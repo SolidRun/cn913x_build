@@ -1,0 +1,25 @@
+From fa13718076b0b4e8100adb11c504e84cbd050689 Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Wed, 28 Oct 2020 15:05:11 +0200
+Subject: [PATCH 2/2] arm64: dts: cn913x: add cn913x COM device trees to the
+ Makefile
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/Makefile | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/marvell/Makefile b/arch/arm64/boot/dts/marvell/Makefile
+index 3e5f2e7a040c..fef06b676881 100644
+--- a/arch/arm64/boot/dts/marvell/Makefile
++++ b/arch/arm64/boot/dts/marvell/Makefile
+@@ -16,3 +16,6 @@ dtb-$(CONFIG_ARCH_MVEBU) += armada-8080-db.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-db.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-db.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9132-db.dtb
++dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cex7.dtb
++dtb-$(CONFIG_ARCH_MVEBU) += cn9131-cex7.dtb
++dtb-$(CONFIG_ARCH_MVEBU) += cn9132-cex7.dtb
+-- 
+2.25.1
+
