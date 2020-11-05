@@ -36,7 +36,18 @@ The board can be configured based on the amount of CP# devices and to which carr
 3. boot loader - *BOOT_LOADER=u-boot*
 
 
-### Examples:
+## U-Boot based on SDK10
+The CN913x u-boot is not public yet, and is taken from Marvell's SDK10
+
+In order to use use the script with the SDK patches, create a directory in ROOTDIR:
+
+`mkdir $ROOTDIR/patches-sdk-u-boot/`
+
+The script will apply the u-boot patches onto the mainline u-boot. In order to do so:
+
+Extract the git-u-boot-<version>-<release>.tar.bz2 under the destination folder git-u-boot-<version>-<release> and copy the patches to $ROOTDIR/patches-sdk-u-boot/
+
+## Examples:
 - `./runme.sh` **or**
 
 generates *images/cn9132-cex7_config_0_ubuntu.img* which is an image ready to be deployed on micro SD card and *images/flash_image.bin* which is an image ready to be deployed on the COM SPI flash.
