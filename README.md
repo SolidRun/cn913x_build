@@ -50,7 +50,7 @@ Extract the git-u-boot-<version>-<release>.tar.bz2 under the destination folder 
 ## Examples:
 - `./runme.sh` **or**
 
-generates *images/cn9132-cex7_config_0_ubuntu.img* which is an image ready to be deployed on micro SD card and *images/flash_image.bin* which is an image ready to be deployed on the COM SPI flash.
+generates *images/cn9132-cex7_config_0_ubuntu.img* which is an image ready to be deployed on micro SD card and *images/flash-image.bin* which is an image ready to be deployed on the COM SPI flash.
 
 
 ## Deploying
@@ -68,7 +68,7 @@ In u-boot prompt, write the folloiwng command for loading ubuntu:
 
 For SPI boot:
 
-Burn the flash_image.bin onto an SDto the system memory and flash it using the `sf probe` and `sf update` commands. 
+Burn the flash-image.bin onto an SDto the system memory and flash it using the `sf probe` and `sf update` commands. 
 
 An example below loads the image through TFTP prototocl, flashes and then verifies the image -
 
