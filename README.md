@@ -62,7 +62,7 @@ Plug in a micro SD into your machine and run the following, where sdX is the loc
 
 In u-boot prompt, write the folloiwng command for loading ubuntu:
 
-`get_images=load mmc 0:1 $kernel_addr_r boot/Image; load mmc 0:1 $fdt_addr_r boot/cn9132-cex7.dtb; setenv root 'root=/dev/mmcblk0p1' rw; mw 0xf2440144 0xffefffff; mw 0xf2440140 0x00100000; boot`
+`get_images=load mmc 1:1 $kernel_addr_r boot/Image; load mmc 1:1 $fdt_addr_r boot/cn9132-cex7.dtb; setenv root 'root=/dev/mmcblk1p1' rw; mw 0xf2440144 0xffefffff; mw 0xf2440140 0x00100000; boot`
 
 
 
@@ -79,22 +79,19 @@ and then set boot DIP switch SW2 on COM to off/on/on/off/on from numbers 1 to 5 
 
 For eMMC boot: 
 
-`load mmc 0:1 0xa4000000 ubuntu-core.img`
+Copy the image located at images/cn9132-cex7_config_0_ubuntu.img onto a SD card or a USB drive.
 
-`setenv mmc dev 1`
+After booting the device from SD card, burn the image onto the eMMC:
 
-`mmc write 0xa4000000 0 0xd2000`
+`mount /dev/mmcblk1p1 /mnt`
 
-And then set boot DIP switch on COM to on/off/on/off/on from numbers 1 to 5 (notice the marking 'ON' on the DIP switch)
+`sudo dd if=/mnt/cn9132-cex7_config_0_ubuntu.img of=/dev/mmcblk0 bs=512 seek=1`
 
-After booting Ubuntu you must resize the boot partition; for instance if booted under eMMC then login as root/root; then:
+Then set the boot DIP switch on COM to on/off/on/off/on from numbers 1 to 5 (notice the marking 'ON' on the DIP switch)
 
-`fdisk /dev/mmcblk1`
+In U-Boot prompt write the following:
 
-Delete first partition and then recreate it starting from 131072 (64MByte) to the end of the volume.
-Do not remove the signaute since it indicates for the kernel which partition ID to use.
-
-After resizing the partition; resize the ext4 boot volume by running 'resize2fs /dev/mmcblk1p1'
+`get_images=load mmc 0:1 $kernel_addr_r boot/Image; load mmc 0:1 $fdt_addr_r boot/cn9132-cex7.dtb; setenv root 'root=/dev/mmcblk0p1' rw; mw 0xf2440144 0xffefffff; mw 0xf2440140 0x00100000; boot`
 
 Afterwards run update the RTC and update the repository -
 
