@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-# set -x
+#set -x
 
 # BOOT_LOADER=u-boot
 # CPU_SPEED=1600,2000,2200
@@ -224,18 +224,21 @@ fi
 echo "Building arm-trusted-firmware"
 cd $ROOTDIR/build/arm-trusted-firmware
 export SCP_BL2=$ROOTDIR/binaries/atf/mrvl_scp_bl2.img
-make -j${PARALLEL} USE_COHERENT_MEM=0 LOG_LEVEL=20 PLAT=t9130 MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell CP_NUM=3 all fip
+make -j${PARALLEL} USE_COHERENT_MEM=0 LOG_LEVEL=20 PLAT=t9130 MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell CP_NUM=$CP_NUM all fip
 
 echo "Building the kernel"
 cd $ROOTDIR/build/linux
-make defconfig
-make -j${PARALLEL} Image dtbs
+#make defconfig
+./scripts/kconfig/merge_config.sh arch/arm64/configs/defconfig $ROOTDIR/configs/linux/cn913x_additions.config
+make -j${PARALLEL} all #Image dtbs modules
 
 \rm -rf $ROOTDIR/images/tmp
 mkdir -p $ROOTDIR/images/tmp/
 mkdir -p $ROOTDIR/images/tmp/boot
+make INSTALL_MOD_PATH=$ROOTDIR/images/tmp/ INSTALL_MOD_STRIP=1 modules_install
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/cn913?-cex7.dtb $ROOTDIR/images/tmp/boot
+
 
 ###############################################################################
 # assembling images
@@ -261,6 +264,23 @@ e2cp -G 0 -O 0 $ROOTDIR/images/tmp/extlinux/extlinux.conf $ROOTDIR/images/tmp/ub
 e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:boot
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/Image $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/cn9132-cex7.dtb $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/
+
+# Copy over kernel image
+echo "Copying kernel modules"
+cd $ROOTDIR/images/tmp/
+for i in `find lib`; do
+        if [ -d $i ]; then
+                e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$i
+        fi
+        if [ -f $i ]; then
+                DIR=`dirname $i`
+                e2cp -G 0 -O 0 -p $ROOTDIR/images/tmp/$i $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$DIR
+        fi
+done
+cd -
+
+
+
 
 # ext4 ubuntu partition is ready
 cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
