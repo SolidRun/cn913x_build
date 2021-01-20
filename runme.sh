@@ -20,6 +20,10 @@ BUILDROOT_VERSION=2020.02.1
 ###############################################################################
 
 RELEASE=${RELEASE:-v5.8}
+SHALLOW=${SHALLOW:true}
+	if [ "x$SHALLOW" == "xtrue" ]; then
+		SHALLOW_FLAG="--depth 1"
+	fi
 BOOT_LOADER=${BOOT_LOADER:-u-boot}
 BOARD_CONFIG=${BOARD_CONFIG:-0}
 CP_NUM=${CP_NUM:-3}
@@ -100,7 +104,7 @@ for i in $SDK_COMPONENTS; do
 		if [ "x$i" == "xlinux" ]; then
 			echo "Cloing https://www.github.com/torvalds/$i release $RELEASE"
 			cd $ROOTDIR/build
-			git clone git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux
+			git clone $SHALLOW_FLAG git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux
 			git checkout v5.8 
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
 			echo "Cloning atf from mainline"
@@ -150,7 +154,7 @@ if [[ ! -f $ROOTDIR/build/ubuntu-core.ext4 ]]; then
         mkdir -p ubuntu
         cd ubuntu
 	if [ ! -d buildroot ]; then
-                git clone https://github.com/buildroot/buildroot -b $BUILDROOT_VERSION
+                git clone $SHALLOW_FLAG https://github.com/buildroot/buildroot -b $BUILDROOT_VERSION
         fi
 	cd buildroot	
 	cp $ROOTDIR/configs/buildroot/buildroot_defconfig configs/
