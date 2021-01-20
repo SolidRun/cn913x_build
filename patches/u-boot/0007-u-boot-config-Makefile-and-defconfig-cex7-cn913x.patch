@@ -1,0 +1,36 @@
+From daf61e06f6c790613248114612060f702b55eff0 Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Tue, 19 Jan 2021 16:22:02 +0200
+Subject: [PATCH] u-boot-config: Makefile and defconfig cex7 cn913x
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ arch/arm/dts/Makefile            | 2 +-
+ configs/sr_cn913x_cex7_defconfig | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index c561974a97..eeb944c878 100644
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -236,7 +236,7 @@ dtb-$(CONFIG_ARCH_MVEBU) +=			\
+ 	cn9131-db-A.dtb				\
+ 	cn9131-db-B.dtb				\
+ 	cn9131-db-C.dtb                         \
+-	cn9131-cex7-A.dtb			\
++	cn9131-cex7-A.dtb				\
+ 	cn9132-db-A.dtb				\
+ 	cn9132-db-B.dtb				\
+ 	cn9132-db-C.dtb				\
+diff --git a/configs/sr_cn913x_cex7_defconfig b/configs/sr_cn913x_cex7_defconfig
+index 090db028c6..307cefef65 100644
+--- a/configs/sr_cn913x_cex7_defconfig
++++ b/configs/sr_cn913x_cex7_defconfig
+@@ -101,3 +101,4 @@ CONFIG_USB_ETHER_RTL8152=y
+ CONFIG_USB_ETHER_SMSC95XX=y
+ CONFIG_SMBIOS_MANUFACTURER=""
+ CONFIG_OF_BOARD_FIXUP=y
++CONFIG_CMD_MVEBU_PHY_FW_DOWNLOAD=y
+-- 
+2.25.1
+

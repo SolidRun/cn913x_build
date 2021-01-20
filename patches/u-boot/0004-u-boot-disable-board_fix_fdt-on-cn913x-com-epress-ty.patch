@@ -1,0 +1,30 @@
+From 10082f9fb347b47b47b73fa3ee5bc621f7f14b91 Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Thu, 29 Oct 2020 17:25:22 +0200
+Subject: [PATCH 4/6] u-boot: disable board_fix_fdt on cn913x com epress type 7
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ board/Marvell/octeontx2_cn913x/board.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index 00b475769b..d4158802d0 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -64,6 +64,12 @@ int board_init(void)
+ 	return 0;
+ }
+ 
++int board_fix_fdt (void *fdt)
++{
++        return 0;
++}
++
++
+ #if (CONFIG_IS_ENABLED(OCTEONTX_SERIAL_BOOTCMD) ||	\
+ 	CONFIG_IS_ENABLED(OCTEONTX_SERIAL_PCIE_CONSOLE)) &&	\
+ 	!CONFIG_IS_ENABLED(CONSOLE_MUX)
+-- 
+2.25.1
+

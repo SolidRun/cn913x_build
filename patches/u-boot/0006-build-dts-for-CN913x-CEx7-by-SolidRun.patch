@@ -1,0 +1,748 @@
+From 26cea2c8f71eaddb64820d466453df4c0b2bf1fa Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Tue, 19 Jan 2021 15:35:07 +0200
+Subject: [PATCH 6/6] build: dts for CN913x CEx7 by SolidRun
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ arch/arm/dts/cn9130-cex7-A.dts | 177 +++++++++++++++++-------
+ arch/arm/dts/cn9131-cex7-A.dts |  29 +---
+ arch/arm/dts/cn9131-cex7.dtsi  | 243 ++++++++++++++++-----------------
+ arch/arm/dts/cn9132-cex7-A.dts |  58 +++++---
+ arch/arm/dts/cn9132-cex7.dtsi  |  35 +----
+ 5 files changed, 292 insertions(+), 250 deletions(-)
+
+diff --git a/arch/arm/dts/cn9130-cex7-A.dts b/arch/arm/dts/cn9130-cex7-A.dts
+index fd24ec8562..ee31a54d89 100644
+--- a/arch/arm/dts/cn9130-cex7-A.dts
++++ b/arch/arm/dts/cn9130-cex7-A.dts
+@@ -107,37 +107,40 @@ ap_emmc_pins: emmc-pins-0 {
+ 
+ &cp0_pinctl {
+ 	/* MPP Bus:
+-	*      [0-11]  RGMII1
+-	*      [12]    GPIO-RGMII-INT
+-	*      [13]    GPIO-DDR-EVNT
+-	*      [14,43] GPIO-FAN-PWM,TACHO
+-	*      [15-23] BOOT Straps
+-	*      [24]    GPIO-IN-SFP-INT
+-	*      [25-26] BOOT Straps
+-	*      [27-30] SPI1
+-	*      [31,49] SMI-MDC
+-	*      [32]    GPIO-CS-STATS
+-	*      [33]    GPIO-BIOS-DIS-OVERRIDE
+-	*      [34]    GPIO-WAKE0
+-	*      [35-36] I2C1 - I2C_MASTER
+-	*      [37-38] I2C0
+-	*      [39-41] PTP, RCLK
+-	*      [42,50] XSMI
+-	*      [44-48] BOOT Straps
+-	*      [51]    SPI1-CS1
+-	*      [52]    GPIO-PERST
+-	*      [53-54] GPIO-AP/CP-VHV
+-	*      [55-61] SD
+-	*      [62]    NC
++	*	[0-11,]	RGMII1
++	*	[12-16]	SPI1
++	*	[17-23]  boot straps
++	*	[24]	GPIO - SFP interrupt - eth0
++	*	[25] 	boot strap	
++	*	[26]	GPIO - FAN TACHO
++	*	[27] 	GPIO - DDR EVENT
++	*	[28-30]	PTP
++	*	[31]	GPIO - PWRBTN_N
++	*	[32]	GPIO - CS Status
++	*	[33]	GPIO - BIOS_DIS_OVERRIDE
++	*	[34]	GPIO - SUS_5_N
++	*	[35,36]	I2C1
++	*	[37,38]	I2C0
++	*	[39]	GPIO - PWM
++	*	[40,41]	SMI - MDC/MDIO
++	*	[42,43]	XSMI - MDC/MDIO
++	*	[44-48]	boot strap
++	*	[49]	CP0_VHV_EN
++	*	[50,51]	UART2
++	*	[52]	RCVR_CLK1
++	*	[53]	AP_VHV_EN
++	*	[54]	RCVR_CLK2
++	*	[55-61]	SDIO
++	*	[62]	NC
+ 	*/
+ 		   /*   0   1   2   3   4   5   6   7   8   9 */
+ 	pin-func = <	3   3   3   3   3   3   3   3   3   3
+-			3   3   0   0   0   0   0   0   0   0
+-			0   0   0   0   0   0   0   2   2   2
+-			2   8   0   0   0   2   2   2   2   5
+-			2   5   8   0   0   0   0   0   0   8
+-			8   0   0   0   0   0xb  0xe 0xe 0xe 0xe
+-			0xe 0xe 0xe >;
++			3   3   3   3   3   3   3   0   0   0
++			0   0   0   0   0   0   0   0   7   7
++			7   0   0   0   0   2   2   2   2   0
++			8   8   8   8   0   0   0   0   0   0
++			6   6   2   0   2   0xb  0xe 0xe 0xe 0xe
++			0xe 0xe 0 >;
+ };
+ 
+ &cp0_i2c0 {
+@@ -145,6 +148,12 @@ ap_emmc_pins: emmc-pins-0 {
+ 	pinctrl-0 = <&cp0_i2c0_pins>;
+ 	status = "okay";
+ 	clock-frequency = <100000>;
++	eeprom0: eeprom@50 {
++                compatible = "atmel,24c64";
++                reg = <0x50>;
++                pagesize = <0x20>;
++        };
++
+ };
+ 
+ &cp0_i2c1 {
+@@ -152,6 +161,58 @@ ap_emmc_pins: emmc-pins-0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&cp0_i2c1_pins>;
+ 	clock-frequency = <100000>;
++	i2c-switch@77 {
++		compatible = "nxp,pca9547";
++		reg = <0x77>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++		clk_gen_i2c: i2c@0 {
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <0>;
++			/*connected to clk generator*/
++		};
++		led_i2c: i2c@1 {
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <1>;
++			/* i2c_led connected to gpio expander on carrier according to com-ex type7 */
++		};
++		cp0_sfp_i2c: i2c@2 {
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <2>;
++			/*connected to sfp cp0_eth0*/
++		};
++		smbus: i2c@3 {
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <3>;
++			/* smbus connected to com-ex type7 connector */
++			current_mon@40 {
++				compatible = "ti,ina220";
++				#address-cells = <1>;
++				#size-cells = <0>;
++				reg = <0x40>;
++			};
++		};
++		therm_i2c: i2c@4 {
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <4>;
++			fan-control-emc2301@2f {
++				compatible = "smsc,emc2305";
++				#address-cells = <1>;
++				#size-cells = <0>;
++				reg = <0x2f>;
++				fan@0 {
++					reg = <0>;
++					pwm-enable = <0>;
++					fan-div = <4>;
++				};
++			};
++		};
++	};
+ };
+ 
+ /* SD CARD */
+@@ -210,7 +271,9 @@ ap_emmc_pins: emmc-pins-0 {
+ 	};
+ 
+ 	phy5 {
+-		phy-type = <COMPHY_TYPE_PEX2>;
++/*		phy-type = <COMPHY_TYPE_PEX2>;	*/
++		phy-type = <COMPHY_TYPE_SGMII2>;
++                phy-speed = <COMPHY_SPEED_3_125G>;
+ 	};
+ };
+ 
+@@ -221,20 +284,23 @@ ap_emmc_pins: emmc-pins-0 {
+ };
+ 
+ /*NVME2 */
+-&cp0_pcie2 {
+-	num-lanes = <1>;
+-	status = "okay";
+-};
++/*
++*&cp0_pcie2 {
++*	num-lanes = <1>;
++*	status = "okay";
++*};
++*/
+ 
+ &cp0_mdio {
+ 	status = "okay";
++	pinctrl-0 = <&cp0_mdio_pins>;
+ 	phy0: ethernet-phy@0 {
+ 		marvell,reg-init = <3 16 0 0x1a4a>;
+ 		reg = <0>;
+ 	};
+-	phy1: ethernet-phy@1 {
+-		reg = <1>;
+-	};
++	switch4: ethernet-switch@4 {
++                reg = <4>;
++        };
+ };
+ 
+ &cp0_ethernet {
+@@ -245,8 +311,18 @@ ap_emmc_pins: emmc-pins-0 {
+ &cp0_eth0 {
+ 	status = "okay";
+ 	phy-mode = "sfi";
++	mod-def0-gpio = <&cp0_gpio0 24 GPIO_ACTIVE_LOW>;
++	i2c-bus = <&cp0_sfp_i2c>;
++	pinctrl-0 = <&cp0_sfp_present_pins>;
+ };
+ 
++/* 2.5G to Topaz switch */
++&cp0_eth2 {
++        status = "okay";
++        phy-mode = "sgmii-2500";
++};
++
++
+ /* 1GE PHY over RGMII */
+ &cp0_eth1 {
+ 	status = "okay";
+@@ -254,14 +330,6 @@ ap_emmc_pins: emmc-pins-0 {
+ 	phy-mode = "rgmii-id";
+ };
+ 
+-/* NC */
+-&cp0_eth2 {
+-	status = "okay";
+-	phy = <&phy1>;
+-	phy-mode = "rgmii-id";
+-};
+-
+-
+ &cp0_pinctl {
+ 	compatible = "marvell,mvebu-pinctrl", "marvell,armada-8k-cpm-pinctrl";
+ 	bank-name ="cp0-110";
+@@ -287,16 +355,19 @@ ap_emmc_pins: emmc-pins-0 {
+ 		marvell,function = <11>;
+ 	};
+ 	cp0_spi0_pins: cp0-spi-pins-0 {
+-		marvell,pins = < 27 28 29 30 >;
+-		marvell,function = <2>;
++		marvell,pins = < 13 14 15 16 >;
++		marvell,function = <3>;
+ 	};
+ 	cp0_spi0_cs1_pins: cp0-spi-cs1-pins-0 {
+-		marvell,pins = < 51 >;
+-		marvell,function = <5>;
++		marvell,pins = < 12 >;
++		marvell,function = <3>;
+ 	};
++	cp0_mdio_pins: cp0-mdio-pins {
++                marvell,pins = < 40 41 >;
++                marvell,function = <8>;
++        };
++	cp0_sfp_present_pins: sfp-present-pins {
++                        marvell,pins = < 24 >;
++                        marvell,function = <0>;
++                };
+ };
+-
+-
+-
+-
+-
+diff --git a/arch/arm/dts/cn9131-cex7-A.dts b/arch/arm/dts/cn9131-cex7-A.dts
+index 454cc2b1a5..dc06d51314 100644
+--- a/arch/arm/dts/cn9131-cex7-A.dts
++++ b/arch/arm/dts/cn9131-cex7-A.dts
+@@ -33,7 +33,7 @@
+ 	};
+ 	phy2 {
+ 		phy-type = <COMPHY_TYPE_SFI0>;
+-		phy-speed = <COMPHY_SPEED_10_3125G>;
++		phy-speed = <COMPHY_SPEED_5_15625G>;
+ 	};
+ 	phy3 {
+ 		phy-type = <COMPHY_TYPE_SATA1>;
+@@ -45,30 +45,3 @@
+ 		phy-type = <COMPHY_TYPE_PEX2>;
+ 	};
+ };
+-
+-&cp1_ethernet {
+-	status = "okay";
+-};
+-
+-/* 5GE to PHY0 */
+-&cp1_eth0 {
+-	status = "okay";
+-	phy-mode = "sfi"; /* lane-4 */
+-};
+-/* NVME0 */
+-&cp1_pcie0 {
+-	num-lanes = <2>;
+-	status = "okay";
+-};
+-
+-/* WIFI0 */
+-&cp1_pcie1 {
+-	num-lanes = <1>;
+-	status = "okay";
+-};
+-
+-/* WIFI1 */
+-&cp1_pcie2 {
+-	num-lanes = <2>;
+-	status = "okay";
+-};
+diff --git a/arch/arm/dts/cn9131-cex7.dtsi b/arch/arm/dts/cn9131-cex7.dtsi
+index 03b965379c..5ccb30281e 100644
+--- a/arch/arm/dts/cn9131-cex7.dtsi
++++ b/arch/arm/dts/cn9131-cex7.dtsi
+@@ -1,11 +1,11 @@
+ /*
+- * Copyright (C) 2020 SolidRun ltd.
+- *
+- * SPDX-License-Identifier:    GPL-2.0
+- * https://spdx.org/licenses
+- */
++* Copyright (C) 2020 SolidRun ltd.
++*
++* SPDX-License-Identifier:    GPL-2.0
++* https://spdx.org/licenses
++*/
+ 
+-/* Device Tree file for the SolidRun cn1931 based com express type 7, cp0  */
++/* Device Tree file for the SolidRun cn1931 based com express type 7, cp1  */
+ 
+ #undef CP110_NAME
+ #undef CP110_NUM
+@@ -14,154 +14,151 @@
+ #undef CP110_PCIEx_BUS_MEM_BASE
+ 
+ /* CP110-1 Settings */
+-#define CP110_NAME			cp1
+-#define CP110_NUM			1
+-#define CP110_PCIE_MEM_SIZE(iface)	(0xf00000)
+-#define CP110_PCIEx_CPU_MEM_BASE(iface)	(0xe2000000 + (iface) * 0x1000000)
+-#define CP110_PCIEx_BUS_MEM_BASE(iface)	(CP110_PCIEx_CPU_MEM_BASE(iface))
++#define CP110_NAME                     cp1
++#define CP110_NUM                      1
++#define CP110_PCIE_MEM_SIZE(iface)     (0xf00000)
++#define CP110_PCIEx_CPU_MEM_BASE(iface)        (0xe2000000 + (iface) * 0x1000000)
++#define CP110_PCIEx_BUS_MEM_BASE(iface)        (CP110_PCIEx_CPU_MEM_BASE(iface))
+ 
+ #include "armada-cp110.dtsi"
+ 
+ / {
+-	model = "SolidRun CN9131 based COM express type 7";
+-	compatible = "marvell,cn9131-db";
++       model = "SolidRun CN9131 based COM express type 7";
++       compatible = "marvell,cn9131-db";
+ 
+-	aliases {
+-		gpio3 = &cp1_gpio0;
+-		gpio4 = &cp1_gpio1;
+-		fuse5 = &cp1_ld_efuse0;	/* bank 68 RO */
+-		fuse6 = &cp1_ld_efuse1;	/* bank 69 RW */
+-	};
++       aliases {
++               gpio3 = &cp1_gpio0;
++               gpio4 = &cp1_gpio1;
++               fuse5 = &cp1_ld_efuse0; /* bank 68 RO */
++               fuse6 = &cp1_ld_efuse1; /* bank 69 RW */
++       };
+ 
+ };
+ 
+ &cp1_ld_efuse0 {
+-	status = "okay";
++       status = "okay";
+ };
+ 
+ &cp1_ld_efuse1 {
+-	status = "okay";
++       status = "okay";
+ };
+ 
+-&cp1_i2c0 {
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&cp1_i2c0_pins>;
+-	status = "okay";
+-	clock-frequency = <100000>;
++&cp1_i2c1 {
++       pinctrl-names = "default";
++       pinctrl-0 = <&cp1_i2c1_pins>;
++       status = "okay";
++       clock-frequency = <100000>;
+ };
+ 
+-&cp1_i2c1 {
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&cp1_i2c1_pins>;
+-	status = "okay";
+-	clock-frequency = <100000>;
++&cp1_xmdio {
++        status = "okay";
++	pinctrl-0 = <&cp1_xmdio_pins>;
++	sfi_phy_cp1_0: ethernet-phy@0 {
++                reg = <0>;
++        };
+ };
+ 
++
+ &cp1_pcie0 {
+-	pinctrl-names = "default";
+-	status = "okay";
+-	num-lanes = <2>;
+-		/* non-prefetchable memory */
+-	ranges = <0x82000000 0 0xe2000000 0 0xe2000000 0 0xf00000>;
++       pinctrl-names = "default";
++       status = "okay";
++       num-lanes = <2>;
++               /* non-prefetchable memory */
++       ranges = <0x82000000 0 0xe2000000 0 0xe2000000 0 0xf00000>;
+ };
+ 
+ &cp1_pinctl {
+-	compatible = "marvell,mvebu-pinctrl",
+-		     "marvell,cp115-standalone-pinctrl";
+-	bank-name ="cp1-110";
+-
+-	/* MPP Bus:
+-	*       [0-1]   I2C
+-	*       [2-3]   UART
+-	*       [4-8]   NC
+-	*       [9]     GPIO-fan-alert-n
+-	*       [10]    NC
+-	*       [11]    GPIO-batlow_n
+-	*       [12]    GPIO-spkr
+-	*       [13-16] SPI1 - connected to TPM - not assembled by default
+-	*       [17]    GPIO - TPM-priq_n
+-	*       [18-23] BOOT starps
+-	*       [24]    GPIO - rtc-int-n
+-	*       [25-27] Boot straps
+-	*       [28-30] PTP
+-	*       [31]    GPIO - SUS-5
+-	*       [32]    GPIO - PWRBTN-N
+-	*       [33]    GPIO - THERMTRIP-N
+-	*       [34]    GPIO - THEM_n
+- 	*       [35-36] I2C1
+-	*       [37-38] I2C0
+- 	*       [39]    GPIO - sata_act_n
+- 	*       [40-41] NC
+- 	*       [42-43] xSMI
+-  	*       [44-48] NC
+- 	*       [49]    GPIO - 10g_phy_rst_23
+- 	*       [50]    GPIO - cp1_sfp_in1
+-  	*       [51]    GPIO - wake
+- 	*       [52]    GPIO - PERST
+-	*       [54-62] NC
++       compatible = "marvell,mvebu-pinctrl",
++                    "marvell,cp115-standalone-pinctrl";
++       bank-name ="cp1-110";
++
++       /* MPP Bus:
++	*	[0-10]	NC
++	*	[11]	GPIO - BATLOW_N serves as LED_IO1 on clearfog
++	*	[12]	GPIO - SPKR
++	*	[13-16]	SPI TPM
++	*	[17]	GPIO - TPM_PIRQ_N
++	*	[18-23]	boot straps
++	*	[24-27]	NC
++	*	[28-30]	PTP
++	*	[31,32]	NC
++	*	[33]	GPIO - THERMTRIP_N
++	*	[34]	GPIO - THERM_N
++	*	[35,36]	I2C1
++	*	[37,38]	xmdio - connected to phy 88e2110
++	*	[39]	sata_act
++	*	[40]	GPIO - sw rerout push cutton
++	*	[41]	NC
++	*	[42,43]	GPIOs - wireless disable wifi0, wifi1
++	*	[44-49]	NC
++	*	[50]	GPIO - SFP_INT_CP1
++	*	[51]	GPIO - wake1
++	*	[52]	RCVR - recovered clock
++	*	[53-62]	NC
+ 	*/
+-		/*      0    1    2    3    4    5    6    7    8    9 */
+-	pin-func = <    0x0  0x0  0x8  0x8  0x0  0x0  0x0  0x0  0x0  0x0
+- 			0x0  0x0  0x0  0x3  0x3  0x3  0x3  0x0  0x0  0x0
+-			0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x7  0x7
+-			0x7  0x0  0x0  0x0  0x2  0x2  0x2  0x2  0x2  0x0
+-			0x0  0x0  0x8  0x8  0x0  0x0  0x0  0x0  0x0  0x0
+-			0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0
+-			0x0  0x0  0x0 >;
+-
+-	cp1_i2c0_pins: cp1-i2c-pins-0 {
+-		marvell,pins = < 37 38 >;
+-		marvell,function = <2>;
+-	};
+-	cp1_i2c1_pins: cp1-i2c-pins-0 {
+-		marvell,pins = < 35 36 >;
+-		marvell,function = <2>;
+-	};
+-
+-	cp1_spi0_pins: cp1-spi-pins-0 {
+-		marvell,pins = < 13 14 15 16 >;
+-		marvell,function = <3>;
+-	};
++               /*      0    1    2    3    4    5    6    7    8    9 */
++       pin-func = <    0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0
++                       0x0  0x0  0x0  0x3  0x3  0x3  0x3  0x0  0x0  0x0
++                       0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x7  0x7
++                       0x7  0x0  0x0  0x0  0x2  0x2  0x2  0x8  0x8  0x9
++                       0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0
++                       0x0  0x0  0x2  0x0  0x0  0x0  0x0  0x0  0x0  0x0
++                       0x0  0x0  0x0 >;
++
++       cp1_xmdio_pins: cp1-xmdio-pins-0 {
++               marvell,pins = < 37 38 >;
++               marvell,function = <8>;
++       };
++       cp1_i2c1_pins: cp1-i2c-pins-1 {
++               marvell,pins = < 35 36 >;
++               marvell,function = <2>;
++       };
++
++       cp1_spi0_pins: cp1-spi-pins-0 {
++               marvell,pins = < 13 14 15 16 >;
++               marvell,function = <3>;
++       };
++
+ };
+ 
+ /* SATA0  */
+ &cp1_sata0 {
+-	status = "okay";
++       status = "okay";
+ };
+ 
+ /* SPI TPM */
+ &cp1_spi1 {
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&cp1_spi0_pins>;
+-	reg = <0x700680 0x50>,		/* control */
+-	      <0x2000000 0x1000000>,	/* CS0 */
+-	      <0 0xffffffff>,		/* CS1 */
+-	      <0 0xffffffff>,		/* CS2 */
+-	      <0 0xffffffff>;		/* CS3 */
+-	status = "okay";
+-
+-	spi-flash@0 {
+-		#address-cells = <0x1>;
+-		#size-cells = <0x1>;
+-		compatible = "jedec,spi-nor", "spi-flash";
+-		reg = <0x0>;
+-		spi-max-frequency = <40000000>;
+-		partitions {
+-			compatible = "fixed-partitions";
+-			#address-cells = <1>;
+-			#size-cells = <1>;
+-			partition@0 {
+-				label = "U-Boot";
+-				reg = <0x0 0x200000>;
+-			};
+-			partition@400000 {
+-				label = "Filesystem";
+-				reg = <0x200000 0xe00000>;
+-			};
+-		};
+-	};
++       pinctrl-names = "default";
++       pinctrl-0 = <&cp1_spi0_pins>;
++       reg = <0x700680 0x50>,          /* control */
++             <0x2000000 0x1000000>,    /* CS0 */
++             <0 0xffffffff>,           /* CS1 */
++             <0 0xffffffff>,           /* CS2 */
++             <0 0xffffffff>;           /* CS3 */
++       status = "okay";
++};
++
++&cp1_ethernet {
++        status = "okay";
++};
++
++&cp1_eth0 {
++        status = "okay";
++        phy-mode = "sfi";
++        phy = <&sfi_phy_cp1_0>;
++};
++
++&cp1_pcie0 {
++        num-lanes = <2>;
++        status = "okay";
++};
++
++&cp1_pcie1 {
++        num-lanes = <1>;
++        status = "okay";
+ };
+ 
+-&cp1_utmi1 {
+-	status = "okay";
++&cp1_pcie2 {
++        num-lanes = <2>;
++        status = "okay";
+ };
+diff --git a/arch/arm/dts/cn9132-cex7-A.dts b/arch/arm/dts/cn9132-cex7-A.dts
+index 965a3ab145..2cb5120104 100644
+--- a/arch/arm/dts/cn9132-cex7-A.dts
++++ b/arch/arm/dts/cn9132-cex7-A.dts
+@@ -25,7 +25,7 @@
+ 
+ 	phy2 {
+ 		phy-type = <COMPHY_TYPE_SFI0>;
+-		phy-speed = <COMPHY_SPEED_10_3125G>;
++		phy-speed = <COMPHY_SPEED_5_15625G>;
+ 	};
+ 
+ 	phy3 {
+@@ -53,6 +53,7 @@
+ &cp2_eth0 {
+ 	status = "okay";
+ 	phy-mode = "sfi";
++	phy = <&sfi_phy_cp2_0>;
+ };
+ 
+ /* AI Module */
+@@ -77,27 +78,48 @@
+         status = "okay";
+ };
+ 
+-
+ &cp2_pinctl {
+ 	/* MPP Bus:
+-	*	[0-26]		GPIO
+-	*	[27]		SATA0_PRESENT_ACTIVEn
+-	*	[28]		SATA1_PRESENT_ACTIVEn
+-	*	[29-31, 33]	GPIO (Default)
+-	*	[32,34]		SMI
+-	*	[37-38]		I2C0
+-	*	[39-53]		GPIO
+-	*	[54]		SD_CRD_RSTn (out)
+-	*	[55]		SD_CRD_DT (in)
+-	*	[56-62]		SDIO
++	*	[0-11]		GPIO
++	*	[12-26]		NC
++	*	[27]		GPIO
++	*	[28-30]		PTP
++	*	[31-32]		GPIO
++	*	[33-34]		NC
++	*	[35-36]		I2C1
++	*	[37-38]		XMDIO (XSMI)
++	*	[39]		NC
++	*	[40]		GPIO
++	*	[41]		NC
++	*	[42-43]		GPIO
++	*	[44-49]		NC
++	*	[50]		SFP_INT
++	*	[51-54]		NC
++	*	[55-56]		GPIO
++	*	[57-62]		NC
+ 	*/
+ 		/*   0    1    2    3    4    5    6    7    8    9 */
+ 	pin-func = < 0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0
+-		     0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0
+-		     0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x9  0x9  0x0
+-		     0x0  0x0  0x8  0x0  0x8  0x0  0x0  0x2  0x2  0x0
+-		     0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0  0x0
+-		     0x0  0x0  0x0  0x0  0xa  0xb  0xe  0xe  0xe  0xe
+-		     0xe  0xe  0xe >;
++		     0x0  0x0  0xff 0xff 0xff 0xff 0xff 0xff 0xff 0xff
++		     0xff 0xff 0xff 0xff 0xff 0xff 0xff 0x0  0x7  0x7
++		     0x7  0x0  0x0  0xff 0xff 0x2  0x2  0x8  0x8  0xff
++		     0x0  0xff 0x0  0x0  0xff 0xff 0xff 0xff 0xff 0xff
++		     0x0  0xff 0xff 0xff 0xff 0x0  0x0  0xff 0xff 0xff
++		     0xff 0xff 0xff >;
++};
++
++&cp2_pinctl {
++        compatible = "marvell,mvebu-pinctrl",
++                     "marvell,cp115-standalone-pinctrl";
++        bank-name ="cp2-110";
++
++        cp2_xmdio_pins: cp2-xmdio-pins-0 {
++                marvell,pins = < 37 38 >;
++                marvell,function = <8>;
++        };
++        cp2_i2c1_pins: cp2-i2c-pins-0 {
++                marvell,pins = < 35 36 >;
++                marvell,function = <2>;
++        };
+ };
+ 
+diff --git a/arch/arm/dts/cn9132-cex7.dtsi b/arch/arm/dts/cn9132-cex7.dtsi
+index 46d54bb647..0244fd6aa4 100644
+--- a/arch/arm/dts/cn9132-cex7.dtsi
++++ b/arch/arm/dts/cn9132-cex7.dtsi
+@@ -35,13 +35,6 @@
+ 
+ };
+ 
+-&cp2_i2c0 {
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&cp2_i2c0_pins>;
+-	status = "okay";
+-	clock-frequency = <100000>;
+-};
+-
+ &cp2_i2c1 {
+         pinctrl-names = "default";
+         pinctrl-0 = <&cp2_i2c1_pins>;
+@@ -49,33 +42,19 @@
+         clock-frequency = <100000>;
+ };
+ 
+-
++&cp2_xmdio {
++	status = "okay";
++	pinctrl-0 = <&cp2_xmdio_pins>;
++	sfi_phy_cp2_0: ethernet-phy@0 {
++                reg = <0>;
++        };
++};
+ 
+ &cp2_pcie0 {
+ 		/* non-prefetchable memory */
+ 	ranges =<0x82000000 0 0xe5000000 0 0xe5000000 0 0x1000000>;
+ };
+ 
+-&cp2_pinctl {
+-	compatible = "marvell,mvebu-pinctrl",
+-		     "marvell,cp115-standalone-pinctrl";
+-	bank-name ="cp2-110";
+-
+-	cp2_i2c0_pins: cp2-i2c-pins-0 {
+-		marvell,pins = < 37 38 >;
+-		marvell,function = <2>;
+-	};
+-	cp2_i2c1_pins: cp2-i2c-pins-0 {
+-		marvell,pins = < 35 36 >;
+- 		marvell,function = <2>;
+-        };
+-
+-	cp2_sdhci_pins: cp2-sdhi-pins-0 {
+-		marvell,pins = < 56 57 58 59 60 61 >;
+-		marvell,function = <14>;
+-	};
+-};
+-
+ &cp2_usb3_0 {
+ 	status = "okay";
+ };
+-- 
+2.25.1
+

@@ -1,0 +1,26 @@
+From 993faa43a264bba5a31ba4b1d16391a60ed84663 Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Thu, 5 Nov 2020 17:17:20 +0200
+Subject: [PATCH 5/6] u-boot: fix i2c1 setting
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ arch/arm/dts/cn9130-cex7-A.dts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/dts/cn9130-cex7-A.dts b/arch/arm/dts/cn9130-cex7-A.dts
+index abcad4c278..fd24ec8562 100644
+--- a/arch/arm/dts/cn9130-cex7-A.dts
++++ b/arch/arm/dts/cn9130-cex7-A.dts
+@@ -20,7 +20,7 @@
+ 
+ 	aliases {
+ 		i2c0 = &cp0_i2c0;
+-		i2c1 = &cp0_i2c0;
++		i2c1 = &cp0_i2c1;
+ 		spi0 = &cp0_spi1;
+ 		gpio0 = &ap_gpio0;
+ 		gpio1 = &cp0_gpio0;
+-- 
+2.25.1
+
