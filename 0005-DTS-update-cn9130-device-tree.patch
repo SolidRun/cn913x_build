@@ -1,0 +1,34 @@
+From 98a5b72d70d6772263f919154fa739ac776d85f9 Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Wed, 27 Jan 2021 17:13:57 +0200
+Subject: [PATCH] DTS: update cn9130 device tree
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cex7.dts | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+index 66be2e22040e..11dc8c323c3a 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+@@ -130,7 +130,6 @@ &cp0_ethernet {
+ &cp0_eth0 {
+ 	status = "okay";
+ 	phy-mode = "10gbase-kr";
+-	vqmmc-supply = <&ap0_reg_sd_vccq>;
+ 	phys = <&cp0_comphy4 0>;
+ 	managed = "in-band-status";
+ 	sfp = <&cp0_sfp_eth0>;
+@@ -338,7 +337,7 @@ &cp0_sdhci0 {
+ 	pinctrl-0 = <&cp0_sdhci_pins
+ 			&cp0_sdhci_cd_pins>;
+ 	bus-width = <4>;
+-	cd-gpios = <&cp0_gpio2 23 GPIO_ACTIVE_LOW>;
++	cd-gpios = <&cp0_gpio2 24 GPIO_ACTIVE_LOW>;
+ 	no-1-8-v;
+ 	vqmmc-supply = <&v_3_3>;
+ 	vmmc-supply = <&v_3_3>;
+-- 
+2.25.1
+
