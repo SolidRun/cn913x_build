@@ -1,0 +1,46 @@
+From 07a2196d3c51e833c667532cf7adb7affa3983bd Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Wed, 27 Jan 2021 17:28:48 +0200
+Subject: [PATCH] u-boot: update device tree of cn9130 cex7
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ arch/arm/dts/cn9130-cex7-A.dts | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm/dts/cn9130-cex7-A.dts b/arch/arm/dts/cn9130-cex7-A.dts
+index ee31a54d89..e8c6dc8a1b 100644
+--- a/arch/arm/dts/cn9130-cex7-A.dts
++++ b/arch/arm/dts/cn9130-cex7-A.dts
+@@ -80,8 +80,14 @@
+ 		/*   0 1 2 3 4 5 6 7 8 9 */
+ 	pin-func = < 1 1 1 1 1 1 1 1 1 1
+ 		     1 3 1 0 0 0 0 0 0 3 >;
++/*	ap_emmc_pins: emmc-pins-0 {
++		marvell,pins = < 0 1 2 3 4 5 6 7
++				8 9 10 12 >;
++		marvell,function = <1>;
++	};*/
+ };
+ 
++
+ /* on-board eMMC */
+ &ap_sdhci0 {
+         pinctrl-names = "default";
+@@ -91,13 +97,6 @@
+         status = "okay";
+ };
+ 
+-/*
+-ap_emmc_pins: emmc-pins-0 {
+-	marvell,pins = < 0 1 2 3 4 5 6 7
+-			8 9 10 12 >;
+-	marvell,function = <1>;
+-};
+-*/
+ 
+ &uart0 {
+         status = "okay";
+-- 
+2.25.1
+
