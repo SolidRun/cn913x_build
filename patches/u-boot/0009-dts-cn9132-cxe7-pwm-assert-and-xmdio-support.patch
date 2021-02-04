@@ -1,0 +1,127 @@
+From df48d6cdd4477b7c21f32c32ea2f5d7ab8f4e54c Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Thu, 4 Feb 2021 17:22:50 +0200
+Subject: [PATCH] dts: cn9132 cxe7 pwm assert and xmdio support
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ arch/arm/dts/cn9130-cex7-A.dts         | 10 ++++++++--
+ arch/arm/dts/cn9131-cex7.dtsi          |  1 +
+ arch/arm/dts/cn9132-cex7-A.dts         | 12 +++++++++++-
+ arch/arm/dts/cn9132-cex7.dtsi          |  7 -------
+ board/Marvell/octeontx2_cn913x/board.c |  5 +++++
+ 5 files changed, 25 insertions(+), 10 deletions(-)
+
+diff --git a/arch/arm/dts/cn9130-cex7-A.dts b/arch/arm/dts/cn9130-cex7-A.dts
+index e8c6dc8a1b..fa64c0dc16 100644
+--- a/arch/arm/dts/cn9130-cex7-A.dts
++++ b/arch/arm/dts/cn9130-cex7-A.dts
+@@ -97,7 +97,6 @@
+         status = "okay";
+ };
+ 
+-
+ &uart0 {
+         status = "okay";
+ };
+@@ -142,6 +141,7 @@
+ 			0xe 0xe 0 >;
+ };
+ 
++
+ &cp0_i2c0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&cp0_i2c0_pins>;
+@@ -368,5 +368,11 @@
+ 	cp0_sfp_present_pins: sfp-present-pins {
+                         marvell,pins = < 24 >;
+                         marvell,function = <0>;
+-                };
++	};
++	fan_pwm_pins: fan-pwm-pins {
++                        marvell,pins = < 39 >;
++                        marvell,function = <0>;
++	};
++
+ };
++
+diff --git a/arch/arm/dts/cn9131-cex7.dtsi b/arch/arm/dts/cn9131-cex7.dtsi
+index 5ccb30281e..6217b1e6dd 100644
+--- a/arch/arm/dts/cn9131-cex7.dtsi
++++ b/arch/arm/dts/cn9131-cex7.dtsi
+@@ -56,6 +56,7 @@
+ 	sfi_phy_cp1_0: ethernet-phy@0 {
+                 reg = <0>;
+         };
++
+ };
+ 
+ 
+diff --git a/arch/arm/dts/cn9132-cex7-A.dts b/arch/arm/dts/cn9132-cex7-A.dts
+index 2cb5120104..f552ac1310 100644
+--- a/arch/arm/dts/cn9132-cex7-A.dts
++++ b/arch/arm/dts/cn9132-cex7-A.dts
+@@ -108,6 +108,17 @@
+ 		     0xff 0xff 0xff >;
+ };
+ 
++
++&cp2_xmdio {
++        status = "okay";
++        pinctrl-0 = <&cp2_xmdio_pins>;
++        sfi_phy_cp2_0: ethernet-phy@0 {
++                reg = <0>;
++        };
++};
++
++
++
+ &cp2_pinctl {
+         compatible = "marvell,mvebu-pinctrl",
+                      "marvell,cp115-standalone-pinctrl";
+@@ -122,4 +133,3 @@
+                 marvell,function = <2>;
+         };
+ };
+-
+diff --git a/arch/arm/dts/cn9132-cex7.dtsi b/arch/arm/dts/cn9132-cex7.dtsi
+index 0244fd6aa4..514ddfa7d4 100644
+--- a/arch/arm/dts/cn9132-cex7.dtsi
++++ b/arch/arm/dts/cn9132-cex7.dtsi
+@@ -42,13 +42,6 @@
+         clock-frequency = <100000>;
+ };
+ 
+-&cp2_xmdio {
+-	status = "okay";
+-	pinctrl-0 = <&cp2_xmdio_pins>;
+-	sfi_phy_cp2_0: ethernet-phy@0 {
+-                reg = <0>;
+-        };
+-};
+ 
+ &cp2_pcie0 {
+ 		/* non-prefetchable memory */
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index d4158802d0..e9a98a38a4 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -57,6 +57,10 @@ int board_init(void)
+ 	/* address of boot parameters */
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+ 
++	writel(0xfbfff7f, 0xf2440144); //define output enable
++	writel(0x0000000, 0xf2440140); //define output value 0
++
++
+ #ifdef CONFIG_BOARD_CONFIG_EEPROM
+ 	cfg_eeprom_init();
+ #endif
+@@ -125,3 +129,4 @@ int board_late_init(void)
+ #endif
+ 	return 0;
+ }
++
+-- 
+2.25.1
+

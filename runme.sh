@@ -288,6 +288,7 @@ cd -
 
 # ext4 ubuntu partition is ready
 cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
+cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images
 cd $ROOTDIR/
 truncate -s 420M $ROOTDIR/images/tmp/ubuntu-core.img
 parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary 64MiB 417MiB
