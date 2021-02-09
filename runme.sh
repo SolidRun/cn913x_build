@@ -104,8 +104,7 @@ for i in $SDK_COMPONENTS; do
 		if [ "x$i" == "xlinux" ]; then
 			echo "Cloing https://www.github.com/torvalds/$i release $RELEASE"
 			cd $ROOTDIR/build
-			git clone $SHALLOW_FLAG git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux
-			git checkout v5.8 
+			git clone $SHALLOW_FLAG git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux -b v5.8
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
 			echo "Cloning atf from mainline"
 			cd $ROOTDIR/build
@@ -135,8 +134,9 @@ for i in $SDK_COMPONENTS; do
 		
 		if [ "x$i" == "xu-boot" ] && [[ -d $ROOTDIR/patches-sdk-u-boot/ ]]; then
 			git am $ROOTDIR/patches-sdk-u-boot/*.patch
+			git am $ROOTDIR/patches/$i/*.patch
 		fi
-		if [[ -d $ROOTDIR/patches/$i/ ]]; then
+		if [ "x$i" != "xu-boot" ] && [[ -d $ROOTDIR/patches/$i/ ]]; then
 			git am $ROOTDIR/patches/$i/*.patch
 		fi
 		if [[ -d $ROOTDIR/patches/$i-$RELEASE/ ]]; then
