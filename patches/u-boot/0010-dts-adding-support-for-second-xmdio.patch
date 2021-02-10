@@ -1,0 +1,72 @@
+From 9d7fa2a19b6a454717ab87f4964a479b0405df1d Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Tue, 9 Feb 2021 17:19:00 +0200
+Subject: [PATCH] dts: adding support for second xmdio
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ arch/arm/dts/armada-cp110.dtsi | 9 +++++++++
+ arch/arm/dts/cn9131-cex7-A.dts | 3 ++-
+ arch/arm/dts/cn9132-cex7-A.dts | 5 +++--
+ 3 files changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/dts/armada-cp110.dtsi b/arch/arm/dts/armada-cp110.dtsi
+index 448cdb2f80..af55c5573d 100644
+--- a/arch/arm/dts/armada-cp110.dtsi
++++ b/arch/arm/dts/armada-cp110.dtsi
+@@ -49,6 +49,15 @@
+ 				status = "disabled";
+ 			};
+ 
++			CP110_LABEL(xxmdio): mdio@12a900 {
++				#address-cells = <1>;
++				#size-cells = <0>;
++				compatible = "marvell,xmdio";
++				reg = <0x12a600 0x200>;
++				mdio-name = CP110_STRING_LABEL(xxmdio);
++				status = "disabled";
++			};
++
+ 			CP110_LABEL(sar-reg) {
+ 				compatible = "marvell,sample-at-reset-common",
+ 					     "marvell,sample-at-reset-cp110";
+diff --git a/arch/arm/dts/cn9131-cex7-A.dts b/arch/arm/dts/cn9131-cex7-A.dts
+index dc06d51314..fecccfd443 100644
+--- a/arch/arm/dts/cn9131-cex7-A.dts
++++ b/arch/arm/dts/cn9131-cex7-A.dts
+@@ -33,7 +33,8 @@
+ 	};
+ 	phy2 {
+ 		phy-type = <COMPHY_TYPE_SFI0>;
+-		phy-speed = <COMPHY_SPEED_5_15625G>;
++//		phy-speed = <COMPHY_SPEED_5_15625G>;
++		phy-speed = <COMPHY_SPEED_10_3125G>;
+ 	};
+ 	phy3 {
+ 		phy-type = <COMPHY_TYPE_SATA1>;
+diff --git a/arch/arm/dts/cn9132-cex7-A.dts b/arch/arm/dts/cn9132-cex7-A.dts
+index f552ac1310..ebe1a42a6d 100644
+--- a/arch/arm/dts/cn9132-cex7-A.dts
++++ b/arch/arm/dts/cn9132-cex7-A.dts
+@@ -25,7 +25,8 @@
+ 
+ 	phy2 {
+ 		phy-type = <COMPHY_TYPE_SFI0>;
+-		phy-speed = <COMPHY_SPEED_5_15625G>;
++	//	phy-speed = <COMPHY_SPEED_5_15625G>;
++		phy-speed = <COMPHY_SPEED_10_3125G>;
+ 	};
+ 
+ 	phy3 {
+@@ -109,7 +110,7 @@
+ };
+ 
+ 
+-&cp2_xmdio {
++&cp2_xxmdio {
+         status = "okay";
+         pinctrl-0 = <&cp2_xmdio_pins>;
+         sfi_phy_cp2_0: ethernet-phy@0 {
+-- 
+2.25.1
+

@@ -1,0 +1,52 @@
+From 50fad6f2107b47c5d220c5caf42d5e476d681e92 Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Tue, 9 Feb 2021 17:12:33 +0200
+Subject: [PATCH] dts: update spi clock frequency to 10MHz
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cex7.dts | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+index 53b316dc58a2..f75e32d03a09 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+@@ -357,7 +357,8 @@ &cp0_sdhci0 {
+ &cp0_spi1 {
+ 	status = "okay";
+ 	pinctrl-names = "default";
+-	pinctrl-0 = <&cp0_spi1_pins>;
++	pinctrl-0 = <&cp0_spi1_pins
++			&cp0_spi1_cs1_pins>;
+ 	reg = <0x700680 0x50>;
+ 	spi-flash@0 {
+ 		#address-cells = <0x1>;
+@@ -372,7 +373,7 @@ spi-flash@1 {
+ 		compatible = "jedec,spi-nor";
+ 		reg = <0x1>;
+ 		/* On carrier MUX does not allow higher frequencies */
+-		spi-max-frequency = <20000000>;
++		spi-max-frequency = <10000000>;
+ 	};
+ };
+ 
+@@ -410,9 +411,14 @@ cp0_sdhci_pins: cp0-sdhi-pins-0 {
+ 			marvell,function = "sdio";
+ 		};
+ 		cp0_spi1_pins: cp0-spi-pins-1 {
+-			marvell,pins = "mpp13", "mpp14", "mpp15", "mpp16", "mpp12";
++			marvell,pins = "mpp13", "mpp14", "mpp15", "mpp16";
+ 			marvell,function = "spi1";
+ 		};
++		cp0_spi1_cs1_pins: cp0-spi-cs1-pins-1 {
++                        marvell,pins = "mpp12";
++                        marvell,function = "spi1";
++                };
++
+ 		cp0_sfp_present_pins: sfp-present-pins {
+ 			marvell,pins = "mpp24";
+ 			marvell,function = "gpio";
+-- 
+2.25.1
+
