@@ -98,7 +98,9 @@ cd $ROOTDIR
 ###############################################################################
 # source code cloning and building 
 ###############################################################################
-SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux"
+#SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux"
+SDK_COMPONENTS="linux"
+
 for i in $SDK_COMPONENTS; do
 	if [[ ! -d $ROOTDIR/build/$i ]]; then
 		if [ "x$i" == "xlinux" ]; then
@@ -115,7 +117,7 @@ for i in $SDK_COMPONENTS; do
 		elif [ "x$i" == "xmv-ddr-marvell" ]; then
 			echo "Cloning mv-ddr-marvell from mainline"
 			echo "Cloing https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git"
-                        cd $ROOTDIR/build
+			cd $ROOTDIR/build
 			git clone https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git mv-ddr-marvell
 			cd mv-ddr-marvell
 			git checkout mv-ddr-devel
@@ -133,14 +135,18 @@ for i in $SDK_COMPONENTS; do
 		echo "Checking patches for $i"
 		
 		if [ "x$i" == "xu-boot" ] && [[ -d $ROOTDIR/patches-sdk-u-boot/ ]]; then
+			cd $ROOTDIR/build/$i
 			git am $ROOTDIR/patches-sdk-u-boot/*.patch
 			git am $ROOTDIR/patches/$i/*.patch
 		fi
 		if [ "x$i" != "xu-boot" ] && [[ -d $ROOTDIR/patches/$i/ ]]; then
+			cd $ROOTDIR/build/$i
 			git am $ROOTDIR/patches/$i/*.patch
 		fi
-		if [[ -d $ROOTDIR/patches/$i-$RELEASE/ ]]; then
-			git am $ROOTDIR/patches/$i-$RELEASE/*.patch
+	
+		if [[ -d $ROOTDIR/patches/$i ]]; then
+			$ROOTDIR/build/$i
+			git am $ROOTDIR/patches/$i/*.patch
 		fi
 	fi
 done
