@@ -98,8 +98,7 @@ cd $ROOTDIR
 ###############################################################################
 # source code cloning and building 
 ###############################################################################
-#SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux"
-SDK_COMPONENTS="linux"
+SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux"
 
 for i in $SDK_COMPONENTS; do
 	if [[ ! -d $ROOTDIR/build/$i ]]; then
