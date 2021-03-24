@@ -1,0 +1,26 @@
+From d415f9375c5ed2497ad8eb13aab9f4f80969e799 Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Wed, 24 Mar 2021 15:47:08 +0200
+Subject: [PATCH] COMPILE: fix stack overflow warning
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ drivers/snps/snps_fw.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/snps/snps_fw.c b/drivers/snps/snps_fw.c
+index e2bbe57..811d70c 100644
+--- a/drivers/snps/snps_fw.c
++++ b/drivers/snps/snps_fw.c
+@@ -451,7 +451,7 @@ static void snps_mail_box_print_stream_msg(int msg_id, int msg_log_index)
+ 
+ 	/* 1D and 2D have different mail box dictionary database */
+ 	mb_stream_database = (snps_get_state() == TRAINING_2D ? two_d_messages : one_d_messages);
+-	stream_msg_count = sizeof(mb_stream_database) / sizeof(mb_stream_database[0]);
++	stream_msg_count = sizeof(mb_stream_database) / sizeof(struct mail_box_stream_message);
+ 
+ 	/* Most of the dictionary msg_id's are continuous, so first check database if
+ 	 * msg_id cell holds this msg_id */
+-- 
+2.25.1
+

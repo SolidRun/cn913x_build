@@ -209,15 +209,14 @@ fi
 
 # if patches from the sdk exist, then compile u-boot, otherwise, the atf will take the u-boot.bin from the binaries  
 if [ "x$BOOT_LOADER" == "xu-boot" ] && [[ -d $ROOTDIR/patches-sdk-u-boot/ ]]; then
-        echo "Building u-boot"
+	echo "Building u-boot"
 	cd $ROOTDIR/build/u-boot/
 	make sr_cn913x_cex7_defconfig
 	make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
-	export BL33=$ROOTDIR/build/u-boot/u-boot.bin
 	cp $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
-else
-	export BL33=$ROOTDIR/binaries/u-boot/u-boot.bin
-fi
+fi 
+
+export BL33=$ROOTDIR/binaries/u-boot/u-boot.bin
 
 if [ "x$BOOT_LOADER" == "xuefi" ]; then
 	echo "no support for uefi yet"
@@ -227,6 +226,7 @@ echo "Building arm-trusted-firmware"
 cd $ROOTDIR/build/arm-trusted-firmware
 export SCP_BL2=$ROOTDIR/binaries/atf/mrvl_scp_bl2.img
 make -j${PARALLEL} USE_COHERENT_MEM=0 LOG_LEVEL=20 PLAT=t9130 MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell CP_NUM=$CP_NUM all fip
+
 
 echo "Building the kernel"
 cd $ROOTDIR/build/linux
