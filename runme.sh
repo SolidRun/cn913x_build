@@ -14,19 +14,24 @@ BUILDROOT_VERSION=2020.02.1
 #UEFI_RELEASE=DEBUG
 #BOOT_LOADER=uefi
 #DDR_SPEED=2400
-#BOARD_CONFIG 0-clearfog_cn 1-napa
+#BOARD_CONFIG -
+# 0-clearfog_cn COM express
+# 1-napa
+# 2-clearfog-base (cn9130 SOM)
+# 3-clearfog-pro (cn9130 SOM)
+
 ###############################################################################
 # Misc
 ###############################################################################
 
-RELEASE=${RELEASE:-v5.8}
+RELEASE=${RELEASE:-v5.12}
 SHALLOW=${SHALLOW:true}
 	if [ "x$SHALLOW" == "xtrue" ]; then
 		SHALLOW_FLAG="--depth 1"
 	fi
 BOOT_LOADER=${BOOT_LOADER:-u-boot}
 BOARD_CONFIG=${BOARD_CONFIG:-0}
-CP_NUM=${CP_NUM:-3}
+CP_NUM=${CP_NUM:-1}
 mkdir -p build images
 ROOTDIR=`pwd`
 PARALLEL=$(getconf _NPROCESSORS_ONLN) # Amount of parallel jobs for the builds
@@ -52,6 +57,18 @@ case "${BOARD_CONFIG}" in
 			 exit -1
 		fi
 	;;
+	2)
+		CP_NUM=1
+		DTB_UBOOT=cn9130-cf-base
+		DTB_KERNEL=cn9130-cf-base
+	;;
+	3)
+		CP_NUM=1
+		DTB_UBOOT=cn9130-cf-pro
+		DTB_KERNEL=cn9130-cf-pro
+	;;
+
+
 
 	*)
 		echo "Please define board configuration"
@@ -105,7 +122,7 @@ for i in $SDK_COMPONENTS; do
 		if [ "x$i" == "xlinux" ]; then
 			echo "Cloing https://www.github.com/torvalds/$i release $RELEASE"
 			cd $ROOTDIR/build
-			git clone $SHALLOW_FLAG git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux -b v5.8
+			git clone $SHALLOW_FLAG git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux -b v5.12
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
 			echo "Cloning atf from mainline"
 			cd $ROOTDIR/build
@@ -239,7 +256,7 @@ mkdir -p $ROOTDIR/images/tmp/
 mkdir -p $ROOTDIR/images/tmp/boot
 make INSTALL_MOD_PATH=$ROOTDIR/images/tmp/ INSTALL_MOD_STRIP=1 modules_install
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images/tmp/boot
-cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/cn913?-cex7.dtb $ROOTDIR/images/tmp/boot
+cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/cn913*.dtb $ROOTDIR/images/tmp/boot
 
 
 ###############################################################################

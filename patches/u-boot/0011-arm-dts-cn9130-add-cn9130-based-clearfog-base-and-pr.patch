@@ -1,0 +1,968 @@
+From 5081a48b23047b581e81c82d2a1c7e6cd6b88727 Mon Sep 17 00:00:00 2001
+From: Rabeeh Khoury <rabeeh@solid-run.com>
+Date: Sun, 20 Jun 2021 20:02:33 +0300
+Subject: [PATCH 11/11] arm: dts: cn9130: add cn9130 based clearfog base and
+ pro
+
+Signed-off-by: Rabeeh Khoury <rabeeh@solid-run.com>
+---
+ arch/arm/dts/Makefile           |   6 +-
+ arch/arm/dts/cn9130-cf-base.dts | 383 ++++++++++++++++++++++++++++++
+ arch/arm/dts/cn9130-cf-pro.dts  | 399 ++++++++++++++++++++++++++++++++
+ arch/arm/dts/cn9130-som.dtsi    | 128 ++++++++++
+ 4 files changed, 914 insertions(+), 2 deletions(-)
+ create mode 100644 arch/arm/dts/cn9130-cf-base.dts
+ create mode 100644 arch/arm/dts/cn9130-cf-pro.dts
+ create mode 100644 arch/arm/dts/cn9130-som.dtsi
+
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index eeb944c878..1b46829593 100644
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -236,11 +236,13 @@ dtb-$(CONFIG_ARCH_MVEBU) +=			\
+ 	cn9131-db-A.dtb				\
+ 	cn9131-db-B.dtb				\
+ 	cn9131-db-C.dtb                         \
+-	cn9131-cex7-A.dtb				\
++	cn9131-cex7-A.dtb			\
+ 	cn9132-db-A.dtb				\
+ 	cn9132-db-B.dtb				\
+ 	cn9132-db-C.dtb				\
+-	cn9132-cex7-A.dtb
++	cn9132-cex7-A.dtb			\
++	cn9130-cf-base.dtb			\
++	cn9130-cf-pro.dtb
+ 
+ dtb-$(CONFIG_ARCH_UNIPHIER_LD11) += \
+ 	uniphier-ld11-global.dtb \
+diff --git a/arch/arm/dts/cn9130-cf-base.dts b/arch/arm/dts/cn9130-cf-base.dts
+new file mode 100644
+index 0000000000..1e65712e34
+--- /dev/null
++++ b/arch/arm/dts/cn9130-cf-base.dts
+@@ -0,0 +1,383 @@
++/*
++ * Copyright (C) 2020 SolidRun ltd.
++ *
++ * SPDX-License-Identifier:    GPL-2.0
++ * https://spdx.org/licenses
++ */
++
++/* cn9130-cex7-A.dts */
++#include "cn9130-som.dtsi"
++
++/ {
++	model = "SolidRun CN9130 based SOM ClearFog Base";
++	compatible = "marvell,cn9130-db", "marvell,cn91xx", "marvell,cn9030-vd",
++		     "marvell,cn9030", "marvell,armada-ap806-quad",
++		     "marvell,armada-ap806", "marvell,armada70x0";
++
++	chosen {
++		stdout-path = "serial0:115200n8";
++	};
++
++	aliases {
++		i2c0 = &cp0_i2c0;
++		i2c1 = &cp0_i2c1;
++		spi0 = &cp0_spi1;
++		gpio0 = &ap_gpio0;
++		gpio1 = &cp0_gpio0;
++		gpio2 = &cp0_gpio1;
++	};
++
++	memory@00000000 {
++		device_type = "memory";
++		reg = <0x0 0x0 0x0 0x80000000>;
++	};
++
++	cp0 {
++		config-space {
++			sdhci@780000 {
++				vqmmc-supply = <&cp0_reg_sd_vccq>;
++				vmmc-supply = <&cp0_reg_sd_vcc>;
++			};
++			ap_reg_mmc_vccq: ap_mmc_vccq@0 {
++				compatible = "regulator-gpio";
++				regulator-name = "ap_mmc_vccq";
++				regulator-min-microvolt = <1800000>;
++				regulator-max-microvolt = <3300000>;
++				gpios = <&cp0_gpio0 26 GPIO_ACTIVE_HIGH>;
++				states = <1800000 0x1
++					3300000 0x0>;
++			};
++			cp0_reg_sd_vcc: cp0_sd_vcc@0 {
++				compatible = "regulator-fixed";
++				regulator-name = "cp_sd_vcc";
++				regulator-min-microvolt = <3300000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-always-on;
++				status = "okay";
++			};
++			cp0_reg_sd_vccq: cp0_sd_vccq@0 {
++				compatible = "regulator-gpio";
++				regulator-name = "cp0_sd_vccq";
++				regulator-min-microvolt = <1800000>;
++				regulator-max-microvolt = <3300000>;
++				gpios = <&cp0_gpio1 26 GPIO_ACTIVE_HIGH>;
++				enable-active-high;
++				states = <1800000 0x1
++					3300000 0x0>;
++			};
++		};
++	};
++};
++
++
++/***** AP related configuration *****/
++
++&ap_pinctl {
++	/* MPP Bus:
++	 * SDIO  [0-10, 12]
++	 * UART0 [11,19]
++	 */
++		/*   0 1 2 3 4 5 6 7 8 9 */
++	pin-func = < 1 1 1 1 1 1 1 1 1 1
++		     1 3 1 0 0 0 0 0 0 3 >;
++/*	ap_emmc_pins: emmc-pins-0 {
++		marvell,pins = < 0 1 2 3 4 5 6 7
++				8 9 10 12 >;
++		marvell,function = <1>;
++	};*/
++};
++
++
++/* on-board eMMC */
++&ap_sdhci0 {
++        pinctrl-names = "default";
++        pinctrl-0 = <&ap_emmc_pins>; /*defined in armada-ap80x.dtsi */
++        vqmmc-supply = <&ap_reg_mmc_vccq>;
++        bus-width = <8>;
++        status = "okay";
++};
++
++&uart0 {
++        status = "okay";
++};
++
++/****** CP related configuration  ******/
++
++&cp0_pinctl {
++	/* MPP Bus:
++	*	[0-11,]	RGMII1
++	*	[12-16]	SPI1
++	*	[17-23]  boot straps
++	*	[24]	GPIO - SFP interrupt - eth0
++	*	[25] 	boot strap	
++	*	[26]	GPIO - FAN TACHO
++	*	[27] 	GPIO - DDR EVENT
++	*	[28-30]	PTP
++	*	[31]	GPIO - PWRBTN_N
++	*	[32]	GPIO - CS Status
++	*	[33]	GPIO - BIOS_DIS_OVERRIDE
++	*	[34]	GPIO - SUS_5_N
++	*	[35,36]	I2C1
++	*	[37,38]	I2C0
++	*	[39]	GPIO - PWM
++	*	[40,41]	SMI - MDC/MDIO
++	*	[42,43]	XSMI - MDC/MDIO
++	*	[44-48]	boot strap
++	*	[49]	CP0_VHV_EN
++	*	[50,51]	UART2
++	*	[52]	RCVR_CLK1
++	*	[53]	AP_VHV_EN
++	*	[54]	RCVR_CLK2
++	*	[55-61]	SDIO
++	*	[62]	NC
++	*/
++		   /*   0   1   2   3   4   5   6   7   8   9 */
++	pin-func = <	3   3   3   3   3   3   3   3   3   3
++			3   3   3   3   3   3   3   0   0   0
++			0   0   0   0   0   0   0   0   7   7
++			7   0   0   0   0   2   2   2   2   0
++			0   0   0   0   0   0   0   8   0   8
++			6   6   2   0   2   0xb  0xe 0xe 0xe 0xe
++			0xe 0xe 0 >;
++};
++
++
++&cp0_i2c0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_i2c0_pins>;
++	status = "okay";
++	clock-frequency = <100000>;
++	eeprom0: eeprom@50 {
++                compatible = "atmel,24c64";
++                reg = <0x50>;
++                pagesize = <0x20>;
++        };
++	/*
++	 * PCA9655 GPIO expander, up to 1MHz clock.
++	 *  0-CON3 CLKREQ#
++	 *  1-CON3 PERST#
++	 *  2-
++	 *  3-CON3 W_DISABLE
++	 *  4-
++	 *  5-USB3 overcurrent
++	 *  6-USB3 power
++	 *  7-
++	 *  8-JP4 P1
++	 *  9-JP4 P4
++	 * 10-JP4 P5
++	 * 11-m.2 DEVSLP
++	 * 12-SFP_LOS
++	 * 13-SFP_TX_FAULT
++	 * 14-SFP_TX_DISABLE
++	 * 15-SFP_MOD_DEF0
++	 */
++	expander0: gpio-expander@20 {
++		/*
++		 * This is how it should be:
++		 * compatible = "onnn,pca9655", "nxp,pca9555";
++		 * but you can't do this because of the way I2C works.
++		 */
++		compatible = "nxp,pca9555";
++		gpio-controller;
++		#gpio-cells = <2>;
++		reg = <0x20>;
++
++		pcie1_0_clkreq {
++			gpio-hog;
++			gpios = <0 GPIO_ACTIVE_LOW>;
++			input;
++			line-name = "pcie1.0-clkreq";
++		};
++		pcie1_0_w_disable {
++			gpio-hog;
++			gpios = <3 GPIO_ACTIVE_LOW>;
++			output-low;
++			line-name = "pcie1.0-w-disable";
++		};
++		usb3_ilimit {
++			gpio-hog;
++			gpios = <5 GPIO_ACTIVE_LOW>;
++			input;
++			line-name = "usb3-current-limit";
++		};
++		usb3_power {
++			gpio-hog;
++			gpios = <6 GPIO_ACTIVE_HIGH>;
++			output-high;
++			line-name = "usb3-power";
++		};
++		m2_devslp {
++			gpio-hog;
++			gpios = <11 GPIO_ACTIVE_HIGH>;
++			output-low;
++			line-name = "m.2 devslp";
++		};
++	};
++};
++
++&cp0_i2c1 {
++	status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_i2c1_pins>;
++	clock-frequency = <100000>;
++};
++
++/* SD CARD */
++&cp0_sdhci0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_sdhci_pins
++		     &cp0_sdhci_cd_pins>;
++	bus-width = <4>;
++	status = "okay";
++	no-1-8-v;
++};
++
++
++/* SPI NOR  */
++&cp0_spi1 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_spi1_pins
++		     &cp0_spi1_cs1_pins>;
++	reg =	<0x700680 0x50>,	/* control */
++		<0x2000000 0x1000000>,	/* CS0 */
++		<0x2000000 0x1000004>,	/* CS1 */
++		<0 0xffffffff>,		/* CS2 */
++		<0 0xffffffff>;		/* CS3 */
++	status = "okay";
++
++	spi-flash@0 {
++		#address-cells = <0x1>;
++		#size-cells = <0x1>;
++		compatible = "jedec,spi-nor", "spi-flash";
++		reg = <0>;
++		/* On-board MUX does not allow higher frequencies */
++		spi-max-frequency = <20000000>;
++	};
++};
++
++&cp0_comphy {
++	phy0 {
++		phy-type = <COMPHY_TYPE_SATA1>;
++	};
++
++	phy1 {
++		phy-type = <COMPHY_TYPE_USB3_HOST0>;
++	};
++
++	phy2 {
++		phy-type = <COMPHY_TYPE_SFI0>;
++		phy-speed = <COMPHY_SPEED_10_3125G>;
++	};
++
++	phy3 {
++		phy-type = <COMPHY_TYPE_SGMII1>;
++                phy-speed = <COMPHY_SPEED_1_25G>;
++	};
++
++	phy4 {
++		phy-type = <COMPHY_TYPE_USB3_HOST1>;
++	};
++
++	phy5 {
++		phy-type = <COMPHY_TYPE_PEX2>;
++	};
++};
++
++/* SRDS #0 - SATA1 on ahci0 on M.2 slot */
++&cp0_sata0 {
++	status = "okay";
++};
++
++/* SRDS #1 - USB 3.0 host */
++&cp0_usb3_0 {
++	status = "okay";
++};
++
++/* SRDS #2 - 10GE SFP+ */
++&cp0_eth0 {
++	status = "okay";
++	phy-mode = "sfi";
++	compatible = "sff,sfp";
++	i2c-bus = <&cp0_i2c1>;
++	los-gpio = <&expander0 12 GPIO_ACTIVE_HIGH>;
++	mod-def0-gpio = <&expander0 15 GPIO_ACTIVE_LOW>;
++	tx-disable-gpio = <&expander0 14 GPIO_ACTIVE_HIGH>;
++	tx-fault-gpio = <&expander0 13 GPIO_ACTIVE_HIGH>;
++	maximum-power-milliwatt = <2000>;
++};
++
++/* SRDS #3 - 1GE PHY over SGMII */
++&cp0_eth1 {
++	status = "okay";
++	phy = <&phy1>;
++	phy-mode = "sgmii";
++};
++
++/* SRDS #4 - USB 3.0 host on M.2 connector */
++&cp0_usb3_1 {
++	status = "okay";
++};
++
++/* SRDS #5 - mini PCIE slot */
++&cp0_pcie2 {
++	num-lanes = <1>;
++	marvell,reset-gpio = <&expander0 1 GPIO_ACTIVE_LOW>;
++	status = "okay";
++};
++
++/* CP0 MDIO connected to local SOM 1Gbps phy and carrier 88E1512 phy */
++&cp0_mdio {
++	status = "okay";
++	pinctrl-0 = <&cp0_mdio_pins>;
++	phy0: ethernet-phy@0 {
++		marvell,reg-init = <3 16 0 0x1a4a>;
++		reg = <0>;
++	};
++	phy1: ethernet-phy@1 {
++		marvell,reg-init = <3 16 0 0x1a4a>;
++		reg = <1>;
++	};
++};
++
++&cp0_ethernet {
++	status = "okay";
++};
++
++
++&cp0_pinctl {
++	compatible = "marvell,mvebu-pinctrl", "marvell,armada-8k-cpm-pinctrl";
++	bank-name ="cp0-110";
++
++	cp0_i2c0_pins: cp0-i2c-pins-0 {
++		marvell,pins = < 37 38 >;
++		marvell,function = <2>;
++	};
++	cp0_i2c1_pins: cp0-i2c-pins-1 {
++		marvell,pins = < 35 36 >;
++		marvell,function = <2>;
++	};
++	cp0_ge1_rgmii_pins: cp0-ge-rgmii-pins-0 {
++		marvell,pins = < 0 1 2 3 4 5 6 7 8 9 10 11>;
++		marvell,function = <3>;
++	};
++	cp0_sdhci_pins: cp0-sdhi-pins-0 {
++		marvell,pins = < 56 57 58 59 60 61 >;
++		marvell,function = <14>;
++	};
++	cp0_sdhci_cd_pins: cp0-sdhci-cd-pins-0 {
++		marvell,pins = < 55 >;
++		marvell,function = <11>;
++	};
++	cp0_spi1_pins: cp0-spi-pins-0 {
++		marvell,pins = < 13 14 15 16 >;
++		marvell,function = <3>;
++	};
++	cp0_spi1_cs1_pins: cp0-spi-cs1-pins-0 {
++		marvell,pins = < 12 >;
++		marvell,function = <3>;
++	};
++	cp0_mdio_pins: cp0-mdio-pins {
++                marvell,pins = < 47 49 >;
++                marvell,function = <8>;
++        };
++};
+diff --git a/arch/arm/dts/cn9130-cf-pro.dts b/arch/arm/dts/cn9130-cf-pro.dts
+new file mode 100644
+index 0000000000..27d1d3a7ac
+--- /dev/null
++++ b/arch/arm/dts/cn9130-cf-pro.dts
+@@ -0,0 +1,399 @@
++/*
++ * Copyright (C) 2020 SolidRun ltd.
++ *
++ * SPDX-License-Identifier:    GPL-2.0
++ * https://spdx.org/licenses
++ */
++
++/* cn9130-cex7-A.dts */
++#include "cn9130-som.dtsi"
++
++/ {
++	model = "SolidRun CN9130 based SOM ClearFog Pro";
++	compatible = "marvell,cn9130-db", "marvell,cn91xx", "marvell,cn9030-vd",
++		     "marvell,cn9030", "marvell,armada-ap806-quad",
++		     "marvell,armada-ap806", "marvell,armada70x0";
++
++	chosen {
++		stdout-path = "serial0:115200n8";
++	};
++
++	aliases {
++		i2c0 = &cp0_i2c0;
++		i2c1 = &cp0_i2c1;
++		spi0 = &cp0_spi1;
++		gpio0 = &ap_gpio0;
++		gpio1 = &cp0_gpio0;
++		gpio2 = &cp0_gpio1;
++	};
++
++	memory@00000000 {
++		device_type = "memory";
++		reg = <0x0 0x0 0x0 0x80000000>;
++	};
++
++	cp0 {
++		config-space {
++			sdhci@780000 {
++				vqmmc-supply = <&cp0_reg_sd_vccq>;
++				vmmc-supply = <&cp0_reg_sd_vcc>;
++			};
++			ap_reg_mmc_vccq: ap_mmc_vccq@0 {
++				compatible = "regulator-gpio";
++				regulator-name = "ap_mmc_vccq";
++				regulator-min-microvolt = <1800000>;
++				regulator-max-microvolt = <3300000>;
++				gpios = <&cp0_gpio0 26 GPIO_ACTIVE_HIGH>;
++				states = <1800000 0x1
++					3300000 0x0>;
++			};
++			cp0_reg_sd_vcc: cp0_sd_vcc@0 {
++				compatible = "regulator-fixed";
++				regulator-name = "cp_sd_vcc";
++				regulator-min-microvolt = <3300000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-always-on;
++				status = "okay";
++			};
++			cp0_reg_sd_vccq: cp0_sd_vccq@0 {
++				compatible = "regulator-gpio";
++				regulator-name = "cp0_sd_vccq";
++				regulator-min-microvolt = <1800000>;
++				regulator-max-microvolt = <3300000>;
++				gpios = <&cp0_gpio1 26 GPIO_ACTIVE_HIGH>;
++				enable-active-high;
++				states = <1800000 0x1
++					3300000 0x0>;
++			};
++		};
++		gpio@440100 {
++			p24 {
++				gpio-hog;
++				gpios = <24 GPIO_ACTIVE_HIGH>;
++				output-high;
++				line-name = "switch_reset";
++			};
++		};
++	};
++};
++
++
++/***** AP related configuration *****/
++&ap_pinctl {
++	/* MPP Bus:
++	 * SDIO  [0-10, 12]
++	 * UART0 [11,19]
++	 */
++		/*   0 1 2 3 4 5 6 7 8 9 */
++	pin-func = < 1 1 1 1 1 1 1 1 1 1
++		     1 3 1 0 0 0 0 0 0 3 >;
++/*	ap_emmc_pins: emmc-pins-0 {
++		marvell,pins = < 0 1 2 3 4 5 6 7
++				8 9 10 12 >;
++		marvell,function = <1>;
++	};*/
++};
++
++
++/* on-board eMMC */
++&ap_sdhci0 {
++        pinctrl-names = "default";
++        pinctrl-0 = <&ap_emmc_pins>; /*defined in armada-ap80x.dtsi */
++        vqmmc-supply = <&ap_reg_mmc_vccq>;
++        bus-width = <8>;
++        status = "okay";
++};
++
++&uart0 {
++        status = "okay";
++};
++
++/****** CP related configuration  ******/
++
++&cp0_pinctl {
++	/* MPP Bus:
++	*	[0-11,]	RGMII1
++	*	[12-16]	SPI1
++	*	[17-23]  boot straps
++	*	[24]	GPIO - SFP interrupt - eth0
++	*	[25] 	boot strap	
++	*	[26]	GPIO - FAN TACHO
++	*	[27] 	GPIO - DDR EVENT
++	*	[28-30]	PTP
++	*	[31]	GPIO - PWRBTN_N
++	*	[32]	GPIO - CS Status
++	*	[33]	GPIO - BIOS_DIS_OVERRIDE
++	*	[34]	GPIO - SUS_5_N
++	*	[35,36]	I2C1
++	*	[37,38]	I2C0
++	*	[39]	GPIO - PWM
++	*	[40,41]	SMI - MDC/MDIO
++	*	[42,43]	XSMI - MDC/MDIO
++	*	[44-48]	boot strap
++	*	[49]	CP0_VHV_EN
++	*	[50,51]	UART2
++	*	[52]	RCVR_CLK1
++	*	[53]	AP_VHV_EN
++	*	[54]	RCVR_CLK2
++	*	[55-61]	SDIO
++	*	[62]	NC
++	*/
++		   /*   0   1   2   3   4   5   6   7   8   9 */
++	pin-func = <	3   3   3   3   3   3   3   3   3   3
++			3   3   3   3   3   3   3   0   0   0
++			0   0   0   0   0   0   0   0   7   7
++			7   0   0   0   0   2   2   2   2   0
++			0   0   0   0   0   0   0   8   0   8
++			6   6   2   0   2   0xb  0xe 0xe 0xe 0xe
++			0xe 0xe 0 >;
++};
++
++
++&cp0_i2c0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_i2c0_pins>;
++	status = "okay";
++	clock-frequency = <100000>;
++	eeprom0: eeprom@50 {
++                compatible = "atmel,24c64";
++                reg = <0x50>;
++                pagesize = <0x20>;
++        };
++	/*
++	 * PCA9655 GPIO expander, up to 1MHz clock.
++	 *  0-CON3 CLKREQ#
++	 *  1-CON3 PERST#
++	 *  2-
++	 *  3-CON3 W_DISABLE
++	 *  4-
++	 *  5-USB3 overcurrent
++	 *  6-USB3 power
++	 *  7-
++	 *  8-JP4 P1
++	 *  9-JP4 P4
++	 * 10-JP4 P5
++	 * 11-m.2 DEVSLP
++	 * 12-SFP_LOS
++	 * 13-SFP_TX_FAULT
++	 * 14-SFP_TX_DISABLE
++	 * 15-SFP_MOD_DEF0
++	 */
++	expander0: gpio-expander@20 {
++		/*
++		 * This is how it should be:
++		 * compatible = "onnn,pca9655", "nxp,pca9555";
++		 * but you can't do this because of the way I2C works.
++		 */
++		compatible = "nxp,pca9555";
++		gpio-controller;
++		#gpio-cells = <2>;
++		reg = <0x20>;
++
++		pcie1_0_clkreq {
++			gpio-hog;
++			gpios = <0 GPIO_ACTIVE_LOW>;
++			input;
++			line-name = "pcie1.0-clkreq";
++		};
++		pcie1_0_w_disable {
++			gpio-hog;
++			gpios = <3 GPIO_ACTIVE_LOW>;
++			output-low;
++			line-name = "pcie1.0-w-disable";
++		};
++		pcie2_0_clkreq {
++			gpio-hog;
++			gpios = <4 GPIO_ACTIVE_LOW>;
++			input;
++			line-name = "pcie2.0-clkreq";
++		};
++		pcie2_0_w_disable {
++			gpio-hog;
++			gpios = <7 GPIO_ACTIVE_LOW>;
++			output-low;
++			line-name = "pcie2.0-w-disable";
++		};
++		usb3_ilimit {
++			gpio-hog;
++			gpios = <5 GPIO_ACTIVE_LOW>;
++			input;
++			line-name = "usb3-current-limit";
++		};
++		usb3_power {
++			gpio-hog;
++			gpios = <6 GPIO_ACTIVE_HIGH>;
++			output-high;
++			line-name = "usb3-power";
++		};
++		m2_devslp {
++			gpio-hog;
++			gpios = <11 GPIO_ACTIVE_HIGH>;
++			output-low;
++			line-name = "m.2 devslp";
++		};
++	};
++};
++
++&cp0_i2c1 {
++	status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_i2c1_pins>;
++	clock-frequency = <100000>;
++};
++
++/* SD CARD */
++&cp0_sdhci0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_sdhci_pins
++		     &cp0_sdhci_cd_pins>;
++	bus-width = <4>;
++	status = "okay";
++	no-1-8-v;
++};
++
++/* SPI NOR  */
++&cp0_spi1 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_spi1_pins
++		     &cp0_spi1_cs1_pins>;
++	reg =	<0x700680 0x50>,	/* control */
++		<0x2000000 0x1000000>,	/* CS0 */
++		<0x2000000 0x1000004>,	/* CS1 */
++		<0 0xffffffff>,		/* CS2 */
++		<0 0xffffffff>;		/* CS3 */
++	status = "okay";
++
++	spi-flash@0 {
++		#address-cells = <0x1>;
++		#size-cells = <0x1>;
++		compatible = "jedec,spi-nor", "spi-flash";
++		reg = <0>;
++		/* On-board MUX does not allow higher frequencies */
++		spi-max-frequency = <20000000>;
++	};
++};
++
++&cp0_comphy {
++	phy0 {
++		phy-type = <COMPHY_TYPE_SATA1>;
++	};
++
++	phy1 {
++		phy-type = <COMPHY_TYPE_USB3_HOST0>;
++	};
++
++	phy2 {
++		phy-type = <COMPHY_TYPE_SFI0>;
++		phy-speed = <COMPHY_SPEED_10_3125G>;
++	};
++
++	phy3 {
++		phy-type = <COMPHY_TYPE_SGMII1>;
++                phy-speed = <COMPHY_SPEED_1_25G>;
++	};
++
++	phy4 {
++		phy-type = <COMPHY_TYPE_PEX1>;
++	};
++
++	phy5 {
++		phy-type = <COMPHY_TYPE_PEX2>;
++	};
++};
++
++/* SRDS #0 - SATA1 on ahci0 on M.2 slot */
++&cp0_sata0 {
++	status = "okay";
++};
++
++/* SRDS #1 - USB 3.0 host */
++&cp0_usb3_0 {
++	status = "okay";
++};
++
++/* SRDS #2 - 10GE SFP+ */
++&cp0_eth0 {
++	status = "okay";
++	phy-mode = "sfi";
++	compatible = "sff,sfp";
++	i2c-bus = <&cp0_i2c1>;
++	los-gpio = <&expander0 12 GPIO_ACTIVE_HIGH>;
++	mod-def0-gpio = <&expander0 15 GPIO_ACTIVE_LOW>;
++	tx-disable-gpio = <&expander0 14 GPIO_ACTIVE_HIGH>;
++	tx-fault-gpio = <&expander0 13 GPIO_ACTIVE_HIGH>;
++	maximum-power-milliwatt = <2000>;
++};
++
++/* SRDS #3 - 1GE PHY over SGMII */
++&cp0_eth1 {
++	status = "okay";
++	phy = <&phy1>;
++	phy-mode = "sgmii";
++};
++
++/* SRDS #4 - PCIe on mini PCIe connector */
++&cp0_pcie1 {
++	num-lanes = <1>;
++	marvell,reset-gpio = <&expander0 2 GPIO_ACTIVE_LOW>;
++	status = "okay";
++};
++
++/* SRDS #5 - mini PCIE slot */
++&cp0_pcie2 {
++	num-lanes = <1>;
++	marvell,reset-gpio = <&expander0 1 GPIO_ACTIVE_LOW>;
++	status = "okay";
++};
++
++/* CP0 MDIO connected to local SOM 1Gbps phy and carrier 88E1512 phy */
++&cp0_mdio {
++	status = "okay";
++	pinctrl-0 = <&cp0_mdio_pins>;
++	phy0: ethernet-phy@0 {
++		marvell,reg-init = <3 16 0 0x1a4a>;
++		reg = <0>;
++	};
++	phy1: ethernet-phy@1 {
++		marvell,reg-init = <3 16 0 0x1a4a>;
++		reg = <1>;
++	};
++};
++
++&cp0_ethernet {
++	status = "okay";
++};
++
++
++&cp0_pinctl {
++	compatible = "marvell,mvebu-pinctrl", "marvell,armada-8k-cpm-pinctrl";
++	bank-name ="cp0-110";
++
++	cp0_i2c0_pins: cp0-i2c-pins-0 {
++		marvell,pins = < 37 38 >;
++		marvell,function = <2>;
++	};
++	cp0_i2c1_pins: cp0-i2c-pins-1 {
++		marvell,pins = < 35 36 >;
++		marvell,function = <2>;
++	};
++	cp0_sdhci_pins: cp0-sdhi-pins-0 {
++		marvell,pins = < 56 57 58 59 60 61 >;
++		marvell,function = <14>;
++	};
++	cp0_sdhci_cd_pins: cp0-sdhci-cd-pins-0 {
++		marvell,pins = < 55 >;
++		marvell,function = <11>;
++	};
++	cp0_spi1_pins: cp0-spi-pins-0 {
++		marvell,pins = < 13 14 15 16 >;
++		marvell,function = <3>;
++	};
++	cp0_spi1_cs1_pins: cp0-spi-cs1-pins-0 {
++		marvell,pins = < 12 >;
++		marvell,function = <3>;
++	};
++	cp0_mdio_pins: cp0-mdio-pins {
++                marvell,pins = < 47 49 >;
++                marvell,function = <8>;
++        };
++};
+diff --git a/arch/arm/dts/cn9130-som.dtsi b/arch/arm/dts/cn9130-som.dtsi
+new file mode 100644
+index 0000000000..51d56359aa
+--- /dev/null
++++ b/arch/arm/dts/cn9130-som.dtsi
+@@ -0,0 +1,128 @@
++/*
++ * Copyright (C) 2020 SolidRun ltd.
++ *
++ * SPDX-License-Identifier:	GPL-2.0
++ * https://spdx.org/licenses
++ */
++
++/* Device Tree file for the SolidRun cn1930 based com express type 7, cp0  */
++
++#include <dt-bindings/gpio/gpio.h>
++#include "armada-common.dtsi"
++#include "armada-ap807.dtsi"
++#include "armada-ap80x-quad.dtsi"
++
++/* This defines used to calculate the base address of each CP */
++#define CP110_BASE_OFFSET		(0xf2000000)
++#define CP110_SPACE_SIZE		(0x02000000)
++#define CP110_BASE			(CP110_BASE_OFFSET + \
++						(CP110_NUM * CP110_SPACE_SIZE))
++
++#define CP110_PCIE_MEM_SIZE(iface)	((iface == 0) ? 0x1ff00000 : 0xf00000)
++#define CP110_PCIE_BUS_MEM_CFG		(0x82000000)
++
++/* CP110-0 Settings */
++#define CP110_NAME			cp0
++#define CP110_NUM			0
++#define CP110_PCIEx_CPU_MEM_BASE(iface)	((iface == 0) ? 0xc0000000 : \
++					 (0xe0000000 + (iface - 1) * 0x1000000))
++#define CP110_PCIEx_BUS_MEM_BASE(iface)	(CP110_PCIEx_CPU_MEM_BASE(iface))
++
++#include "armada-cp110.dtsi"
++
++/ {
++	model = "SolidRun CN9130 based SOM";
++	compatible =	"marvell,armada70x0", "marvell,armada-ap806-quad",
++			"marvell,armada-ap806", "marvell,cn9030";
++	aliases {
++		fuse0 = &ap_hd_efuse0;	/* banks 0-63 RW */
++		fuse1 = &ap_ld_efuse0;	/* bank 64 RO */
++		fuse2 = &ap_ld_efuse1;	/* bank 65 RW */
++		fuse3 = &cp0_ld_efuse0;	/* bank 66 RO */
++		fuse4 = &cp0_ld_efuse1;	/* bank 67 RW */
++	};
++
++	cp0 {
++		config-space {
++			cp0_reg_usb3_vbus0: cp0_usb3_vbus@0 {
++				compatible = "regulator-fixed";
++				regulator-name = "cp0-xhci0-vbus";
++				regulator-min-microvolt = <5000000>;
++				regulator-max-microvolt = <5000000>;
++				startup-delay-us = <100000>;
++				regulator-force-boot-off;
++			};
++
++			cp0_reg_usb3_vbus1: cp0_usb3_vbus@1 {
++				compatible = "regulator-fixed";
++				regulator-name = "cp0-xhci1-vbus";
++				regulator-min-microvolt = <5000000>;
++				regulator-max-microvolt = <5000000>;
++				startup-delay-us = <100000>;
++				regulator-force-boot-off;
++			};
++			cp0_reg_usb3_current_lim0:cp0_usb3_current_limiter@0 {
++				compatible = "regulator-fixed";
++				regulator-min-microamp = <900000>;
++				regulator-max-microamp = <900000>;
++				regulator-force-boot-off;
++			};
++
++			cp0_reg_usb3_current_lim1: cp0_usb3_current_limiter@1 {
++				compatible = "regulator-fixed";
++				regulator-min-microamp = <900000>;
++				regulator-max-microamp = <900000>;
++				regulator-force-boot-off;
++			};
++		};
++	};
++};
++
++&cp0_rtc {
++	status = "okay";
++};
++
++&ap_hd_efuse0 {
++	status = "okay";
++};
++
++&ap_ld_efuse0 {
++	status = "okay";
++};
++
++&ap_ld_efuse1 {
++	status = "okay";
++};
++
++/*  CP0  */
++&cp0_ld_efuse0 {
++	status = "okay";
++};
++
++&cp0_ld_efuse1 {
++	status = "okay";
++};
++
++&cp0_utmi0 {
++	status = "okay";
++};
++
++&cp0_utmi1 {
++	status = "okay";
++};
++
++&cp0_usb3_0 {
++	status = "okay";
++};
++
++&cp0_usb3_1 {
++	status = "okay";
++};
++
++&cp0_gpio1 { /* Not functional in u-boot */
++	phy_reset { /* Release carrier board phy reset */
++		gpio-hog;
++		gpios = <12 GPIO_ACTIVE_HIGH>;
++		output-high;
++	};
++};
+-- 
+2.25.1
+
