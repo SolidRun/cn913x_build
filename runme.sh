@@ -56,16 +56,19 @@ case "${BOARD_CONFIG}" in
 			 echo "Please define a correct number of CPs [1,2,3]"
 			 exit -1
 		fi
+		TFA_CONFIG=t9130_cex7_eval
 	;;
 	2)
 		CP_NUM=1
 		DTB_UBOOT=cn9130-cf-base
 		DTB_KERNEL=cn9130-cf-base
+		TFA_CONFIG=t9130
 	;;
 	3)
 		CP_NUM=1
 		DTB_UBOOT=cn9130-cf-pro
 		DTB_KERNEL=cn9130-cf-pro
+		TFA_CONFIG=t9130
 	;;
 
 
@@ -126,10 +129,10 @@ for i in $SDK_COMPONENTS; do
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
 			echo "Cloning atf from mainline"
 			cd $ROOTDIR/build
-			git clone https://github.com/ARM-software/arm-trusted-firmware.git arm-trusted-firmware
+			git clone https://git.trustedfirmware.org/TF-A/trusted-firmware-a.git arm-trusted-firmware
 			cd arm-trusted-firmware
 			# Temporary commit waiting for a release
-			git checkout 00ad74c7afe67b2ffaf08300710f18d3dafebb45
+			git checkout d01139f3b59a1bc6542e74f52ff3fb26eea23c69
 		elif [ "x$i" == "xmv-ddr-marvell" ]; then
 			echo "Cloning mv-ddr-marvell from mainline"
 			echo "Cloing https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git"
@@ -242,7 +245,7 @@ fi
 echo "Building arm-trusted-firmware"
 cd $ROOTDIR/build/arm-trusted-firmware
 export SCP_BL2=$ROOTDIR/binaries/atf/mrvl_scp_bl2.img
-make -j${PARALLEL} USE_COHERENT_MEM=0 LOG_LEVEL=20 PLAT=t9130 MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell CP_NUM=$CP_NUM all fip
+make -j${PARALLEL} USE_COHERENT_MEM=0 LOG_LEVEL=20 PLAT=$TFA_CONFIG MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell CP_NUM=$CP_NUM all fip mrvl_flash
 
 
 echo "Building the kernel"
@@ -302,7 +305,7 @@ cd -
 
 
 # ext4 ubuntu partition is ready
-cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
+cp $ROOTDIR/build/arm-trusted-firmware/build/$TFA_CONFIG/release/flash-image.bin $ROOTDIR/images
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images
 cd $ROOTDIR/
 truncate -s 420M $ROOTDIR/images/tmp/ubuntu-core.img
