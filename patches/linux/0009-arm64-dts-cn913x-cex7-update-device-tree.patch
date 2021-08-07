@@ -1,0 +1,295 @@
+From b40582a922f18d2ed995713934f61855b6a64694 Mon Sep 17 00:00:00 2001
+From: Marcin Wojtas <mw@semihalf.com>
+Date: Sat, 7 Aug 2021 02:18:29 +0200
+Subject: [PATCH 7/7] arm64: dts: cn913x-cex7: update device tree
+
+This patch introduces the following fixes and improvements to the
+CN913x CEx7 Evaluation Board device tree:
+* Fix whitespaces
+* Fix CP1 & CP2 phy-mode
+* Adjust CP1 & CP2 PCIe mmio32 base addresses to the new map in TF-A
+* Change switch CPU port connection to fixed-link
+
+Signed-off-by: Marcin Wojtas <mw@semihalf.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cex7.dts | 89 +++++++++++----------
+ arch/arm64/boot/dts/marvell/cn9131-cex7.dts | 13 ++-
+ arch/arm64/boot/dts/marvell/cn9132-cex7.dts | 20 ++---
+ 3 files changed, 61 insertions(+), 61 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+index 9636dc01993c..b1a12c7013d7 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+@@ -20,8 +20,8 @@ aliases {
+ 		gpio1 = &cp0_gpio1;
+ 		gpio2 = &cp0_gpio2;
+ 		i2c0 = &cp0_i2c0;
+-		ethernet0 = &cp0_eth0; //SFP+ Port
+-		ethernet1 = &cp0_eth1; // RGMII 
++		ethernet0 = &cp0_eth0; // SFP+ Port
++		ethernet1 = &cp0_eth1; // RGMII
+ 		ethernet2 = &cp0_eth2; // HS-SGMII
+ 		spi1 = &cp0_spi0;
+ 		spi2 = &cp0_spi1;
+@@ -105,9 +105,9 @@ &uart0 {
+ };
+ 
+ &cp0_uart2 {
+-        pinctrl-names = "default";
+-        pinctrl-0 = <&cp0_uart2_pins>;
+-        status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_uart2_pins>;
++	status = "okay";
+ };
+ 
+ /* on-board eMMC  */
+@@ -152,10 +152,14 @@ &cp0_gpio2 {
+ 
+ /* Switch uplink */
+ &cp0_eth2 {
+-        status = "okay";
+-        phy-mode = "2500base-x";
+-        phys = <&cp0_comphy5 2>;
+-        managed = "in-band-status";
++	status = "okay";
++	phy-mode = "2500base-x";
++	phys = <&cp0_comphy5 2>;
++
++	fixed-link {
++		speed = <2500>;
++		full-duplex;
++	};
+ };
+ 
+ 
+@@ -180,49 +184,48 @@ &cp0_i2c1 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&cp0_i2c1_pins>;
+ 
+-	
+ 	i2c-switch@77 {
+ 		compatible = "nxp,pca9547";
+ 		reg = <0x77>;
+- 		#address-cells = <1>;
++		 #address-cells = <1>;
+ 		#size-cells = <0>;
+-                clk_gen_i2c: i2c@0 {
+-                        #address-cells = <1>;
+-                        #size-cells = <0>;
+-                        reg = <0>;
++		clk_gen_i2c: i2c@0 {
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <0>;
+ 			/*connected to clk generator*/
+-                };
+-                led_i2c: i2c@1 {
+-                        #address-cells = <1>;
+-                        #size-cells = <0>;
+-                        reg = <1>;
++		};
++		led_i2c: i2c@1 {
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <1>;
+ 			/* i2c_led connected to gpio expander on carrier according to com-ex type7 */
+-                };
++		};
+ 		cp0_sfp_i2c: i2c@2 {
+-                        #address-cells = <1>;
+-                        #size-cells = <0>;
+-                        reg = <2>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <2>;
+ 			/*connected to sfp cp0_eth0*/
+-                };
++		};
+ 
+-                smbus: i2c@3 {
+-                        #address-cells = <1>;
+-                        #size-cells = <0>;
+-                        reg = <3>;
++		smbus: i2c@3 {
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <3>;
+ 			/* smbus connected to com-ex type7 connector */
+ 			current_mon@40 {
+-                                compatible = "ti,ina220";
+-                                #address-cells = <1>;
+-                                #size-cells = <0>;
+-                                reg = <0x40>;
++				compatible = "ti,ina220";
++				#address-cells = <1>;
++				#size-cells = <0>;
++				reg = <0x40>;
+ 			};
+-                };
++		};
+ 
+-                therm_i2c: i2c@4 {
++		therm_i2c: i2c@4 {
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+ 			reg = <4>;
+-			
++
+ 			fan-control-emc2301@2f {
+ 				compatible = "smsc,emc2305";
+ 				#address-cells = <1>;
+@@ -234,7 +237,7 @@ fan@0 {
+ 					fan-div = <4>;
+ 				};
+ 			};
+-        	};
++		};
+ 	};
+ };
+ &cp0_mdio {
+@@ -258,7 +261,7 @@ port@1 {
+ 				label = "lan2";
+ 				phy-handle = <&switch0phy0>;
+ 			};
+-	
++
+ 			port@2 {
+ 				reg = <2>;
+ 				label = "lan1";
+@@ -281,8 +284,6 @@ port@5 {
+ 				reg = <5>;
+ 				label = "cpu";
+ 				ethernet = <&cp0_eth2>;
+-				phy-mode = "2500base-x";
+-				managed = "in-band-status";
+ 			};
+ 		};
+ 
+@@ -372,7 +373,7 @@ cp0_pinctrl: pinctrl {
+ 
+ 		cp0_ge_mdio_pins: ge-mdio-pins {
+ 			marvell,pins = "mpp40", "mpp41";
+-	       		marvell,function = "ge";
++			       marvell,function = "ge";
+ 		};
+ 
+ 		cp0_i2c0_pins: cp0-i2c-pins-0 {
+@@ -404,9 +405,9 @@ cp0_spi1_pins: cp0-spi-pins-1 {
+ 			marvell,function = "spi1";
+ 		};
+ 		cp0_spi1_cs1_pins: cp0-spi-cs1-pins-1 {
+-                        marvell,pins = "mpp12";
+-                        marvell,function = "spi1";
+-                };
++			marvell,pins = "mpp12";
++			marvell,function = "spi1";
++		};
+ 
+ 		cp0_sfp_present_pins: sfp-present-pins {
+ 			marvell,pins = "mpp24";
+diff --git a/arch/arm64/boot/dts/marvell/cn9131-cex7.dts b/arch/arm64/boot/dts/marvell/cn9131-cex7.dts
+index 2296cb68ec03..c86a99209334 100644
+--- a/arch/arm64/boot/dts/marvell/cn9131-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9131-cex7.dts
+@@ -47,14 +47,13 @@ cp1_sfp_eth0: sfp_eth0{
+ 		pinctrl-0 = <&cp1_sfp_present_pins>;
+ 		status = "okay";
+ 	};
+-	
+ };
+ 
+ /* Instantiate the first slave CP115  */
+ 
+ #define CP11X_NAME		cp1
+ #define CP11X_BASE		f4000000
+-#define CP11X_PCIEx_MEM_BASE(iface) (0xe2000000 + (iface * 0x1000000))
++#define CP11X_PCIEx_MEM_BASE(iface) (0xe2000000 + (iface * 0x2000000))
+ #define CP11X_PCIEx_MEM_SIZE(iface) 0xf00000
+ #define CP11X_PCIE0_BASE	f4600000
+ #define CP11X_PCIE1_BASE	f4620000
+@@ -81,7 +80,7 @@ &cp1_ethernet {
+ /* 5GE PHY0 */
+ &cp1_eth0 {
+ 	status = "okay";
+-	phy-mode = "55555gbase-r";
++	phy-mode = "5gbase-r";
+ 	phys = <&cp1_comphy2 0>;
+ 	phy = <&phy1>;
+ 	sfp = <&cp1_sfp_eth0>;
+@@ -165,7 +164,7 @@ cp1_xmdio_pins: cp1_xmdio_pins-0 {
+ 		cp1_sfp_present_pins: cp1_sfp_present_pins-0 {
+ 			marvell,pins = "mpp50";
+ 			marvell,function = "gpio";
+-                };
++		};
+ 	};
+ };
+ 
+@@ -175,7 +174,7 @@ &cp1_usb3_0 {
+ 	phy-names = "usb";
+ };
+ &cp1_usb3_1 {
+-        status = "okay";
+-        usb-phy = <&cp1_usb3_0_phy1>;
+-        phy-names = "usb";
++	status = "okay";
++	usb-phy = <&cp1_usb3_0_phy1>;
++	phy-names = "usb";
+ };
+diff --git a/arch/arm64/boot/dts/marvell/cn9132-cex7.dts b/arch/arm64/boot/dts/marvell/cn9132-cex7.dts
+index 45958b67aa29..93cff780f827 100644
+--- a/arch/arm64/boot/dts/marvell/cn9132-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9132-cex7.dts
+@@ -9,8 +9,8 @@
+ 
+ / {
+ 	model = "SolidRun CN9132 based COM Express type 7";
+-	compatible = 	"marvell,cn9132", "marvell,cn9131", "marvell,cn9130",
+-			"marvell,armada-ap807-quad", "marvell,armada-ap807";
++	compatible = "marvell,cn9132", "marvell,cn9131", "marvell,cn9130",
++		     "marvell,armada-ap807-quad", "marvell,armada-ap807";
+ 
+ 	aliases {
+ 		gpio5 = &cp2_gpio1;
+@@ -58,7 +58,7 @@ cp2_sfp_eth0: sfp-eth0 {
+ 
+ #define CP11X_NAME		cp2
+ #define CP11X_BASE		f6000000
+-#define CP11X_PCIEx_MEM_BASE(iface) (0xe5000000 + (iface * 0x1000000))
++#define CP11X_PCIEx_MEM_BASE(iface) (0xe9000000 + (iface * 0x2000000))
+ #define CP11X_PCIEx_MEM_SIZE(iface) 0xf00000
+ #define CP11X_PCIE0_BASE	f6600000
+ #define CP11X_PCIE1_BASE	f6620000
+@@ -85,7 +85,7 @@ &cp2_ethernet {
+ /* 10GE Port */
+ &cp2_eth0 {
+ 	status = "okay";
+-	phy-mode = "5gbase-kr";
++	phy-mode = "5gbase-r";
+ 	phys = <&cp2_comphy2 0>;
+ 	phy = <&phy2>;
+ 	sfp = <&cp2_sfp_eth0>;
+@@ -107,12 +107,12 @@ &cp2_i2c1 {
+ };
+ 
+ &cp2_xmdio {
+-        status = "okay";
+-        pinctrl-0 = <&cp2_xmdio_pins>;
+-        phy2: ethernet-phy@0 {
+-                compatible = "ethernet-phy-ieee802.3-c45";
+-                reg = <0>;
+-        };
++	status = "okay";
++	pinctrl-0 = <&cp2_xmdio_pins>;
++	phy2: ethernet-phy@0 {
++		compatible = "ethernet-phy-ieee802.3-c45";
++		reg = <0>;
++	};
+ };
+ 
+ 
+-- 
+2.29.0
+
