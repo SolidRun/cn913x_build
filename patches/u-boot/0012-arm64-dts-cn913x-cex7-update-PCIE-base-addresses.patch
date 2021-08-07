@@ -1,0 +1,43 @@
+From 9abfe9a7374187310939f0b44c01a9c0f26244b7 Mon Sep 17 00:00:00 2001
+From: Marcin Wojtas <mw@semihalf.com>
+Date: Sat, 7 Aug 2021 03:28:52 +0200
+Subject: [PATCH] arm64: dts: cn913x-cex7: update PCIE base addresses
+
+Adjust PCIE base addresses to the updated IO window
+map found in the TF-A.
+
+Signed-off-by: Marcin Wojtas <mw@semihalf.com>
+---
+ arch/arm/dts/cn9131-cex7.dtsi | 2 +-
+ arch/arm/dts/cn9132-cex7.dtsi | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/dts/cn9131-cex7.dtsi b/arch/arm/dts/cn9131-cex7.dtsi
+index 5ccb30281e..bfc786be7a 100644
+--- a/arch/arm/dts/cn9131-cex7.dtsi
++++ b/arch/arm/dts/cn9131-cex7.dtsi
+@@ -17,7 +17,7 @@
+ #define CP110_NAME                     cp1
+ #define CP110_NUM                      1
+ #define CP110_PCIE_MEM_SIZE(iface)     (0xf00000)
+-#define CP110_PCIEx_CPU_MEM_BASE(iface)        (0xe2000000 + (iface) * 0x1000000)
++#define CP110_PCIEx_CPU_MEM_BASE(iface)        (0xe2000000 + (iface) * 0x2000000)
+ #define CP110_PCIEx_BUS_MEM_BASE(iface)        (CP110_PCIEx_CPU_MEM_BASE(iface))
+ 
+ #include "armada-cp110.dtsi"
+diff --git a/arch/arm/dts/cn9132-cex7.dtsi b/arch/arm/dts/cn9132-cex7.dtsi
+index 0244fd6aa4..6a3a510447 100644
+--- a/arch/arm/dts/cn9132-cex7.dtsi
++++ b/arch/arm/dts/cn9132-cex7.dtsi
+@@ -17,7 +17,7 @@
+ #define CP110_NAME			cp2
+ #define CP110_NUM			2
+ #define CP110_PCIE_MEM_SIZE(iface)	(0xf00000)
+-#define CP110_PCIEx_CPU_MEM_BASE(iface)	(0xe5000000 + (iface) *  0x1000000)
++#define CP110_PCIEx_CPU_MEM_BASE(iface)	(0xe9000000 + (iface) * 0x2000000)
+ #define CP110_PCIEx_BUS_MEM_BASE(iface)	(CP110_PCIEx_CPU_MEM_BASE(iface))
+ 
+ #include "armada-cp110.dtsi"
+-- 
+2.29.0
+
