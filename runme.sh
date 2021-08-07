@@ -136,7 +136,7 @@ for i in $SDK_COMPONENTS; do
 			cd $ROOTDIR/build
 			git clone https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git mv-ddr-marvell
 			cd mv-ddr-marvell
-			git checkout mv-ddr-devel
+			git checkout master
 		elif [ "x$i" == "xu-boot" ]; then
 			echo "Cloning u-boot from git://git.denx.de/u-boot.git"
 			cd $ROOTDIR/build
