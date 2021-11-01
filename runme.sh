@@ -24,7 +24,7 @@ BUILDROOT_VERSION=2020.02.1
 # Misc
 ###############################################################################
 
-RELEASE=${RELEASE:-v5.12}
+RELEASE=${RELEASE:-v5.15}
 SHALLOW=${SHALLOW:true}
 	if [ "x$SHALLOW" == "xtrue" ]; then
 		SHALLOW_FLAG="--depth 1"
@@ -125,7 +125,7 @@ for i in $SDK_COMPONENTS; do
 		if [ "x$i" == "xlinux" ]; then
 			echo "Cloing https://www.github.com/torvalds/$i release $RELEASE"
 			cd $ROOTDIR/build
-			git clone $SHALLOW_FLAG git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux -b v5.12
+			git clone $SHALLOW_FLAG git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux -b $RELEASE
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
 			echo "Cloning atf from mainline"
 			cd $ROOTDIR/build
