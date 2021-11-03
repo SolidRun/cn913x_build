@@ -317,4 +317,4 @@ dd if=$ROOTDIR/images/tmp/ubuntu-core.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.im
 dd if=$ROOTDIR/images/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc
 mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/${DTB_KERNEL}_config_${BOARD_CONFIG}_ubuntu.img
 
-echo "Images are ready at $ROOTDIR/image/"
+echo "Images are ready at $ROOTDIR/images/"
