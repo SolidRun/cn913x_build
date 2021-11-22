@@ -16,9 +16,8 @@ BUILDROOT_VERSION=2020.02.1
 #DDR_SPEED=2400
 #BOARD_CONFIG -
 # 0-clearfog_cn COM express
-# 1-napa
-# 2-clearfog-base (cn9130 SOM)
-# 3-clearfog-pro (cn9130 SOM)
+# 1-clearfog-base (cn9130 SOM)
+# 2-clearfog-pro (cn9130 SOM)
 
 ###############################################################################
 # Misc
@@ -30,7 +29,7 @@ SHALLOW=${SHALLOW:true}
 		SHALLOW_FLAG="--depth 1"
 	fi
 BOOT_LOADER=${BOOT_LOADER:-u-boot}
-BOARD_CONFIG=${BOARD_CONFIG:-0}
+BOARD_CONFIG=${BOARD_CONFIG:-2}
 CP_NUM=${CP_NUM:-1}
 mkdir -p build images
 ROOTDIR=`pwd`
@@ -43,6 +42,7 @@ export ARCH=arm64
 
 case "${BOARD_CONFIG}" in
 	0)
+		echo "*** Board Configuration CEx7 CN9132 based on Clearfog CN9K ***"
 		if [ "x$CP_NUM" == "x1" ]; then
 			DTB_UBOOT=cn9130-cex7-A
 			DTB_KERNEL=cn9130-cex7
@@ -57,23 +57,21 @@ case "${BOARD_CONFIG}" in
 			 exit -1
 		fi
 	;;
-	2)
+	1)
+                echo "*** CN9130 SOM based on Clearfog Base ***"
 		CP_NUM=1
 		DTB_UBOOT=cn9130-cf-base
 		DTB_KERNEL=cn9130-cf-base
 	;;
-	3)
+	2)
+		echo "*** CN9130 SOM based on Clearfog Pro ***"
 		CP_NUM=1
 		DTB_UBOOT=cn9130-cf-pro
-		DTB_KERNEL=cn9130-cf-pro
+                DTB_KERNEL=cn9130-cf-pro
 	;;
-
-
-
 	*)
 		echo "Please define board configuration"
 		exit -1
-	
 	;;
 esac
 
@@ -230,6 +228,7 @@ if [ "x$BOOT_LOADER" == "xu-boot" ] && [[ -d $ROOTDIR/patches-sdk-u-boot/ ]]; th
 	cd $ROOTDIR/build/u-boot/
 	make sr_cn913x_cex7_defconfig
 	make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
+
 	cp $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
 fi 
 
@@ -242,7 +241,16 @@ fi
 echo "Building arm-trusted-firmware"
 cd $ROOTDIR/build/arm-trusted-firmware
 export SCP_BL2=$ROOTDIR/binaries/atf/mrvl_scp_bl2.img
+
+echo "Compiling U-BOOT and ATF"
+echo "CP_NUM=$CP_NUM"
+echo "DTB=$DTB_UBOOT"
+
+make PLAT=t9130 clean
 make -j${PARALLEL} USE_COHERENT_MEM=0 LOG_LEVEL=20 PLAT=t9130 MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell CP_NUM=$CP_NUM all fip
+
+echo "Copying flash-image.bin to /Images folder"
+cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
 
 
 echo "Building the kernel"
@@ -251,14 +259,14 @@ cd $ROOTDIR/build/linux
 ./scripts/kconfig/merge_config.sh arch/arm64/configs/defconfig $ROOTDIR/configs/linux/cn913x_additions.config
 make -j${PARALLEL} all #Image dtbs modules
 
-\rm -rf $ROOTDIR/images/tmp
+rm -rf $ROOTDIR/images/tmp
 mkdir -p $ROOTDIR/images/tmp/
 mkdir -p $ROOTDIR/images/tmp/boot
 make INSTALL_MOD_PATH=$ROOTDIR/images/tmp/ INSTALL_MOD_STRIP=1 modules_install
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/cn913*.dtb $ROOTDIR/images/tmp/boot
 
-
+ 
 ###############################################################################
 # assembling images
 ###############################################################################
@@ -272,7 +280,7 @@ cat > $ROOTDIR/images/tmp/extlinux/extlinux.conf << EOF
   LABEL primary
     MENU LABEL primary kernel
     LINUX /boot/Image
-    FDT /boot/cn9132-cex7.dtb
+    FDT /boot/${DTB_KERNEL}.dtb
     APPEND console=ttyS0,115200 root=PARTUUID=30303030-01 rw rootwait
 EOF
 
@@ -282,7 +290,7 @@ e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:extlinux
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/extlinux/extlinux.conf $ROOTDIR/images/tmp/ubuntu-core.ext4:extlinux/
 e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:boot
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/Image $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/
-e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/cn9132-cex7.dtb $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/
+e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/${DTB_KERNEL}.dtb $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/
 
 # Copy over kernel image
 echo "Copying kernel modules"

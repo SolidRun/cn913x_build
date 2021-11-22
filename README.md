@@ -1,14 +1,14 @@
-# SolidRun's CN913x COM express type 7 build scripts
+# SolidRun's CN913x products build scripts
 
 ## Introduction
 The main intention of this repository is to provide build scripts that are easy to handle than Marvell's build environment.
 
-They are used in SolidRun to quickly build images for development where those images can be SD or SPI booted or network TFTP (kernel) or used for root NFS
+They are used in SolidRun to quickly build images for development where those images can be used to boot from SD card, SPI, eMMC, network TFTP (kernel) or used for root NFS
 
 The sources are pulled from:
 1. arm-trusted firmware: https://github.com/ARM-software/arm-trusted-firmware.git
 2. mv-ddr-marvell:  https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git
-3. u-boot: currently from marvell SDK10
+3. u-boot: currently from marvell SDK
 4. linux: https://github.com/torvalds/linux.git
 5. patches are supplied by Solid-Run in the patches/ directory
 6. binaries are supplied by Solid-Run in the binaries/ directory
@@ -22,7 +22,8 @@ Simply running ./runme.sh will check for required tools, clone and build images 
 Currently there no support of distro for auto detection of boot device, however it is under development.
 
 ## Configuration adn Customization
-The board can be configured based on the amount of CP# devices and to which carrier board it will fit. the default is CN9132 and Clearfog Eval Board
+The board can be configured based on the amount of CP# devices and to which carrier board it will fit.
+There are a few parameters that must be taken to account:
 
 1. CP_NUM:
 	1 - CN9130
@@ -30,16 +31,23 @@ The board can be configured based on the amount of CP# devices and to which carr
 	3 - CN9132
 2. BOARD_CONFIG - defines the device tree based on the platform
 	0 - CN9132 CEx7 based on Clearfog Eval Board
-	1 - CN9130 SOM based on Clearfog Pro
-	2 - CN9130 SOM based on Clearfog Base
-	3 - CN9132 CEx7 based on NAPA
-3. boot loader - *BOOT_LOADER=u-boot*
+	1 - CN9130 SOM based on Clearfog Base
+	2 - CN9130 SOM based on Clearfog Pro
 
 
-## U-Boot based on SDK10
+## Examples:
+1. For CN9130 SOM base on Clearfog Base, run:
+	`BOARD_CONFIG=1 CP_NUM=1 ./runme`
+	generates *images/cn9130-cf-base_config_1_ubuntu.img*
+
+2. For CN9132 CEx7 base on Clearfog EVAL board, run:
+        `BOARD_CONFIG=0 CP_NUM=3 ./runme`
+	generates *images/cn9132-cex7_config_0_ubuntu.img*
+
+## U-Boot based on Marevll's SDK
 The CN913x u-boot is not public yet, and is taken from Marvell's SDK10
 
-In order to use use the script with the SDK patches, create a directory in ROOTDIR:
+In order to use the script with the SDK patches, create a directory in ROOTDIR:
 
 `mkdir $ROOTDIR/patches-sdk-u-boot/`
 
@@ -47,28 +55,34 @@ The script will apply the u-boot patches onto the mainline u-boot. In order to d
 
 Extract the git-u-boot-<version>-<release>.tar.bz2 under the destination folder git-u-boot-<version>-<release> and copy the patches to $ROOTDIR/patches-sdk-u-boot/
 
-## Examples:
-- `./runme.sh` **or**
 
-generates *images/cn9132-cex7_config_0_ubuntu.img* which is an image ready to be deployed on micro SD card and *images/flash-image.bin* which is an image ready to be deployed on the COM SPI flash.
+## DDR configuration and EEPROM
+The atf dram_port.c supports both CN9132 CEx7 SO-DIMM with SPD and CN9130 SOM with DDRs soldered on board which might have various configurations and are set according to boot straps MPPs[11:10].
+In order to differentiate, it checks the first 196 Bytes of the EEPROM. 
+If programming data on the EEPROM (address 0x53) is requiered, and is not related to the DDR configuration, it must be after the first 196 Bytes. Otherwise, the boot sequence will be corrupted. 
 
 
 ## Deploying
 For SD card bootable images:
 
-Plug in a micro SD into your machine and run the following, where sdX is the location of the SD card got probed into your machine -
+Plug in a uSD into your machine and run the following, where sdX is the location of the SD card got probed into your machine -
 
-`sudo dd if=images/cn9132-cex7_config_0_ubuntu.img of=/dev/sdX bs=512 seek=1`
+`sudo dd if=images/<image_name>.img of=/dev/sdX`
 
 In u-boot prompt, write the folloiwng command for loading ubuntu:
 
-`get_images=load mmc 1:1 $kernel_addr_r boot/Image; load mmc 1:1 $fdt_addr_r boot/cn9132-cex7.dtb; setenv root 'root=/dev/mmcblk1p1' rw; mw 0xf2440144 0xffefffff; mw 0xf2440140 0x00100000; boot`
+`get_images=load mmc 1:1 $kernel_addr_r boot/Image; load mmc 1:1 $fdt_addr_r boot/<device_tree>.dtb; setenv root 'root=/dev/mmcblk1p1' rw; boot`
 
+To active the FAN on CEx7 platform, add to the command:
+'mw 0xf2440144 0xffefffff; mw 0xf2440140 0x00100000;`
+
+For burning u-boot image only on uSD card:
+`sudo dd if=images/flash-image.bin of=/dev/sdX bs=512 seek=4096`
 
 
 For SPI boot:
 
-Burn the flash-image.bin onto an SDto the system memory and flash it using the `sf probe` and `sf update` commands. 
+Burn the flash-image.bin onto a uSD to the system memory and flash it using the `sf probe` and `sf update` commands. 
 
 An example below loads the image through TFTP prototocl, flashes and then verifies the image -
 
@@ -87,13 +101,11 @@ After booting the device from SD card, burn the image onto the eMMC:
 
 `sudo dd if=/mnt/cn9132-cex7_config_0_ubuntu.img of=/dev/mmcblk0 bs=512 seek=1`
 
-Then set the boot DIP switch on COM to on/off/on/off/on from numbers 1 to 5 (notice the marking 'ON' on the DIP switch)
+Then set the boot DIP switch and reset the system. 
 
-In U-Boot prompt write the following:
-
-`get_images=load mmc 0:1 $kernel_addr_r boot/Image; load mmc 0:1 $fdt_addr_r boot/cn9132-cex7.dtb; setenv root 'root=/dev/mmcblk0p1' rw; mw 0xf2440144 0xffefffff; mw 0xf2440140 0x00100000; boot`
+`get_images=load mmc 0:1 $kernel_addr_r boot/Image; load mmc 0:1 $fdt_addr_r boot/cn9132-cex7.dtb; setenv root 'root=/dev/mmcblk0p1' rw; boot`
 
 Afterwards run update the RTC and update the repository -
 
-`dhclient -i eth1; ntpdate pool.ntp.org; apt update`
+`dhclient -i eth2; ntpdate pool.ntp.org; apt update`
 
