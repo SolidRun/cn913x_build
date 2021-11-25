@@ -1,0 +1,164 @@
+From 5aeea052b30604b2f8640960b775cee0f5c877cb Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Mon, 22 Nov 2021 13:33:25 +0200
+Subject: [PATCH 2/2] ddr spd read failover to defualt config
+
+---
+ .../octeontx/otx2/t91/t9130/board/dram_port.c | 100 ++++++++++++++++--
+ 1 file changed, 93 insertions(+), 7 deletions(-)
+
+diff --git a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+index 0befadfc6..5de71f095 100644
+--- a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
++++ b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+@@ -33,7 +33,7 @@ struct mv_ddr_iface dram_iface_ap0 = {
+ 	.id = 0,
+ 	.iface_base_addr = 0,
+ 	.tm = {
+-		DEBUG_LEVEL_ERROR,
++		DEBUG_LEVEL_INFO,
+ 		0x1, /* active interfaces */
+ 		/* cs_mask, mirror, dqs_swap, ck_swap X subphys */
+ 		{ { { {0x1, 0x0, 0, 0},
+@@ -45,8 +45,8 @@ struct mv_ddr_iface dram_iface_ap0 = {
+ 		      {0x1, 0x0, 0, 0},
+ 		      {0x1, 0x0, 0, 0},
+ 		      {0x1, 0x0, 0, 0} },
+-		   SPEED_BIN_DDR_2400T,		/* speed_bin */
+-		   MV_DDR_DEV_WIDTH_8BIT,	/* sdram device width */
++		   SPEED_BIN_DDR_2400R,		/* speed_bin */
++		   MV_DDR_DEV_WIDTH_16BIT,	/* sdram device width */
+ 		   MV_DDR_DIE_CAP_8GBIT,	/* die capacity */
+ 		   MV_DDR_FREQ_SAR,		/* frequency */
+ 		   0, 0,			/* cas_l, cas_wl */
+@@ -54,7 +54,8 @@ struct mv_ddr_iface dram_iface_ap0 = {
+ #if DDR32
+ 		MV_DDR_32BIT_ECC_PUP8_BUS_MASK,	/* subphys mask */
+ #else
+-		MV_DDR_64BIT_ECC_PUP8_BUS_MASK,	/* subphys mask */
++/*		MV_DDR_64BIT_ECC_PUP8_BUS_MASK,	*//* subphys mask */
++		MV_DDR_64BIT_BUS_MASK,
+ #endif
+ 		MV_DDR_CFG_SPD,			/* ddr configuration data src */
+ 		NOT_COMBINED,			/* ddr twin-die combined*/
+@@ -98,6 +99,87 @@ struct mv_ddr_iface dram_iface_ap0 = {
+ 	},
+ };
+ 
++u8 is_spd_empty_sr(u8 *spd_buffer){
++/* checks the first 196 bytes to check if SPD is has any DDR */
++	u32 i=0;
++	u32 size=MV_DDR_SPD_DATA_BLOCK0_SIZE+MV_DDR_SPD_DATA_BLOCK1M_SIZE;
++	for (i=0; i<size; i++){
++		if (spd_buffer[i] != 0xff) {
++			return 0;
++		}
++	}
++	return 1;
++}
++
++void define_gpio_input_sr (u32 mux_address, u32 direction_address, u8 bit_start_mux, u8 bit_dir_address)
++{
++	u32 mask=0;
++	u32 val;
++	
++	/* define as gpio */
++	val = mmio_read_32 (mux_address);
++	mask |= (0xf << bit_start_mux);
++	mask = ~mask;
++	val &= mask;
++	mmio_write_32(mux_address, val);
++	/*define as input */
++
++	val = mmio_read_32(direction_address);
++	val |= (1 << bit_dir_address);
++	mmio_write_32(direction_address, val);
++
++	/*all is standard polarity  by defualt */
++}
++
++u8 read_gpio_strap_sr (u32 addr, u8 bit_loc)
++{
++	u32 val;
++
++	val=mmio_read_32 (addr);
++	val &= (0x1<<bit_loc);
++	printf("\nDDR Strap %d, value is %d\n", bit_loc, val != 0);
++
++	if (!val)
++		return (u8) 0;
++	
++	return (u8) 1;
++	
++}
++
++void set_param_based_on_som_strap (){
++	/*	sample GPIOs 10, 11
++	 *	MPP10: 1-ECC /0-noECC
++	 *	MPP11: 1-4Gb /0-8Gb per component
++	 */
++
++	/*defining MPP[11:10] as gpio inputs*/
++	define_gpio_input_sr (0xf2440004, 0xf2440100, 8, 10);	
++	define_gpio_input_sr (0xf2440004, 0xf2440100, 12,11);
++
++	/*after SPD read failed, defining as DEFAULT configuration*/
++	dram_iface_ap0.tm.cfg_src = MV_DDR_CFG_DEFAULT;
++ 
++	/* read gpio value to check if ECC exist or not */
++	if (read_gpio_strap_sr ((u32) 0xf2440110, (u8) 10)){
++		printf("ecc strap value=1\n\n");
++	       	dram_iface_ap0.tm.bus_act_mask=MV_DDR_64BIT_ECC_PUP8_BUS_MASK;
++	}
++	else {
++		dram_iface_ap0.tm.bus_act_mask=MV_DDR_64BIT_BUS_MASK;
++		printf("ecc strap value=0\n\n");
++	}
++	/* read gpio value to check 4GB or 8GB configuration */
++	if (!read_gpio_strap_sr ((u32) 0xf2440110, (u8) 11)){ 
++		dram_iface_ap0.tm.interface_params[0].memory_size=MV_DDR_DIE_CAP_8GBIT;
++		printf("die capacity strap value=1\n\n");
++	}
++	else{
++		dram_iface_ap0.tm.interface_params[0].memory_size=MV_DDR_DIE_CAP_4GBIT;
++		printf("die capacity strap value=1\n\n");
++	}
++}
++
++
+ /* Pointer to the first DRAM interface in the system */
+ struct mv_ddr_iface *ptr_iface = &dram_iface_ap0;
+ 
+@@ -109,7 +191,7 @@ struct mv_ddr_iface *mv_ddr_iface_get(void)
+ 
+ struct mv_ddr_topology_map *mv_ddr_topology_map_get(void)
+ {
+-	/* Return the board topology as defined in the board code */
++/* Return the board topology as defined in the board code */
+ 	return &ptr_iface->tm;
+ }
+ 
+@@ -135,6 +217,8 @@ static void mpp_config(void)
+  * based on information received from SPD or bootloader
+  * configuration located on non volatile storage
+  */
++
++
+ void plat_marvell_dram_update_topology(void)
+ {
+ 	struct mv_ddr_topology_map *tm = mv_ddr_topology_map_get();
+@@ -152,7 +236,9 @@ void plat_marvell_dram_update_topology(void)
+ 		i2c_write(I2C_SPD_P0_ADDR, 0x0, 1, tm->spd_data.all_bytes, 1);
+ 
+ 		/* read data from spd */
+-		i2c_read(I2C_SPD_ADDR, 0x0, 1, tm->spd_data.all_bytes,
+-			 sizeof(tm->spd_data.all_bytes));
++		i2c_read(I2C_SPD_ADDR, 0x0, 1, tm->spd_data.all_bytes,sizeof(tm->spd_data.all_bytes));
++		/* if SPD is empty, then copy default configuration as SPD */
++		if (is_spd_empty_sr(tm->spd_data.all_bytes)) 
++			set_param_based_on_som_strap();
+ 	}
+ }
+-- 
+2.25.1
+
