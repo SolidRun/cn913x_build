@@ -1,0 +1,127 @@
+From da25bbba607de35267f4dbe74cd772588260de57 Mon Sep 17 00:00:00 2001
+From: Alon Rotman <alon.rotman@solid-run.com>
+Date: Mon, 6 Dec 2021 18:34:37 +0200
+Subject: [PATCH] som sdp failover using crc verification
+
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
+---
+ .../octeontx/otx2/t91/t9130/board/dram_port.c | 63 ++++++++++++-------
+ 1 file changed, 41 insertions(+), 22 deletions(-)
+
+diff --git a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+index 5de71f095..d59b8100d 100644
+--- a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
++++ b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+@@ -50,7 +50,7 @@ struct mv_ddr_iface dram_iface_ap0 = {
+ 		   MV_DDR_DIE_CAP_8GBIT,	/* die capacity */
+ 		   MV_DDR_FREQ_SAR,		/* frequency */
+ 		   0, 0,			/* cas_l, cas_wl */
+-		   MV_DDR_TEMP_LOW} },		/* temperature */
++		   MV_DDR_TEMP_HIGH} },		/* temperature */
+ #if DDR32
+ 		MV_DDR_32BIT_ECC_PUP8_BUS_MASK,	/* subphys mask */
+ #else
+@@ -99,16 +99,33 @@ struct mv_ddr_iface dram_iface_ap0 = {
+ 	},
+ };
+ 
+-u8 is_spd_empty_sr(u8 *spd_buffer){
+-/* checks the first 196 bytes to check if SPD is has any DDR */
+-	u32 i=0;
+-	u32 size=MV_DDR_SPD_DATA_BLOCK0_SIZE+MV_DDR_SPD_DATA_BLOCK1M_SIZE;
+-	for (i=0; i<size; i++){
+-		if (spd_buffer[i] != 0xff) {
+-			return 0;
+-		}
++int spd_crc16_sr (u8 *ptr, int count){
++	/*crc16 calculation*/
++	int crc, i;
++	crc = 0;
++	 while (--count >= 0) {
++		crc = crc ^ (int)*ptr++ << 8;
++		for (i = 0; i < 8; ++i)
++			if (crc & 0x8000)
++				crc = crc << 1 ^ 0x1021;
++			else
++				crc = crc << 1;
+ 	}
+-	return 1;
++	return (crc & 0xFFFF);
++}
++
++
++u8 spd_verify_correction_sr(u8 *spd_buffer){
++/* this function verifies that the  the first 196 bytes to check if SPD has any DDR configuration */
++	int data16;
++	data16= spd_crc16_sr(spd_buffer, 126);
++	if ((spd_buffer[126] !=(u8)(data16&0xff)) || (spd_buffer[127]!=(u8)(data16>>8))){
++		/* if bits 126 and 127 in the spd matches the crc calculation and the data is valid*/
++		return 1;
++		}
++
++	return 0;
++	
+ }
+ 
+ void define_gpio_input_sr (u32 mux_address, u32 direction_address, u8 bit_start_mux, u8 bit_dir_address)
+@@ -137,7 +154,6 @@ u8 read_gpio_strap_sr (u32 addr, u8 bit_loc)
+ 
+ 	val=mmio_read_32 (addr);
+ 	val &= (0x1<<bit_loc);
+-	printf("\nDDR Strap %d, value is %d\n", bit_loc, val != 0);
+ 
+ 	if (!val)
+ 		return (u8) 0;
+@@ -156,26 +172,26 @@ void set_param_based_on_som_strap (){
+ 	define_gpio_input_sr (0xf2440004, 0xf2440100, 8, 10);	
+ 	define_gpio_input_sr (0xf2440004, 0xf2440100, 12,11);
+ 
+-	/*after SPD read failed, defining as DEFAULT configuration*/
++	/*after SPD crc failed, defining as DEFAULT configuration*/
+ 	dram_iface_ap0.tm.cfg_src = MV_DDR_CFG_DEFAULT;
+  
+ 	/* read gpio value to check if ECC exist or not */
+ 	if (read_gpio_strap_sr ((u32) 0xf2440110, (u8) 10)){
+-		printf("ecc strap value=1\n\n");
+-	       	dram_iface_ap0.tm.bus_act_mask=MV_DDR_64BIT_ECC_PUP8_BUS_MASK;
++		printf("w/ ecc; strap value=1\n");
++	       	dram_iface_ap0.tm.bus_act_mask = MV_DDR_64BIT_ECC_PUP8_BUS_MASK;
+ 	}
+ 	else {
+-		dram_iface_ap0.tm.bus_act_mask=MV_DDR_64BIT_BUS_MASK;
+-		printf("ecc strap value=0\n\n");
++		dram_iface_ap0.tm.bus_act_mask =MV_DDR_64BIT_BUS_MASK;
++		printf("w/o ecc; strap value=0\n");
+ 	}
+ 	/* read gpio value to check 4GB or 8GB configuration */
+-	if (!read_gpio_strap_sr ((u32) 0xf2440110, (u8) 11)){ 
+-		dram_iface_ap0.tm.interface_params[0].memory_size=MV_DDR_DIE_CAP_8GBIT;
+-		printf("die capacity strap value=1\n\n");
++	if (read_gpio_strap_sr ((u32) 0xf2440110, (u8) 11)){ 
++		dram_iface_ap0.tm.interface_params[0].memory_size=MV_DDR_DIE_CAP_16GBIT;
++		printf("8GB capacity; strap value=1\n");
+ 	}
+ 	else{
+-		dram_iface_ap0.tm.interface_params[0].memory_size=MV_DDR_DIE_CAP_4GBIT;
+-		printf("die capacity strap value=1\n\n");
++		dram_iface_ap0.tm.interface_params[0].memory_size=MV_DDR_DIE_CAP_8GBIT;
++		printf("4GB capacity; strap value=0\n");
+ 	}
+ }
+ 
+@@ -237,8 +253,11 @@ void plat_marvell_dram_update_topology(void)
+ 
+ 		/* read data from spd */
+ 		i2c_read(I2C_SPD_ADDR, 0x0, 1, tm->spd_data.all_bytes,sizeof(tm->spd_data.all_bytes));
++		
+ 		/* if SPD is empty, then copy default configuration as SPD */
+-		if (is_spd_empty_sr(tm->spd_data.all_bytes)) 
++		if (spd_verify_correction_sr(tm->spd_data.all_bytes)) {
+ 			set_param_based_on_som_strap();
++		}
++	
+ 	}
+ }
+-- 
+2.25.1
+
