@@ -2,3 +2,4 @@ build/
 images/
 *.swp
 patches-sdk-u-boot/
+binaries/u-boot/u-boot.bin

@@ -148,13 +148,7 @@ for i in $SDK_COMPONENTS; do
 		
 		echo "Checking patches for $i"
 		cd $ROOTDIR/build/$i
-		if [ "x$i" == "xu-boot" ] && [[ -d $ROOTDIR/patches-sdk-u-boot/ ]]; then
-			git am $ROOTDIR/patches-sdk-u-boot/*.patch
-			git am $ROOTDIR/patches/$i/*.patch
-		fi
-		if [ "x$i" != "xu-boot" ] && [[ -d $ROOTDIR/patches/$i/ ]]; then
-			git am $ROOTDIR/patches/$i/*.patch
-		fi
+		git am $ROOTDIR/patches/$i/*.patch
 	fi
 done
 ##############################################################################
@@ -251,7 +245,6 @@ make -j${PARALLEL} USE_COHERENT_MEM=0 LOG_LEVEL=20 PLAT=t9130 MV_DDR_PATH=$ROOTD
 
 echo "Copying flash-image.bin to /Images folder"
 cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
-
 
 echo "Building the kernel"
 cd $ROOTDIR/build/linux
