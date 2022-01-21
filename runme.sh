@@ -216,16 +216,11 @@ fi
 # Building sources u-boot / atf / mv-ddr / kernel
 ###############################################################################
 
-# if patches from the sdk exist, then compile u-boot, otherwise, the atf will take the u-boot.bin from the binaries  
-if [ "x$BOOT_LOADER" == "xu-boot" ] && [[ -d $ROOTDIR/patches-sdk-u-boot/ ]]; then
-	echo "Building u-boot"
-	cd $ROOTDIR/build/u-boot/
-	make sr_cn913x_cex7_defconfig
-	make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
-
-	cp $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
-fi 
-
+echo "Building u-boot"
+cd $ROOTDIR/build/u-boot/
+make sr_cn913x_cex7_defconfig
+make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
+cp $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
 export BL33=$ROOTDIR/binaries/u-boot/u-boot.bin
 
 if [ "x$BOOT_LOADER" == "xuefi" ]; then
