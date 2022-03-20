@@ -268,7 +268,7 @@ cat > $ROOTDIR/images/tmp/extlinux/extlinux.conf << EOF
   LABEL primary
     MENU LABEL primary kernel
     LINUX /boot/Image
-    FDT /boot/${DTB_KERNEL}.dtb
+    FDTDIR /boot
     APPEND console=ttyS0,115200 root=PARTUUID=30303030-01 rw rootwait
 EOF
 
@@ -278,7 +278,8 @@ e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:extlinux
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/extlinux/extlinux.conf $ROOTDIR/images/tmp/ubuntu-core.ext4:extlinux/
 e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:boot
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/Image $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/
-e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/${DTB_KERNEL}.dtb $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/
+e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/marvell
+e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/*.dtb $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/marvell/
 
 # Copy over kernel image
 echo "Copying kernel modules"
