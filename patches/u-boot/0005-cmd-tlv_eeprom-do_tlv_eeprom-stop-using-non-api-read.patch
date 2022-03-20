@@ -1,0 +1,40 @@
+From f2e9d0f8e65f04b7a0e9b6d2556f76ddbdf4a8a4 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Thu, 17 Mar 2022 14:23:22 +0200
+Subject: [PATCH 05/14] cmd: tlv_eeprom: do_tlv_eeprom: stop using non-api
+ read_eeprom function
+
+IN the scope of do_tlv_eeprom, the error-checking provided by the
+read_eeprom function is not required.
+Instead use the API function read_tlv_eeprom.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ cmd/tlv_eeprom.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/cmd/tlv_eeprom.c b/cmd/tlv_eeprom.c
+index 70c1a2e7df..8a926ba224 100644
+--- a/cmd/tlv_eeprom.c
++++ b/cmd/tlv_eeprom.c
+@@ -428,7 +428,7 @@ int do_tlv_eeprom(cmd_tbl_t *cmdtp, int flag, int argc, char *const argv[])
+ 	// If no arguments, read the EERPOM and display its contents
+ 	if (argc == 1) {
+ 		if(has_been_read != current_dev) {
+-			read_eeprom(current_dev, eeprom);
++			read_tlv_eeprom(eeprom, 0, TLV_INFO_MAX_LEN, current_dev);
+ 			has_been_read = current_dev;
+ 		}
+ 		show_eeprom(current_dev, eeprom);
+@@ -442,7 +442,7 @@ int do_tlv_eeprom(cmd_tbl_t *cmdtp, int flag, int argc, char *const argv[])
+ 	// Read the EEPROM contents
+ 	if (cmd == 'r') {
+ 		has_been_read = -1;
+-		if (!read_eeprom(current_dev, eeprom)) {
++		if (read_tlv_eeprom(eeprom, 0, TLV_INFO_MAX_LEN, current_dev) == 0) {
+ 			printf("EEPROM data loaded from device to memory.\n");
+ 			has_been_read = current_dev;
+ 		}
+-- 
+2.34.1
+

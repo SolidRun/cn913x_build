@@ -1,0 +1,146 @@
+From 3759936df29242ba33b2222b4b4d40ff2ca69944 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 13 Mar 2022 12:42:28 +0200
+Subject: [PATCH 13/14] find fdtfile from tlv eeprom
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ board/Marvell/octeontx2_cn913x/board.c | 97 ++++++++++++++++++++++++++
+ configs/sr_cn913x_cex7_defconfig       |  2 +
+ 2 files changed, 99 insertions(+)
+
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index 27db37e86e..8526e76be3 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -8,11 +8,13 @@
+ #include <common.h>
+ #include <console.h>
+ #include <dm.h>
++#include <env.h>
+ #include <i2c.h>
+ #include <asm/io.h>
+ #include <asm/arch/cpu.h>
+ #include <asm/arch/soc.h>
+ #include <power/regulator.h>
++#include <tlv_eeprom.h>
+ #ifdef CONFIG_BOARD_CONFIG_EEPROM
+ #include <mvebu/cfg_eeprom.h>
+ #endif
+@@ -121,8 +123,103 @@ static int init_bootcmd_console(void)
+ }
+ #endif
+ 
++/*
++ * Read TLV formatted data from eeprom.
++ * Only read as much data as indicated by the TLV header.
++ */
++// TODO: this should be a library function?!
++static bool get_tlvinfo_from_eeprom(int index, u8 *buffer, size_t length) {
++	struct tlvinfo_header *eeprom_hdr = (struct tlvinfo_header *) buffer;
++	struct tlvinfo_tlv *eeprom_tlv = (struct tlvinfo_tlv *) &buffer[sizeof(struct tlvinfo_header)];
++
++	if(length < TLV_INFO_HEADER_SIZE) {
++		pr_err("%s: buffer too small for tlv header!\n", __func__);
++		return false;
++	}
++	if(read_tlv_eeprom((void *)eeprom_hdr, 0, TLV_INFO_HEADER_SIZE, index) != 0) {
++		pr_err("%s: failed to read from eeprom!\n", __func__);
++		return false;
++	}
++	if(!is_valid_tlvinfo_header(eeprom_hdr)) {
++		pr_warn("%s: invalid tlv header!\n", __func__);
++		return false;
++	}
++	if(length - TLV_INFO_HEADER_SIZE < be16_to_cpu(eeprom_hdr->totallen)) {
++		pr_err("%s: buffer too small for tlv data!\n", __func__);
++		return false;
++	}
++	if(read_tlv_eeprom((void *)eeprom_tlv, sizeof(struct tlvinfo_header), be16_to_cpu(eeprom_hdr->totallen), index) != 0) {
++		pr_err("%s: failed to read from eeprom!\n", __func__);
++		return false;
++	}
++
++	return true;
++}
++
++static void get_fdtfile_from_tlv_eeprom(u8 *buffer, size_t length) {
++	char cpu[5] = {0};
++	char carrier[8] = {0};
++	static u8 eeprom[TLV_INFO_MAX_LEN];
++	char sku[257];
++
++	for(int i = 0; i < 2;i++) {
++		// read eeprom
++		if(!get_tlvinfo_from_eeprom(i, eeprom, sizeof(eeprom))) {
++			pr_info("%s: failed to read eeprom %d\n", __func__, i);
++			continue;
++		}
++
++		// read sku
++		if(!tlvinfo_read_tlv(eeprom, TLV_CODE_PART_NUMBER, sku, sizeof(sku))) {
++			pr_warn("%s: could not find sku in eeprom\n", __func__);
++			continue;
++		}
++		pr_debug("%s: read sku %s\n", __func__, sku);
++
++		// parse sku - processor or carrier indicated at index 2-6
++		if(memcmp(&sku[2], "CFCB", 4) == 0) {
++			// Clearfog Base
++			strcpy(carrier, "cf-base");
++		} else if(memcmp(&sku[2], "CFCP", 4) == 0) {
++			// Clearfog Pro
++			strcpy(carrier, "cf-pro");
++		} else if(memcmp(&sku[2], "C", 1) == 0) {
++			// COM-Express 7 - C9130 / C9131 / C9132 ...
++			memcpy(cpu, &sku[3], 4);
++			strcpy(carrier, "cex7-A");
++		} else if(memcmp(&sku[2], "S9130", 4) == 0) {
++			// SoM - S9130 / S9131 / S9132 ...
++			memcpy(cpu, &sku[3], 4);
++		} else {
++			pr_err("%s: did not recognise SKU %s!\n", __func__, sku);
++		}
++	}
++
++	if(!cpu[0]) {
++		pr_err("%s: could not identify SoC, defaulting to %s!\n", __func__, "CN9130");
++		strcpy(cpu, "9130");
++	}
++
++	if(!carrier[0]) {
++		pr_err("%s: could not identify carrier, defaulting to %s!\n", __func__, "Clearfog Pro");
++		strcpy(carrier, "cf-pro");
++	}
++
++	// assemble fdtfile
++	if(snprintf(buffer, length, "marvell/cn%s-%s.dtb", cpu, carrier) >= length) {
++		pr_err("%s: fdtfile buffer too small, result truncated!\n", __func__);
++	}
++}
++
+ int board_late_init(void)
+ {
++	char fdtfile[32] = {0};
++
++	// identify device
++	get_fdtfile_from_tlv_eeprom(fdtfile, sizeof(fdtfile));
++	if (!env_get("fdtfile"))
++		env_set("fdtfile", fdtfile);
++
+ #if CONFIG_IS_ENABLED(OCTEONTX_SERIAL_BOOTCMD)
+ 	if (init_bootcmd_console())
+ 		printf("Failed to init bootcmd input\n");
+diff --git a/configs/sr_cn913x_cex7_defconfig b/configs/sr_cn913x_cex7_defconfig
+index 307cefef65..f971d9d4d0 100644
+--- a/configs/sr_cn913x_cex7_defconfig
++++ b/configs/sr_cn913x_cex7_defconfig
+@@ -102,3 +102,5 @@ CONFIG_USB_ETHER_SMSC95XX=y
+ CONFIG_SMBIOS_MANUFACTURER=""
+ CONFIG_OF_BOARD_FIXUP=y
+ CONFIG_CMD_MVEBU_PHY_FW_DOWNLOAD=y
++CONFIG_I2C_EEPROM=y
++CONFIG_CMD_TLV_EEPROM=y
+-- 
+2.34.1
+

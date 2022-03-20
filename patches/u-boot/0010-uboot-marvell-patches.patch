@@ -1,7 +1,7 @@
-From de6eeaf6aebb2e0dd55e72d234e1f7a7143226b6 Mon Sep 17 00:00:00 2001
+From 253dec472f094d81793fc705ee1db1f52f01bad8 Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Wed, 12 Jan 2022 16:32:37 +0200
-Subject: [PATCH 1/2] uboot: marvell patches
+Subject: [PATCH 10/14] uboot: marvell patches
 
 Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---
@@ -50215,7 +50215,7 @@ index 9e0abdda31..98a07deaa4 100644
  {
  	/*
 diff --git a/cmd/Kconfig b/cmd/Kconfig
-index 4e61565aab..eb107f96d8 100644
+index a87bcfffbb..1ccd09aead 100644
 --- a/cmd/Kconfig
 +++ b/cmd/Kconfig
 @@ -188,6 +188,13 @@ comment "Commands"
@@ -50232,7 +50232,7 @@ index 4e61565aab..eb107f96d8 100644
  config CMD_BDI
  	bool "bdinfo"
  	default y
-@@ -1379,6 +1386,15 @@ config BOOTP_PREFER_SERVERIP
+@@ -1393,6 +1400,15 @@ config BOOTP_PREFER_SERVERIP
  	  takes precedence over DHCP server IP and will only be set by the DHCP
  	  server if not already set in the environment.
  
@@ -50248,7 +50248,7 @@ index 4e61565aab..eb107f96d8 100644
  config BOOTP_SUBNETMASK
  	bool "Request & store 'netmask' from BOOTP/DHCP server"
  	default y
-@@ -1666,6 +1682,7 @@ config CMD_QFW
+@@ -1680,6 +1696,7 @@ config CMD_QFW
  	  via -kernel / -initrd
  
  source "cmd/mvebu/Kconfig"
@@ -50257,7 +50257,7 @@ index 4e61565aab..eb107f96d8 100644
  config CMD_TERMINAL
  	bool "terminal - provides a way to attach a serial terminal"
 diff --git a/cmd/Makefile b/cmd/Makefile
-index ac843b4b16..554022272a 100644
+index c10f2e308b..5aef55249c 100644
 --- a/cmd/Makefile
 +++ b/cmd/Makefile
 @@ -178,6 +178,10 @@ obj-$(CONFIG_RISCV) += riscv/
@@ -50270,7 +50270,7 @@ index ac843b4b16..554022272a 100644
 +
  endif # !CONFIG_SPL_BUILD
  
- # core command
+ obj-$(CONFIG_$(SPL_)CMD_TLV_EEPROM) += tlv_eeprom.o
 diff --git a/cmd/fdt.c b/cmd/fdt.c
 index 25a6ed40d2..92fece9ecb 100644
 --- a/cmd/fdt.c
@@ -103254,5 +103254,5 @@ index a46411fc99..044942c86e 100755
  minicom -D $port -b $default_baudrate
  
 -- 
-2.25.1
+2.34.1
 

@@ -1,7 +1,7 @@
-From b23729a869876c3fd91a94837b8132c1ea6ed9d3 Mon Sep 17 00:00:00 2001
+From 4056a0e55be5c91f8d8d261c9ad0c72df17de04b Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Wed, 12 Jan 2022 16:49:06 +0200
-Subject: [PATCH 2/2] uboot support cn913x solidrun paltfroms
+Subject: [PATCH 11/14] uboot support cn913x solidrun paltfroms
 
 Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---
@@ -2123,5 +2123,5 @@ index 0000000000..307cefef65
 +CONFIG_OF_BOARD_FIXUP=y
 +CONFIG_CMD_MVEBU_PHY_FW_DOWNLOAD=y
 -- 
-2.25.1
+2.34.1
 
