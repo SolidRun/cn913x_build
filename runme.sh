@@ -18,6 +18,15 @@ BUILDROOT_VERSION=2020.02.1
 # 0-clearfog_cn COM express
 # 1-clearfog-base (cn9130 SOM)
 # 2-clearfog-pro (cn9130 SOM)
+#UBOOT_ENVIRONMENT -
+# - spi (SPI FLash)
+# - mmc:0:0 (MMC 0 Partition 0)
+# - mmc:0:1 (MMC 0 Partition boot0)
+# - mmc:0:2 (MMC 0 Partition boot1)
+# - mmc:1:0 (MMC 1 Partition 0) <-- default, microSD on Clearfog
+# - mmc:1:1 (MMC 1 Partition boot0)
+# - mmc:1:2 (MMC 1 Partition boot1)
+: ${BUILD_ROOTFS:=yes} # set to no for bootloader-only build
 
 ###############################################################################
 # Misc
@@ -218,7 +227,29 @@ fi
 
 echo "Building u-boot"
 cd $ROOTDIR/build/u-boot/
-make sr_cn913x_cex7_defconfig
+cp configs/sr_cn913x_cex7_defconfig .config
+: ${UBOOT_ENVIRONMENT:=mmc:1:0} # default Clearfog microSD
+[[ "${UBOOT_ENVIRONMENT}" =~ (.*):(.*):(.*) ]] || [[ "${UBOOT_ENVIRONMENT}" =~ (.*) ]]
+if [ "x${BASH_REMATCH[1]}" = "xspi" ]; then
+cat >> .config << EOF
+CONFIG_ENV_IS_IN_MMC=n
+CONFIG_ENV_IS_IN_SPI_FLASH=y
+CONFIG_ENV_SIZE=0x10000
+CONFIG_ENV_OFFSET=0x3f0000
+CONFIG_ENV_SECT_SIZE=0x10000
+EOF
+elif [ "x${BASH_REMATCH[1]}" = "xmmc" ]; then
+cat >> .config << EOF
+CONFIG_ENV_IS_IN_MMC=y
+CONFIG_SYS_MMC_ENV_DEV=${BASH_REMATCH[2]}
+CONFIG_SYS_MMC_ENV_PART=${BASH_REMATCH[3]}
+CONFIG_ENV_IS_IN_SPI_FLASH=n
+EOF
+else
+	echo "ERROR: \$UBOOT_ENVIRONMENT setting invalid"
+	exit 1
+fi
+make olddefconfig
 make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
 cp $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
 export BL33=$ROOTDIR/binaries/u-boot/u-boot.bin
@@ -239,7 +270,12 @@ make PLAT=t9130 clean
 make -j${PARALLEL} USE_COHERENT_MEM=0 LOG_LEVEL=20 PLAT=t9130 MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell CP_NUM=$CP_NUM all fip
 
 echo "Copying flash-image.bin to /Images folder"
-cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
+cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images/u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin
+
+if [ "x${BUILD_ROOTFS}" != "xyes" ]; then
+	echo "U-Boot Ready, Skipping RootFS"
+	exit 0
+fi
 
 echo "Building the kernel"
 cd $ROOTDIR/build/linux
@@ -299,7 +335,6 @@ cd -
 
 
 # ext4 ubuntu partition is ready
-cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images
 cd $ROOTDIR/
 truncate -s 420M $ROOTDIR/images/tmp/ubuntu-core.img
@@ -308,7 +343,7 @@ parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary
 echo "0000" | dd of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1 seek=440 conv=notrunc
 dd if=$ROOTDIR/images/tmp/ubuntu-core.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1M seek=64 conv=notrunc
 
-dd if=$ROOTDIR/images/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc
-mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/${DTB_KERNEL}_config_${BOARD_CONFIG}_ubuntu.img
+dd if=$ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc
+mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/ubuntu-${DTB_KERNEL}-${UBOOT_ENVIRONMENT}.img
 
 echo "Images are ready at $ROOTDIR/image/"
