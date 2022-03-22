@@ -1,4 +1,4 @@
-From 3759936df29242ba33b2222b4b4d40ff2ca69944 Mon Sep 17 00:00:00 2001
+From d709f56ed2e43081bb9f1b805d0eec27967ed5cf Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 13 Mar 2022 12:42:28 +0200
 Subject: [PATCH 13/16] find fdtfile from tlv eeprom
@@ -10,7 +10,7 @@ Signed-off-by: Josua Mayer <josua@solid-run.com>
  2 files changed, 99 insertions(+)
 
 diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
-index 27db37e86e..8526e76be3 100644
+index 27db37e86e..1e900d2aab 100644
 --- a/board/Marvell/octeontx2_cn913x/board.c
 +++ b/board/Marvell/octeontx2_cn913x/board.c
 @@ -8,11 +8,13 @@
@@ -94,7 +94,7 @@ index 27db37e86e..8526e76be3 100644
 +		} else if(memcmp(&sku[2], "C", 1) == 0) {
 +			// COM-Express 7 - C9130 / C9131 / C9132 ...
 +			memcpy(cpu, &sku[3], 4);
-+			strcpy(carrier, "cex7-A");
++			strcpy(carrier, "cex7");
 +		} else if(memcmp(&sku[2], "S9130", 4) == 0) {
 +			// SoM - S9130 / S9131 / S9132 ...
 +			memcpy(cpu, &sku[3], 4);

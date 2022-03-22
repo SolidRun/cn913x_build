@@ -1,4 +1,4 @@
-From e58967e976da00bd3eb941914680253c1b299ebf Mon Sep 17 00:00:00 2001
+From 556f129eedfd16a80f28835425a6d2707f899471 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 13 Mar 2022 10:54:15 +0200
 Subject: [PATCH 12/16] add SoM and Carrier eeproms
@@ -11,7 +11,7 @@ Signed-off-by: Josua Mayer <josua@solid-run.com>
  3 files changed, 36 insertions(+), 15 deletions(-)
 
 diff --git a/arch/arm/dts/cn9130-cex7-A.dts b/arch/arm/dts/cn9130-cex7-A.dts
-index 2db0fc802e..639d9f5e3a 100644
+index 2db0fc802e..209e485822 100644
 --- a/arch/arm/dts/cn9130-cex7-A.dts
 +++ b/arch/arm/dts/cn9130-cex7-A.dts
 @@ -147,12 +147,13 @@
@@ -28,7 +28,7 @@ index 2db0fc802e..639d9f5e3a 100644
 +	com_eeprom@50 {
 +		compatible = "atmel,24c02";
 +		reg = <0x50>;
-+		pagesize = <0x16>;
++		pagesize = <0x10>;
 +	};
  };
  

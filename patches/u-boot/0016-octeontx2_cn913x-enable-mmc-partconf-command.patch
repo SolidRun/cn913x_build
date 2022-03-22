@@ -1,4 +1,4 @@
-From b48583c946fe048098a58d0d2a42e552946c0814 Mon Sep 17 00:00:00 2001
+From 00c2e3260346b2d774b74e0d1521e3561ec22f4c Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Tue, 22 Mar 2022 11:12:12 +0200
 Subject: [PATCH 16/16] octeontx2_cn913x: enable mmc partconf command
