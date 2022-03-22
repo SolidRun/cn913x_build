@@ -1,7 +1,7 @@
 From 1874a3f19645ba294ac6a16c3583f998274d5620 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 20 Mar 2022 15:02:03 +0200
-Subject: [PATCH 14/14] octeontx2_cn913x: support distro-boot
+Subject: [PATCH 14/16] octeontx2_cn913x: support distro-boot
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---

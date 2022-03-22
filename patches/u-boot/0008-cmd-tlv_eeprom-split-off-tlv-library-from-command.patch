@@ -1,7 +1,7 @@
 From ae8729ecbcc312b7b628b784bd43b7db3e79cc2e Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 17 Mar 2022 14:16:26 +0200
-Subject: [PATCH 08/14] cmd: tlv_eeprom: split off tlv library from command
+Subject: [PATCH 08/16] cmd: tlv_eeprom: split off tlv library from command
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---

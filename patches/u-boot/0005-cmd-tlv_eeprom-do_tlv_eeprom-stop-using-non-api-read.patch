@@ -1,7 +1,7 @@
 From f2e9d0f8e65f04b7a0e9b6d2556f76ddbdf4a8a4 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 17 Mar 2022 14:23:22 +0200
-Subject: [PATCH 05/14] cmd: tlv_eeprom: do_tlv_eeprom: stop using non-api
+Subject: [PATCH 05/16] cmd: tlv_eeprom: do_tlv_eeprom: stop using non-api
  read_eeprom function
 
 IN the scope of do_tlv_eeprom, the error-checking provided by the

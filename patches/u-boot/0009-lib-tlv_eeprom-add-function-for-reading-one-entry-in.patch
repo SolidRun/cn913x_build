@@ -1,7 +1,7 @@
 From f5ff404d70728666e7e0d3138f435738cacbf8a4 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 20 Mar 2022 12:07:38 +0200
-Subject: [PATCH 09/14] lib: tlv_eeprom: add function for reading one entry
+Subject: [PATCH 09/16] lib: tlv_eeprom: add function for reading one entry
  into a C string
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>

@@ -1,7 +1,7 @@
 From 3759936df29242ba33b2222b4b4d40ff2ca69944 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 13 Mar 2022 12:42:28 +0200
-Subject: [PATCH 13/14] find fdtfile from tlv eeprom
+Subject: [PATCH 13/16] find fdtfile from tlv eeprom
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---

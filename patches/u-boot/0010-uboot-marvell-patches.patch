@@ -1,7 +1,7 @@
 From 253dec472f094d81793fc705ee1db1f52f01bad8 Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Wed, 12 Jan 2022 16:32:37 +0200
-Subject: [PATCH 10/14] uboot: marvell patches
+Subject: [PATCH 10/16] uboot: marvell patches
 
 Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---

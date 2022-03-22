@@ -1,7 +1,7 @@
 From e58967e976da00bd3eb941914680253c1b299ebf Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 13 Mar 2022 10:54:15 +0200
-Subject: [PATCH 12/14] add SoM and Carrier eeproms
+Subject: [PATCH 12/16] add SoM and Carrier eeproms
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---

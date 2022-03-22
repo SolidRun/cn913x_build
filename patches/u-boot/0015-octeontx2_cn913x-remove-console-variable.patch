@@ -1,0 +1,38 @@
+From 51d56dc176822c58a51b3fda8f06f07fcc443a9d Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Tue, 22 Mar 2022 11:09:06 +0200
+Subject: [PATCH 15/16] octeontx2_cn913x: remove console variable
+
+console is now properly selected by chosen nodei n device-tree rather
+than through bootargs.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ include/configs/octeontx2_cn913x.h | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/include/configs/octeontx2_cn913x.h b/include/configs/octeontx2_cn913x.h
+index aa966bd292..d01644fcb5 100644
+--- a/include/configs/octeontx2_cn913x.h
++++ b/include/configs/octeontx2_cn913x.h
+@@ -8,9 +8,6 @@
+ #ifndef _CONFIG_OCTEONTX2_CN913X_H
+ #define _CONFIG_OCTEONTX2_CN913X_H
+ 
+-#define CONFIG_DEFAULT_CONSOLE		"console=ttyS0,115200 "\
+-					"earlycon=uart8250,mmio32,0xf0512000"
+-
+ #include <configs/mvebu_armada-common.h>
+ 
+ /*
+@@ -39,7 +36,6 @@
+ 
+ #undef CONFIG_EXTRA_ENV_SETTINGS
+ #define CONFIG_EXTRA_ENV_SETTINGS \
+-	"console=" CONFIG_DEFAULT_CONSOLE "\0"\
+ 	"kernel_addr_r=0x7000000\0" \
+ 	"fdt_addr_r=0x6f00000\0" \
+ 	"ramdisk_addr_r=0x9000000\0" \
+-- 
+2.34.1
+

@@ -1,7 +1,7 @@
 From c4fb59c4261746b30580878d9678c784625f1053 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 17 Mar 2022 12:49:46 +0200
-Subject: [PATCH 04/14] cmd: tlv_eeprom: remove use of global variable
+Subject: [PATCH 04/16] cmd: tlv_eeprom: remove use of global variable
  has_been_read
 
 has_been_read is only used as an optimization for do_tlv_eeprom.

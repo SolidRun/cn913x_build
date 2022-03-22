@@ -1,7 +1,7 @@
 From 25c5e1fe67b87d66b28c6419d6221cbc35c61811 Mon Sep 17 00:00:00 2001
 From: Sven Auhagen <Sven.Auhagen@voleatech.de>
 Date: Sun, 12 Sep 2021 09:25:44 +0200
-Subject: [PATCH 02/14] cmd: tlv_eeprom
+Subject: [PATCH 02/16] cmd: tlv_eeprom
 
 The function show_eeprom is missing int i if debug is enabled.
 
