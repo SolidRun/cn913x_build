@@ -11,6 +11,7 @@ set -e
 ###############################################################################
 #RELEASE=cn9130-early-access-bsp_rev1.0 # Supports both rev1.0 and rev1.1
 BUILDROOT_VERSION=2020.02.1
+: ${BR2_PRIMARY_SITE:=} # custom buildroot mirror
 #UEFI_RELEASE=DEBUG
 #BOOT_LOADER=uefi
 #DDR_SPEED=2400
@@ -195,6 +196,7 @@ if [[ ! -f $ROOTDIR/build/ubuntu-core.ext4 ]]; then
         fi
 	cd buildroot	
 	cp $ROOTDIR/configs/buildroot/buildroot_defconfig configs/
+	printf 'BR2_PRIMARY_SITE="%s"\n' "${BR2_PRIMARY_SITE}" >> configs/buildroot_defconfig
 	make buildroot_defconfig 
 	mkdir -p overlay/etc/init.d/
 	cat > overlay/etc/init.d/S99bootstrap-ubuntu.sh << EOF
