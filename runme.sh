@@ -173,10 +173,12 @@ for i in $SDK_COMPONENTS; do
                         mkdir $ROOTDIR/build/$i
 			echo "dpdk not supported yet"
 		fi
-		
+
 		echo "Checking patches for $i"
 		cd $ROOTDIR/build/$i
-		git am $ROOTDIR/patches/$i/*.patch
+		if [ -d $ROOTDIR/patches/$i ]; then
+			git am $ROOTDIR/patches/$i/*.patch
+		fi
 	fi
 done
 ##############################################################################
