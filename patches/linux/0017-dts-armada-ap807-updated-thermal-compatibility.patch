@@ -1,0 +1,33 @@
+From 4bac3283fac48bffc35be35a99ef805b4d9f5a0f Mon Sep 17 00:00:00 2001
+From: Alex Leibovich <alexl@marvell.com>
+Date: Sun, 2 Jan 2022 14:29:17 +0200
+Subject: [PATCH 17/17] dts: armada-ap807: updated thermal compatibility
+
+Updated compatibility with "marvell,armada-ap807-thermal"
+
+Signed-off-by: Alex Leibovich <alexl@marvell.com>
+Change-Id: I7dfe3c0bb2d37b7b5bb600600cfe3120c7951824
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/kernel/linux/+/68441
+Reviewed-by: Stefan Chulski <stefanc@marvell.com>
+Tested-by: Stefan Chulski <stefanc@marvell.com>
+---
+ arch/arm64/boot/dts/marvell/armada-ap807.dtsi | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/marvell/armada-ap807.dtsi b/arch/arm64/boot/dts/marvell/armada-ap807.dtsi
+index 4a23f65d475f..d095396ce31e 100644
+--- a/arch/arm64/boot/dts/marvell/armada-ap807.dtsi
++++ b/arch/arm64/boot/dts/marvell/armada-ap807.dtsi
+@@ -26,6 +26,9 @@ cpu_clk: clock-cpu {
+ 		clocks = <&ap_clk 0>, <&ap_clk 1>;
+ 		#clock-cells = <1>;
+ 	};
++	ap_thermal: thermal-sensor@80 {
++		compatible = "marvell,armada-ap807-thermal";
++	};
+ };
+ 
+ &ap_sdhci0 {
+-- 
+2.37.3
+

@@ -1,0 +1,32 @@
+From b4fcd85393424f0c9f52d1bf498737ff7b27e8b8 Mon Sep 17 00:00:00 2001
+From: Alex Leibovich <alexl@marvell.com>
+Date: Sun, 2 Jan 2022 17:38:46 +0200
+Subject: [PATCH 15/17] Documentation: bindings: armada-thermal: Added
+ armada-ap807-thermal
+
+Added marvell,armada-ap807-thermal to compatible documentation
+
+Signed-off-by: Alex Leibovich <alexl@marvell.com>
+Change-Id: I81131a4b04e6472c32e64b34db86757188e29c22
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/kernel/linux/+/68449
+Tested-by: sa_ip-sw-jenkins <sa_ip-sw-jenkins@marvell.com>
+Reviewed-by: Stefan Chulski <stefanc@marvell.com>
+---
+ Documentation/devicetree/bindings/thermal/armada-thermal.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/thermal/armada-thermal.txt b/Documentation/devicetree/bindings/thermal/armada-thermal.txt
+index b0bee7e42038..ab8b8fccc7af 100644
+--- a/Documentation/devicetree/bindings/thermal/armada-thermal.txt
++++ b/Documentation/devicetree/bindings/thermal/armada-thermal.txt
+@@ -8,6 +8,7 @@ Required properties:
+     * marvell,armada380-thermal
+     * marvell,armadaxp-thermal
+     * marvell,armada-ap806-thermal
++    * marvell,armada-ap807-thermal
+     * marvell,armada-cp110-thermal
+ 
+ Note: these bindings are deprecated for AP806/CP110 and should instead
+-- 
+2.37.3
+

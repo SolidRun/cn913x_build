@@ -1,0 +1,89 @@
+From 8e6953a7ee7f143c657e9adeb8d8a37a641328e2 Mon Sep 17 00:00:00 2001
+From: Alex Leibovich <alexl@marvell.com>
+Date: Sun, 2 Jan 2022 12:18:25 +0200
+Subject: [PATCH 16/17] thermal: armada: ap807: Thermal data structure added
+
+-Renamed init function to armada_ap80x_init
+-Added thermal driver compatibility structure for ap807
+   ap807 values taken from TSENSE_ADC_16FFC spec, which says:
+        T(in Celsius) = T(code)*TSENE _GAIN+TSENE_OFFSET
+   where in default:
+        TSENE _OFFSET = 128.9
+        TSENE _GAIN= 0.394
+
+Signed-off-by: Alex Leibovich <alexl@marvell.com>
+Change-Id: I2deb2a375b717f2f873da2dd9caf9f1bfe09b3f8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/kernel/linux/+/68437
+Tested-by: sa_ip-sw-jenkins <sa_ip-sw-jenkins@marvell.com>
+Reviewed-by: Stefan Chulski <stefanc@marvell.com>
+---
+ drivers/thermal/armada_thermal.c | 32 ++++++++++++++++++++++++++++++--
+ 1 file changed, 30 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/thermal/armada_thermal.c b/drivers/thermal/armada_thermal.c
+index 545e43d7d464..e6f11cce810c 100644
+--- a/drivers/thermal/armada_thermal.c
++++ b/drivers/thermal/armada_thermal.c
+@@ -233,7 +233,7 @@ static void armada380_init(struct platform_device *pdev,
+ 	regmap_write(priv->syscon, data->syscon_control0_off, reg);
+ }
+ 
+-static void armada_ap806_init(struct platform_device *pdev,
++static void armada_ap80x_init(struct platform_device *pdev,
+ 			      struct armada_thermal_priv *priv)
+ {
+ 	struct armada_thermal_data *data = priv->data;
+@@ -622,7 +622,7 @@ static const struct armada_thermal_data armada380_data = {
+ };
+ 
+ static const struct armada_thermal_data armada_ap806_data = {
+-	.init = armada_ap806_init,
++	.init = armada_ap80x_init,
+ 	.is_valid_bit = BIT(16),
+ 	.temp_shift = 0,
+ 	.temp_mask = 0x3ff,
+@@ -645,6 +645,30 @@ static const struct armada_thermal_data armada_ap806_data = {
+ 	.cpu_nr = 4,
+ };
+ 
++static const struct armada_thermal_data armada_ap807_data = {
++	.init = armada_ap80x_init,
++	.is_valid_bit = BIT(16),
++	.temp_shift = 0,
++	.temp_mask = 0x3ff,
++	.thresh_shift = 3,
++	.hyst_shift = 19,
++	.hyst_mask = 0x3,
++	.coef_b = -128900LL,
++	.coef_m = 394ULL,
++	.coef_div = 1,
++	.inverted = true,
++	.signed_sample = true,
++	.syscon_control0_off = 0x84,
++	.syscon_control1_off = 0x88,
++	.syscon_status_off = 0x8C,
++	.dfx_irq_cause_off = 0x108,
++	.dfx_irq_mask_off = 0x10C,
++	.dfx_overheat_irq = BIT(22),
++	.dfx_server_irq_mask_off = 0x104,
++	.dfx_server_irq_en = BIT(1),
++	.cpu_nr = 4,
++};
++
+ static const struct armada_thermal_data armada_cp110_data = {
+ 	.init = armada_cp110_init,
+ 	.is_valid_bit = BIT(10),
+@@ -688,6 +712,10 @@ static const struct of_device_id armada_thermal_id_table[] = {
+ 		.compatible = "marvell,armada-ap806-thermal",
+ 		.data       = &armada_ap806_data,
+ 	},
++	{
++		.compatible = "marvell,armada-ap807-thermal",
++		.data       = &armada_ap807_data,
++	},
+ 	{
+ 		.compatible = "marvell,armada-cp110-thermal",
+ 		.data       = &armada_cp110_data,
+-- 
+2.37.3
+
