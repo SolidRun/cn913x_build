@@ -21,7 +21,7 @@ Simply running ./runme.sh will check for required tools, clone and build images 
 #Auto detection of boot device such as SD card, eMMC and SPI
 Currently there no support of distro for auto detection of boot device, however it is under development.
 
-## Configuration adn Customization
+## Configuration and Customization
 The board can be configured based on the amount of CP# devices and to which carrier board it will fit.
 There are a few parameters that must be taken to account:
 
