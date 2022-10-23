@@ -15,10 +15,32 @@ The sources are pulled from:
 
 The build script builds the u-boot, atf and linux components, integrate it with Ubuntu rootfs bootstrapped with multistrap. Buildroot is also built aside for future use.
 
-## Build with host tools
+## Build
+### Docker build (recommended)
+
+* Build the Docker image (<b>Just once</b>):
+
+```
+docker build --build-arg user=$(whoami) --build-arg userid=$(id -u) -t cn913x_build docker/
+```
+
+To check if the image exists in you machine, you can use the following command:
+
+```
+docker images | grep cn913x_build
+```
+
+* Run the build script:
+```
+docker run -i -t -v "$PWD":/cn913x_build_dir -v /etc/gitconfig:/etc/gitconfig cn913x_build bash -c "<ARGUMENTS> ./runme.sh"
+```
+
+> The git configuration file is mounted, if your gitconfig file is not located in /etc/gitconfig, change the command accordingly, or copy the file to /etc/gitconfig.
+
+### Build with host tools
 Simply running ./runme.sh will check for required tools, clone and build images and place results in images/ directory.
 
-#Auto detection of boot device such as SD card, eMMC and SPI
+## Auto detection of boot device such as SD card, eMMC and SPI
 Currently there no support of distro for auto detection of boot device, however it is under development.
 
 ## Configuration adn Customization

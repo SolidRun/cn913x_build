@@ -33,6 +33,15 @@ BUILDROOT_VERSION=2020.02.1
 # - mmc:1:2 (MMC 1 Partition boot1)
 : ${BUILD_ROOTFS:=yes} # set to no for bootloader-only build
 
+
+# Check if git user name and git email are configured
+if [ -z "`git config user.name`" ] || [ -z "`git config user.email`" ]; then
+			echo "git is not configured, please run:"
+			echo "git config --global user.email \"you@example.com\""
+			echo "git config --global user.name \"Your Name\""
+			exit -1
+fi
+
 ###############################################################################
 # Misc
 ###############################################################################
@@ -121,13 +130,6 @@ for i in $TOOLS; do
         fi
 done
 set -e
-
-# Check if git is configured:
-#GIT_CONF=`git config user.name`
-#if [ "x$GIT_CONF" == "x" ]; then
-#	echo "git is not configured. please configure git username and email first"
-#	exit -1
-#fi
 
 if [[ ! -d $ROOTDIR/build/toolchain ]]; then
 	mkdir -p $ROOTDIR/build/toolchain
