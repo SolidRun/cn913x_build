@@ -32,7 +32,7 @@ docker images | grep cn913x_build
 
 * Run the build script:
 ```
-docker run -i -t -v "$PWD":/cn913x_build_dir -v /etc/gitconfig:/etc/gitconfig cn913x_build bash -c "<ARGUMENTS> ./runme.sh"
+docker run --rm -i -t -v "$PWD":/cn913x_build_dir -v /etc/gitconfig:/etc/gitconfig cn913x_build bash -c "<ARGUMENTS> ./runme.sh"
 ```
 
 > The git configuration file is mounted, if your gitconfig file is not located in /etc/gitconfig, change the command accordingly, or copy the file to /etc/gitconfig.
