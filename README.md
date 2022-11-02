@@ -131,10 +131,18 @@ Afterwards run update the RTC and update the repository -
 
 `dhclient -i eth2; ntpdate pool.ntp.org; apt update`
 
-## Running DPDK
+## DPDK
 
-The default DPDK version is v22.07, and can be changed using the DPDK_RELEASE argument.
-<br>
+### Compiling DPDK
+The default DPDK version is v22.07, and the supported versions are v22.07 and v20.11.<br>
+Technically, any DPDK version can be used, but the DPDK patches should be ported to the wanted version.<br>
+Usually the porting is quite easy and takes a few minutes.<br>
+The closes supported version should be used as reference (usually, the only differences are the location of the changed lines).<br><br>
+The runme script will clone the version specified by the <b>DPDK_RELEASE</b> argument (or the default one), and will look for patches in patches/dpdk-{version} directory, so this directory should be created and the patches should be placed there.<br>
+
+> Please note that once DPDK is cloned, it won't be cloned again, even if the DPDK_RELEASE argument is different. Please delete the build/dpdk directory in order to invoke a new clone.
+
+## Running DPDK
 Allocate hugepages for DPDK, for example:
 
 ```

@@ -1,0 +1,146 @@
+From ad01dacf75ba11f0c7402195352851b9659871cd Mon Sep 17 00:00:00 2001
+From: Alvaro Karsz <alvaro.karsz@solid-run.com>
+Date: Wed, 2 Nov 2022 14:23:57 +0200
+Subject: [PATCH] Use pkg-config to find libmusdk
+
+Signed-off-by: Alvaro Karsz <alvaro.karsz@solid-run.com>
+---
+ drivers/common/mvep/meson.build  | 18 +++++++-----------
+ drivers/crypto/mvsam/meson.build | 19 +++++++------------
+ drivers/net/mvneta/meson.build   | 23 +++++++----------------
+ drivers/net/mvpp2/meson.build    | 19 +++++++------------
+ 4 files changed, 28 insertions(+), 51 deletions(-)
+
+diff --git a/drivers/common/mvep/meson.build b/drivers/common/mvep/meson.build
+index 8df4bc6e0b..e20407b861 100644
+--- a/drivers/common/mvep/meson.build
++++ b/drivers/common/mvep/meson.build
+@@ -3,18 +3,14 @@
+ # Copyright(c) 2018 Semihalf.
+ # All rights reserved.
+ #
+-path = get_option('lib_musdk_dir')
+-lib_dir = path + '/lib'
+-inc_dir = path + '/include'
+ 
+-lib = cc.find_library('libmusdk', dirs: [lib_dir], required: false)
+-if not lib.found()
+-	build = false
+-	reason = 'missing dependency, "libmusdk"'
+-else
+-	ext_deps += lib
+-	includes += include_directories(inc_dir)
+-	cflags += ['-DMVCONF_TYPES_PUBLIC', '-DMVCONF_DMA_PHYS_ADDR_T_PUBLIC']
++dep = dependency('libmusdk', required: false, method: 'pkg-config')
++if not dep.found()
++    build = false
++    reason = 'missing dependency, "libmusdk"'
++    subdir_done()
+ endif
+ 
++ext_deps += dep
++
+ sources = files('mvep_common.c')
+diff --git a/drivers/crypto/mvsam/meson.build b/drivers/crypto/mvsam/meson.build
+index 6d97dc8a23..c0c828fbf8 100644
+--- a/drivers/crypto/mvsam/meson.build
++++ b/drivers/crypto/mvsam/meson.build
+@@ -3,20 +3,15 @@
+ # Copyright(c) 2018 Semihalf.
+ # All rights reserved.
+ 
+-path = get_option('lib_musdk_dir')
+-lib_dir = path + '/lib'
+-inc_dir = path + '/include'
+-
+-lib = cc.find_library('libmusdk', dirs: [lib_dir], required: false)
+-if not lib.found()
+-	build = false
+-	reason = 'missing dependency, "libmusdk"'
+-else
+-	ext_deps += lib
+-	includes += include_directories(inc_dir)
+-	cflags += ['-DMVCONF_TYPES_PUBLIC', '-DMVCONF_DMA_PHYS_ADDR_T_PUBLIC']
++dep = dependency('libmusdk', required: false, method: 'pkg-config')
++if not dep.found()
++    build = false
++    reason = 'missing dependency, "libmusdk"'
++    subdir_done()
+ endif
+ 
++ext_deps += dep
++
+ sources = files('rte_mrvl_pmd.c', 'rte_mrvl_pmd_ops.c')
+ 
+ deps += ['bus_vdev', 'common_mvep']
+diff --git a/drivers/net/mvneta/meson.build b/drivers/net/mvneta/meson.build
+index 8d72027883..ecc9fb5c53 100644
+--- a/drivers/net/mvneta/meson.build
++++ b/drivers/net/mvneta/meson.build
+@@ -3,24 +3,15 @@
+ # Copyright(c) 2018 Semihalf.
+ # All rights reserved.
+ 
+-path = get_option('lib_musdk_dir')
+-lib_dir = path + '/lib'
+-inc_dir = path + '/include'
+-
+-lib = cc.find_library('libmusdk', dirs : [lib_dir], required: false)
+-if not lib.found()
+-	build = false
+-	reason = 'missing dependency, "libmusdk"'
+-else
+-	ext_deps += lib
+-	includes += include_directories(inc_dir)
+-	cflags += [
+-	  '-DMVCONF_TYPES_PUBLIC',
+-	  '-DMVCONF_DMA_PHYS_ADDR_T_PUBLIC',
+-	  '-DMVCONF_DMA_PHYS_ADDR_T_SIZE=64'
+-	]
++dep = dependency('libmusdk', required: false, method: 'pkg-config')
++if not dep.found()
++    build = false
++    reason = 'missing dependency, "libmusdk"'
++    subdir_done()
+ endif
+ 
++ext_deps += dep
++
+ sources = files(
+ 	'mvneta_ethdev.c',
+ 	'mvneta_rxtx.c'
+diff --git a/drivers/net/mvpp2/meson.build b/drivers/net/mvpp2/meson.build
+index e06eddaac2..1f66d9990b 100644
+--- a/drivers/net/mvpp2/meson.build
++++ b/drivers/net/mvpp2/meson.build
+@@ -3,20 +3,15 @@
+ # Copyright(c) 2018 Semihalf.
+ # All rights reserved.
+ 
+-path = get_option('lib_musdk_dir')
+-lib_dir = path + '/lib'
+-inc_dir = path + '/include'
+-
+-lib = cc.find_library('libmusdk', dirs : [lib_dir], required: false)
+-if not lib.found()
+-	build = false
+-	reason = 'missing dependency, "libmusdk"'
+-else
+-	ext_deps += lib
+-	includes += include_directories(inc_dir)
+-	cflags += ['-DMVCONF_TYPES_PUBLIC', '-DMVCONF_DMA_PHYS_ADDR_T_PUBLIC']
++dep = dependency('libmusdk', required: false, method: 'pkg-config')
++if not dep.found()
++    build = false
++    reason = 'missing dependency, "libmusdk"'
++    subdir_done()
+ endif
+ 
++ext_deps += dep
++
+ sources = files(
+ 	'mrvl_ethdev.c',
+ 	'mrvl_flow.c',
+-- 
+2.32.0
+

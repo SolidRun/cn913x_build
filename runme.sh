@@ -178,6 +178,11 @@ for i in $SDK_COMPONENTS; do
                         echo "Cloning DPDK from https://github.com/DPDK/dpdk.git"
                         cd $ROOTDIR/build
                         git clone $SHALLOW_FLAG https://github.com/DPDK/dpdk.git dpdk -b $DPDK_RELEASE
+			# Apply release specific DPDK patches
+			if [ -d $ROOTDIR/patches/dpdk-$DPDK_RELEASE ]; then
+				cd dpdk
+				git am $ROOTDIR/patches/dpdk-${DPDK_RELEASE}/*.patch
+			fi
 		fi
 
 		echo "Checking patches for $i"
