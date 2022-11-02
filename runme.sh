@@ -33,6 +33,10 @@ BUILDROOT_VERSION=2020.02.1
 # - mmc:1:2 (MMC 1 Partition boot1)
 : ${BUILD_ROOTFS:=yes} # set to no for bootloader-only build
 
+# Ubuntu Version
+# - bionic (18.04)
+# - focal (20.04)
+: ${UBUNTU_VERSION:=focal}
 
 # Check if git user name and git email are configured
 if [ -z "`git config user.name`" ] || [ -z "`git config user.email`" ]; then
@@ -197,7 +201,18 @@ done
 ###############################################################################
 
 if [[ ! -f $ROOTDIR/build/ubuntu-core.ext4 ]]; then
-        echo "Building File System"
+	if [[ $UBUNTU_VERSION == bionic ]]; then
+		UBUNTU_BASE_URL=http://cdimage.ubuntu.com/ubuntu-base/releases/18.04/release/ubuntu-base-18.04.5-base-arm64.tar.gz
+	fi
+	if [[ $UBUNTU_VERSION == focal ]]; then
+		UBUNTU_BASE_URL=http://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/ubuntu-base-20.04.5-base-arm64.tar.gz
+	fi
+	if [[ -z $UBUNTU_BASE_URL ]]; then
+		echo "Error: Unknown URL for Ubuntu Version \"\${UBUNTU_VERSION}! Please provide UBUNTU_BASE_URL."
+		exit 1
+	fi
+
+        echo "Building Ubuntu ${UBUNTU_VERSION} File System"
 	cd $ROOTDIR/build
         mkdir -p ubuntu
         cd ubuntu
@@ -219,8 +234,8 @@ case "\$1" in
                 mount /dev/vda /mnt
                 cd /mnt/
                 udhcpc -i eth0
-                wget -c -P /tmp/ http://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/ubuntu-base-20.04.1-base-arm64.tar.gz
-                tar zxf /tmp/ubuntu-base-20.04.1-base-arm64.tar.gz -C /mnt
+		wget -c -P /tmp/ -O /tmp/ubuntu-base.dl "${UBUNTU_BASE_URL}"
+		tar -C /mnt -xf /tmp/ubuntu-base.dl
                 mount -o bind /proc /mnt/proc/
                 mount -o bind /sys/ /mnt/sys/
                 mount -o bind /dev/ /mnt/dev/
@@ -232,7 +247,7 @@ case "\$1" in
                 echo "127.0.0.1 localhost" > /mnt/etc/hosts
                 export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true LC_ALL=C LANGUAGE=C LANG=C
                 chroot /mnt apt update
-                chroot /mnt apt install --no-install-recommends -y systemd-sysv apt locales less wget procps openssh-server ifupdown net-tools isc-dhcp-client ntpdate lm-sensors i2c-tools psmisc less sudo htop iproute2 iputils-ping kmod network-manager iptables rng-tools apt-utils libatomic1
+                chroot /mnt apt install --no-install-recommends -y systemd-sysv apt locales less wget procps openssh-server ifupdown net-tools isc-dhcp-client ntpdate lm-sensors i2c-tools psmisc less sudo htop iproute2 iputils-ping kmod network-manager iptables rng-tools apt-utils libatomic1 ethtool
 		echo -e "root\nroot" | chroot /mnt passwd
                 umount /mnt/var/lib/apt/
                 umount /mnt/var/cache/apt
