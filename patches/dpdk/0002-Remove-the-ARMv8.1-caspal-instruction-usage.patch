@@ -1,0 +1,27 @@
+From 01ab72c9dbb16a1a68f4b9ace0aed33d5f6635ce Mon Sep 17 00:00:00 2001
+From: Alvaro Karsz <alvaro.karsz@solid-run.com>
+Date: Wed, 2 Nov 2022 12:53:10 +0200
+Subject: [PATCH] Remove the ARMv8.1 caspal instruction usage.
+
+Signed-off-by: Alvaro Karsz <alvaro.karsz@solid-run.com>
+---
+ drivers/event/cnxk/cn10k_worker.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index 0915f404e0..d91e732fd8 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -279,7 +279,8 @@ cn10k_sso_hws_get_work(struct cn10k_sso_hws *ws, struct rte_event *ev,
+ 	} gw;
+ 
+ 	gw.get_work = ws->gw_wdata;
+-#if defined(RTE_ARCH_ARM64) && !defined(__clang__)
++#if 0
++/* #if defined(RTE_ARCH_ARM64) && !defined(__clang__) */
+ 	asm volatile(
+ 		PLT_CPU_FEATURE_PREAMBLE
+ 		"caspal %[wdata], %H[wdata], %[wdata], %H[wdata], [%[gw_loc]]\n"
+-- 
+2.32.0
+

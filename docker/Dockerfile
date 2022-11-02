@@ -14,7 +14,11 @@ RUN DEBIAN_FRONTEND=noninteractive apt install -y \
 	python unzip python3 zlib1g-dev udev cmake \
 	libusb-1.0-0 bzip2 libbz2-dev libbz2-1.0 \
 	libusb-1.0-0-dev libzip-dev pkg-config g++ \
-	vim qemu-system-arm
+	vim qemu-system-arm libtool m4 automake meson \
+        pkg-config-aarch64-linux-gnu python3-pip
+
+# Install python packages
+RUN pip3 install pyelftools
 
 # Set workdir
 WORKDIR /cn913x_build_dir

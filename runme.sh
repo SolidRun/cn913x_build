@@ -47,6 +47,8 @@ fi
 ###############################################################################
 
 RELEASE=${RELEASE:-v5.15}
+DPDK_RELEASE=${DPDK_RELEASE:-v22.07}
+
 SHALLOW=${SHALLOW:true}
 	if [ "x$SHALLOW" == "xtrue" ]; then
 		SHALLOW_FLAG="--depth 1"
@@ -144,7 +146,7 @@ cd $ROOTDIR
 ###############################################################################
 # source code cloning and building 
 ###############################################################################
-SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux"
+SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux dpdk"
 
 for i in $SDK_COMPONENTS; do
 	if [[ ! -d $ROOTDIR/build/$i ]]; then
@@ -173,8 +175,9 @@ for i in $SDK_COMPONENTS; do
 			cd u-boot
 			git checkout v2019.10 -b marvell
 		elif [ "x$i" == "xdpdk" ]; then
-                        mkdir $ROOTDIR/build/$i
-			echo "dpdk not supported yet"
+                        echo "Cloning DPDK from https://github.com/DPDK/dpdk.git"
+                        cd $ROOTDIR/build
+                        git clone $SHALLOW_FLAG https://github.com/DPDK/dpdk.git dpdk -b $DPDK_RELEASE
 		fi
 
 		echo "Checking patches for $i"
@@ -224,8 +227,8 @@ case "\$1" in
                 echo "127.0.0.1 localhost" > /mnt/etc/hosts
                 export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true LC_ALL=C LANGUAGE=C LANG=C
                 chroot /mnt apt update
-                chroot /mnt apt install --no-install-recommends -y systemd-sysv apt locales less wget procps openssh-server ifupdown net-tools isc-dhcp-client ntpdate lm-sensors i2c-tools psmisc less sudo htop iproute2 iputils-ping kmod network-manager iptables rng-tools apt-utils
-                echo -e "root\nroot" | chroot /mnt passwd
+                chroot /mnt apt install --no-install-recommends -y systemd-sysv apt locales less wget procps openssh-server ifupdown net-tools isc-dhcp-client ntpdate lm-sensors i2c-tools psmisc less sudo htop iproute2 iputils-ping kmod network-manager iptables rng-tools apt-utils libatomic1
+		echo -e "root\nroot" | chroot /mnt passwd
                 umount /mnt/var/lib/apt/
                 umount /mnt/var/cache/apt
                 chroot /mnt apt clean
@@ -239,7 +242,7 @@ EOF
 	chmod +x overlay/etc/init.d/S99bootstrap-ubuntu.sh
 	make
 	IMG=ubuntu-core.ext4.tmp
-	truncate -s 350M $IMG
+	truncate -s 450M $IMG
 	qemu-system-aarch64 -m 1G -M virt -cpu cortex-a57 -nographic -smp 1 -kernel output/images/Image -append "console=ttyAMA0" -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 -initrd output/images/rootfs.cpio.gz -drive file=$IMG,if=none,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -no-reboot
         mv $IMG $ROOTDIR/build/ubuntu-core.ext4
 
@@ -315,7 +318,37 @@ make INSTALL_MOD_PATH=$ROOTDIR/images/tmp/ INSTALL_MOD_STRIP=1 modules_install
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/cn913*.dtb $ROOTDIR/images/tmp/boot
 
- 
+
+###############################################################################
+# build MUSDK
+###############################################################################
+if [[ ! -d $ROOTDIR/build/musdk-marvell-SDK11.22.07 ]]; then
+	cd $ROOTDIR/build/
+	wget https://solidrun-common.sos-de-fra-1.exo.io/cn913x/marvell/SDK11.22.07/sources-musdk-marvell-SDK11.22.07.tar.bz2
+	tar -vxf sources-musdk-marvell-SDK11.22.07.tar.bz2
+	rm -f sources-musdk-marvell-SDK11.22.07.tar.bz2
+	cd musdk-marvell-SDK11.22.07
+	patch -p1 < $ROOTDIR/patches/musdk/*.patch
+fi
+
+cd $ROOTDIR/build/musdk-marvell-SDK11.22.07
+./bootstrap
+./configure --host=aarch64-linux-gnu
+make -j${PARALLEL}
+make install
+cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma
+make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
+cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2
+make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
+
+###############################################################################
+# build DPDK
+###############################################################################
+export PKG_CONFIG_PATH=$ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/lib/pkgconfig/:$PKG_CONFIG_PATH
+cd $ROOTDIR/build/dpdk
+meson build -Dexamples=all --cross-file $ROOTDIR/configs/dpdk/arm64_armada_solidrun_linux_gcc
+ninja -C build
+
 ###############################################################################
 # assembling images
 ###############################################################################
@@ -330,7 +363,7 @@ cat > $ROOTDIR/images/tmp/extlinux/extlinux.conf << EOF
     MENU LABEL primary kernel
     LINUX /boot/Image
     FDTDIR /boot
-    APPEND console=ttyS0,115200 root=PARTUUID=30303030-01 rw rootwait
+    APPEND console=ttyS0,115200 root=PARTUUID=30303030-01 rw rootwait cma=256M
 EOF
 
 # blkid images/tmp/ubuntu-core.img | cut -f2 -d'"'
@@ -341,6 +374,29 @@ e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:boot
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/Image $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/
 e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/marvell
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/*.dtb $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/marvell/
+
+# Copy DPDK testpmd
+e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:root/dpdk
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/app/dpdk-testpmd $ROOTDIR/images/tmp/ubuntu-core.ext4:root/dpdk/
+
+# Copy MUSDK
+cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/
+for i in `find .`; do
+	if [ -d $i ]; then
+		e2mkdir -v -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$i
+	fi
+	if [ -f $i ] && ! [ -L $i ]; then
+		DIR=`dirname $i`
+		e2cp -v -G 0 -O 0 -p $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/$i $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$DIR
+	fi
+done
+for i in `find .`; do
+       if [ -L $i ]; then
+               DIR=`dirname $i`
+               DEST=`readlink -qn $i`
+               e2ln -vf $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$DIR/$DEST /usr/$i
+       fi
+done
 
 # Copy over kernel image
 echo "Copying kernel modules"
@@ -356,16 +412,20 @@ for i in `find lib`; do
 done
 cd -
 
+# Copy MUSDK modules
+e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:root/musdk_modules
+e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma/musdk_cma.ko $ROOTDIR/images/tmp/ubuntu-core.ext4:root/musdk_modules
+e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2/mv_pp_uio.ko $ROOTDIR/images/tmp/ubuntu-core.ext4:root/musdk_modules
+
 # ext4 ubuntu partition is ready
 cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images
 cd $ROOTDIR/
-truncate -s 420M $ROOTDIR/images/tmp/ubuntu-core.img
-parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary 64MiB 417MiB
+truncate -s 520M $ROOTDIR/images/tmp/ubuntu-core.img
+parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary 64MiB 517MiB
 # Generate the above partuuid 3030303030 which is the 4 characters of '0' in ascii
 echo "0000" | dd of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1 seek=440 conv=notrunc
 dd if=$ROOTDIR/images/tmp/ubuntu-core.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1M seek=64 conv=notrunc
-
 dd if=$ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc
 mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/ubuntu-${DTB_KERNEL}-${UBOOT_ENVIRONMENT}.img
 
