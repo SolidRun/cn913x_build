@@ -133,6 +133,10 @@ Afterwards run update the RTC and update the repository -
 
 ## DPDK
 
+> DPDK has been tested only on ClearFog-Base CN9130 based product.
+
+> Please notice that the support is for ethernet ports that are directly connected to the SoC (i.e. no L2 DSA switch support).
+
 ### Compiling DPDK
 The default DPDK version is v22.07, and the supported versions are v22.07 and v20.11.<br>
 Technically, any DPDK version can be used, but the DPDK patches should be ported to the wanted version.<br>
