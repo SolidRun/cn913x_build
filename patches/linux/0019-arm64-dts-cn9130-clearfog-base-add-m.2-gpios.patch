@@ -1,0 +1,68 @@
+From 5b1d2eb079e22b81790cad6a83f896902fee3244 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 7 Dec 2022 17:38:17 +0200
+Subject: [PATCH] arm64: dts: cn9130-clearfog-base: add m.2 gpios
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ .../arm64/boot/dts/marvell/cn9130-cf-base.dts | 24 ++++++++++++++++---
+ 1 file changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
+index b04e0d0bd6ee..814511007bd7 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
+@@ -156,15 +156,15 @@ &cp0_i2c0 {
+ 	 * PCA9655 GPIO expander, up to 1MHz clock.
+ 	 *  0-CON3 CLKREQ#
+ 	 *  1-CON3 PERST#
+-	 *  2-CON2 PERST#
++	 *  2-M2 FUL_CARD_POWER_OFF
+ 	 *  3-CON3 W_DISABLE
+ 	 *  4-CON2 CLKREQ#
+ 	 *  5-USB3 overcurrent
+ 	 *  6-USB3 power
+ 	 *  7-CON2 W_DISABLE
+-	 *  8-JP4 P1
++	 *  8-M2 W_DISABLE
+ 	 *  9-JP4 P4
+-	 * 10-JP4 P5
++	 * 10-M2 RESET
+ 	 * 11-m.2 DEVSLP
+ 	 * 12-SFP_LOS
+ 	 * 13-SFP_TX_FAULT
+@@ -188,6 +188,12 @@ pcie1_0_clkreq {
+ 			input;
+ 			line-name = "pcie1.0-clkreq";
+ 		};
++		m2_ful_card_power_off {
++			gpio-hog;
++			gpios = <2 GPIO_ACTIVE_HIGH>;
++			output-high;
++			line-name = "m2-ful-card-power-off";
++		};
+ 		pcie1_0_w_disable {
+ 			gpio-hog;
+ 			gpios = <3 GPIO_ACTIVE_LOW>;
+@@ -206,6 +212,18 @@ usb3_power {
+ 			output-high;
+ 			line-name = "usb3-power";
+ 		};
++		m2_w_disable {
++			gpio-hog;
++			gpios = <8 GPIO_ACTIVE_LOW>;
++			output-low;
++			line-name = "m2-w-disable";
++		};
++		m2_reset {
++			gpio-hog;
++			gpios = <10 GPIO_ACTIVE_HIGH>;
++			output-high;
++			line-name = "m2-reset";
++		};
+ 		m2_devslp {
+ 			gpio-hog;
+ 			gpios = <11 GPIO_ACTIVE_HIGH>;
+-- 
+2.37.3
+
