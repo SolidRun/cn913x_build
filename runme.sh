@@ -233,7 +233,7 @@ case "\$1" in
                 mkfs.ext4 -F /dev/vda -b 4096
                 mount /dev/vda /mnt
                 cd /mnt/
-                udhcpc -i eth0
+                cat /proc/net/pnp > /etc/resolv.conf
 		wget -c -P /tmp/ -O /tmp/ubuntu-base.dl "${UBUNTU_BASE_URL}"
 		tar -C /mnt -xf /tmp/ubuntu-base.dl
                 mount -o bind /proc /mnt/proc/
@@ -242,7 +242,7 @@ case "\$1" in
                 mount -o bind /dev/pts /mnt/dev/pts
                 mount -t tmpfs tmpfs /mnt/var/lib/apt/
                 mount -t tmpfs tmpfs /mnt/var/cache/apt/
-                echo "nameserver 8.8.8.8" > /mnt/etc/resolv.conf
+                cat /proc/net/pnp > /mnt/etc/resolv.conf
                 echo "localhost" > /mnt/etc/hostname
                 echo "127.0.0.1 localhost" > /mnt/etc/hosts
                 export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true LC_ALL=C LANGUAGE=C LANG=C
@@ -263,7 +263,7 @@ EOF
 	make
 	IMG=ubuntu-core.ext4.tmp
 	truncate -s 450M $IMG
-	qemu-system-aarch64 -m 1G -M virt -cpu cortex-a57 -nographic -smp 1 -kernel output/images/Image -append "console=ttyAMA0" -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 -initrd output/images/rootfs.cpio.gz -drive file=$IMG,if=none,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -no-reboot
+	qemu-system-aarch64 -m 1G -M virt -cpu cortex-a57 -nographic -smp 1 -kernel output/images/Image -append "console=ttyAMA0 ip=dhcp" -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 -initrd output/images/rootfs.cpio.gz -drive file=$IMG,if=none,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -no-reboot
         mv $IMG $ROOTDIR/build/ubuntu-core.ext4
 
 fi
