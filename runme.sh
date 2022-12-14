@@ -222,6 +222,7 @@ if [[ ! -f $ROOTDIR/build/ubuntu-core.ext4 ]]; then
 	cd buildroot	
 	cp $ROOTDIR/configs/buildroot/buildroot_defconfig configs/
 	printf 'BR2_PRIMARY_SITE="%s"\n' "${BR2_PRIMARY_SITE}" >> configs/buildroot_defconfig
+	export FORCE_UNSAFE_CONFIGURE=1
 	make buildroot_defconfig 
 	mkdir -p overlay/etc/init.d/
 	cat > overlay/etc/init.d/S99bootstrap-ubuntu.sh << EOF
@@ -299,7 +300,7 @@ cp configs/sr_cn913x_cex7_defconfig .config
 #fi
 make olddefconfig
 make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
-cp $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
+install -m644 -D $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
 export BL33=$ROOTDIR/binaries/u-boot/u-boot.bin
 
 if [ "x$BOOT_LOADER" == "xuefi" ]; then

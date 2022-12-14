@@ -34,7 +34,7 @@ RUN if [ -z "$user" ]; then printf "\n\nPlease pass the user argument\n\n"; exit
 RUN if [ -z "$userid" ]; then printf "\n\nPlease pass the userid argument\n\n"; exit -1; fi
 
 # Add user
-RUN useradd -u $userid $user
+RUN test "$userid" -eq 0 || useradd -u $userid $user
 
 # Run as user
 USER $user
