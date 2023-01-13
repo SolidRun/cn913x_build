@@ -31,6 +31,7 @@ BUILDROOT_VERSION=2020.02.1
 # - mmc:1:0 (MMC 1 Partition 0) <-- default, microSD on Clearfog
 # - mmc:1:1 (MMC 1 Partition boot0)
 # - mmc:1:2 (MMC 1 Partition boot1)
+: ${UBOOT_ENVIRONMENT:=mmc:1:0}
 : ${BUILD_ROOTFS:=yes} # set to no for bootloader-only build
 
 # Ubuntu Version
@@ -277,27 +278,26 @@ fi
 echo "Building u-boot"
 cd $ROOTDIR/build/u-boot/
 cp configs/sr_cn913x_cex7_defconfig .config
-: ${UBOOT_ENVIRONMENT:=mmc:1:1} # default microSD partition 1
 [[ "${UBOOT_ENVIRONMENT}" =~ (.*):(.*):(.*) ]] || [[ "${UBOOT_ENVIRONMENT}" =~ (.*) ]]
-#if [ "x${BASH_REMATCH[1]}" = "xspi" ]; then
-#cat >> .config << EOF
-#CONFIG_ENV_IS_IN_MMC=n
-#CONFIG_ENV_IS_IN_SPI_FLASH=y
-#CONFIG_ENV_SIZE=0x10000
-#CONFIG_ENV_OFFSET=0x3f0000
-#CONFIG_ENV_SECT_SIZE=0x10000
-#EOF
-#elif [ "x${BASH_REMATCH[1]}" = "xmmc" ]; then
-#cat >> .config << EOF
-#CONFIG_ENV_IS_IN_MMC=y
-#CONFIG_SYS_MMC_ENV_DEV=${BASH_REMATCH[2]}
-#CONFIG_SYS_MMC_ENV_PART=${BASH_REMATCH[3]}
-#CONFIG_ENV_IS_IN_SPI_FLASH=n
-#EOF
-#else
-#	echo "ERROR: \$UBOOT_ENVIRONMENT setting invalid"
-#	exit 1
-#fi
+if [ "x${BASH_REMATCH[1]}" = "xspi" ]; then
+cat >> .config << EOF
+CONFIG_ENV_IS_IN_MMC=n
+CONFIG_ENV_IS_IN_SPI_FLASH=y
+CONFIG_ENV_SIZE=0x10000
+CONFIG_ENV_OFFSET=0x3f0000
+CONFIG_ENV_SECT_SIZE=0x10000
+EOF
+elif [ "x${BASH_REMATCH[1]}" = "xmmc" ]; then
+cat >> .config << EOF
+CONFIG_ENV_IS_IN_MMC=y
+CONFIG_SYS_MMC_ENV_DEV=${BASH_REMATCH[2]}
+CONFIG_SYS_MMC_ENV_PART=${BASH_REMATCH[3]}
+CONFIG_ENV_IS_IN_SPI_FLASH=n
+EOF
+else
+	echo "ERROR: \$UBOOT_ENVIRONMENT setting invalid"
+	exit 1
+fi
 make olddefconfig
 make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
 install -m644 -D $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
