@@ -1,0 +1,28 @@
+From c9abdf9f93884460ae4a44a0a657ae7521b2e845 Mon Sep 17 00:00:00 2001
+From: Kareiman Fadly <kareiman.fadly@solid-run.com>
+Date: Sun, 22 Jan 2023 14:57:03 +0200
+Subject: [PATCH] linux: cn9130-cf-solidwan : add carrier eeprom
+
+---
+ arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
+index e47a767964e4..27dc9b27199e 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
+@@ -195,6 +195,11 @@ eeprom@53 {
+ 		reg = <0x53>;
+ 		pagesize = <16>;
+ 	};
++	carrier_eeprom@52 {
++                compatible = "atmel,24c02";
++                reg = <0x52>;
++                pagesize = <8>;
++        };
+ };
+ 
+ /* I2C Master */
+-- 
+2.39.0
+
