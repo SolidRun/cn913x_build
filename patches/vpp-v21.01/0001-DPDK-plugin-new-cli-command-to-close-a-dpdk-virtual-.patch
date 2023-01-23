@@ -1,0 +1,161 @@
+From 1fd97a6a24c72d906aa162e8bb33ee8f3bc46dc8 Mon Sep 17 00:00:00 2001
+From: Alvaro Karsz <alvaro.karsz@solid-run.com>
+Date: Sun, 22 Jan 2023 18:54:36 +0200
+Subject: [PATCH] DPDK plugin: new cli command to close a dpdk virtual port
+
+DPDK takes control over the network interface when rte_eth_dev_start is called.
+The driver implementation of dev_start CB calls musdk functions, which will
+set a flag in the Linux kernel driver, telling the kernel that userspace is in control.
+
+In order to switch control back to the Linux kernel, rte_eth_dev_close must be called,
+which in turn will call to the dev_close CB in DPDK.
+
+Using DPDK without VPP, the application usually calls rte_eth_dev_close
+before cleaning the eal parameters, so, when DPDK stops, Linux kernel
+gained control again over the interfaces.
+
+The problem with VPP is that rte_eth_dev_close is never called, so even
+when VPP stops, the Linux kernel have no control over the network
+interfaces.
+
+This is fixed by adding a new CLI command: dpdk close <interface>
+
+This command should be called before we exit VPP, in order to switch the
+control back to the Linux kernel.
+
+A user must not try to bring back the link again with VPP after calling
+dpdk close, it will lead to vpp errors.
+
+After calling dpdk close, the user should exit VPP with quit command.
+
+Signed-off-by: Alvaro Karsz <alvaro.karsz@solid-run.com>
+---
+ src/plugins/dpdk/device/cli.c    | 43 ++++++++++++++++++++++++++++++++
+ src/plugins/dpdk/device/common.c | 27 ++++++++++++++++++++
+ src/plugins/dpdk/device/dpdk.h   |  4 ++-
+ 3 files changed, 73 insertions(+), 1 deletion(-)
+
+diff --git a/src/plugins/dpdk/device/cli.c b/src/plugins/dpdk/device/cli.c
+index 0f771c6ba..8cdef3596 100644
+--- a/src/plugins/dpdk/device/cli.c
++++ b/src/plugins/dpdk/device/cli.c
+@@ -382,6 +382,49 @@ VLIB_CLI_COMMAND (show_vpe_version_command, static) = {
+   .short_help = "show dpdk version",
+   .function = show_dpdk_version_command_fn,
+ };
++
++static clib_error_t *stop_dpdk_dev(vlib_main_t *vm, unformat_input_t *input,
++				   vlib_cli_command_t *cmd)
++{
++	unformat_input_t _line_input, *line_input = &_line_input;
++	dpdk_main_t *dm = &dpdk_main;
++	vnet_hw_interface_t *hw;
++	dpdk_device_t *xd;
++	u32 hw_if_index = (u32) ~ 0;
++	clib_error_t *error = NULL;
++
++	if (!unformat_user(input, unformat_line_input, line_input))
++		return 0;
++
++	while (unformat_check_input(line_input) != UNFORMAT_END_OF_INPUT) {
++		if (unformat(line_input, "%U", unformat_vnet_hw_interface, dm->vnet_main, &hw_if_index)) {
++			;
++		} else {
++			error = clib_error_return(0, "parse error: '%U'", format_unformat_error, line_input);
++			goto done;
++		}
++	}
++
++	if (hw_if_index == (u32) ~ 0) {
++		error = clib_error_return(0, "please specify valid interface name");
++		goto done;
++	}
++
++	hw = vnet_get_hw_interface(dm->vnet_main, hw_if_index);
++	xd = vec_elt_at_index(dm->devices, hw->dev_instance);
++
++	dpdk_device_close(xd);
++done:
++	unformat_free(line_input);
++	return 0;
++}
++
++VLIB_CLI_COMMAND (cmd_stop_dpdk_dev, static) = {
++  .path = "dpdk close",
++  .short_help = "dpdk close <interface>",
++  .function = stop_dpdk_dev,
++};
++
+ /* *INDENT-ON* */
+ 
+ /* Dummy function to get us linked in. */
+diff --git a/src/plugins/dpdk/device/common.c b/src/plugins/dpdk/device/common.c
+index 0c43bfe02..2d2817287 100644
+--- a/src/plugins/dpdk/device/common.c
++++ b/src/plugins/dpdk/device/common.c
+@@ -192,6 +192,11 @@ dpdk_device_start (dpdk_device_t * xd)
+ 
+   rte_eth_allmulticast_enable (xd->port_id);
+ 
++  /* Set a flag indicating that device started.
++   * We need to know this when closing the device
++   */
++  xd->flags |= DPDK_DEVICE_FLAG_DEV_STARTED;
++
+   dpdk_log_info ("Interface %U started",
+ 		 format_dpdk_device_name, xd->port_id);
+ }
+@@ -210,6 +215,28 @@ dpdk_device_stop (dpdk_device_t * xd)
+ 		 format_dpdk_device_name, xd->port_id);
+ }
+ 
++void dpdk_device_close(dpdk_device_t *xd)
++{
++        if (xd->flags & DPDK_DEVICE_FLAG_PMD_INIT_FAIL)
++                return;
++
++        /* Relevant only if device started.. */
++        if (!(xd->flags & DPDK_DEVICE_FLAG_DEV_STARTED))
++                return;
++
++        /* Stop - just in case user forgot to call stop device */
++        if (xd->flags & DPDK_DEVICE_FLAG_ADMIN_UP) {
++                dpdk_device_stop(xd);
++                xd->flags &= ~DPDK_DEVICE_FLAG_ADMIN_UP;
++        }
++
++        rte_eth_dev_close(xd->port_id);
++
++        /* Remove the started flag */
++        xd->flags &= ~DPDK_DEVICE_FLAG_DEV_STARTED;
++        dpdk_log_info("Interface %U closed", format_dpdk_device_name, xd->port_id);
++}
++
+ void vl_api_force_rpc_call_main_thread (void *fp, u8 * data, u32 data_length);
+ 
+ always_inline int
+diff --git a/src/plugins/dpdk/device/dpdk.h b/src/plugins/dpdk/device/dpdk.h
+index c81f23d76..835996879 100644
+--- a/src/plugins/dpdk/device/dpdk.h
++++ b/src/plugins/dpdk/device/dpdk.h
+@@ -136,7 +136,8 @@ typedef uint16_t dpdk_portid_t;
+   _( 9, TX_OFFLOAD, "tx-offload") \
+   _(10, INTEL_PHDR_CKSUM, "intel-phdr-cksum") \
+   _(11, RX_FLOW_OFFLOAD, "rx-flow-offload") \
+-  _(12, RX_IP4_CKSUM, "rx-ip4-cksum")
++  _(12, RX_IP4_CKSUM, "rx-ip4-cksum") \
++  _(13, DEV_STARTED, "device-started")
+ 
+ enum
+ {
+@@ -383,6 +384,7 @@ typedef struct
+ void dpdk_device_setup (dpdk_device_t * xd);
+ void dpdk_device_start (dpdk_device_t * xd);
+ void dpdk_device_stop (dpdk_device_t * xd);
++void dpdk_device_close(dpdk_device_t *xd);
+ int dpdk_port_state_callback (dpdk_portid_t port_id,
+ 			      enum rte_eth_event_type type,
+ 			      void *param, void *ret_param);
+-- 
+2.34.1
+
