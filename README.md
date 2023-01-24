@@ -170,3 +170,10 @@ In order to use all three interfaces, the next command can be used:
 ```
 dpdk-testpmd --vdev=eth_mvpp2,iface=eth0,iface=eth1,iface=eth2 -- --txd=1024 --txpkts=1500 --tx-first --auto-start --forward-mode=txonly --nb-cores=1 --stats-period=1
 ```
+
+The output image will have the following DPDK applications:
+* dpdk-testpmd
+* dpdk-l2fwd
+* dpdk-l3fwd
+
+More applications can be copied from ```build/dpdk/build/examples``` or ```build/dpdk/build/app```

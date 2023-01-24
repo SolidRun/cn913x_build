@@ -401,6 +401,8 @@ e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/*.dtb $ROOTDIR/images/tmp/ubuntu-core.ex
 
 # Copy DPDK applications
 e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/app/dpdk-testpmd $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l2fwd $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l3fwd $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/bin/
 
 # Copy MUSDK
 cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/
