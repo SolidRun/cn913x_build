@@ -168,5 +168,5 @@ Run test-pmd
 In order to use all three interfaces, the next command can be used:
 
 ```
-/root/dpdk/dpdk-testpmd --vdev=eth_mvpp2,iface=eth0,iface=eth1,iface=eth2 -- --txd=1024 --txpkts=1500 --tx-first --auto-start --forward-mode=txonly --nb-cores=1 --stats-period=1
+dpdk-testpmd --vdev=eth_mvpp2,iface=eth0,iface=eth1,iface=eth2 -- --txd=1024 --txpkts=1500 --tx-first --auto-start --forward-mode=txonly --nb-cores=1 --stats-period=1
 ```
