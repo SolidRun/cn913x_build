@@ -1,0 +1,64 @@
+diff --git a/src/drivers/ppv2/cls/pp2_flow_rules.c b/src/drivers/ppv2/cls/pp2_flow_rules.c
+index 8b5301a..7de2916 100644
+--- a/src/drivers/ppv2/cls/pp2_flow_rules.c
++++ b/src/drivers/ppv2/cls/pp2_flow_rules.c
+@@ -459,7 +459,7 @@ int pp2_cls_lkp_dcod_enable(struct pp2_inst *inst, u16 fl_log_id)
+ 
+ 	if (!lkp_dcod_db.flow_len) {
+ 		/* there are no flow rules */
+-		pr_warn("skipping enable of fl_log_id=%d, no rules in flow\n", fl_log_id);
++		pr_debug("skipping enable of fl_log_id=%d, no rules in flow\n", fl_log_id);
+ 		return 0;
+ 	}
+ 
+@@ -3109,7 +3109,7 @@ static int pp2_cls_find_flows_per_lkp(uintptr_t cpu_slot,
+ 		}
+ 
+ 		if (!engine) {
+-			pr_err("didn't find any flows\n");
++			pr_debug("didn't find any flows\n");
+ 			break;
+ 		}
+ 
+diff --git a/src/drivers/ppv2/pp2_port_us.c b/src/drivers/ppv2/pp2_port_us.c
+index af551bd..4ef7843 100644
+--- a/src/drivers/ppv2/pp2_port_us.c
++++ b/src/drivers/ppv2/pp2_port_us.c
+@@ -531,9 +531,9 @@ int pp2_port_set_vlan_filtering(struct pp2_port *port, int enable)
+ 	rc = system(buf);
+ 	if (rc != 0) {
+ 		if (enable)
+-			pr_err("failed to enable vlan filtering\n");
++			pr_debug("failed to enable vlan filtering\n");
+ 		else
+-			pr_err("failed to disable vlan filtering\n");
++			pr_debug("failed to disable vlan filtering\n");
+ 
+ 		return rc;
+ 	}
+diff --git a/src/env/sys_dma.c b/src/env/sys_dma.c
+index 1425c7c..dc17de9 100644
+--- a/src/env/sys_dma.c
++++ b/src/env/sys_dma.c
+@@ -413,7 +413,7 @@ void *mv_sys_dma_mem_region_alloc(struct mv_sys_dma_mem_region *mem, size_t size
+ 
+ 	if (!mem) {
+ 		if (!warn_once) {
+-			pr_warn("(%s) redirected to mv_sys_dma_mem_alloc()\n", __func__);
++			pr_debug("(%s) redirected to mv_sys_dma_mem_alloc()\n", __func__);
+ 			warn_once = true;
+ 		}
+ 		return mv_sys_dma_mem_alloc(size, align);
+diff --git a/src/env/sys_dma_ks.c b/src/env/sys_dma_ks.c
+index 1231c1d..3aff1da 100644
+--- a/src/env/sys_dma_ks.c
++++ b/src/env/sys_dma_ks.c
+@@ -159,7 +159,7 @@ void *mv_sys_dma_mem_region_alloc(struct mv_sys_dma_mem_region *mem, size_t size
+ 
+ 	if (!mem) {
+ 		if (!warn_once) {
+-			pr_warn("(%s) redirected to mv_sys_dma_mem_alloc()\n", __func__);
++			pr_debug("(%s) redirected to mv_sys_dma_mem_alloc()\n", __func__);
+ 			warn_once = true;
+ 		}
+ 		return mv_sys_dma_mem_alloc(size, align);

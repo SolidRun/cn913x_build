@@ -349,7 +349,10 @@ if [[ ! -d $ROOTDIR/build/musdk-marvell-SDK11.22.07 ]]; then
 	tar -vxf sources-musdk-marvell-SDK11.22.07.tar.bz2
 	rm -f sources-musdk-marvell-SDK11.22.07.tar.bz2
 	cd musdk-marvell-SDK11.22.07
-	patch -p1 < $ROOTDIR/patches/musdk/*.patch
+	for i in `find $ROOTDIR/patches/musdk/*.patch`; do
+		patch -p1 < $i
+	done
+
 fi
 
 cd $ROOTDIR/build/musdk-marvell-SDK11.22.07
