@@ -8,7 +8,7 @@ They are used in SolidRun to quickly build images for development where those im
 The sources are pulled from:
 1. arm-trusted firmware: https://github.com/ARM-software/arm-trusted-firmware.git
 2. mv-ddr-marvell:  https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git
-3. u-boot: currently from marvell SDK
+3. u-boot: git://git.denx.de/u-boot.git v2019.10
 4. linux: https://github.com/torvalds/linux.git
 5. patches are supplied by Solid-Run in the patches/ directory
 6. binaries are supplied by Solid-Run in the binaries/ directory
@@ -65,17 +65,6 @@ There are a few parameters that must be taken to account:
 2. For CN9132 CEx7 base on Clearfog EVAL board, run:
         `BOARD_CONFIG=0 CP_NUM=3 ./runme`
 	generates *images/cn9132-cex7_config_0_ubuntu.img*
-
-## U-Boot based on Marevll's SDK
-The CN913x u-boot is not public yet, and is taken from Marvell's SDK10
-
-In order to use the script with the SDK patches, create a directory in ROOTDIR:
-
-`mkdir $ROOTDIR/patches-sdk-u-boot/`
-
-The script will apply the u-boot patches onto the mainline u-boot. In order to do so:
-
-Extract the git-u-boot-<version>-<release>.tar.bz2 under the destination folder git-u-boot-<version>-<release> and copy the patches to $ROOTDIR/patches-sdk-u-boot/
 
 
 ## DDR configuration and EEPROM
