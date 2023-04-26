@@ -1,0 +1,38 @@
+From db24289562eeb810360268dd5fcf650081aaeeb1 Mon Sep 17 00:00:00 2001
+From: Ben Peled <bpeled@marvell.com>
+Date: Mon, 24 Aug 2020 14:19:08 +0300
+Subject: [PATCH] cpufreq: armada: enable ap807-cpu-clk.
+
+commit f2fa5da50e422db6054d9af5d32ec1c730380cdc from
+git@git.assembla.com:cavium/WindRiver.linux.git
+
+adding ap807-cpu-clk option to cpu freq.
+ap-cpu-clk driver is already supporting ap807-cpu-clk.
+
+Signed-off-by: Ben Peled <bpeled@marvell.com>
+Change-Id: I4f4d3a7cf50c0b8cfc8cad4c9b554b7a22750aec
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/kernel/linux/+/49667
+Tested-by: sa_ip-sw-jenkins <sa_ip-sw-jenkins@marvell.com>
+Reviewed-by: Stefan Chulski <stefanc@marvell.com>
+Signed-off-by: Ruiqiang Hao <Ruiqiang.Hao@windriver.com>
+---
+ drivers/cpufreq/armada-8k-cpufreq.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/cpufreq/armada-8k-cpufreq.c b/drivers/cpufreq/armada-8k-cpufreq.c
+index b0fc5e84f857..36f85f0ed073 100644
+--- a/drivers/cpufreq/armada-8k-cpufreq.c
++++ b/drivers/cpufreq/armada-8k-cpufreq.c
+@@ -128,6 +128,9 @@ static int __init armada_8k_cpufreq_init(void)
+ 	struct cpumask cpus;
+ 
+ 	node = of_find_compatible_node(NULL, NULL, "marvell,ap806-cpu-clock");
++	if (!node)
++		node = of_find_compatible_node(NULL, NULL,
++					       "marvell,ap807-cpu-clock");
+ 	if (!node || !of_device_is_available(node)) {
+ 		of_node_put(node);
+ 		return -ENODEV;
+-- 
+2.25.1
+
