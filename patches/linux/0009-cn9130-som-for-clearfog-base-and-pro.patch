@@ -1,32 +1,36 @@
-From f05670f2be89726622db0f9d7bf2cba891332b2e Mon Sep 17 00:00:00 2001
+From 43c4b3cab0aca8db68272730aecb457bf7ee030c Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Mon, 22 Nov 2021 13:37:46 +0200
-Subject: [PATCH] dts cn9130 som for clearfog base and pro
+Subject: [PATCH 09/13] cn9130 som for clearfog base and pro
 
+Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---
  arch/arm64/boot/dts/marvell/Makefile          |   2 +
- .../arm64/boot/dts/marvell/cn9130-cf-base.dts | 371 +++++++++++++++
- arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts | 442 ++++++++++++++++++
- 3 files changed, 815 insertions(+)
+ .../arm64/boot/dts/marvell/cn9130-cf-base.dts | 415 ++++++++++++++++
+ arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts | 468 ++++++++++++++++++
+ 3 files changed, 885 insertions(+)
  create mode 100644 arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
  create mode 100644 arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts
 
 diff --git a/arch/arm64/boot/dts/marvell/Makefile b/arch/arm64/boot/dts/marvell/Makefile
-index fef06b676881..3597c985fc92 100644
+index 92e0d26ddfa2..eca656302858 100644
 --- a/arch/arm64/boot/dts/marvell/Makefile
 +++ b/arch/arm64/boot/dts/marvell/Makefile
-@@ -19,3 +19,5 @@ dtb-$(CONFIG_ARCH_MVEBU) += cn9132-db.dtb
+@@ -18,6 +18,8 @@ dtb-$(CONFIG_ARCH_MVEBU) += armada-8040-mcbin-singleshot.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += armada-8040-puzzle-m801.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += armada-8080-db.dtb
  dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cex7.dtb
- dtb-$(CONFIG_ARCH_MVEBU) += cn9131-cex7.dtb
- dtb-$(CONFIG_ARCH_MVEBU) += cn9132-cex7.dtb
 +dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-base.dtb
 +dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-pro.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-db.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-db-B.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-cex7.dtb
 diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
 new file mode 100644
-index 000000000000..159374683091
+index 000000000000..814511007bd7
 --- /dev/null
 +++ b/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
-@@ -0,0 +1,371 @@
+@@ -0,0 +1,415 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Copyright SolidRun Ltd.
@@ -37,6 +41,7 @@ index 000000000000..159374683091
 +#include "cn9130.dtsi"
 +
 +#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
 +
 +/ {
 +	model = "SolidRun CN9130 based SOM Clearfog Base";
@@ -129,6 +134,20 @@ index 000000000000..159374683091
 +		tx-fault-gpio = <&expander0 13 GPIO_ACTIVE_HIGH>;
 +		maximum-power-milliwatt = <2000>;
 +	};
++
++	keys {
++                compatible = "gpio-keys";
++                pinctrl-0 = <&cp0_button_pin>;
++                pinctrl-names = "default";
++
++		button0{
++			/* SW3 button */
++			label = "SW3";
++			gpios = <&cp0_gpio2 0 GPIO_ACTIVE_LOW>;
++			linux,can-disable;
++			linux,code = <BTN_0>;
++		};
++	};
 +};
 +
 +&uart0 {
@@ -170,15 +189,15 @@ index 000000000000..159374683091
 +	 * PCA9655 GPIO expander, up to 1MHz clock.
 +	 *  0-CON3 CLKREQ#
 +	 *  1-CON3 PERST#
-+	 *  2-CON2 PERST#
++	 *  2-M2 FUL_CARD_POWER_OFF
 +	 *  3-CON3 W_DISABLE
 +	 *  4-CON2 CLKREQ#
 +	 *  5-USB3 overcurrent
 +	 *  6-USB3 power
 +	 *  7-CON2 W_DISABLE
-+	 *  8-JP4 P1
++	 *  8-M2 W_DISABLE
 +	 *  9-JP4 P4
-+	 * 10-JP4 P5
++	 * 10-M2 RESET
 +	 * 11-m.2 DEVSLP
 +	 * 12-SFP_LOS
 +	 * 13-SFP_TX_FAULT
@@ -202,6 +221,12 @@ index 000000000000..159374683091
 +			input;
 +			line-name = "pcie1.0-clkreq";
 +		};
++		m2_ful_card_power_off {
++			gpio-hog;
++			gpios = <2 GPIO_ACTIVE_HIGH>;
++			output-high;
++			line-name = "m2-ful-card-power-off";
++		};
 +		pcie1_0_w_disable {
 +			gpio-hog;
 +			gpios = <3 GPIO_ACTIVE_LOW>;
@@ -219,6 +244,18 @@ index 000000000000..159374683091
 +			gpios = <6 GPIO_ACTIVE_HIGH>;
 +			output-high;
 +			line-name = "usb3-power";
++		};
++		m2_w_disable {
++			gpio-hog;
++			gpios = <8 GPIO_ACTIVE_LOW>;
++			output-low;
++			line-name = "m2-w-disable";
++		};
++		m2_reset {
++			gpio-hog;
++			gpios = <10 GPIO_ACTIVE_HIGH>;
++			output-high;
++			line-name = "m2-reset";
 +		};
 +		m2_devslp {
 +			gpio-hog;
@@ -283,6 +320,13 @@ index 000000000000..159374683091
 +	usb-phy = <&cp0_usb3_0_phy0>;
 +	phy-names = "usb";
 +};
++
++&cp0_usb3_1 {
++        status = "okay";
++	usb-phy = <&cp0_usb3_0_phy1>;
++};
++
++
 +
 +/* SRDS #2 - SFP+ 10GE */
 +&cp0_eth0 {
@@ -394,16 +438,20 @@ index 000000000000..159374683091
 +			marvell, pins = "mpp40";
 +                        marvell,function = "synce1";
 +		};*/
++		cp0_button_pin: cp0-button-pin {
++                	marvell,pins = "mpp32";
++                	marvell,function = "gpio";
++        	};
 +	};
 +};
 +
 +
 diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts
 new file mode 100644
-index 000000000000..bede63d244e2
+index 000000000000..54068d75542a
 --- /dev/null
 +++ b/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts
-@@ -0,0 +1,442 @@
+@@ -0,0 +1,468 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Copyright SolidRun Ltd.
@@ -414,6 +462,7 @@ index 000000000000..bede63d244e2
 +#include "cn9130.dtsi"
 +
 +#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
 +
 +/ {
 +	model = "SolidRun CN9130 based SOM Clearfog Pro";
@@ -505,6 +554,20 @@ index 000000000000..bede63d244e2
 +		tx-disable-gpio = <&expander0 14 GPIO_ACTIVE_HIGH>;
 +		tx-fault-gpio = <&expander0 13 GPIO_ACTIVE_HIGH>;
 +		maximum-power-milliwatt = <2000>;
++	};
++
++	keys {
++                compatible = "gpio-keys";
++                pinctrl-0 = <&cp0_button_pin>;
++                pinctrl-names = "default";
++
++		button0{
++			/* SW3 button */
++			label = "SW3";
++			gpios = <&cp0_gpio2 0 GPIO_ACTIVE_LOW>;
++			linux,can-disable;
++			linux,code = <BTN_0>;
++		};
 +	};
 +};
 +
@@ -726,6 +789,13 @@ index 000000000000..bede63d244e2
 +	phy-names = "usb";
 +};
 +
++&cp0_usb3_1 {
++        status = "okay";
++	usb-phy = <&cp0_usb3_0_phy1>;
++};
++
++
++
 +/* SRDS #2 - SFP+ 10GE */
 +&cp0_eth0 {
 +	status = "okay";
@@ -842,10 +912,14 @@ index 000000000000..bede63d244e2
 +			marvell, pins = "mpp40";
 +                        marvell,function = "synce1";
 +		};*/
++		cp0_button_pin: cp0-button-pin {
++                	marvell,pins = "mpp32";
++                	marvell,function = "gpio";
++        	};
 +	};
 +};
 +
 +
 -- 
-2.25.1
+2.35.3
 

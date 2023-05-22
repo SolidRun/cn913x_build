@@ -1,16 +1,36 @@
-From f5918fcdffc6251b2f934341f9bae279f59bb984 Mon Sep 17 00:00:00 2001
+From ac5666231c5948d52bc0fe72b1ef616d5e247684 Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Thu, 7 Jul 2022 22:03:46 +0300
-Subject: [PATCH 2/2] linux: add support cn9131-bldn-mbv
+Subject: [PATCH 11/13] linux: add support cn9131-bldn-mbv
 
 Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---
+ arch/arm64/boot/dts/marvell/Makefile          |   2 +
  .../boot/dts/marvell/cn9130-bldn-mbv.dts      | 406 ++++++++++++++++++
  .../boot/dts/marvell/cn9131-bldn-mbv.dts      | 254 +++++++++++
- 2 files changed, 660 insertions(+)
+ 3 files changed, 662 insertions(+)
  create mode 100644 arch/arm64/boot/dts/marvell/cn9130-bldn-mbv.dts
  create mode 100644 arch/arm64/boot/dts/marvell/cn9131-bldn-mbv.dts
 
+diff --git a/arch/arm64/boot/dts/marvell/Makefile b/arch/arm64/boot/dts/marvell/Makefile
+index eefa70f56027..cb50fa884702 100644
+--- a/arch/arm64/boot/dts/marvell/Makefile
++++ b/arch/arm64/boot/dts/marvell/Makefile
+@@ -17,12 +17,14 @@ dtb-$(CONFIG_ARCH_MVEBU) += armada-8040-mcbin.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += armada-8040-mcbin-singleshot.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += armada-8040-puzzle-m801.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += armada-8080-db.dtb
++dtb-$(CONFIG_ARCH_MVEBU) += cn9130-bldn-mbv.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cex7.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-base.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-pro.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-solidwan.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-db.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-db-B.dtb
++dtb-$(CONFIG_ARCH_MVEBU) += cn9131-bldn-mbv.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-cex7.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-cf-solidwan.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-db.dtb
 diff --git a/arch/arm64/boot/dts/marvell/cn9130-bldn-mbv.dts b/arch/arm64/boot/dts/marvell/cn9130-bldn-mbv.dts
 new file mode 100644
 index 000000000000..42faebf55e28
@@ -684,5 +704,5 @@ index 000000000000..b0140000141c
 +};
 +                                                   
 -- 
-2.25.1
+2.35.3
 

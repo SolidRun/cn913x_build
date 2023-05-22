@@ -1,0 +1,98 @@
+From 050fcc7d4fe42ff420f373b900828399bb0e8714 Mon Sep 17 00:00:00 2001
+From: "Russell King (Oracle)" <rmk+kernel@armlinux.org.uk>
+Date: Sat, 20 May 2023 11:18:30 +0100
+Subject: [PATCH 06/13] net: sfp: add support for a couple of copper multi-rate
+ modules
+
+Add support for the Fiberstore SFP-10G-T and Walsun HXSX-ATRC-1
+modules. Internally, the PCB silkscreen has what seems to be a part
+number of WT_502. Fiberstore use v2.2 whereas Walsun use v2.6.
+
+These modules contain a Marvell AQrate AQR113C PHY, accessible through
+I2C 0x51 using the "rollball" protocol. In both cases, the PHY is
+programmed to use 10GBASE-R with pause-mode rate adaption.
+
+Unlike the other rollball modules, these only need a four second delay
+before we can talk to the PHY.
+
+Signed-off-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+---
+ drivers/net/phy/sfp.c | 34 +++++++++++++++++++++++++++++++---
+ 1 file changed, 31 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index 766f86bdc4a0..106956de3405 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -166,7 +166,6 @@ static const enum gpiod_flags gpio_flags[] = {
+  * on board (for a copper SFP) time to initialise.
+  */
+ #define T_WAIT			msecs_to_jiffies(50)
+-#define T_WAIT_ROLLBALL		msecs_to_jiffies(25000)
+ #define T_START_UP		msecs_to_jiffies(300)
+ #define T_START_UP_BAD_GPON	msecs_to_jiffies(60000)
+ 
+@@ -333,6 +332,27 @@ static void sfp_fixup_ignore_tx_fault(struct sfp *sfp)
+ 	sfp->tx_fault_ignore = true;
+ }
+ 
++// For 10GBASE-T short-reach modules
++static void sfp_fixup_10gbaset_30m(struct sfp *sfp)
++{
++	sfp->id.base.connector = SFF8024_CONNECTOR_RJ45;
++	sfp->id.base.extended_cc = SFF8024_ECC_10GBASE_T_SR;
++}
++
++static void sfp_fixup_rollball_proto(struct sfp *sfp, unsigned int secs)
++{
++	sfp->mdio_protocol = MDIO_I2C_ROLLBALL;
++	sfp->module_t_wait = msecs_to_jiffies(secs * 1000);
++}
++
++static void sfp_fixup_fs_10gt(struct sfp *sfp)
++{
++	sfp_fixup_10gbaset_30m(sfp);
++
++	// These SFPs need 4 seconds before the PHY can be accessed
++	sfp_fixup_rollball_proto(sfp, 4);
++}
++
+ static void sfp_fixup_halny_gsfp(struct sfp *sfp)
+ {
+ 	/* Ignore the TX_FAULT and LOS signals on this module.
+@@ -344,8 +364,8 @@ static void sfp_fixup_halny_gsfp(struct sfp *sfp)
+ 
+ static void sfp_fixup_rollball(struct sfp *sfp)
+ {
+-	sfp->mdio_protocol = MDIO_I2C_ROLLBALL;
+-	sfp->module_t_wait = T_WAIT_ROLLBALL;
++	// Rollball SFPs need 25 seconds before the PHY can be accessed
++	sfp_fixup_rollball_proto(sfp, 25);
+ }
+ 
+ static void sfp_fixup_rollball_cc(struct sfp *sfp)
+@@ -393,6 +413,10 @@ static const struct sfp_quirk sfp_quirks[] = {
+ 	SFP_QUIRK("ALCATELLUCENT", "3FE46541AA", sfp_quirk_2500basex,
+ 		  sfp_fixup_long_startup),
+ 
++	// Fiberstore SFP-10G-T doesn't identify as copper, and uses the
++	// Rollball protocol to talk to the PHY.
++	SFP_QUIRK_F("FS", "SFP-10G-T", sfp_fixup_fs_10gt),
++
+ 	SFP_QUIRK_F("HALNy", "HL-GSFP", sfp_fixup_halny_gsfp),
+ 
+ 	// HG MXPD-483II-F 2.5G supports 2500Base-X, but incorrectly reports
+@@ -410,6 +434,10 @@ static const struct sfp_quirk sfp_quirks[] = {
+ 
+ 	SFP_QUIRK_M("UBNT", "UF-INSTANT", sfp_quirk_ubnt_uf_instant),
+ 
++	// Walsun HXSX-ATRC-1 doesn't identify as copper, and uses the
++	// Rollball protocol to talk to the PHY.
++	SFP_QUIRK_F("Walsun", "HXSX-ATRC-1", sfp_fixup_fs_10gt),
++
+ 	SFP_QUIRK_F("OEM", "SFP-10G-T", sfp_fixup_rollball_cc),
+ 	SFP_QUIRK_F("OEM", "RTSFP-10", sfp_fixup_rollball_cc),
+ 	SFP_QUIRK_F("OEM", "RTSFP-10G", sfp_fixup_rollball_cc),
+-- 
+2.35.3
+

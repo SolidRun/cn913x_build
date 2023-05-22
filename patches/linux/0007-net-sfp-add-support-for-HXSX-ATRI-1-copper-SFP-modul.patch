@@ -1,0 +1,36 @@
+From d984227dcf6a76abd069ce37e0ec980e24e0c235 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Mon, 22 May 2023 17:52:42 +0300
+Subject: [PATCH 07/13] net: sfp: add support for HXSX-ATRI-1 copper SFP+
+ module
+
+Walsun offers commercial ("C") and industrial ("I") variants of
+multi-rate copper SFP+ modules.
+
+Add quirk for HXSX-ATRI-1 using same parameters as the already supported
+commercial variant HXSX-ATRC-1.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/net/phy/sfp.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index 106956de3405..d27ea2c20c0a 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -434,9 +434,10 @@ static const struct sfp_quirk sfp_quirks[] = {
+ 
+ 	SFP_QUIRK_M("UBNT", "UF-INSTANT", sfp_quirk_ubnt_uf_instant),
+ 
+-	// Walsun HXSX-ATRC-1 doesn't identify as copper, and uses the
++	// Walsun HXSX-ATR[CI]-1 don't identify as copper, and use the
+ 	// Rollball protocol to talk to the PHY.
+ 	SFP_QUIRK_F("Walsun", "HXSX-ATRC-1", sfp_fixup_fs_10gt),
++	SFP_QUIRK_F("Walsun", "HXSX-ATRI-1", sfp_fixup_fs_10gt),
+ 
+ 	SFP_QUIRK_F("OEM", "SFP-10G-T", sfp_fixup_rollball_cc),
+ 	SFP_QUIRK_F("OEM", "RTSFP-10", sfp_fixup_rollball_cc),
+-- 
+2.35.3
+

@@ -1,7 +1,7 @@
-From db24289562eeb810360268dd5fcf650081aaeeb1 Mon Sep 17 00:00:00 2001
+From 02b806f7a5c369ccafd86d652482dc3fdb0a8674 Mon Sep 17 00:00:00 2001
 From: Ben Peled <bpeled@marvell.com>
 Date: Mon, 24 Aug 2020 14:19:08 +0300
-Subject: [PATCH] cpufreq: armada: enable ap807-cpu-clk.
+Subject: [PATCH 01/13] cpufreq: armada: enable ap807-cpu-clk.
 
 commit f2fa5da50e422db6054d9af5d32ec1c730380cdc from
 git@git.assembla.com:cavium/WindRiver.linux.git
@@ -34,4 +34,5 @@ index b0fc5e84f857..36f85f0ed073 100644
  		of_node_put(node);
  		return -ENODEV;
 -- 
-2.25.1
+2.35.3
+

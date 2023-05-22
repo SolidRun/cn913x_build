@@ -1,7 +1,7 @@
-From 4bac3283fac48bffc35be35a99ef805b4d9f5a0f Mon Sep 17 00:00:00 2001
+From 91df0839af70e96ba38b2a475019a2418998c613 Mon Sep 17 00:00:00 2001
 From: Alex Leibovich <alexl@marvell.com>
 Date: Sun, 2 Jan 2022 14:29:17 +0200
-Subject: [PATCH 17/17] dts: armada-ap807: updated thermal compatibility
+Subject: [PATCH 05/13] dts: armada-ap807: updated thermal compatibility
 
 Updated compatibility with "marvell,armada-ap807-thermal"
 
@@ -29,5 +29,5 @@ index 4a23f65d475f..d095396ce31e 100644
  
  &ap_sdhci0 {
 -- 
-2.37.3
+2.35.3
 

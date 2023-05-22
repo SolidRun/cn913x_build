@@ -1,7 +1,7 @@
-From 8e6953a7ee7f143c657e9adeb8d8a37a641328e2 Mon Sep 17 00:00:00 2001
+From 862314c486809e2e44684099db58154903ccaf96 Mon Sep 17 00:00:00 2001
 From: Alex Leibovich <alexl@marvell.com>
 Date: Sun, 2 Jan 2022 12:18:25 +0200
-Subject: [PATCH 16/17] thermal: armada: ap807: Thermal data structure added
+Subject: [PATCH 04/13] thermal: armada: ap807: Thermal data structure added
 
 -Renamed init function to armada_ap80x_init
 -Added thermal driver compatibility structure for ap807
@@ -21,7 +21,7 @@ Reviewed-by: Stefan Chulski <stefanc@marvell.com>
  1 file changed, 30 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/thermal/armada_thermal.c b/drivers/thermal/armada_thermal.c
-index 545e43d7d464..e6f11cce810c 100644
+index b38fb04c4631..8cbf63522faa 100644
 --- a/drivers/thermal/armada_thermal.c
 +++ b/drivers/thermal/armada_thermal.c
 @@ -233,7 +233,7 @@ static void armada380_init(struct platform_device *pdev,
@@ -85,5 +85,5 @@ index 545e43d7d464..e6f11cce810c 100644
  		.compatible = "marvell,armada-cp110-thermal",
  		.data       = &armada_cp110_data,
 -- 
-2.37.3
+2.35.3
 

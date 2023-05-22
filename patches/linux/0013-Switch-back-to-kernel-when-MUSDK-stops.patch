@@ -1,7 +1,7 @@
-From 4c7d34844dfab055f2a944476e4308ef850eea02 Mon Sep 17 00:00:00 2001
+From d970db12d7bea5f0a6db824b02f7869557d43344 Mon Sep 17 00:00:00 2001
 From: Alvaro Karsz <alvaro.karsz@solid-run.com>
 Date: Thu, 19 Jan 2023 16:34:45 +0200
-Subject: [PATCH] Switch back to kernel when MUSDK stops
+Subject: [PATCH 13/13] Switch back to kernel when MUSDK stops
 
 This commit fixes the issue described in a3d6b3ac84efccea74704c9ce4fdf3eff4210cf0.
 
@@ -14,10 +14,10 @@ Signed-off-by: Alvaro Karsz <alvaro.karsz@solid-run.com>
  1 file changed, 46 insertions(+), 27 deletions(-)
 
 diff --git a/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c b/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c
-index 8bf808bcf..6b56167cf 100644
+index 6190f00c8427..6c4596fc534f 100644
 --- a/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c
 +++ b/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c
-@@ -5043,7 +5043,7 @@ static int mvpp2_change_mtu(struct net_device *dev, int mtu)
+@@ -5048,7 +5048,7 @@ static int mvpp2_change_mtu(struct net_device *dev, int mtu)
  {
  	struct mvpp2_port *port = netdev_priv(dev);
  	bool running = netif_running(dev);
@@ -26,10 +26,10 @@ index 8bf808bcf..6b56167cf 100644
  	int err;
  
  	if (port->flags & MVPP22_F_IF_MUSDK) {
-@@ -5062,29 +5062,34 @@ static int mvpp2_change_mtu(struct net_device *dev, int mtu)
- 			netdev_err(dev, "Jumbo frames are not supported with XDP\n");
- 			return -EINVAL;
- 		}
+@@ -5069,29 +5069,34 @@ static int mvpp2_change_mtu(struct net_device *dev, int mtu)
+ 	}
+ 
+ 	if (MVPP2_RX_PKT_SIZE(mtu) > MVPP2_BM_LONG_PKT_SIZE) {
 -		if (priv->percpu_pools) {
 -			netdev_warn(dev, "mtu %d too high, switching to shared buffers", mtu);
 -			mvpp2_bm_switch_buffers(priv, false);
@@ -55,36 +55,36 @@ index 8bf808bcf..6b56167cf 100644
 -	}
 +		/* We won't use per cpu pools */
 +		// if (priv->percpu_pools) {
-+		// 	netdev_warn(dev, "mtu %d too high, switching to shared buffers", mtu);
-+		// 	mvpp2_bm_switch_buffers(priv, false);
++		//	netdev_warn(dev, "mtu %d too high, switching to shared buffers", mtu);
++		//	mvpp2_bm_switch_buffers(priv, false);
 +		// }
 +	}
 +
 +	/* We won't use per cpu pools */
 +
-+	// else {
-+	// 	bool jumbo = false;
-+	// 	int i;
++	// } else {
++	//	bool jumbo = false;
++	//	int i;
 +	//
-+	// 	for (i = 0; i < priv->port_count; i++)
-+	// 		if (priv->port_list[i] != port &&
-+	// 		    MVPP2_RX_PKT_SIZE(priv->port_list[i]->dev->mtu) >
-+	// 		    MVPP2_BM_LONG_PKT_SIZE) {
-+	// 			jumbo = true;
-+	// 			break;
-+	// 		}
++	//	for (i = 0; i < priv->port_count; i++)
++	//		if (priv->port_list[i] != port &&
++	//		    MVPP2_RX_PKT_SIZE(priv->port_list[i]->dev->mtu) >
++	//		    MVPP2_BM_LONG_PKT_SIZE) {
++	//			jumbo = true;
++	//			break;
++	//		}
 +	//
-+	// 	/* No port is using jumbo frames */
-+	// 	if (!jumbo) {
-+	// 		dev_info(port->dev->dev.parent,
-+	// 			 "all ports have a low MTU, switching to per-cpu buffers");
-+	// 		mvpp2_bm_switch_buffers(priv, true);
-+	// 	}
++	//	/* No port is using jumbo frames */
++	//	if (!jumbo) {
++	//		dev_info(port->dev->dev.parent,
++	//			 "all ports have a low MTU, switching to per-cpu buffers");
++	//		mvpp2_bm_switch_buffers(priv, true);
++	//	}
 +	// }
  
  	if (running)
  		mvpp2_stop_dev(port);
-@@ -5142,6 +5147,7 @@ static int mvpp2_port_musdk_cfg(struct net_device *dev, bool ena)
+@@ -5149,6 +5154,7 @@ static int mvpp2_port_musdk_cfg(struct net_device *dev, bool ena)
  			netdev_update_features(dev);
  		}
  	} else {
@@ -92,7 +92,7 @@ index 8bf808bcf..6b56167cf 100644
  		/* Back to Kernel mode */
  		us = port->us_cfg;
  		port->nqvecs = us->nqvecs;
-@@ -5153,6 +5159,15 @@ static int mvpp2_port_musdk_cfg(struct net_device *dev, bool ena)
+@@ -5160,6 +5166,15 @@ static int mvpp2_port_musdk_cfg(struct net_device *dev, bool ena)
  		}
  		kfree(us);
  		port->us_cfg = NULL;
@@ -108,7 +108,7 @@ index 8bf808bcf..6b56167cf 100644
  	}
  	return 0;
  }
-@@ -7604,9 +7619,13 @@ static int mvpp2_probe(struct platform_device *pdev)
+@@ -7606,9 +7621,13 @@ static int mvpp2_probe(struct platform_device *pdev)
  			priv->sysctrl_base = NULL;
  	}
  
@@ -126,5 +126,5 @@ index 8bf808bcf..6b56167cf 100644
  	mvpp2_setup_bm_pool();
  
 -- 
-2.34.1
+2.35.3
 

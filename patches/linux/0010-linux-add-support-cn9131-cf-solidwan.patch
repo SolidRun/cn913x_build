@@ -1,32 +1,36 @@
-From bbf0ab29a35aeac0818627097f7f12c550caa836 Mon Sep 17 00:00:00 2001
+From cbad64d18c6613eac8964321762dd6dc2fa0b145 Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Thu, 7 Jul 2022 22:02:53 +0300
-Subject: [PATCH 1/2] linux: add support cn9131-cf-solidwan
+Subject: [PATCH 10/13] linux: add support cn9131-cf-solidwan
 
 Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---
- arch/arm64/boot/dts/marvell/Makefile          |   4 +
+ arch/arm64/boot/dts/marvell/Makefile          |   2 +
  arch/arm64/boot/dts/marvell/armada-cp11x.dtsi |  10 +
- .../boot/dts/marvell/cn9130-cf-solidwan.dts   | 410 ++++++++++++++++++
+ .../boot/dts/marvell/cn9130-cf-solidwan.dts   | 415 ++++++++++++++++++
  .../boot/dts/marvell/cn9131-cf-solidwan.dts   | 240 ++++++++++
- 4 files changed, 664 insertions(+)
+ 4 files changed, 667 insertions(+)
  create mode 100644 arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
  create mode 100644 arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
 
 diff --git a/arch/arm64/boot/dts/marvell/Makefile b/arch/arm64/boot/dts/marvell/Makefile
-index 5d7563d666b6..20606404448c 100644
+index eca656302858..eefa70f56027 100644
 --- a/arch/arm64/boot/dts/marvell/Makefile
 +++ b/arch/arm64/boot/dts/marvell/Makefile
-@@ -28,3 +28,7 @@ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-cex7.dtb
- dtb-$(CONFIG_ARCH_MVEBU) += cn9132-cex7.dtb
+@@ -20,9 +20,11 @@ dtb-$(CONFIG_ARCH_MVEBU) += armada-8080-db.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cex7.dtb
  dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-base.dtb
  dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-pro.dtb
-+dtb-$(CONFIG_ARCH_MVEBU) += cn9130-bldn-mbv.dtb
-+dtb-$(CONFIG_ARCH_MVEBU) += cn9131-bldn-mbv.dtb
 +dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-solidwan.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-db.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-db-B.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-cex7.dtb
 +dtb-$(CONFIG_ARCH_MVEBU) += cn9131-cf-solidwan.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-db.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-db-B.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9132-cex7.dtb
 diff --git a/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi b/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi
-index 3bd2182817fb..84afbd9dbad5 100644
+index d6c0990a267d..c22066b018a1 100644
 --- a/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi
 +++ b/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi
 @@ -177,6 +177,16 @@ CP11X_LABEL(mdio): mdio@12a200 {
@@ -48,10 +52,10 @@ index 3bd2182817fb..84afbd9dbad5 100644
  			#address-cells = <1>;
 diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
 new file mode 100644
-index 000000000000..e47a767964e4
+index 000000000000..27dc9b27199e
 --- /dev/null
 +++ b/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
-@@ -0,0 +1,410 @@
+@@ -0,0 +1,415 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Copyright SolidRun Ltd.
@@ -249,6 +253,11 @@ index 000000000000..e47a767964e4
 +		reg = <0x53>;
 +		pagesize = <16>;
 +	};
++	carrier_eeprom@52 {
++                compatible = "atmel,24c02";
++                reg = <0x52>;
++                pagesize = <8>;
++        };
 +};
 +
 +/* I2C Master */
@@ -709,5 +718,5 @@ index 000000000000..7915ce2d1232
 +};
 +
 -- 
-2.25.1
+2.35.3
 

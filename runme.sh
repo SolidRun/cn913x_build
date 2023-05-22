@@ -51,7 +51,7 @@ fi
 # Misc
 ###############################################################################
 
-RELEASE=${RELEASE:-v5.15}
+RELEASE=${RELEASE:-v6.1.29}
 DPDK_RELEASE=${DPDK_RELEASE:-v22.07}
 
 SHALLOW=${SHALLOW:true}
@@ -158,7 +158,7 @@ for i in $SDK_COMPONENTS; do
 		if [ "x$i" == "xlinux" ]; then
 			echo "Cloing https://www.github.com/torvalds/$i release $RELEASE"
 			cd $ROOTDIR/build
-			git clone $SHALLOW_FLAG git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux -b $RELEASE
+			git clone $SHALLOW_FLAG https://kernel.googlesource.com/pub/scm/linux/kernel/git/stable/linux.git linux -b $RELEASE
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
 			echo "Cloning atf from mainline"
 			cd $ROOTDIR/build

@@ -1,7 +1,7 @@
-From 5b5755b32b4f8eaf51c72a12269b27b24b10b011 Mon Sep 17 00:00:00 2001
+From dc10ed88a44166427b02e6290a0fe6b607a0aacf Mon Sep 17 00:00:00 2001
 From: Alvaro Karsz <alvaro.karsz@solid-run.com>
 Date: Mon, 31 Oct 2022 12:40:38 +0200
-Subject: [PATCH] DPDK support for MVPP2.
+Subject: [PATCH 12/13] DPDK support for MVPP2.
 
 Allow DPDK to take control over the network interfaces.
 
@@ -18,7 +18,7 @@ Signed-off-by: Alvaro Karsz <alvaro.karsz@solid-run.com>
  4 files changed, 216 insertions(+), 37 deletions(-)
 
 diff --git a/arch/arm64/boot/dts/marvell/armada-ap80x.dtsi b/arch/arm64/boot/dts/marvell/armada-ap80x.dtsi
-index 661447210..5d4994db7 100644
+index a06a0a889c43..4903f95ece42 100644
 --- a/arch/arm64/boot/dts/marvell/armada-ap80x.dtsi
 +++ b/arch/arm64/boot/dts/marvell/armada-ap80x.dtsi
 @@ -301,6 +301,11 @@ ap_thermal: thermal-sensor@80 {
@@ -34,7 +34,7 @@ index 661447210..5d4994db7 100644
  	};
  
 diff --git a/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi b/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi
-index 84afbd9db..11be3043b 100644
+index c22066b018a1..8bbac7e762ed 100644
 --- a/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi
 +++ b/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi
 @@ -126,6 +126,13 @@ CP11X_LABEL(eth2): eth2 {
@@ -52,7 +52,7 @@ index 84afbd9db..11be3043b 100644
  		CP11X_LABEL(comphy): phy@120000 {
  			compatible = "marvell,comphy-cp110";
 diff --git a/drivers/net/ethernet/marvell/mvpp2/mvpp2.h b/drivers/net/ethernet/marvell/mvpp2/mvpp2.h
-index cf8acabb9..58c8dcd3f 100644
+index 11e603686a27..8d7f834d8a6f 100644
 --- a/drivers/net/ethernet/marvell/mvpp2/mvpp2.h
 +++ b/drivers/net/ethernet/marvell/mvpp2/mvpp2.h
 @@ -865,6 +865,7 @@
@@ -63,7 +63,7 @@ index cf8acabb9..58c8dcd3f 100644
  
  /* Marvell tag types */
  enum mvpp2_tag_type {
-@@ -1268,6 +1269,9 @@ struct mvpp2_port {
+@@ -1269,6 +1270,9 @@ struct mvpp2_port {
  	enum hwtstamp_tx_types tx_hwtstamp_type;
  	struct mvpp2_hwtstamp_queue tx_hwtstamp_queue[2];
  
@@ -74,7 +74,7 @@ index cf8acabb9..58c8dcd3f 100644
  	bool tx_fc;
  };
 diff --git a/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c b/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c
-index d5c92e43f..8bf808bcf 100644
+index b399bdb1ca36..6190f00c8427 100644
 --- a/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c
 +++ b/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c
 @@ -68,7 +68,6 @@ static int queue_mode = MVPP2_QDIST_MULTI_MODE;
@@ -95,7 +95,7 @@ index d5c92e43f..8bf808bcf 100644
  	thread = mvpp2_cpu_to_thread(port->priv, cpu);
  
  	val = MVPP2_CAUSE_MISC_SUM_MASK |
-@@ -1852,6 +1854,13 @@ static u64 mvpp2_read_count(struct mvpp2_port *port,
+@@ -1854,6 +1856,13 @@ static u64 mvpp2_read_count(struct mvpp2_port *port,
  	return val;
  }
  
@@ -109,7 +109,7 @@ index d5c92e43f..8bf808bcf 100644
  /* Some counters are accessed indirectly by first writing an index to
   * MVPP2_CTRS_IDX. The index can represent various resources depending on the
   * register we access, it can be a hit counter for some classification tables,
-@@ -1948,42 +1957,48 @@ static void mvpp2_ethtool_get_strings(struct net_device *netdev, u32 sset,
+@@ -1950,42 +1959,48 @@ static void mvpp2_ethtool_get_strings(struct net_device *netdev, u32 sset,
  	struct mvpp2_port *port = netdev_priv(netdev);
  	int i, q;
  
@@ -186,7 +186,7 @@ index d5c92e43f..8bf808bcf 100644
  	}
  }
  
-@@ -2132,6 +2147,9 @@ static int mvpp2_ethtool_get_sset_count(struct net_device *dev, int sset)
+@@ -2134,6 +2149,9 @@ static int mvpp2_ethtool_get_sset_count(struct net_device *dev, int sset)
  
  	if (sset == ETH_SS_STATS)
  		return MVPP2_N_ETHTOOL_STATS(port->ntxqs, port->nrxqs);
@@ -196,7 +196,7 @@ index d5c92e43f..8bf808bcf 100644
  
  	return -EOPNOTSUPP;
  }
-@@ -2206,6 +2224,8 @@ static void mvpp22_pcs_reset_deassert(struct mvpp2_port *port)
+@@ -2210,6 +2228,8 @@ static void mvpp22_pcs_reset_deassert(struct mvpp2_port *port,
  static inline void mvpp2_gmac_max_rx_size_set(struct mvpp2_port *port)
  {
  	u32 val;
@@ -205,7 +205,7 @@ index d5c92e43f..8bf808bcf 100644
  
  	val = readl(port->base + MVPP2_GMAC_CTRL_0_REG);
  	val &= ~MVPP2_GMAC_MAX_RX_SIZE_MASK;
-@@ -2218,6 +2238,8 @@ static inline void mvpp2_gmac_max_rx_size_set(struct mvpp2_port *port)
+@@ -2222,6 +2242,8 @@ static inline void mvpp2_gmac_max_rx_size_set(struct mvpp2_port *port)
  static inline void mvpp2_xlg_max_rx_size_set(struct mvpp2_port *port)
  {
  	u32 val;
@@ -214,7 +214,7 @@ index d5c92e43f..8bf808bcf 100644
  
  	val =  readl(port->base + MVPP22_XLG_CTRL1_REG);
  	val &= ~MVPP22_XLG_CTRL1_FRAMESIZELIMIT_MASK;
-@@ -2321,6 +2343,9 @@ static void mvpp2_egress_enable(struct mvpp2_port *port)
+@@ -2325,6 +2347,9 @@ static void mvpp2_egress_enable(struct mvpp2_port *port)
  	int queue;
  	int tx_port_num = mvpp2_egress_port(port);
  
@@ -224,7 +224,7 @@ index d5c92e43f..8bf808bcf 100644
  	/* Enable all initialized TXs. */
  	qmap = 0;
  	for (queue = 0; queue < port->ntxqs; queue++) {
-@@ -2343,6 +2368,9 @@ static void mvpp2_egress_disable(struct mvpp2_port *port)
+@@ -2347,6 +2372,9 @@ static void mvpp2_egress_disable(struct mvpp2_port *port)
  	int delay;
  	int tx_port_num = mvpp2_egress_port(port);
  
@@ -234,7 +234,7 @@ index d5c92e43f..8bf808bcf 100644
  	/* Issue stop command for active channels only */
  	mvpp2_write(port->priv, MVPP2_TXP_SCHED_PORT_INDEX_REG, tx_port_num);
  	reg_data = (mvpp2_read(port->priv, MVPP2_TXP_SCHED_Q_CMD_REG)) &
-@@ -3411,9 +3439,11 @@ static void mvpp2_isr_handle_link(struct mvpp2_port *port, bool link)
+@@ -3415,9 +3443,11 @@ static void mvpp2_isr_handle_link(struct mvpp2_port *port, bool link)
  		mvpp2_egress_enable(port);
  		mvpp2_ingress_enable(port);
  		netif_carrier_on(dev);
@@ -248,7 +248,7 @@ index d5c92e43f..8bf808bcf 100644
  		netif_carrier_off(dev);
  		mvpp2_ingress_disable(port);
  		mvpp2_egress_disable(port);
-@@ -3607,6 +3637,7 @@ static u32 mvpp2_skb_tx_csum(struct mvpp2_port *port, struct sk_buff *skb)
+@@ -3611,6 +3641,7 @@ static u32 mvpp2_skb_tx_csum(struct mvpp2_port *port, struct sk_buff *skb)
  	return MVPP2_TXD_L4_CSUM_NOT | MVPP2_TXD_IP_CSUM_DISABLE;
  }
  
@@ -256,7 +256,7 @@ index d5c92e43f..8bf808bcf 100644
  static void mvpp2_xdp_finish_tx(struct mvpp2_port *port, u16 txq_id, int nxmit, int nxmit_byte)
  {
  	unsigned int thread = mvpp2_cpu_to_thread(port->priv, smp_processor_id());
-@@ -4587,7 +4618,8 @@ static void mvpp2_start_dev(struct mvpp2_port *port)
+@@ -4592,7 +4623,8 @@ static void mvpp2_start_dev(struct mvpp2_port *port)
  		mvpp2_acpi_start(port);
  	}
  
@@ -266,7 +266,7 @@ index d5c92e43f..8bf808bcf 100644
  
  	clear_bit(0, &port->state);
  }
-@@ -4733,7 +4765,8 @@ static void mvpp2_irqs_deinit(struct mvpp2_port *port)
+@@ -4738,7 +4770,8 @@ static void mvpp2_irqs_deinit(struct mvpp2_port *port)
  static bool mvpp22_rss_is_supported(struct mvpp2_port *port)
  {
  	return (queue_mode == MVPP2_QDIST_MULTI_MODE) &&
@@ -276,7 +276,7 @@ index d5c92e43f..8bf808bcf 100644
  }
  
  static int mvpp2_open(struct net_device *dev)
-@@ -4755,6 +4788,10 @@ static int mvpp2_open(struct net_device *dev)
+@@ -4760,6 +4793,10 @@ static int mvpp2_open(struct net_device *dev)
  		netdev_err(dev, "mvpp2_prs_mac_da_accept own addr failed\n");
  		return err;
  	}
@@ -287,7 +287,7 @@ index d5c92e43f..8bf808bcf 100644
  	err = mvpp2_prs_tag_mode_set(port->priv, port->id, MVPP2_TAG_TYPE_MH);
  	if (err) {
  		netdev_err(dev, "mvpp2_prs_tag_mode_set failed\n");
-@@ -4765,7 +4802,7 @@ static int mvpp2_open(struct net_device *dev)
+@@ -4770,7 +4807,7 @@ static int mvpp2_open(struct net_device *dev)
  		netdev_err(dev, "mvpp2_prs_def_flow failed\n");
  		return err;
  	}
@@ -296,7 +296,7 @@ index d5c92e43f..8bf808bcf 100644
  	/* Allocate the Rx/Tx queues */
  	err = mvpp2_setup_rxqs(port);
  	if (err) {
-@@ -5009,6 +5046,11 @@ static int mvpp2_change_mtu(struct net_device *dev, int mtu)
+@@ -5014,6 +5051,11 @@ static int mvpp2_change_mtu(struct net_device *dev, int mtu)
  	struct mvpp2 *priv = port->priv;
  	int err;
  
@@ -308,7 +308,7 @@ index d5c92e43f..8bf808bcf 100644
  	if (!IS_ALIGNED(MVPP2_RX_PKT_SIZE(mtu), 8)) {
  		netdev_info(dev, "illegal MTU value %d, round to %d\n", mtu,
  			    ALIGN(MVPP2_RX_PKT_SIZE(mtu), 8));
-@@ -5065,6 +5107,94 @@ static int mvpp2_change_mtu(struct net_device *dev, int mtu)
+@@ -5072,6 +5114,94 @@ static int mvpp2_change_mtu(struct net_device *dev, int mtu)
  	return err;
  }
  
@@ -403,24 +403,24 @@ index d5c92e43f..8bf808bcf 100644
  static int mvpp2_check_pagepool_dma(struct mvpp2_port *port)
  {
  	enum dma_data_direction dma_dir = DMA_FROM_DEVICE;
-@@ -5421,12 +5551,16 @@ mvpp2_ethtool_get_coalesce(struct net_device *dev,
+@@ -5425,12 +5555,16 @@ mvpp2_ethtool_get_coalesce(struct net_device *dev,
  static void mvpp2_ethtool_get_drvinfo(struct net_device *dev,
  				      struct ethtool_drvinfo *drvinfo)
  {
 +	struct mvpp2_port *port = netdev_priv(dev);
 +
- 	strlcpy(drvinfo->driver, MVPP2_DRIVER_NAME,
+ 	strscpy(drvinfo->driver, MVPP2_DRIVER_NAME,
  		sizeof(drvinfo->driver));
- 	strlcpy(drvinfo->version, MVPP2_DRIVER_VERSION,
+ 	strscpy(drvinfo->version, MVPP2_DRIVER_VERSION,
  		sizeof(drvinfo->version));
- 	strlcpy(drvinfo->bus_info, dev_name(&dev->dev),
+ 	strscpy(drvinfo->bus_info, dev_name(&dev->dev),
  		sizeof(drvinfo->bus_info));
 +	drvinfo->n_priv_flags = (port->priv->hw_version == MVPP21) ?
 +			0 : ARRAY_SIZE(mvpp22_priv_flags_strings);
  }
  
- static void mvpp2_ethtool_get_ringparam(struct net_device *dev,
-@@ -5698,6 +5832,31 @@ static int mvpp2_ethtool_set_rxfh_context(struct net_device *dev,
+ static void
+@@ -5708,6 +5842,31 @@ static int mvpp2_ethtool_set_rxfh_context(struct net_device *dev,
  
  	return mvpp22_port_rss_ctx_indir_set(port, *rss_context, indir);
  }
@@ -452,7 +452,7 @@ index d5c92e43f..8bf808bcf 100644
  /* Device ops */
  
  static const struct net_device_ops mvpp2_netdev_ops = {
-@@ -5741,6 +5900,8 @@ static const struct ethtool_ops mvpp2_eth_tool_ops = {
+@@ -5751,6 +5910,8 @@ static const struct ethtool_ops mvpp2_eth_tool_ops = {
  	.set_rxfh		= mvpp2_ethtool_set_rxfh,
  	.get_rxfh_context	= mvpp2_ethtool_get_rxfh_context,
  	.set_rxfh_context	= mvpp2_ethtool_set_rxfh_context,
@@ -461,7 +461,7 @@ index d5c92e43f..8bf808bcf 100644
  };
  
  /* Used for PPv2.1, or PPv2.2 with the old Device Tree binding that
-@@ -6647,7 +6808,8 @@ static void mvpp2_mac_link_up(struct phylink_config *config,
+@@ -6572,7 +6733,8 @@ static void mvpp2_mac_link_up(struct phylink_config *config,
  
  	mvpp2_egress_enable(port);
  	mvpp2_ingress_enable(port);
@@ -471,7 +471,7 @@ index d5c92e43f..8bf808bcf 100644
  }
  
  static void mvpp2_mac_link_down(struct phylink_config *config,
-@@ -6670,7 +6832,8 @@ static void mvpp2_mac_link_down(struct phylink_config *config,
+@@ -6595,7 +6757,8 @@ static void mvpp2_mac_link_down(struct phylink_config *config,
  		}
  	}
  
@@ -481,7 +481,7 @@ index d5c92e43f..8bf808bcf 100644
  	mvpp2_egress_disable(port);
  	mvpp2_ingress_disable(port);
  
-@@ -7000,7 +7163,7 @@ static int mvpp2_port_probe(struct platform_device *pdev,
+@@ -6998,7 +7161,7 @@ static int mvpp2_port_probe(struct platform_device *pdev,
  static void mvpp2_port_remove(struct mvpp2_port *port)
  {
  	int i;
@@ -491,5 +491,5 @@ index d5c92e43f..8bf808bcf 100644
  	if (port->phylink)
  		phylink_destroy(port->phylink);
 -- 
-2.32.0
+2.35.3
 

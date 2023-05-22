@@ -1,7 +1,7 @@
-From b4fcd85393424f0c9f52d1bf498737ff7b27e8b8 Mon Sep 17 00:00:00 2001
+From 3d65375595a9c87825b9ab69ede70f0741af0fb3 Mon Sep 17 00:00:00 2001
 From: Alex Leibovich <alexl@marvell.com>
 Date: Sun, 2 Jan 2022 17:38:46 +0200
-Subject: [PATCH 15/17] Documentation: bindings: armada-thermal: Added
+Subject: [PATCH 03/13] Documentation: bindings: armada-thermal: Added
  armada-ap807-thermal
 
 Added marvell,armada-ap807-thermal to compatible documentation
@@ -28,5 +28,5 @@ index b0bee7e42038..ab8b8fccc7af 100644
  
  Note: these bindings are deprecated for AP806/CP110 and should instead
 -- 
-2.37.3
+2.35.3
 
