@@ -1,0 +1,92 @@
+From 49dfffab6dbfb7feea78bf706b48f575ffa83464 Mon Sep 17 00:00:00 2001
+From: Kareiman-Fadly <kareiman.fadly@solid-run.com>
+Date: Mon, 26 Jun 2023 16:01:14 +0300
+Subject: [PATCH 14/14] Add x2 5GB eth ports phy support - cn9132
+
+---
+ arch/arm64/boot/dts/marvell/cn9130-cex7.dts | 2 +-
+ arch/arm64/boot/dts/marvell/cn9131-cex7.dts | 9 ++++-----
+ arch/arm64/boot/dts/marvell/cn9132-cex7.dts | 7 +++----
+ 3 files changed, 8 insertions(+), 10 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+index 9636dc01993c..92f690288f57 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+@@ -129,7 +129,7 @@ &cp0_ethernet {
+ /* SFP+ 10GE */
+ &cp0_eth0 {
+ 	status = "okay";
+-	phy-mode = "10gbase-kr";
++	phy-mode = "10gbase-r";
+ 	phys = <&cp0_comphy4 0>;
+ 	managed = "in-band-status";
+ 	sfp = <&cp0_sfp_eth0>;
+diff --git a/arch/arm64/boot/dts/marvell/cn9131-cex7.dts b/arch/arm64/boot/dts/marvell/cn9131-cex7.dts
+index 2296cb68ec03..37b3b3c11d90 100644
+--- a/arch/arm64/boot/dts/marvell/cn9131-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9131-cex7.dts
+@@ -47,7 +47,7 @@ cp1_sfp_eth0: sfp_eth0{
+ 		pinctrl-0 = <&cp1_sfp_present_pins>;
+ 		status = "okay";
+ 	};
+-	
++
+ };
+ 
+ /* Instantiate the first slave CP115  */
+@@ -81,10 +81,9 @@ &cp1_ethernet {
+ /* 5GE PHY0 */
+ &cp1_eth0 {
+ 	status = "okay";
+-	phy-mode = "55555gbase-r";
++	phy-mode = "5gbase-r";
+ 	phys = <&cp1_comphy2 0>;
+ 	phy = <&phy1>;
+-	sfp = <&cp1_sfp_eth0>;
+ };
+ 
+ &cp1_gpio1 {
+@@ -98,9 +97,9 @@ &cp1_gpio2 {
+ &cp1_xmdio {
+ 	status = "okay";
+ 	pinctrl-0 = <&cp1_xmdio_pins>;
+-	phy1: ethernet-phy@0 {
++	phy1: ethernet-phy@8 {
+ 		compatible = "ethernet-phy-ieee802.3-c45";
+-		reg = <0>;
++		reg = <8>;
+ 	};
+ };
+ 
+diff --git a/arch/arm64/boot/dts/marvell/cn9132-cex7.dts b/arch/arm64/boot/dts/marvell/cn9132-cex7.dts
+index 45958b67aa29..231b10c66a7f 100644
+--- a/arch/arm64/boot/dts/marvell/cn9132-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9132-cex7.dts
+@@ -85,10 +85,9 @@ &cp2_ethernet {
+ /* 10GE Port */
+ &cp2_eth0 {
+ 	status = "okay";
+-	phy-mode = "5gbase-kr";
++	phy-mode = "5gbase-r";
+ 	phys = <&cp2_comphy2 0>;
+ 	phy = <&phy2>;
+-	sfp = <&cp2_sfp_eth0>;
+ };
+ 
+ &cp2_gpio1 {
+@@ -109,9 +108,9 @@ &cp2_i2c1 {
+ &cp2_xmdio {
+         status = "okay";
+         pinctrl-0 = <&cp2_xmdio_pins>;
+-        phy2: ethernet-phy@0 {
++        phy2: ethernet-phy@8 {
+                 compatible = "ethernet-phy-ieee802.3-c45";
+-                reg = <0>;
++                reg = <8>;
+         };
+ };
+ 
+-- 
+2.39.0
+
