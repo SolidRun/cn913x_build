@@ -1,0 +1,95 @@
+From 70baa0ce5cc08942aa79ef1eae05b44344303234 Mon Sep 17 00:00:00 2001
+From: Kareiman-Fadly <kareiman.fadly@solid-run.com>
+Date: Mon, 10 Jul 2023 15:13:53 +0300
+Subject: [PATCH] Add phy support - 1G eth ports - Belden cn9131
+
+---
+ arch/arm64/boot/dts/marvell/cn9130-bldn-mbv.dts |  2 +-
+ arch/arm64/boot/dts/marvell/cn9131-bldn-mbv.dts | 17 ++++++++---------
+ 2 files changed, 9 insertions(+), 10 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-bldn-mbv.dts b/arch/arm64/boot/dts/marvell/cn9130-bldn-mbv.dts
+index 42faebf55e28..03a40beca74a 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-bldn-mbv.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-bldn-mbv.dts
+@@ -246,7 +246,7 @@ &cp0_eth0 {
+ 	managed = "in-band-status";
+ 
+ 	/* for SFP direct connectivity */
+-//      sfp = <&cp0_sfp_eth0>;
++        sfp = <&cp0_sfp_eth0>;
+ 
+         /* MBV-A BCM PHY  | MBV-B VSC Microchip PHY */
+ //      phy = <&cp0_sfi_phy8>; //address 0x01000
+diff --git a/arch/arm64/boot/dts/marvell/cn9131-bldn-mbv.dts b/arch/arm64/boot/dts/marvell/cn9131-bldn-mbv.dts
+index b0140000141c..a8252c1ab53b 100644
+--- a/arch/arm64/boot/dts/marvell/cn9131-bldn-mbv.dts
++++ b/arch/arm64/boot/dts/marvell/cn9131-bldn-mbv.dts
+@@ -16,7 +16,6 @@ aliases {
+ 		gpio3 = &cp1_gpio1;
+ 		gpio4 = &cp1_gpio2;
+ 		ethernet3 = &cp1_eth0;
+-		ethernet4 = &cp1_eth1;
+ 	};
+ 	cp1_reg_usb3_vbus0: cp1_usb3_vbus@0 {
+ 		compatible = "regulator-fixed";
+@@ -42,7 +41,7 @@ cp1_usb3_0_phy1: cp1_usb3_phy@1 {
+ 	};
+ 	cp1_sfp_eth0: sfp_eth0{
+ 		compatible = "sff,sfp";
+-	//	i2c-bus = <&i2c_sfp1>;
++		i2c-bus = <&i2c_sfp1>;
+                 mod-def0-gpio = <&cp1_gpio2 18 GPIO_ACTIVE_LOW>; //MPP50
+                 maximum-power-milliwatt = <2000>;
+                 pinctrl-0 = <&sfp_cp1_present_pins>; 
+@@ -104,10 +103,10 @@ &cp1_eth0 {
+         managed = "in-band-status";
+ 
+ 	/* for SFP direct connectivity */
+-//	sfp = <&cp1_sfp_eth0>;
++	sfp = <&cp1_sfp_eth0>;
+         
+ 	/* MBV-A BCM PHY  | MBV-B VSC Microchip PHY */
+-	phy = <&cp1_sfi_phy9>; //address 0x01001
++//	phy = <&cp1_sfi_phy9>; //address 0x01001
+ };
+ 
+ /* SRDS #3 - NC */
+@@ -146,10 +145,10 @@ &cp1_xmdio {
+         status = "okay";
+  	pinctrl-0 = <&cp1_xmdio_pins>;
+         cp0_sfi_phy8: ethernet-phy@8 {
+-                reg = <8>;
++                reg = <0x8>;
+         };
+         cp1_sfi_phy9: ethernet-phy@9 {
+-                reg = <9>;
++                reg = <0x9>;
+         };
+ };
+ 
+@@ -157,10 +156,10 @@ &cp1_mdio {
+         status = "okay";
+         pinctrl-0 = <&cp1_mdio_pins>;
+         cp0_vsc_phy18: ethernet-phy@18 {
+-                reg = <18>;
++                reg = <0x18>;
+         };
+         cp0_vsc_phy19: ethernet-phy@19 {
+-                reg = <19>;
++                reg = <0x19>;
+         };
+ 
+ };
+@@ -239,7 +238,7 @@ cp1_uart1_pins: cp1-uart1-pins-1 {
+ 
+ &cp0_eth0 {
+         status = "okay";
+-        phy = <&cp0_sfi_phy8>; //address 0x01000
++//        phy = <&cp0_sfi_phy8>; //address 0x01000
+ };
+ 
+ &cp0_eth1 {
+-- 
+2.39.0
+
