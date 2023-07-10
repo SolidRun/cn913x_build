@@ -339,6 +339,9 @@ mkdir -p $ROOTDIR/images/tmp/boot
 make INSTALL_MOD_PATH=$ROOTDIR/images/tmp/ INSTALL_MOD_STRIP=1 modules_install
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/cn913*.dtb $ROOTDIR/images/tmp/boot
+cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-clearfog-gt-8k.dtb $ROOTDIR/images/tmp/boot
+cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin.dtb $ROOTDIR/images/tmp/boot
+cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin-singleshot.dtb $ROOTDIR/images/tmp/boot
 
 
 ###############################################################################
