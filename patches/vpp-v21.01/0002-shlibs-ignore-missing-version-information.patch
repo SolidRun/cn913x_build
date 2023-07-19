@@ -1,0 +1,29 @@
+From beab0b08f4280fe30cb6e371fc5727845603188d Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 19 Jul 2023 17:56:21 +0300
+Subject: [PATCH] shlibs: ignore missing version information
+
+Some dependencies might not be packaged, such as Marvell
+"musdk". In such case no poin in aborting the build.
+
+Add override for dh_shlibdeps step, and pass --ignore-missing-info
+option to ignore missing dependency information.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ build/external/deb/debian/rules | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/build/external/deb/debian/rules b/build/external/deb/debian/rules
+index 2b1157e5e..87f3e06c0 100755
+--- a/build/external/deb/debian/rules
++++ b/build/external/deb/debian/rules
+@@ -25,3 +25,5 @@ override_dh_install:
+ 	make $(MAKE_ARGS) install
+ 	dh_install -p$(PKG) --autodest /opt
+ 
++override_dh_shlibdeps:
++	dh_shlibdeps -- --ignore-missing-info
+-- 
+2.25.1
+

@@ -1,0 +1,43 @@
+From 99b36ebcbc2e08b0e6e1b254dd38846bc440ad55 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Thu, 20 Jul 2023 11:43:28 +0300
+Subject: [PATCH] marvell: fix "warn_unused_result" when calling
+ vlib_trace_buffer
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ src/plugins/marvell/pp2/input.c | 18 +++++++++++-------
+ 1 file changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/src/plugins/marvell/pp2/input.c b/src/plugins/marvell/pp2/input.c
+index ec3d37671..c873bf8b6 100644
+--- a/src/plugins/marvell/pp2/input.c
++++ b/src/plugins/marvell/pp2/input.c
+@@ -59,13 +59,17 @@ mrvl_pp2_input_trace (vlib_main_t * vm, vlib_node_runtime_t * node, u32 next0,
+ 		      mrvl_pp2_if_t * ppif, struct pp2_ppio_desc *d)
+ {
+   mrvl_pp2_input_trace_t *tr;
+-  vlib_trace_buffer (vm, node, next0, b0,
+-		     /* follow_chain */ 0);
+-  vlib_set_trace_count (vm, node, --(*n_trace));
+-  tr = vlib_add_trace (vm, node, b0, sizeof (*tr));
+-  tr->next_index = next0;
+-  tr->hw_if_index = ppif->hw_if_index;
+-  clib_memcpy_fast (&tr->desc, d, sizeof (struct pp2_ppio_desc));
++
++  if (PREDICT_TRUE
++      (vlib_trace_buffer (vm, node, next0, b0,
++                          /* follow_chain */ 0)))
++    {
++      vlib_set_trace_count (vm, node, --(*n_trace));
++      tr = vlib_add_trace (vm, node, b0, sizeof (*tr));
++      tr->next_index = next0;
++      tr->hw_if_index = ppif->hw_if_index;
++      clib_memcpy_fast (&tr->desc, d, sizeof (struct pp2_ppio_desc));
++    }
+ }
+ 
+ static_always_inline u16
+-- 
+2.25.1
+

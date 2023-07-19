@@ -137,7 +137,7 @@ The runme script will clone the version specified by the <b>DPDK_RELEASE</b> arg
 
 > Please note that once DPDK is cloned, it won't be cloned again, even if the DPDK_RELEASE argument is different. Please delete the build/dpdk directory in order to invoke a new clone.
 
-## Running DPDK
+### Running DPDK
 Allocate hugepages for DPDK, for example:
 
 ```
@@ -166,3 +166,10 @@ The output image will have the following DPDK applications:
 * dpdk-l3fwd
 
 More applications can be copied from ```build/dpdk/build/examples``` or ```build/dpdk/build/app```
+
+## VPP
+
+VPP is supported for all native interfaces of CN9130, CN9131, CN9132.
+However interfaces connected to managed ethernet switches (e.g. Clearfog Pro) are not supported.
+
+Please see [vpp.md](vpp.md) for details.

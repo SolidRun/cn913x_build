@@ -357,7 +357,7 @@ fi
 
 cd $ROOTDIR/build/musdk-marvell-SDK11.22.07
 ./bootstrap
-./configure --host=aarch64-linux-gnu
+./configure --host=aarch64-linux-gnu CFLAGS="-fPIC -O2"
 make -j${PARALLEL}
 make install
 cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma
