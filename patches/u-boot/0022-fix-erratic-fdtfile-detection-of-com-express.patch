@@ -1,0 +1,58 @@
+From bcff29556eb0416f57bb1b88198a28e38972d1e7 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Mon, 24 Jul 2023 17:21:20 +0200
+Subject: [PATCH 22/23] fix erratic fdtfile detection of com-express
+
+Change the sequence in which SKU carrier prefixes are tested so that
+"C***" (COM-Express) matches last.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ board/Marvell/octeontx2_cn913x/board.c | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index 35c8464ea4..8c06a6c18d 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -189,7 +189,9 @@ static void get_fdtfile_from_tlv_eeprom(u8 *buffer, size_t length) {
+ 			}
+ 		} else {
+ 			// parse sku - processor or carrier indicated at index 2-6
+-			if(memcmp(&sku[2], "CFCB", 4) == 0) {
++			if(memcmp(&sku[2], "S9130", 4) == 0) {
++				// SoM - S913x
++			} else if(memcmp(&sku[2], "CFCB", 4) == 0) {
+ 				// Clearfog Base
+ 				strcpy(carrier, "cf-base");
+ 
+@@ -201,20 +203,18 @@ static void get_fdtfile_from_tlv_eeprom(u8 *buffer, size_t length) {
+ 
+ 				// Carrier has no extra CPs
+ 				strcpy(cpu, "9130");
+-			} else if(memcmp(&sku[2], "C", 1) == 0) {
+-				// COM-Express 7 - C9130 / C9131 / C9132 ...
+-				strcpy(carrier, "cex7");
+-
+-				// COM can have additional CPs indicated in next 4 chars
+-				memcpy(cpu, &sku[2+1], 4);
+-			} else if(memcmp(&sku[2], "S9130", 4) == 0) {
+-				// SoM - S913x
+ 			} else if(memcmp(&sku[2], "CFSW", 4) == 0) {
+ 				// SolidWan SOM S9131
+ 				strcpy(carrier, "cf-solidwan");
+ 
+ 				// Carrier has 1 extra CPs
+ 				strcpy(cpu, "9131");
++			} else if(memcmp(&sku[2], "C", 1) == 0) {
++				// COM-Express 7 - C9130 / C9131 / C9132 ...
++				strcpy(carrier, "cex7");
++
++				// COM can have additional CPs indicated in next 4 chars
++				memcpy(cpu, &sku[2+1], 4);
+ 			} else {
+ 				pr_err("%s: did not recognise SKU %s!\n", __func__, sku);
+ 			}
+-- 
+2.35.3
+

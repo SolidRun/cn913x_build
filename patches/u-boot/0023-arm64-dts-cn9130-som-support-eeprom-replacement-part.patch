@@ -1,0 +1,74 @@
+From 1479c41db7e1846eb720240a0dce7a78860ab507 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Mon, 24 Jul 2023 17:24:09 +0200
+Subject: [PATCH 23/23] arm64: dts: cn9130-som: support eeprom replacement part
+ for rev. 1.3
+
+SoM revision 1.3 has replaced M24C02-WMN6TP with ST24C02WP supporting
+smaller page size for writes.
+Update the page-size in device-tree to 8, supporting both variants.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9130-cf-base.dts     | 4 ++--
+ arch/arm/dts/cn9130-cf-pro.dts      | 4 ++--
+ arch/arm/dts/cn9130-cf-solidwan.dts | 4 ++--
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm/dts/cn9130-cf-base.dts b/arch/arm/dts/cn9130-cf-base.dts
+index 355c9d8ed0..0121ee857f 100644
+--- a/arch/arm/dts/cn9130-cf-base.dts
++++ b/arch/arm/dts/cn9130-cf-base.dts
+@@ -229,11 +229,11 @@
+ 		pagesize = <8>;
+ 	};
+ 
+-	/* M24C02-WMN6TP */
++	/* M24C02-WMN6TP / ST24C02WP */
+ 	som_eeprom@53 {
+ 		compatible = "atmel,24c02";
+ 		reg = <0x53>;
+-		pagesize = <16>;
++		pagesize = <8>;
+ 	};
+ };
+ 
+diff --git a/arch/arm/dts/cn9130-cf-pro.dts b/arch/arm/dts/cn9130-cf-pro.dts
+index 6931818cf6..7d2aa3900a 100644
+--- a/arch/arm/dts/cn9130-cf-pro.dts
++++ b/arch/arm/dts/cn9130-cf-pro.dts
+@@ -235,11 +235,11 @@
+ 		pagesize = <8>;
+ 	};
+ 
+-	/* M24C02-WMN6TP */
++	/* M24C02-WMN6TP / ST24C02WP */
+ 	som_eeprom@53 {
+ 		compatible = "atmel,24c02";
+ 		reg = <0x53>;
+-		pagesize = <16>;
++		pagesize = <8>;
+ 	};
+ };
+ 
+diff --git a/arch/arm/dts/cn9130-cf-solidwan.dts b/arch/arm/dts/cn9130-cf-solidwan.dts
+index cb4aca11c2..98c874f63b 100644
+--- a/arch/arm/dts/cn9130-cf-solidwan.dts
++++ b/arch/arm/dts/cn9130-cf-solidwan.dts
+@@ -178,11 +178,11 @@
+ 		pagesize = <0x08>;
+ 	};
+ 
+-	/* M24C02-WMN6TP */
++	/* M24C02-WMN6TP / ST24C02WP */
+ 	som_eeprom@53 {
+ 		compatible = "atmel,24c02";
+ 		reg = <0x53>;
+-		pagesize = <0x16>;
++		pagesize = <0x8>;
+ 	};
+ };
+ 
+-- 
+2.35.3
+

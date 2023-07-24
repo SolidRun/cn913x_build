@@ -47,7 +47,7 @@ make install
   ```
   git am ../0001-DPDK-plugin-new-cli-command-to-close-a-dpdk-virtual-.patch
   git am ../0002-shlibs-ignore-missing-version-information.patch
-  TODO
+  git am ../0003-marvell-fix-warn_unused_result-when-calling-vlib_tra.patch
   ```
 
 - Apply DPDK Patches (from `patches/dpdk-v20.11/`):

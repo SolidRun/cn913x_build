@@ -1,0 +1,41 @@
+From 1e1229bb03056cd7fa0eb3037c45bda199301a0b Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Mon, 24 Jul 2023 17:19:25 +0200
+Subject: [PATCH 21/23] arm64: dts: cn9131-cf-solidwan: update model property
+ to be consistent
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9130-cf-solidwan.dts | 2 +-
+ arch/arm/dts/cn9131-cf-solidwan.dts | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/dts/cn9130-cf-solidwan.dts b/arch/arm/dts/cn9130-cf-solidwan.dts
+index d55730cf63..cb4aca11c2 100644
+--- a/arch/arm/dts/cn9130-cf-solidwan.dts
++++ b/arch/arm/dts/cn9130-cf-solidwan.dts
+@@ -9,7 +9,7 @@
+ #include "cn9130-som.dtsi"
+ 
+ / {
+-	model = "SolidRun CN9130 based SOM ClearFog SolidWAN ";
++	model = "SolidRun CN9130 SolidWAN";
+ 	compatible = "marvell,cn9130-db", "marvell,cn91xx", "marvell,cn9030-vd",
+ 				 "marvell,cn9030", "marvell,armada-ap806-quad",
+ 				 "marvell,armada-ap806", "marvell,armada70x0";
+diff --git a/arch/arm/dts/cn9131-cf-solidwan.dts b/arch/arm/dts/cn9131-cf-solidwan.dts
+index e5aad26108..30079662c8 100644
+--- a/arch/arm/dts/cn9131-cf-solidwan.dts
++++ b/arch/arm/dts/cn9131-cf-solidwan.dts
+@@ -11,7 +11,7 @@
+ #include "cn9131-cf-solidwan.dtsi"
+ 
+ / {
+-	model = "Belden CN9131 based Platform";
++	model = "SolidRun CN9131 SolidWAN";
+ 	compatible = "marvell,cn9131-db", "marvell,armada-ap806-quad",
+ 				 "marvell,armada-ap806";
+ };
+-- 
+2.35.3
+
