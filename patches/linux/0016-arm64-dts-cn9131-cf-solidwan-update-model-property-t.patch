@@ -1,0 +1,41 @@
+From 70bc082beff0c17758836f6239d8872eaf5a7453 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Mon, 24 Jul 2023 17:31:09 +0200
+Subject: [PATCH 16/17] arm64: dts: cn9131-cf-solidwan: update model property
+ to be consistent
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts | 2 +-
+ arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
+index 27dc9b27199e..1016c16db0d1 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
+@@ -11,7 +11,7 @@
+ #include <dt-bindings/input/input.h>
+ 
+ / {
+-	model = "SolidRun CN9130 based SOM SolidWan";
++	model = "SolidRun CN9130 SolidWan";
+ 
+ 	chosen {
+ 		stdout-path = "serial0:115200n8";
+diff --git a/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts b/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
+index 7915ce2d1232..359e9378c929 100644
+--- a/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
++++ b/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
+@@ -8,7 +8,7 @@
+ #include "cn9130-cf-solidwan.dts"
+ 
+ / {
+-	model = "CN9131 based BLDN MBV";
++	model = "SolidRun CN9131 SolidWAN";
+ 	compatible = "marvell,cn9131", "marvell,cn9130",
+ 		     "marvell,armada-ap807-quad", "marvell,armada-ap807";
+ 
+-- 
+2.35.3
+
