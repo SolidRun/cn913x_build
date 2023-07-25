@@ -1,0 +1,27 @@
+From 9edaee2eb75bdeb0c2b4353cc8ac2180b6fee557 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Tue, 25 Jul 2023 11:54:36 +0200
+Subject: [PATCH] board: cn913x som: read mac addresses from eeprom
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ board/Marvell/octeontx2_cn913x/board.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index 8c06a6c18d..4df0c33b84 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -246,6 +246,9 @@ int board_late_init(void)
+ 	if (!env_get("fdtfile"))
+ 		env_set("fdtfile", fdtfile);
+ 
++	/* read MAC addresses and save in environment */
++	mac_read_from_eeprom();
++
+ #if CONFIG_IS_ENABLED(OCTEONTX_SERIAL_BOOTCMD)
+ 	if (init_bootcmd_console())
+ 		printf("Failed to init bootcmd input\n");
+-- 
+2.35.3
+

@@ -1,0 +1,28 @@
+From c392e5c4b90ef83e59527164a929e64f444ed1fa Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Tue, 25 Jul 2023 11:49:32 +0200
+Subject: [PATCH] arm64: dts: cn9131-cf-solidwan: add alias for ethernet5
+
+u-boot uses aliases "ethernet*" from linux device-tree to inject mac
+addresses. Add alias for port #6 (ethernet5) to enable MAC assignment.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts b/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
+index 359e9378c929..6aa5c6ac93dc 100644
+--- a/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
++++ b/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
+@@ -17,6 +17,7 @@ aliases {
+ 		gpio4 = &cp1_gpio2;
+ 		ethernet3 = &cp1_eth0;
+ 		ethernet4 = &cp1_eth1;
++		ethernet5 = &cp1_eth2;
+ 	};
+ 	cp1_reg_usb3_vbus0: cp1_usb3_vbus@0 {
+ 		compatible = "regulator-fixed";
+-- 
+2.35.3
+
