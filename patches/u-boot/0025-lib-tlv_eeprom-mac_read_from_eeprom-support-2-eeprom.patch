@@ -1,0 +1,68 @@
+From 0641088a733d6e19541e2b868ce1d6d5b474801b Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Tue, 25 Jul 2023 11:52:57 +0200
+Subject: [PATCH] lib: tlv_eeprom: mac_read_from_eeprom: support 2 eeproms
+
+Update mac_read_from_eeprom function to read from 2 eeproms
+successively, collecting any mac addrsses found on either.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ lib/tlv/tlv_eeprom.c | 19 ++++++++++++++++---
+ 1 file changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/lib/tlv/tlv_eeprom.c b/lib/tlv/tlv_eeprom.c
+index e2c7a0d664..b8b2a1babf 100644
+--- a/lib/tlv/tlv_eeprom.c
++++ b/lib/tlv/tlv_eeprom.c
+@@ -670,16 +670,16 @@ int read_tlvinfo_tlv_eeprom(void *eeprom, struct tlvinfo_header **hdr,
+  *
+  *  This function must be called after relocation.
+  */
+-int mac_read_from_eeprom(void)
++int _mac_read_from_eeprom(int devnum)
+ {
+ 	unsigned int i;
++	static unsigned int j = 0;
+ 	int eeprom_index;
+ 	struct tlvinfo_tlv *eeprom_tlv;
+ 	int maccount;
+ 	u8 macbase[6];
+ 	u8 eeprom[TLV_INFO_MAX_LEN];
+ 	struct tlvinfo_header *eeprom_hdr = to_header(eeprom);
+-	int devnum = 0; // TODO: support multiple EEPROMs
+ 
+ 	puts("EEPROM: ");
+ 
+@@ -708,7 +708,8 @@ int mac_read_from_eeprom(void)
+ 			sprintf(ethaddr, "%02X:%02X:%02X:%02X:%02X:%02X",
+ 				macbase[0], macbase[1], macbase[2],
+ 				macbase[3], macbase[4], macbase[5]);
+-			sprintf(enetvar, i ? "eth%daddr" : "ethaddr", i);
++			sprintf(enetvar, j ? "eth%daddr" : "ethaddr", j);
++			j++;
+ 			/* Only initialize environment variables that are blank
+ 			 * (i.e. have not yet been set)
+ 			 */
+@@ -735,6 +736,18 @@ int mac_read_from_eeprom(void)
+ 
+ 	return 0;
+ }
++int mac_read_from_eeprom(void)
++{
++	int ret[2];
++
++	ret[0] = _mac_read_from_eeprom(0);
++	ret[1] = _mac_read_from_eeprom(1);
++
++	if (!ret[0] && !ret[1])
++		return ret[0];
++
++	return 0;
++}
+ 
+ /**
+  *  populate_serial_number - read the serial number from EEPROM
+-- 
+2.35.3
+
