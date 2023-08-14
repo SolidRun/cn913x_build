@@ -1,0 +1,41 @@
+From b475b0e2c65ea7c8f7d09852ea69313646a255c9 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Mon, 14 Aug 2023 13:22:16 +0200
+Subject: [PATCH] arm64: dts: cn9131-cf-solidwan: enable only cp0 rtc
+
+only the rtc of cp0 has backup battery connected and can keep time
+across power-cycle.
+Disable the rtc in cp1 to avoid confusion.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts | 4 ++++
+ arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts | 3 +++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
+index 4c81e76a0521..fea0d9ac29f4 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf-solidwan.dts
+@@ -418,3 +418,7 @@ cp0_uart1_pins: cp0-uart1-pins {
+ 		
+ 	};
+ };
++
++&cp0_rtc {
++	status = "okay";
++};
+diff --git a/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts b/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
+index 6aa5c6ac93dc..ace4518b806a 100644
+--- a/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
++++ b/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
+@@ -239,3 +239,6 @@ cp1_uart1_pins: cp1-uart1-pins-1 {
+ 	};
+ };
+ 
++&cp1_rtc {
++	status = "disabled";
++};
+-- 
+2.35.3
+
