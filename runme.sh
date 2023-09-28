@@ -38,6 +38,7 @@ BUILDROOT_VERSION=2020.02.1
 # - bionic (18.04)
 # - focal (20.04)
 : ${UBUNTU_VERSION:=focal}
+: ${UBUNTU_ROOTFS_SIZE:=500M}
 
 # Check if git user name and git email are configured
 if [ -z "`git config user.name`" ] || [ -z "`git config user.email`" ]; then
@@ -264,7 +265,7 @@ EOF
 	chmod +x overlay/etc/init.d/S99bootstrap-ubuntu.sh
 	make
 	IMG=ubuntu-core.ext4.tmp
-	truncate -s 500M $IMG
+	truncate -s $UBUNTU_ROOTFS_SIZE $IMG
 	qemu-system-aarch64 -m 1G -M virt -cpu cortex-a57 -nographic -smp 1 -kernel output/images/Image -append "console=ttyAMA0 ip=dhcp" -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 -initrd output/images/rootfs.cpio.gz -drive file=$IMG,if=none,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -no-reboot
         mv $IMG $ROOTDIR/build/ubuntu-core.ext4
 
@@ -446,8 +447,10 @@ e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2/mv_pp_uio.ko
 cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images
 cd $ROOTDIR/
-truncate -s 570M $ROOTDIR/images/tmp/ubuntu-core.img
-parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary 64MiB 567MiB
+ROOTFS_SIZE=$(stat -c "%s" $ROOTDIR/images/tmp/ubuntu-core.ext4)
+truncate -s 64M $ROOTDIR/images/tmp/ubuntu-core.img
+truncate -s +$ROOTFS_SIZE $ROOTDIR/images/tmp/ubuntu-core.img
+parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary 64MiB $((64*1024*1024+ROOTFS_SIZE-1))B
 # Generate the above partuuid 3030303030 which is the 4 characters of '0' in ascii
 echo "0000" | dd of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1 seek=440 conv=notrunc
 dd if=$ROOTDIR/images/tmp/ubuntu-core.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1M seek=64 conv=notrunc
