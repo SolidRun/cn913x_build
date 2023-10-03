@@ -1,0 +1,44 @@
+From 6931050969949ec28313130d8fc2fe8d335eb3d2 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Tue, 3 Oct 2023 12:19:46 +0200
+Subject: [PATCH] arm64: dts: cn9130-clearfog-base: add description for m.2 i2c
+ irq pin
+
+Add pinctrl for m.2 i2c irq gpio, and mention it in i2c node comment.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cf-base.dts | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
+index 593ae88e45ec..20be8732625b 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
+@@ -264,9 +264,10 @@ &cp0_i2c1 {
+ 	 *  address pins tied low, which takes addresses 0x50 and 0x51.
+ 	 * Mikrobus doesn't specify beyond an I2C bus being present.
+ 	 * PCIe uses ARP to assign addresses, or 0x63-0x64.
++	 * M.2 supports irq on mpp33.
+ 	 */
+ 	clock-frequency = <100000>;
+-	pinctrl-0 = <&cp0_i2c1_pins>;
++	pinctrl-0 = <&cp0_i2c1_pins &cp0_i2c1_m2_pins>;
+ 	pinctrl-names = "default";
+ 	status = "okay";
+ };
+@@ -364,6 +365,11 @@ cp0_i2c1_pins: cp0-i2c-pins-1 {
+ 			marvell,function = "i2c1";
+ 		};
+ 
++		cp0_i2c1_m2_pins: cp0-i2c-m2-pins {
++			marvell,pins = "mpp33";
++			marvell,function = "gpio";
++		};
++
+ 		cp0_mdio_pins: cp0-mdio-pins {
+ 			marvell,pins = "mpp0", "mpp1";
+ 			marvell,function = "ge";
+-- 
+2.35.3
+
