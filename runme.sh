@@ -250,7 +250,7 @@ case "\$1" in
                 echo "127.0.0.1 localhost" > /mnt/etc/hosts
                 export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true LC_ALL=C LANGUAGE=C LANG=C
                 chroot /mnt apt update
-                chroot /mnt apt install --no-install-recommends -y systemd-sysv apt locales less wget procps openssh-server ifupdown net-tools isc-dhcp-client ntpdate lm-sensors i2c-tools psmisc less sudo htop iproute2 iputils-ping kmod network-manager iptables rng-tools apt-utils libatomic1 ethtool
+                chroot /mnt apt install --no-install-recommends -y systemd-sysv apt less wget procps openssh-server ifupdown net-tools isc-dhcp-client ntpdate lm-sensors i2c-tools psmisc less sudo htop iproute2 iputils-ping kmod iptables rng-tools apt-utils libatomic1 ethtool rfkill usbutils
 		echo -e "root\nroot" | chroot /mnt passwd
                 umount /mnt/var/lib/apt/
                 umount /mnt/var/cache/apt
