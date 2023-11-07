@@ -1,0 +1,28 @@
+From c6672690960531967e1bfa82a5865a8b76f8453d Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Tue, 7 Nov 2023 10:10:37 +0100
+Subject: [PATCH] support 8gb total memory variant using 4x twin-die modules
+
+4GB total: 4x Samsung K4A8G16
+8GB total: 4x Samsung K4AAG16
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+index d59b8100d..53cd758e6 100644
+--- a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
++++ b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+@@ -187,6 +187,7 @@ void set_param_based_on_som_strap (){
+ 	/* read gpio value to check 4GB or 8GB configuration */
+ 	if (read_gpio_strap_sr ((u32) 0xf2440110, (u8) 11)){ 
+ 		dram_iface_ap0.tm.interface_params[0].memory_size=MV_DDR_DIE_CAP_16GBIT;
++		dram_iface_ap0.tm.twin_die_combined = COMBINED;
+ 		printf("8GB capacity; strap value=1\n");
+ 	}
+ 	else{
+-- 
+2.35.3
+
