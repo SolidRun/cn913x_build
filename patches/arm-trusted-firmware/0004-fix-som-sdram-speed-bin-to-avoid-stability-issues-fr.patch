@@ -1,0 +1,32 @@
+From ac4af81936407ef29091a039257d0af8cc76cda9 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 7 Apr 2024 18:24:36 +0200
+Subject: [PATCH] fix som sdram speed bin to avoid stability issues from
+ silicon lottery
+
+The previosuly enabled timings 2400R are not appropriate for either 4GB
+or 8GB configuration, they happened  to work okay on evaluation units
+due to luck in silicon lottery.
+Change the timings back to "T" matching sdram datasheets.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+index 53cd758e6..506e62073 100644
+--- a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
++++ b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+@@ -45,7 +45,7 @@ struct mv_ddr_iface dram_iface_ap0 = {
+ 		      {0x1, 0x0, 0, 0},
+ 		      {0x1, 0x0, 0, 0},
+ 		      {0x1, 0x0, 0, 0} },
+-		   SPEED_BIN_DDR_2400R,		/* speed_bin */
++		   SPEED_BIN_DDR_2400T,		/* speed_bin */
+ 		   MV_DDR_DEV_WIDTH_16BIT,	/* sdram device width */
+ 		   MV_DDR_DIE_CAP_8GBIT,	/* die capacity */
+ 		   MV_DDR_FREQ_SAR,		/* frequency */
+-- 
+2.35.3
+
