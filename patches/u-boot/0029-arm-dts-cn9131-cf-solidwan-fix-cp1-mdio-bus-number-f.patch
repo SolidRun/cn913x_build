@@ -1,0 +1,29 @@
+From ff1d242e553ff9d6f0e31d42cc75f5daf3cbd67a Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 7 Apr 2024 18:01:01 +0200
+Subject: [PATCH 29/30] arm: dts: cn9131-cf-solidwan: fix cp1 mdio bus number
+ for 1g phys
+
+1G phys on CP1 are on the first mdio bus, change the number accordingly.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9131-cf-solidwan.dtsi | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/dts/cn9131-cf-solidwan.dtsi b/arch/arm/dts/cn9131-cf-solidwan.dtsi
+index dfb361df53..51fff53cbb 100644
+--- a/arch/arm/dts/cn9131-cf-solidwan.dtsi
++++ b/arch/arm/dts/cn9131-cf-solidwan.dtsi
+@@ -156,7 +156,7 @@
+ 	};
+ };
+ 
+-&cp1_mdio2 {
++&cp1_mdio {
+ 	pinctrl-0 = <&cp1_mdio_pins>;
+ 	status = "okay";
+ 
+-- 
+2.35.3
+

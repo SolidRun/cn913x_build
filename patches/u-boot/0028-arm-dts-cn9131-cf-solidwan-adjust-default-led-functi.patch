@@ -1,0 +1,73 @@
+From b50f8b6575e789cf9315f3b5c1fad408803e4b59 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 7 Apr 2024 17:03:20 +0200
+Subject: [PATCH 28/30] arm: dts: cn9131-cf-solidwan: adjust default led
+ function
+
+Configure LED functions to be consistent between clearfog products:
+Green LED for activity, yellow/red leds for link.
+
+In current u-boot version this is not supported, only added for
+consistency.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9130-cf-solidwan.dts  |  8 +++++++-
+ arch/arm/dts/cn9131-cf-solidwan.dtsi | 16 ++++++++++++++--
+ 2 files changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/dts/cn9130-cf-solidwan.dts b/arch/arm/dts/cn9130-cf-solidwan.dts
+index 3154316c87..394a0ae8f6 100644
+--- a/arch/arm/dts/cn9130-cf-solidwan.dts
++++ b/arch/arm/dts/cn9130-cf-solidwan.dts
+@@ -352,8 +352,14 @@
+ 	 */
+ 
+ 	cp0_phy1: ethernet-phy@1 {
+-		marvell,reg-init = <3 16 0 0x1017>;
+ 		reg = <1>;
++		/*
++		 * Configure LEDs default behaviour:
++		 * - LED[0]: link is 1000Mbps: On (yellow)
++		 * - LED[1]: link/activity: On/blink (green)
++		 * - LED[2]: high impedance (floating)
++		 */
++		marvell,reg-init = <3 16 0xf000 0x0a17>;
+ 	};
+ };
+ 
+diff --git a/arch/arm/dts/cn9131-cf-solidwan.dtsi b/arch/arm/dts/cn9131-cf-solidwan.dtsi
+index 55e0373b5c..dfb361df53 100644
+--- a/arch/arm/dts/cn9131-cf-solidwan.dtsi
++++ b/arch/arm/dts/cn9131-cf-solidwan.dtsi
+@@ -161,13 +161,25 @@
+ 	status = "okay";
+ 
+ 	cp1_phy0: ethernet-phy@0 {
+-		marvell,reg-init = <3 16 0 0x1017>;
+ 		reg = <0>;
++		/*
++		 * Configure LEDs default behaviour:
++		 * - LED[0]: link is 1000Mbps: On (yellow)
++		 * - LED[1]: link/activity: On/blink (green)
++		 * - LED[2]: high impedance (floating)
++		 */
++		marvell,reg-init = <3 16 0xf000 0x0a17>;
+ 	};
+ 
+ 	cp1_phy1: ethernet-phy@1 {
+-		marvell,reg-init = <3 16 0 0x1017>;
+ 		reg = <1>;
++		/*
++		 * Configure LEDs default behaviour:
++		 * - LED[0]: link is 1000Mbps: On (yellow)
++		 * - LED[1]: link/activity: On/blink (green)
++		 * - LED[2]: high impedance (floating)
++		 */
++		marvell,reg-init = <3 16 0xf000 0x0a17>;
+ 	};
+ };
+ 
+-- 
+2.35.3
+

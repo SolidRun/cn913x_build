@@ -1,0 +1,98 @@
+From 89281468cc6128f514966f25c1d8c1705e6f1e97 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 7 Apr 2024 17:48:54 +0200
+Subject: [PATCH 30/30] board: cn9131-cf-solidwan: rewrite phy fixup to
+ configure all phys
+
+At power-on the PHys by default are not configured for sgmii mode
+(serdes link) and the orange LEDs are always on.
+
+For consistent user experience configure all PHYs, including LED
+functions from board code so that they behave consistent with external
+connections before initialization of network stack.
+
+This should (currently) be done in board-code because
+1) dts marvell,reg-init is not supported
+2) dts marvell,reg-init is only evaluated when initiating connections
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ board/Marvell/octeontx2_cn913x/board.c | 42 ++++++++++++++++++--------
+ 1 file changed, 29 insertions(+), 13 deletions(-)
+
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index 2e12072e88..736ad161f7 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -275,12 +275,9 @@ static inline int miiphy_modify(const char *devname, unsigned char addr, unsigne
+ }
+ 
+ /*
+- * CN9131 SolidWAN has a PHY address conflict between SoM and Carrier.
+- *
+  * Configure PHY(s) at address 0 for SGMII auto-negotiation between MAC and PHY,
+  */
+-static void solidwan_phy_init() {
+-	const char *mii_bus_name = "cp0-mdio@12a200";
++static void solidwan_phy_init(const char *mii_bus_name, unsigned char addr) {
+ 	struct mii_dev *bus;
+ 	int ret = 0;
+ 
+@@ -290,18 +287,27 @@ static void solidwan_phy_init() {
+ 		return;
+ 	}
+ 
+-	ret |= miiphy_write(mii_bus_name, 0x00, 0x16, 0x0001); // select page 1
+-	ret |= miiphy_modify(mii_bus_name, 0x00, 0x00, 0x1000, 0x1000); // set page 1 register 0 bit 12=1
+-	ret |= miiphy_modify(mii_bus_name, 0x00, 0x1a, 0x0000, 0x0040); // set page 1 register 26 bit 6=0
+-	ret |= miiphy_modify(mii_bus_name, 0x00, 0x00, 0x8000, 0x8000); // set page 1 register 0 bit 15=1
++	ret |= miiphy_write(mii_bus_name, addr, 0x16, 0x0001); // select page 1
++	ret |= miiphy_modify(mii_bus_name, addr, 0x00, 0x1000, 0x1000); // set page 1 register 0 bit 12=1
++	ret |= miiphy_modify(mii_bus_name, addr, 0x1a, 0x0000, 0x0040); // set page 1 register 26 bit 6=0
++	ret |= miiphy_modify(mii_bus_name, addr, 0x00, 0x8000, 0x8000); // set page 1 register 0 bit 15=1
+ 	udelay(1000); // wait for sw-reset to complete
+-	ret |= miiphy_write(mii_bus_name, 0x00, 0x16, 0x0012); // select page 18
+-	ret |= miiphy_modify(mii_bus_name, 0x00, 0x14, 0x0001, 0x0007); // set page 18 register 20 bits [2:0]=001
+-	ret |= miiphy_modify(mii_bus_name, 0x00, 0x14, 0x8000, 0x8000); // set page 18 register 20 bit 15=1
++	ret |= miiphy_write(mii_bus_name, addr, 0x16, 0x0012); // select page 18
++	ret |= miiphy_modify(mii_bus_name, addr, 0x14, 0x0001, 0x0007); // set page 18 register 20 bits [2:0]=001
++	ret |= miiphy_modify(mii_bus_name, addr, 0x14, 0x8000, 0x8000); // set page 18 register 20 bit 15=1
+ 	udelay(1000); // wait for sw-reset to complete
+ 
++	/*
++	 * Configure LEDs default behaviour (consistent with Linux default):
++	 * - LED[0]: link is 1000Mbps: On (yellow)
++	 * - LED[1]: link/activity: On/blink (green)
++	 * - LED[2]: high impedance (floating)
++	 */
++	ret |= miiphy_write(mii_bus_name, addr, 0x16, 0x0003); // select page 3
++	ret |= miiphy_modify(mii_bus_name, addr, 0x10, 0x0a17, 0x0fff); // set page 3 register 16 bits [11:0]=0xa17
++
+ 	if (ret)
+-		printf("Warning: Failed to configure phy for eth1!\n");
++		printf("Warning: Failed to configure phy %s:%d!\n", mii_bus_name, addr);
+ }
+ 
+ int last_stage_init(void)
+@@ -311,7 +317,17 @@ int last_stage_init(void)
+ 	fdtfile = env_get("fdtfile");
+ 	if (strcmp(fdtfile, "marvell/cn9131-cf-solidwan.dtb") == 0) {
+ 		printf("Applying eth1 phy workaround ...\n");
+-		solidwan_phy_init();
++		/*
++		 * CN9131 SolidWAN has a PHY address conflict between SoM and Carrier.
++		 * Configure PHY(s) at address 0 as workaround for address conflict.
++		 *
++		 * Also configure the other 3 PHYs for SGMII mode, to ensure LEDs
++		 * are configured correctly before netdev initialization.
++		 */
++		solidwan_phy_init("cp0-mdio@12a200", 0);
++		solidwan_phy_init("cp0-mdio@12a200", 1);
++		solidwan_phy_init("cp1-mdio@12a200", 0);
++		solidwan_phy_init("cp1-mdio@12a200", 1);
+ 	}
+ 
+ 	return 0;
+-- 
+2.35.3
+

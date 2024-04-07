@@ -1,0 +1,63 @@
+From 1a7c8a9f72b123ca5ef282f5ca2e4ef671f9acf8 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 7 Apr 2024 16:25:43 +0200
+Subject: [PATCH 27/30] HACK: arm: dts: armada-cp110: disambiguate mdio bus
+ names with cp name
+
+Board code uses the device-tree node name (e.g. mdio@12a200) to fix
+on-som phy. On systems with multiple CPs, e.g. CN9131, this name
+collides between all CPs.
+Prepend cp-name to disambiguate (e.g. cp0-mdio).
+
+This is a hack in that it violates device-tree common naming scheme.
+Better would be introduction of a new mii_dev getter taking device-tree
+path instead of name.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/armada-cp110.dtsi | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/dts/armada-cp110.dtsi b/arch/arm/dts/armada-cp110.dtsi
+index 6abe8f0bea..736d0e6851 100644
+--- a/arch/arm/dts/armada-cp110.dtsi
++++ b/arch/arm/dts/armada-cp110.dtsi
+@@ -36,7 +36,7 @@
+ 
+ */
+ 
+-			CP110_LABEL(mdio): mdio@12a200 {
++			CP110_LABEL(mdio): APPEND(CP110_NAME,mdio)@12a200 {
+ 				#address-cells = <1>;
+ 				#size-cells = <0>;
+ 				compatible = "marvell,orion-mdio";
+@@ -44,7 +44,7 @@
+ 				mdio-name = CP110_STRING_LABEL(mdio);
+ 				status = "disabled";
+ 			};
+-			CP110_LABEL(mdio2): mdio@12a400 {
++			CP110_LABEL(mdio2): APPEND(CP110_NAME,mdio)@12a400 {
+                                 #address-cells = <1>;
+                                 #size-cells = <0>;
+                                 compatible = "marvell,orion-mdio";
+@@ -54,7 +54,7 @@
+                         };
+ 
+ 
+-			CP110_LABEL(xmdio): mdio@12a600 {
++			CP110_LABEL(xmdio): APPEND(CP110_NAME,mdio)@12a600 {
+ 				#address-cells = <1>;
+ 				#size-cells = <0>;
+ 				compatible = "marvell,xmdio";
+@@ -63,7 +63,7 @@
+ 				status = "disabled";
+ 			};
+ 
+-			CP110_LABEL(xxmdio): mdio@12a900 {
++			CP110_LABEL(xxmdio): APPEND(CP110_NAME,mdio)@12a900 {
+ 				#address-cells = <1>;
+ 				#size-cells = <0>;
+ 				compatible = "marvell,xmdio";
+-- 
+2.35.3
+
