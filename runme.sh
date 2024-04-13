@@ -34,9 +34,15 @@ BUILDROOT_VERSION=2020.02.1
 : ${UBOOT_ENVIRONMENT:=mmc:1:0}
 : ${BUILD_ROOTFS:=yes} # set to no for bootloader-only build
 
+: ${DISTRO:=ubuntu}
+# Debian Version
+# - bookworm (12)
+: ${DEBIAN_VERSION:=bookworm}
+: ${DEBIAN_ROOTFS_SIZE:=1472M}
 # Ubuntu Version
 # - bionic (18.04)
 # - focal (20.04)
+# - jammy (22.04)
 : ${UBUNTU_VERSION:=focal}
 : ${UBUNTU_ROOTFS_SIZE:=500M}
 
@@ -65,7 +71,7 @@ CP_NUM=${CP_NUM:-1}
 mkdir -p build images
 ROOTDIR=`pwd`
 PARALLEL=$(getconf _NPROCESSORS_ONLN) # Amount of parallel jobs for the builds
-TOOLS="wget tar git make 7z unsquashfs dd vim mkfs.ext4 parted mkdosfs mcopy dtc iasl mkimage e2cp truncate qemu-system-aarch64 cpio rsync bc bison flex python unzip depmod"
+TOOLS="wget tar git make 7z unsquashfs dd vim mkfs.ext4 parted mkdosfs mcopy dtc iasl mkimage e2cp truncate qemu-system-aarch64 cpio rsync bc bison flex python unzip depmod debootstrap"
 
 export PATH=$ROOTDIR/build/toolchain/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
 export CROSS_COMPILE=aarch64-linux-gnu-
@@ -133,7 +139,7 @@ for i in $TOOLS; do
         if [ "x$TOOL_PATH" == "x" ]; then
                 echo "Tool $i is not installed"
                 echo "If running under apt based package management you can run -"
-                echo "sudo apt install build-essential git dosfstools e2fsprogs parted sudo mtools p7zip p7zip-full device-tree-compiler acpica-tools u-boot-tools e2tools qemu-system-arm libssl-dev cpio rsync bc bison flex python unzip kmod"
+                echo "sudo apt install build-essential git dosfstools e2fsprogs parted sudo mtools p7zip p7zip-full device-tree-compiler acpica-tools u-boot-tools e2tools qemu-system-arm libssl-dev cpio rsync bc bison flex python unzip kmod debootstrap"
                 exit -1
         fi
 done
@@ -198,79 +204,13 @@ for i in $SDK_COMPONENTS; do
 		fi
 	fi
 done
-##############################################################################
-# File System
+
+###############################################################################
+# Clean old image artifacts
 ###############################################################################
 
-if [[ ! -f $ROOTDIR/build/ubuntu-core.ext4 ]]; then
-	if [[ $UBUNTU_VERSION == bionic ]]; then
-		UBUNTU_BASE_URL=http://cdimage.ubuntu.com/ubuntu-base/releases/18.04/release/ubuntu-base-18.04.5-base-arm64.tar.gz
-	fi
-	if [[ $UBUNTU_VERSION == focal ]]; then
-		UBUNTU_BASE_URL=http://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/ubuntu-base-20.04.5-base-arm64.tar.gz
-	fi
-	if [[ -z $UBUNTU_BASE_URL ]]; then
-		echo "Error: Unknown URL for Ubuntu Version \"\${UBUNTU_VERSION}! Please provide UBUNTU_BASE_URL."
-		exit 1
-	fi
-
-        echo "Building Ubuntu ${UBUNTU_VERSION} File System"
-	cd $ROOTDIR/build
-        mkdir -p ubuntu
-        cd ubuntu
-	if [ ! -d buildroot ]; then
-                git clone $SHALLOW_FLAG https://github.com/buildroot/buildroot -b $BUILDROOT_VERSION
-        fi
-	cd buildroot	
-	cp $ROOTDIR/configs/buildroot/buildroot_defconfig configs/
-	printf 'BR2_PRIMARY_SITE="%s"\n' "${BR2_PRIMARY_SITE}" >> configs/buildroot_defconfig
-	export FORCE_UNSAFE_CONFIGURE=1
-	make buildroot_defconfig 
-	mkdir -p overlay/etc/init.d/
-	cat > overlay/etc/init.d/S99bootstrap-ubuntu.sh << EOF
-#!/bin/sh
-
-case "\$1" in
-        start)
-		resize
-                mkfs.ext4 -F /dev/vda -b 4096
-                mount /dev/vda /mnt
-                cd /mnt/
-                cat /proc/net/pnp > /etc/resolv.conf
-		wget -c -P /tmp/ -O /tmp/ubuntu-base.dl "${UBUNTU_BASE_URL}"
-		tar -C /mnt -xf /tmp/ubuntu-base.dl
-                mount -o bind /proc /mnt/proc/
-                mount -o bind /sys/ /mnt/sys/
-                mount -o bind /dev/ /mnt/dev/
-                mount -o bind /dev/pts /mnt/dev/pts
-                mount -t tmpfs tmpfs /mnt/var/lib/apt/
-                mount -t tmpfs tmpfs /mnt/var/cache/apt/
-                cat /proc/net/pnp > /mnt/etc/resolv.conf
-                echo "localhost" > /mnt/etc/hostname
-                echo "127.0.0.1 localhost" > /mnt/etc/hosts
-                export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true LC_ALL=C LANGUAGE=C LANG=C
-                chroot /mnt apt update
-                chroot /mnt apt install --no-install-recommends -y systemd-sysv apt less wget procps openssh-server ifupdown net-tools isc-dhcp-client ntpdate lm-sensors i2c-tools psmisc less sudo htop iproute2 iputils-ping kmod iptables rng-tools apt-utils libatomic1 ethtool rfkill usbutils
-		echo -e "root\nroot" | chroot /mnt passwd
-                umount /mnt/var/lib/apt/
-                umount /mnt/var/cache/apt
-                chroot /mnt apt clean
-                chroot /mnt apt autoclean
-                reboot
-                ;;
-
-esac
-EOF
-
-	chmod +x overlay/etc/init.d/S99bootstrap-ubuntu.sh
-	make
-	IMG=ubuntu-core.ext4.tmp
-	truncate -s $UBUNTU_ROOTFS_SIZE $IMG
-	qemu-system-aarch64 -m 1G -M virt -cpu cortex-a57 -nographic -smp 1 -kernel output/images/Image -append "console=ttyAMA0 ip=dhcp" -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 -initrd output/images/rootfs.cpio.gz -drive file=$IMG,if=none,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -no-reboot
-        mv $IMG $ROOTDIR/build/ubuntu-core.ext4
-
-fi
-
+rm -rf $ROOTDIR/images/tmp
+mkdir -p $ROOTDIR/images/tmp
 
 ###############################################################################
 # Building sources u-boot / atf / mv-ddr / kernel
@@ -333,8 +273,6 @@ cd $ROOTDIR/build/linux
 ./scripts/kconfig/merge_config.sh arch/arm64/configs/defconfig $ROOTDIR/configs/linux/cn913x_additions.config
 make -j${PARALLEL} all #Image dtbs modules
 
-rm -rf $ROOTDIR/images/tmp
-mkdir -p $ROOTDIR/images/tmp/
 mkdir -p $ROOTDIR/images/tmp/boot
 make INSTALL_MOD_PATH=$ROOTDIR/images/tmp/ INSTALL_MOD_STRIP=1 modules_install
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images/tmp/boot
@@ -343,6 +281,226 @@ cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-clearfog-gt-8k.d
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin.dtb $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin-singleshot.dtb $ROOTDIR/images/tmp/boot
 
+###############################################################################
+# File System
+###############################################################################
+
+do_build_ubuntu() {
+	case "${UBUNTU_VERSION}" in
+		bionic)
+			UBUNTU_BASE_URL=http://cdimage.ubuntu.com/ubuntu-base/releases/18.04/release/ubuntu-base-18.04.5-base-arm64.tar.gz
+		;;
+		focal)
+			UBUNTU_BASE_URL=http://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/ubuntu-base-20.04.5-base-arm64.tar.gz
+		;;
+		jammy)
+			UBUNTU_BASE_URL=http://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.4-base-arm64.tar.gz
+		;;
+		*)
+			echo "Error: Unsupported Ubuntu Version \"\${UBUNTU_VERSION}\"! To proceed please add support to runme.sh."
+			exit 1
+		;;
+	esac
+
+	if [[ ! -f $ROOTDIR/build/ubuntu/${UBUNTU_VERSION}.ext4 ]]; then
+		mkdir -p $ROOTDIR/build/ubuntu
+		cd $ROOTDIR/build/ubuntu
+		echo "Building Ubuntu ${UBUNTU_VERSION} File System"
+
+		rm -f ubuntu-base.dl
+		wget -c -O ubuntu-base.dl "${UBUNTU_BASE_URL}"
+
+		rm -rf rootfs
+		mkdir rootfs
+		fakeroot -- tar -C rootfs -xpf ubuntu-base.dl
+
+cat > rootfs/stage2.sh << EOF
+#!/bin/sh
+
+# mount pseudo-filesystems
+mount -vt proc proc /proc
+mount -vt sysfs sysfs /sys
+mkdir -p -m 755 /dev/pts
+mount -vt devpts devpts /dev/pts
+
+# mount tmpfs for apt caches
+mount -t tmpfs tmpfs /var/lib/apt/
+mount -t tmpfs tmpfs /var/cache/apt/
+
+# configure dns
+cat /proc/net/pnp > /etc/resolv.conf
+
+# configure hostname
+echo "localhost" > /etc/hostname
+echo "127.0.0.1 localhost" > /etc/hosts
+
+# configure apt proxy
+test -n "$APTPROXY" && printf 'Acquire::http { Proxy "%s"; }\n' $APTPROXY | tee -a /etc/apt/apt.conf.d/proxy || true
+
+# fix path to stop dpkg complaints
+test "$UBUNTU_VERSION" = "bionic" && export PATH=$PATH:/sbin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin
+
+apt-get update
+env DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true LC_ALL=C LANGUAGE=C LANG=C \
+	apt-get install --no-install-recommends -y apt apt-utils ethtool htop i2c-tools ifupdown iproute2 iptables iputils-ping isc-dhcp-client kmod less lm-sensors locales memtester net-tools ntpdate openssh-server pciutils procps psmisc rfkill rng-tools sudo systemd-sysv usbutils wget
+apt-get clean
+
+# fix modules location for split lib,usr/lib
+test "$UBUNTU_VERSION" = "bionic" && test -d /lib && ln -sv /usr/lib/modules /lib/modules
+
+# set root password
+echo "root\nroot" | passwd
+
+# populate fstab
+printf "/dev/root / ext4 defaults 0 1\\n" > /etc/fstab
+
+# enable watchdog service
+sed -i "s;[# ]*RuntimeWatchdogSec=.*\$;RuntimeWatchdogSec=30;g" /etc/systemd/system.conf
+
+# wipe machine-id (regenerates during first boot)
+echo uninitialized > /etc/machine-id
+
+# remove apt proxy
+rm -f /etc/apt/apt.conf.d/proxy
+
+# delete self
+rm -f /stage2.sh
+
+# flush disk
+sync
+
+# power-off
+reboot -f
+EOF
+		chmod +x rootfs/stage2.sh
+
+		rm -f rootfs.ext4
+		truncate -s $UBUNTU_ROOTFS_SIZE rootfs.ext4
+		fakeroot mkfs.ext4 -L rootfs -d rootfs rootfs.ext4
+
+		qemu-system-aarch64 \
+			-m 1G \
+			-M virt \
+			-cpu max \
+			-smp 4 \
+			-netdev user,id=eth0 \
+			-device virtio-net-device,netdev=eth0 \
+			-drive file=rootfs.ext4,if=none,format=raw,cache=unsafe,id=hd0,discard=unmap \
+			-device virtio-blk-device,drive=hd0 \
+			-device virtio-rng-device \
+			-nographic \
+			-no-reboot \
+			-kernel "${ROOTDIR}/images/tmp/boot/Image" \
+			-append "console=ttyAMA0 root=/dev/vda rootfstype=ext4 ip=dhcp rw init=/stage2.sh"
+
+		# fix errors
+		s=0
+		e2fsck -fy rootfs.ext4 || s=$?
+		if [ $s -ge 4 ]; then
+			echo "Error: Couldn't repair generated rootfs."
+			exit 1
+		fi
+
+		mv rootfs.ext4 $UBUNTU_VERSION.ext4
+	fi
+
+	cp -v --sparse=always $ROOTDIR/build/ubuntu/$UBUNTU_VERSION.ext4 $ROOTDIR/images/tmp/rootfs.ext4
+}
+
+do_build_debian() {
+	mkdir -p $ROOTDIR/build/debian
+	cd $ROOTDIR/build/debian
+
+	# (re-)generate only if rootfs doesn't exist
+	if [ ! -f ${DEBIAN_VERSION}.ext4 ]; then
+		rm -f rootfs.ext4
+
+		local PKGS=apt-transport-https,busybox,ca-certificates,can-utils,command-not-found,curl,e2fsprogs,ethtool,fdisk,gpiod,haveged,i2c-tools,ifupdown,iputils-ping,isc-dhcp-client,initramfs-tools,lm-sensors,locales,nano,net-tools,ntpdate,openssh-server,psmisc,rfkill,sudo,systemd-sysv,usbutils,wget,xterm,xz-utils
+
+		# bootstrap a first-stage rootfs
+		rm -rf stage1
+		fakeroot debootstrap --variant=minbase \
+			--arch=arm64 --components=main,contrib,non-free,non-free-firmware \
+			--foreign \
+			--include=$PKGS \
+			${DEBIAN_VERSION} \
+			stage1 \
+			https://deb.debian.org/debian
+
+		# prepare init-script for second stage inside VM
+		cat > stage1/stage2.sh << EOF
+#!/bin/sh
+
+# run second-stage bootstrap
+/debootstrap/debootstrap --second-stage
+
+# mount pseudo-filesystems
+mount -vt proc proc /proc
+mount -vt sysfs sysfs /sys
+
+# configure dns
+cat /proc/net/pnp > /etc/resolv.conf
+
+# set empty root password
+passwd -d root
+
+# update command-not-found db
+apt-file update
+update-command-not-found
+
+# enable optional system services
+# none yet ...
+
+# populate fstab
+printf "/dev/root / ext4 defaults 0 1\\n" > /etc/fstab
+
+# delete self
+rm -f /stage2.sh
+
+# flush disk
+sync
+
+# power-off
+reboot -f
+EOF
+		chmod +x stage1/stage2.sh
+
+		# create empty partition image
+		dd if=/dev/zero of=rootfs.ext4 bs=1 count=0 seek=${DEBIAN_ROOTFS_SIZE}
+
+		# create filesystem from first stage
+		mkfs.ext2 -L rootfs -E root_owner=0:0 -d stage1 rootfs.ext4
+
+		# bootstrap second stage within qemu
+		qemu-system-aarch64 \
+			-m 1G \
+			-M virt \
+			-cpu max \
+			-smp 4 \
+			-device virtio-rng-device \
+			-netdev user,id=eth0 \
+			-device virtio-net-device,netdev=eth0 \
+			-drive file=rootfs.ext4,if=none,format=raw,cache=unsafe,id=hd0,discard=unmap \
+			-device virtio-blk-device,drive=hd0 \
+			-nographic \
+			-no-reboot \
+			-kernel "${ROOTDIR}/images/tmp/boot/Image" \
+			-append "earlycon console=ttyAMA0 root=/dev/vda rootfstype=ext2 ip=dhcp rw init=/stage2.sh" \
+
+
+		:
+
+		# convert to ext4
+		tune2fs -O extents,uninit_bg,dir_index,has_journal rootfs.ext4
+
+		mv rootfs.ext4 $DEBIAN_VERSION.ext4
+	fi;
+
+	# export final rootfs for next steps
+	cp -v --sparse=always $DEBIAN_VERSION.ext4 $ROOTDIR/images/tmp/rootfs.ext4
+}
+
+do_build_${DISTRO}
 
 ###############################################################################
 # build MUSDK
@@ -395,35 +553,34 @@ cat > $ROOTDIR/images/tmp/extlinux/extlinux.conf << EOF
 EOF
 
 # blkid images/tmp/ubuntu-core.img | cut -f2 -d'"'
-cp $ROOTDIR/build/ubuntu-core.ext4 $ROOTDIR/images/tmp/
-e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:extlinux
-e2cp -G 0 -O 0 $ROOTDIR/images/tmp/extlinux/extlinux.conf $ROOTDIR/images/tmp/ubuntu-core.ext4:extlinux/
-e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:boot
-e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/Image $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/
-e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/marvell
-e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/*.dtb $ROOTDIR/images/tmp/ubuntu-core.ext4:boot/marvell/
+e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:extlinux
+e2cp -G 0 -O 0 $ROOTDIR/images/tmp/extlinux/extlinux.conf $ROOTDIR/images/tmp/rootfs.ext4:extlinux/
+e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:boot
+e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/Image $ROOTDIR/images/tmp/rootfs.ext4:boot/
+e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:boot/marvell
+e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/*.dtb $ROOTDIR/images/tmp/rootfs.ext4:boot/marvell/
 
 # Copy DPDK applications
-e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/app/dpdk-testpmd $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/bin/
-e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l2fwd $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/bin/
-e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l3fwd $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/app/dpdk-testpmd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l2fwd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l3fwd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
 
 # Copy MUSDK
 cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/
 for i in `find .`; do
 	if [ -d $i ]; then
-		e2mkdir -v -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$i
+		e2mkdir -v -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:usr/$i
 	fi
 	if [ -f $i ] && ! [ -L $i ]; then
 		DIR=`dirname $i`
-		e2cp -v -G 0 -O 0 -p $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/$i $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$DIR
+		e2cp -v -G 0 -O 0 -p $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/$i $ROOTDIR/images/tmp/rootfs.ext4:usr/$DIR
 	fi
 done
 for i in `find .`; do
        if [ -L $i ]; then
                DIR=`dirname $i`
                DEST=`readlink -qn $i`
-               e2ln -vf $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$DIR/$DEST /usr/$i
+               e2ln -vf $ROOTDIR/images/tmp/rootfs.ext4:usr/$DIR/$DEST /usr/$i
        fi
 done
 
@@ -432,32 +589,32 @@ echo "Copying kernel modules"
 cd $ROOTDIR/images/tmp/
 for i in `find lib`; do
         if [ -d $i ]; then
-                e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$i
+                e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:usr/$i
         fi
         if [ -f $i ]; then
                 DIR=`dirname $i`
-                e2cp -G 0 -O 0 -p $ROOTDIR/images/tmp/$i $ROOTDIR/images/tmp/ubuntu-core.ext4:usr/$DIR
+                e2cp -G 0 -O 0 -p $ROOTDIR/images/tmp/$i $ROOTDIR/images/tmp/rootfs.ext4:usr/$DIR
         fi
 done
 cd -
 
 # Copy MUSDK modules
-e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/ubuntu-core.ext4:root/musdk_modules
-e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma/musdk_cma.ko $ROOTDIR/images/tmp/ubuntu-core.ext4:root/musdk_modules
-e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2/mv_pp_uio.ko $ROOTDIR/images/tmp/ubuntu-core.ext4:root/musdk_modules
+e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
+e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma/musdk_cma.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
+e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2/mv_pp_uio.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
 
 # ext4 ubuntu partition is ready
 cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images
 cd $ROOTDIR/
-ROOTFS_SIZE=$(stat -c "%s" $ROOTDIR/images/tmp/ubuntu-core.ext4)
+ROOTFS_SIZE=$(stat -c "%s" $ROOTDIR/images/tmp/rootfs.ext4)
 truncate -s 64M $ROOTDIR/images/tmp/ubuntu-core.img
 truncate -s +$ROOTFS_SIZE $ROOTDIR/images/tmp/ubuntu-core.img
 parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary 64MiB $((64*1024*1024+ROOTFS_SIZE-1))B
 # Generate the above partuuid 3030303030 which is the 4 characters of '0' in ascii
 echo "0000" | dd of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1 seek=440 conv=notrunc
-dd if=$ROOTDIR/images/tmp/ubuntu-core.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1M seek=64 conv=notrunc
-dd if=$ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc
+dd if=$ROOTDIR/images/tmp/rootfs.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1M seek=64 conv=notrunc,sparse
+dd if=$ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc,sparse
 mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/ubuntu-${DTB_KERNEL}-${UBOOT_ENVIRONMENT}.img
 
 echo "Images are ready at $ROOTDIR/image/"
