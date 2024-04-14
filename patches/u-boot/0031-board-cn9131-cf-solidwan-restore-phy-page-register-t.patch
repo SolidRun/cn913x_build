@@ -1,0 +1,38 @@
+From 1f0aa889aaa6338714f32ac261fefb77d0be3334 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 14 Apr 2024 12:24:32 +0200
+Subject: [PATCH] board: cn9131-cf-solidwan: restore phy page register to fix
+ Linux probe
+
+Linux can't know which phy driver to start without reading ID registers
+on page 0. When U-Boot leaves the page register set to a different page
+Linux fails to identify the phy, and later to bind mac and phy.
+
+Restore the page register after phy configuration in board-file is
+complete.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ board/Marvell/octeontx2_cn913x/board.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index 736ad161f7..9a6e97f370 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -308,6 +308,12 @@ static void solidwan_phy_init(const char *mii_bus_name, unsigned char addr) {
+ 
+ 	if (ret)
+ 		printf("Warning: Failed to configure phy %s:%d!\n", mii_bus_name, addr);
++
++	/*
++	 * Restore page register to reset-default. Otherwise phy drivers get confused
++	 * reading ID register as 0x00 from wrong page.
++	 */
++	miiphy_write(mii_bus_name, addr, 0x16, 0x0000); // select page 0
+ }
+ 
+ int last_stage_init(void)
+-- 
+2.35.3
+
