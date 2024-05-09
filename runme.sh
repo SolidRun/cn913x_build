@@ -58,7 +58,7 @@ fi
 # Misc
 ###############################################################################
 
-RELEASE=${RELEASE:-v6.1.29}
+RELEASE=${RELEASE:-linux-4.14.207-marvell-sdk-v10.23.01}
 DPDK_RELEASE=${DPDK_RELEASE:-v22.07}
 
 SHALLOW=${SHALLOW:true}
@@ -158,14 +158,14 @@ cd $ROOTDIR
 ###############################################################################
 # source code cloning and building 
 ###############################################################################
-SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux dpdk"
+SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux"
 
 for i in $SDK_COMPONENTS; do
 	if [[ ! -d $ROOTDIR/build/$i ]]; then
 		if [ "x$i" == "xlinux" ]; then
-			echo "Cloing https://www.github.com/torvalds/$i release $RELEASE"
+			echo "Cloing https://github.com/SolidRun/linux-marvell release $RELEASE"
 			cd $ROOTDIR/build
-			git clone $SHALLOW_FLAG https://kernel.googlesource.com/pub/scm/linux/kernel/git/stable/linux.git linux -b $RELEASE
+			git clone $SHALLOW_FLAG https://github.com/SolidRun/linux-marvell.git linux -b $RELEASE
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
 			echo "Cloning atf from mainline"
 			cd $ROOTDIR/build
@@ -270,16 +270,16 @@ fi
 echo "Building the kernel"
 cd $ROOTDIR/build/linux
 #make defconfig
-./scripts/kconfig/merge_config.sh arch/arm64/configs/defconfig $ROOTDIR/configs/linux/cn913x_additions.config
+./scripts/kconfig/merge_config.sh -m arch/arm64/configs/marvell_v8_sdk_defconfig $ROOTDIR/configs/linux/cn913x_additions.config
+make olddefconfig
+make savedefconfig
 make -j${PARALLEL} all #Image dtbs modules
 
 mkdir -p $ROOTDIR/images/tmp/boot
 make INSTALL_MOD_PATH=$ROOTDIR/images/tmp/ INSTALL_MOD_STRIP=1 modules_install
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/cn913*.dtb $ROOTDIR/images/tmp/boot
-cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-clearfog-gt-8k.dtb $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin.dtb $ROOTDIR/images/tmp/boot
-cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin-singleshot.dtb $ROOTDIR/images/tmp/boot
 
 ###############################################################################
 # File System
@@ -503,39 +503,6 @@ EOF
 do_build_${DISTRO}
 
 ###############################################################################
-# build MUSDK
-###############################################################################
-if [[ ! -d $ROOTDIR/build/musdk-marvell-SDK11.22.07 ]]; then
-	cd $ROOTDIR/build/
-	wget https://solidrun-common.sos-de-fra-1.exo.io/cn913x/marvell/SDK11.22.07/sources-musdk-marvell-SDK11.22.07.tar.bz2
-	tar -vxf sources-musdk-marvell-SDK11.22.07.tar.bz2
-	rm -f sources-musdk-marvell-SDK11.22.07.tar.bz2
-	cd musdk-marvell-SDK11.22.07
-	for i in `find $ROOTDIR/patches/musdk/*.patch`; do
-		patch -p1 < $i
-	done
-
-fi
-
-cd $ROOTDIR/build/musdk-marvell-SDK11.22.07
-./bootstrap
-./configure --host=aarch64-linux-gnu CFLAGS="-fPIC -O2"
-make -j${PARALLEL}
-make install
-cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma
-make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
-cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2
-make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
-
-###############################################################################
-# build DPDK
-###############################################################################
-export PKG_CONFIG_PATH=$ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/lib/pkgconfig/:$PKG_CONFIG_PATH
-cd $ROOTDIR/build/dpdk
-meson build -Dexamples=all --cross-file $ROOTDIR/configs/dpdk/arm64_armada_solidrun_linux_gcc
-ninja -C build
-
-###############################################################################
 # assembling images
 ###############################################################################
 echo "Assembling kernel image"
@@ -560,30 +527,6 @@ e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/Image $ROOTDIR/images/tmp/rootfs.ext4:bo
 e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:boot/marvell
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/*.dtb $ROOTDIR/images/tmp/rootfs.ext4:boot/marvell/
 
-# Copy DPDK applications
-e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/app/dpdk-testpmd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
-e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l2fwd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
-e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l3fwd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
-
-# Copy MUSDK
-cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/
-for i in `find .`; do
-	if [ -d $i ]; then
-		e2mkdir -v -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:usr/$i
-	fi
-	if [ -f $i ] && ! [ -L $i ]; then
-		DIR=`dirname $i`
-		e2cp -v -G 0 -O 0 -p $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/$i $ROOTDIR/images/tmp/rootfs.ext4:usr/$DIR
-	fi
-done
-for i in `find .`; do
-       if [ -L $i ]; then
-               DIR=`dirname $i`
-               DEST=`readlink -qn $i`
-               e2ln -vf $ROOTDIR/images/tmp/rootfs.ext4:usr/$DIR/$DEST /usr/$i
-       fi
-done
-
 # Copy over kernel image
 echo "Copying kernel modules"
 cd $ROOTDIR/images/tmp/
@@ -597,11 +540,6 @@ for i in `find lib`; do
         fi
 done
 cd -
-
-# Copy MUSDK modules
-e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
-e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma/musdk_cma.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
-e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2/mv_pp_uio.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
 
 # ext4 ubuntu partition is ready
 cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
