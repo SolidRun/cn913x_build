@@ -1,7 +1,7 @@
-From 198d2921dc0825fe53b47b932b77922209343581 Mon Sep 17 00:00:00 2001
+From 13feb25cf37a04a4327f4f7372901dfb855cc43e Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 17 Mar 2022 16:09:02 +0200
-Subject: [PATCH 06/16] cmd: tlv_eeprom: convert functions used by command to
+Subject: [PATCH 06/31] cmd: tlv_eeprom: convert functions used by command to
  api functions
 
 - prog_eeprom: write_tlvinfo_tlv_eeprom
@@ -277,5 +277,5 @@ index aa96c9e8d4..eeb8af57f1 100644
 +
  #endif /* __TLV_EEPROM_H_ */
 -- 
-2.34.1
+2.35.3
 

@@ -1,7 +1,7 @@
-From ff1d242e553ff9d6f0e31d42cc75f5daf3cbd67a Mon Sep 17 00:00:00 2001
+From 7e6c2b7b965df1635143e1b90d12d27d478361f3 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 7 Apr 2024 18:01:01 +0200
-Subject: [PATCH 29/30] arm: dts: cn9131-cf-solidwan: fix cp1 mdio bus number
+Subject: [PATCH 28/31] arm: dts: cn9131-cf-solidwan: fix cp1 mdio bus number
  for 1g phys
 
 1G phys on CP1 are on the first mdio bus, change the number accordingly.

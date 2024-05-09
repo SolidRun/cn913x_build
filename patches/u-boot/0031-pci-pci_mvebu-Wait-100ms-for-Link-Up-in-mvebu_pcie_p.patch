@@ -1,0 +1,87 @@
+From 56b4d2febec8c91e77651f0a22012465a379d033 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Pali=20Roh=C3=A1r?= <pali@kernel.org>
+Date: Tue, 21 Dec 2021 12:20:17 +0100
+Subject: [PATCH 31/31] pci: pci_mvebu: Wait 100ms for Link Up in
+ mvebu_pcie_probe()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+After function mvebu_pcie_probe() returns U-Boot DM expects that PCIe link
+is already up. In followup patches link initialization will be moved from
+SPL to proper and therefore explicitly link up delay is required.
+
+Delay mvebu_pcie_probe() for 100ms to ensure that PCIe link is up after
+function finish. In the case when no card is connected to the PCIe slot,
+this will delay probe time by 100ms, which should not be problematic.
+
+This change fixes detection and initialization of some QCA98xx cards on
+the first serdes when configured in x1 mode. Default configuration of
+the first serdes on A385 is x4 mode, so it looks as if some delay is
+required when x4 is changed to x1 and card correctly links with A385.
+Other PCIe serdes ports on A385 are x1-only, and so they don't have this
+problem.
+
+Signed-off-by: Pali Rohár <pali@kernel.org>
+---
+ drivers/pci/pci_mvebu.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/drivers/pci/pci_mvebu.c b/drivers/pci/pci_mvebu.c
+index 31dcfc2814..fb638eb0cf 100644
+--- a/drivers/pci/pci_mvebu.c
++++ b/drivers/pci/pci_mvebu.c
+@@ -18,6 +18,7 @@
+ #include <asm/io.h>
+ #include <asm/arch/cpu.h>
+ #include <asm/arch/soc.h>
++#include <linux/delay.h>
+ #include <linux/errno.h>
+ #include <linux/ioport.h>
+ #include <linux/mbus.h>
+@@ -64,6 +65,9 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define PCIE_DEBUG_CTRL			0x1a60
+ #define  PCIE_DEBUG_SOFT_RESET		BIT(20)
+ 
++#define LINK_WAIT_RETRIES	100
++#define LINK_WAIT_TIMEOUT	1000
++
+ struct mvebu_pcie {
+ 	struct pci_controller hose;
+ 	void __iomem *base;
+@@ -95,6 +99,23 @@ static inline bool mvebu_pcie_link_up(struct mvebu_pcie *pcie)
+ 	return !(val & PCIE_STAT_LINK_DOWN);
+ }
+ 
++static void mvebu_pcie_wait_for_link(struct mvebu_pcie *pcie)
++{
++	int retries;
++
++	/* check if the link is up or not */
++	for (retries = 0; retries < LINK_WAIT_RETRIES; retries++) {
++		if (mvebu_pcie_link_up(pcie)) {
++			printf("%s: Link up\n", pcie->name);
++			return;
++		}
++
++		udelay(LINK_WAIT_TIMEOUT);
++	}
++
++	printf("%s: Link down\n", pcie->name);
++}
++
+ static void mvebu_pcie_set_local_bus_nr(struct mvebu_pcie *pcie, int busno)
+ {
+ 	u32 stat;
+@@ -360,6 +381,8 @@ static int mvebu_pcie_port_parse_dt(ofnode node, struct mvebu_pcie *pcie)
+ 
+ 	pcie->base = (void *)(fdt32_to_cpu(addr[2]) + SOC_REGS_PHY_BASE);
+ 
++	mvebu_pcie_wait_for_link(pcie);
++
+ 	return 0;
+ }
+ 
+-- 
+2.35.3
+

@@ -1,7 +1,7 @@
-From 30c73f6aeddee994dc3467a12b6848c25c999b3b Mon Sep 17 00:00:00 2001
+From c7dab3404113499008cc4b94062b8c4fa51c9d5b Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Tue, 22 Mar 2022 11:09:06 +0200
-Subject: [PATCH 15/16] octeontx2_cn913x: remove console variable
+Subject: [PATCH 14/31] octeontx2_cn913x: remove console variable
 
 console is now properly selected by chosen nodei n device-tree rather
 than through bootargs.
@@ -34,5 +34,5 @@ index aa966bd292..d01644fcb5 100644
  	"fdt_addr_r=0x6f00000\0" \
  	"ramdisk_addr_r=0x9000000\0" \
 -- 
-2.34.1
+2.35.3
 

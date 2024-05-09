@@ -1,7 +1,7 @@
-From b50f8b6575e789cf9315f3b5c1fad408803e4b59 Mon Sep 17 00:00:00 2001
+From 8c9645d2441851eeb0d5bc6380751100c09c4315 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 7 Apr 2024 17:03:20 +0200
-Subject: [PATCH 28/30] arm: dts: cn9131-cf-solidwan: adjust default led
+Subject: [PATCH 27/31] arm: dts: cn9131-cf-solidwan: adjust default led
  function
 
 Configure LED functions to be consistent between clearfog products:

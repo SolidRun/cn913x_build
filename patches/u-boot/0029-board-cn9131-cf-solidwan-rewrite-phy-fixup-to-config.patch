@@ -1,7 +1,7 @@
-From 89281468cc6128f514966f25c1d8c1705e6f1e97 Mon Sep 17 00:00:00 2001
+From 196da2b856f93c4bb1e9728a62b4cd0c9902fa35 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 7 Apr 2024 17:48:54 +0200
-Subject: [PATCH 30/30] board: cn9131-cf-solidwan: rewrite phy fixup to
+Subject: [PATCH 29/31] board: cn9131-cf-solidwan: rewrite phy fixup to
  configure all phys
 
 At power-on the PHys by default are not configured for sgmii mode
@@ -21,10 +21,10 @@ Signed-off-by: Josua Mayer <josua@solid-run.com>
  1 file changed, 29 insertions(+), 13 deletions(-)
 
 diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
-index 2e12072e88..736ad161f7 100644
+index e02488cab7..0392d5f983 100644
 --- a/board/Marvell/octeontx2_cn913x/board.c
 +++ b/board/Marvell/octeontx2_cn913x/board.c
-@@ -275,12 +275,9 @@ static inline int miiphy_modify(const char *devname, unsigned char addr, unsigne
+@@ -295,12 +295,9 @@ static inline int miiphy_modify(const char *devname, unsigned char addr, unsigne
  }
  
  /*
@@ -38,7 +38,7 @@ index 2e12072e88..736ad161f7 100644
  	struct mii_dev *bus;
  	int ret = 0;
  
-@@ -290,18 +287,27 @@ static void solidwan_phy_init() {
+@@ -310,18 +307,27 @@ static void solidwan_phy_init() {
  		return;
  	}
  
@@ -74,7 +74,7 @@ index 2e12072e88..736ad161f7 100644
  }
  
  int last_stage_init(void)
-@@ -311,7 +317,17 @@ int last_stage_init(void)
+@@ -331,7 +337,17 @@ int last_stage_init(void)
  	fdtfile = env_get("fdtfile");
  	if (strcmp(fdtfile, "marvell/cn9131-cf-solidwan.dtb") == 0) {
  		printf("Applying eth1 phy workaround ...\n");
