@@ -174,12 +174,10 @@ for i in $SDK_COMPONENTS; do
 			# Temporary commit waiting for a release
 			git checkout 00ad74c7afe67b2ffaf08300710f18d3dafebb45
 		elif [ "x$i" == "xmv-ddr-marvell" ]; then
-			echo "Cloning mv-ddr-marvell from mainline"
-			echo "Cloing https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git"
+			echo "Cloning mv-ddr-marvell from SolidRun"
+			echo "Cloning https://github.com/SolidRun/mv-ddr-marvell.git"
 			cd $ROOTDIR/build
-			git clone https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git mv-ddr-marvell
-			cd mv-ddr-marvell
-			git checkout mv-ddr-devel
+			git clone https://github.com/SolidRun/mv-ddr-marvell.git mv-ddr-marvell -b mv-ddr-marvell-sdk-v10
 		elif [ "x$i" == "xarmada-firmware" ]; then
 			echo "Cloning armada-firmware from SolidRun"
 			echo "Cloing https://github.com/SolidRun/armada-firmware.git"
