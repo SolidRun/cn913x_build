@@ -1,20 +1,19 @@
-From ef396b6266905c3d80e9235d734e1877de14dcd2 Mon Sep 17 00:00:00 2001
+From 651daceb131047a23fa5b73765de4b4792573abb Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 9 May 2024 14:43:58 +0200
-Subject: [PATCH 4/4] arm64: dts: cn913x solidrun boards: fix build errors with
- linux 4.14
+Subject: [PATCH 4/5] arm64: dts: cn913x solidrun boards: port to linux 4.14
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---
- .../arm64/boot/dts/marvell/cn9130-cf-base.dts |  42 +-----
- arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts | 130 +-----------------
- arch/arm64/boot/dts/marvell/cn9130-cf.dtsi    |   7 +-
+ .../arm64/boot/dts/marvell/cn9130-cf-base.dts |  46 +-----
+ arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts | 132 +-----------------
+ arch/arm64/boot/dts/marvell/cn9130-cf.dtsi    |  13 +-
  .../arm64/boot/dts/marvell/cn9130-sr-som.dtsi |   5 -
- .../boot/dts/marvell/cn9131-cf-solidwan.dts   | 113 +++------------
- 5 files changed, 28 insertions(+), 269 deletions(-)
+ .../boot/dts/marvell/cn9131-cf-solidwan.dts   | 125 ++++-------------
+ 5 files changed, 40 insertions(+), 281 deletions(-)
 
 diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
-index 788a5c302b17..f550e2e60164 100644
+index 788a5c302b17..d79481a12dca 100644
 --- a/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
 +++ b/arch/arm64/boot/dts/marvell/cn9130-cf-base.dts
 @@ -68,25 +68,6 @@
@@ -69,7 +68,15 @@ index 788a5c302b17..f550e2e60164 100644
  	};
  };
  
-@@ -161,6 +123,10 @@
+@@ -155,12 +117,16 @@
+  * USB-2.0 Host on Type-A connector
+  */
+ &cp0_usb3_1 {
+-	phys = <&cp0_comphy4 1>, <&cp0_utmi1>;
+-	phy-names = "comphy", "utmi";
++	phys = <&cp0_utmi1>, <&cp0_comphy4 1>;
++	phy-names = "usb", "usb3";
+ 	dr_mode = "host";
  	status = "okay";
  };
  
@@ -81,7 +88,7 @@ index 788a5c302b17..f550e2e60164 100644
  	m2-full-card-power-off-hog {
  		gpio-hog;
 diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts
-index a27fe0042867..c7edd5fc06c7 100644
+index a27fe0042867..06a0943cc9a8 100644
 --- a/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts
 +++ b/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts
 @@ -61,27 +61,6 @@
@@ -248,7 +255,13 @@ index a27fe0042867..c7edd5fc06c7 100644
  			};
  
  			ethernet-port@5 {
-@@ -356,6 +230,10 @@
+@@ -351,11 +225,15 @@
+ /* USB-2.0 Host on Type-A connector */
+ &cp0_usb3_1 {
+ 	phys = <&cp0_utmi1>;
+-	phy-names = "utmi";
++	phy-names = "usb";
+ 	dr_mode = "host";
  	status = "okay";
  };
  
@@ -260,9 +273,18 @@ index a27fe0042867..c7edd5fc06c7 100644
  	/* CON2 */
  	pcie1-0-clkreq-hog {
 diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi b/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
-index ad0ab34b6602..969d5bc162c8 100644
+index ad0ab34b6602..80f9ae3613fd 100644
 --- a/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
 +++ b/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
+@@ -39,7 +39,7 @@
+ &cp0_eth0 {
+ 	managed = "in-band-status";
+ 	phys = <&cp0_comphy2 0>;
+-	phy-mode = "10gbase-r";
++	phy-mode = "10gbase-kr";
+ 	sfp = <&sfp>;
+ 	status = "okay";
+ };
 @@ -123,11 +123,6 @@
  };
  
@@ -275,7 +297,16 @@ index ad0ab34b6602..969d5bc162c8 100644
  	cp0_mmc0_pins: cp0-mmc0-pins {
  		marvell,pins = "mpp43", "mpp56", "mpp57", "mpp58",
  			       "mpp59", "mpp60", "mpp61";
-@@ -185,7 +180,7 @@
+@@ -178,14 +173,14 @@
+  * USB-2.0 Host on mPCI-e connector (CON3)
+  */
+ &cp0_usb3_0 {
+-	phys = <&cp0_comphy1 0>, <&cp0_utmi0>;
+-	phy-names = "comphy", "utmi";
++	phys = <&cp0_utmi0>, <&cp0_comphy1 0>;
++	phy-names = "usb", "usb3";
+ 	vbus-supply = <&reg_usb3_vbus0>;
+ 	dr_mode = "host";
  	status = "okay";
  };
  
@@ -301,7 +332,7 @@ index 4676e3488f54..331893f3892d 100644
  			marvell,pins = "mpp40", "mpp41";
  			marvell,function = "ge";
 diff --git a/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts b/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
-index f41e5dd22c7e..c313f1bd6e18 100644
+index f41e5dd22c7e..2f9c9524e380 100644
 --- a/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
 +++ b/arch/arm64/boot/dts/marvell/cn9131-cf-solidwan.dts
 @@ -18,23 +18,18 @@
@@ -340,6 +371,15 @@ index f41e5dd22c7e..c313f1bd6e18 100644
  
  / {
  	model = "SolidRun CN9131 SolidWAN";
+@@ -150,7 +145,7 @@
+ /* SRDS #2 - SFP+ 10GE */
+ &cp0_eth0 {
+ 	managed = "in-band-status";
+-	phy-mode = "10gbase-r";
++	phy-mode = "10gbase-kr";
+ 	phys = <&cp0_comphy2 0>;
+ 	sfp = <&sfp0>;
+ 	status = "okay";
 @@ -285,25 +280,6 @@
  		 * - LED[2]: high impedance (floating)
  		 */
@@ -378,14 +418,22 @@ index f41e5dd22c7e..c313f1bd6e18 100644
  	cp0_led_pins: cp0-led-pins {
  		marvell,pins = "mpp4", "mpp7";
  		marvell,function = "gpio";
-@@ -403,24 +374,12 @@
+@@ -396,31 +367,19 @@
+ /* USB-2.0 Host to USB-Hub */
+ &cp0_usb3_0 {
+ 	phys = <&cp0_utmi0>;
+-	phy-names = "utmi";
++	phy-names = "usb";
+ 	dr_mode = "host";
+ 	status = "okay";
+ };
  
  /* SRDS #4 - USB-3.0 Host to USB-Hub */
  &cp0_usb3_1 {
 -	phys = <&cp0_comphy4 1>, <&cp0_utmi1>;
 -	phy-names = "comphy", "utmi";
-+	phys = <&cp0_comphy4 1>;
-+	phy-names = "comphy";
++	phys = <&cp0_utmi1>, <&cp0_comphy4 1>;
++	phy-names = "usb", "usb3";
  	dr_mode = "host";
  	status = "okay";
  };
@@ -405,6 +453,15 @@ index f41e5dd22c7e..c313f1bd6e18 100644
  &cp1_ethernet {
  	status = "okay";
  };
+@@ -428,7 +387,7 @@
+ /* SRDS #4 - SFP+ 10GE */
+ &cp1_eth0 {
+ 	managed = "in-band-status";
+-	phy-mode = "10gbase-r";
++	phy-mode = "10gbase-kr";
+ 	phys = <&cp1_comphy4 0>;
+ 	sfp = <&sfp1>;
+ 	status = "okay";
 @@ -502,25 +461,6 @@
  		 * - LED[2]: high impedance (floating)
  		 */
@@ -457,7 +514,15 @@ index f41e5dd22c7e..c313f1bd6e18 100644
  	};
  };
  
-@@ -628,6 +549,10 @@
+@@ -622,20 +543,24 @@
+  * USB-2.0 Host to M.2 (J30)
+  */
+ &cp1_usb3_0 {
+-	phys = <&cp1_comphy2 0>, <&cp1_utmi0>;
+-	phy-names = "comphy", "utmi";
++	phys = <&cp1_utmi0>, <&cp1_comphy2 0>;
++	phy-names = "usb", "usb3";
+ 	dr_mode = "host";
  	status = "okay";
  };
  
@@ -468,7 +533,9 @@ index f41e5dd22c7e..c313f1bd6e18 100644
  /* USB-2.0 Host to M.2 (J44) */
  &cp1_usb3_1 {
  	phys = <&cp1_utmi1>;
-@@ -636,6 +561,6 @@
+-	phy-names = "utmi";
++	phy-names = "usb";
+ 	dr_mode = "host";
  	status = "okay";
  };
  
