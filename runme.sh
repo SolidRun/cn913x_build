@@ -158,12 +158,12 @@ cd $ROOTDIR
 ###############################################################################
 # source code cloning and building 
 ###############################################################################
-SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux"
+SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux armada-firmware"
 
 for i in $SDK_COMPONENTS; do
 	if [[ ! -d $ROOTDIR/build/$i ]]; then
 		if [ "x$i" == "xlinux" ]; then
-			echo "Cloing https://github.com/SolidRun/linux-marvell release $RELEASE"
+			echo "Cloning https://github.com/SolidRun/linux-marvell release $RELEASE"
 			cd $ROOTDIR/build
 			git clone $SHALLOW_FLAG https://github.com/SolidRun/linux-marvell.git linux -b $RELEASE
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
@@ -180,6 +180,11 @@ for i in $SDK_COMPONENTS; do
 			git clone https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git mv-ddr-marvell
 			cd mv-ddr-marvell
 			git checkout mv-ddr-devel
+		elif [ "x$i" == "xarmada-firmware" ]; then
+			echo "Cloning armada-firmware from SolidRun"
+			echo "Cloing https://github.com/SolidRun/armada-firmware.git"
+			cd $ROOTDIR/build
+			git clone https://github.com/SolidRun/armada-firmware.git armada-firmware -b marvell-sdk-v10
 		elif [ "x$i" == "xu-boot" ]; then
 			echo "Cloning u-boot from git://git.denx.de/u-boot.git"
 			cd $ROOTDIR/build
@@ -250,7 +255,7 @@ fi
 
 echo "Building arm-trusted-firmware"
 cd $ROOTDIR/build/arm-trusted-firmware
-export SCP_BL2=$ROOTDIR/binaries/atf/mrvl_scp_bl2.img
+export SCP_BL2=$ROOTDIR/build/armada-firmware/mrvl_scp_bl2.img
 
 echo "Compiling U-BOOT and ATF"
 echo "CP_NUM=$CP_NUM"
