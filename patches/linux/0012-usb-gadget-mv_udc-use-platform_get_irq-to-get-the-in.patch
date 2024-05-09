@@ -1,0 +1,52 @@
+From 80d4184bfbc2ef89a3112749c43d955dbb2800a2 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Thu, 9 May 2024 19:16:00 +0200
+Subject: [PATCH 12/13] usb: gadget: mv_udc: use platform_get_irq() to get the
+ interrupt
+
+As of commit a1a2b7125e10 ("of/platform: Drop static setup of IRQ
+resource from DT core"), platform_get_resource() no longer returns
+interrupts on platforms using device-tree.
+
+Replace the platform_get_resource() call in probe function with the
+generic platform_get_irq().
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/usb/gadget/udc/mv_udc_core.c | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/usb/gadget/udc/mv_udc_core.c b/drivers/usb/gadget/udc/mv_udc_core.c
+index dccf76402545..f1f4f69c0e90 100644
+--- a/drivers/usb/gadget/udc/mv_udc_core.c
++++ b/drivers/usb/gadget/udc/mv_udc_core.c
+@@ -2130,7 +2130,7 @@ static int mv_udc_probe(struct platform_device *pdev)
+ 	struct mv_usb_platform_data *pdata = dev_get_platdata(&pdev->dev);
+ 	struct mv_udc *udc;
+ 	int retval = 0;
+-	struct resource *capregs, *phyregs, *irq;
++	struct resource *capregs, *phyregs;
+ 	size_t size;
+ 	struct clk *clk;
+ 
+@@ -2279,13 +2279,12 @@ static int mv_udc_probe(struct platform_device *pdev)
+ 	udc->remote_wakeup = 0;
+ 
+ 	/* request irq */
+-	irq = platform_get_resource(udc->dev, IORESOURCE_IRQ, 0);
+-	if (irq == NULL) {
+-		dev_err(&pdev->dev, "no IRQ resource defined\n");
+-		retval = -ENODEV;
++	udc->irq = platform_get_irq(pdev, 0);
++	if (udc->irq < 0) {
++		dev_err(&pdev->dev, "no IRQ resource found: %d\n", udc->irq);
++		retval = udc->irq;
+ 		goto err_destroy_dma;
+ 	}
+-	udc->irq = irq->start;
+ 	if (devm_request_irq(&pdev->dev, udc->irq, mv_udc_irq,
+ 		IRQF_SHARED, driver_name, udc)) {
+ 		dev_err(&pdev->dev, "Request irq %d for UDC failed\n",
+-- 
+2.35.3
+

@@ -1,0 +1,32 @@
+From 8d4166aeb88af2e52509d63f30cbf13c7f7993ec Mon Sep 17 00:00:00 2001
+From: Hanna Hawa <hannah@marvell.com>
+Date: Tue, 22 Nov 2016 11:00:02 +0200
+Subject: [PATCH 11/13] fix: udc: fix null pointer access when UDC suspend
+
+fix null pointer access in UDC driver while running suspend to RAM
+
+Change-Id: I15b74bf530f9630b4c4e9cbb4bc62e626aee90f8
+Signed-off-by: Hanna Hawa <hannah@marvell.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/33951
+Tested-by: Star_Automation <star@marvell.com>
+Reviewed-by: Omri Itach <omrii@marvell.com>
+---
+ drivers/usb/gadget/udc/mv_udc_core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/mv_udc_core.c b/drivers/usb/gadget/udc/mv_udc_core.c
+index 1669292ac36d..dccf76402545 100644
+--- a/drivers/usb/gadget/udc/mv_udc_core.c
++++ b/drivers/usb/gadget/udc/mv_udc_core.c
+@@ -2399,7 +2399,7 @@ static int mv_udc_suspend(struct device *dev)
+ 	if (udc->transceiver)
+ 		return 0;
+ 
+-	if (udc->pdata->vbus && udc->pdata->vbus->poll)
++	if (udc->pdata && udc->pdata->vbus && udc->pdata->vbus->poll)
+ 		if (udc->pdata->vbus->poll() == VBUS_HIGH) {
+ 			dev_info(&udc->dev->dev, "USB cable is connected!\n");
+ 			return -EAGAIN;
+-- 
+2.35.3
+

@@ -1,0 +1,136 @@
+From 3f6f54152a928ff486ef2d092ae2f5e074dcd557 Mon Sep 17 00:00:00 2001
+From: Lior Amsalem <alior@marvell.com>
+Date: Sun, 7 Jun 2015 14:35:09 +0300
+Subject: [PATCH 08/13] usb: gadget: mv_udc: support VBUS over GPIO from device
+ tree
+
+Add VBUS on GPIO input as a trigger for USB connection.
+
+Change-Id: Ifb866cf1143bce1d24f1ff2d4a028bb15119684e
+Signed-off-by: Lior Amsalem <alior@marvell.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/32805
+Tested-by: Star_Automation <star@marvell.com>
+Reviewed-by: Hanna Hawa <hannah@marvell.com>
+---
+ drivers/usb/gadget/udc/mv_udc.h      |  2 ++
+ drivers/usb/gadget/udc/mv_udc_core.c | 45 ++++++++++++++++++++++++++--
+ 2 files changed, 45 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/gadget/udc/mv_udc.h b/drivers/usb/gadget/udc/mv_udc.h
+index 4acf7edf4d86..3b2ed5a3f83d 100644
+--- a/drivers/usb/gadget/udc/mv_udc.h
++++ b/drivers/usb/gadget/udc/mv_udc.h
+@@ -215,6 +215,8 @@ struct mv_udc {
+ 				active:1,
+ 				stopped:1;      /* stop bit is setted */
+ 
++
++	int vbus_pin;
+ 	struct work_struct	vbus_work;
+ 	struct workqueue_struct *qwork;
+ 
+diff --git a/drivers/usb/gadget/udc/mv_udc_core.c b/drivers/usb/gadget/udc/mv_udc_core.c
+index 934ab4805b7d..f2c45eb00530 100644
+--- a/drivers/usb/gadget/udc/mv_udc_core.c
++++ b/drivers/usb/gadget/udc/mv_udc_core.c
+@@ -35,8 +35,10 @@
+ #include <linux/platform_device.h>
+ #include <linux/clk.h>
+ #include <linux/of.h>
++#include <linux/of_gpio.h>
+ #include <linux/platform_data/mv_usb.h>
+ #include <asm/unaligned.h>
++#include <linux/gpio.h>
+ 
+ #include "mv_udc.h"
+ 
+@@ -1371,6 +1373,9 @@ static int mv_udc_start(struct usb_gadget *gadget,
+ 	udc->ep0_state = WAIT_FOR_SETUP;
+ 	udc->ep0_dir = EP_DIR_OUT;
+ 
++	if (gpio_is_valid(udc->vbus_pin))
++		enable_irq(gpio_to_irq(udc->vbus_pin));
++
+ 	spin_unlock_irqrestore(&udc->lock, flags);
+ 
+ 	if (udc->transceiver) {
+@@ -1398,6 +1403,9 @@ static int mv_udc_stop(struct usb_gadget *gadget)
+ 
+ 	udc = container_of(gadget, struct mv_udc, gadget);
+ 
++	if (gpio_is_valid(udc->vbus_pin))
++		disable_irq(gpio_to_irq(udc->vbus_pin));
++
+ 	spin_lock_irqsave(&udc->lock, flags);
+ 
+ 	mv_udc_enable(udc);
+@@ -2061,10 +2069,13 @@ static void mv_udc_vbus_work(struct work_struct *work)
+ 	unsigned int vbus;
+ 
+ 	udc = container_of(work, struct mv_udc, vbus_work);
+-	if (!udc->pdata->vbus)
++	if (udc->pdata && udc->pdata->vbus)
++		vbus = udc->pdata->vbus->poll();
++	else if (gpio_is_valid(udc->vbus_pin))
++		vbus = gpio_get_value(udc->vbus_pin);
++	else
+ 		return;
+ 
+-	vbus = udc->pdata->vbus->poll();
+ 	dev_info(&udc->dev->dev, "vbus is %d\n", vbus);
+ 
+ 	if (vbus == VBUS_HIGH)
+@@ -2136,6 +2147,11 @@ static int mv_udc_probe(struct platform_device *pdev)
+ 		/* no phyregs for mvebu platform */
+ 		phyregs = NULL;
+ 
++		/* VBUS pin via GPIO */
++		udc->vbus_pin = of_get_named_gpio(pdev->dev.of_node, "vbus-gpio", 0);
++		if (udc->vbus_pin < 0)
++			udc->vbus_pin = -ENODEV;
++
+ 	} else if (pdata) {
+ 		udc->pdata = pdev->dev.platform_data;
+ 		if (pdata->mode == MV_USB_MODE_OTG) {
+@@ -2158,6 +2174,9 @@ static int mv_udc_probe(struct platform_device *pdev)
+ 			return -ENODEV;
+ 		}
+ 
++		/* platform data registration doesn't use the VBUS GPIO subsystem */
++		udc->vbus_pin = -ENODEV;
++
+ 	} else {
+ 		dev_err(&pdev->dev, "missing platform_data or of_node\n");
+ 		return -ENODEV;
+@@ -2299,6 +2318,28 @@ static int mv_udc_probe(struct platform_device *pdev)
+ 			udc->clock_gating = 0;
+ 		}
+ 
++	} else if (gpio_is_valid(udc->vbus_pin)) {
++		udc->clock_gating = 1;
++		if (!devm_gpio_request(&pdev->dev, udc->vbus_pin, "mv-udc")) {
++			retval = devm_request_irq(&pdev->dev,
++					       gpio_to_irq(udc->vbus_pin),
++					       mv_udc_vbus_irq, IRQ_TYPE_EDGE_BOTH,
++					       "mv-udc", udc);
++			if (retval) {
++				udc->vbus_pin = -ENODEV;
++				dev_warn(&pdev->dev,
++					 "failed to request vbus irq; "
++					 "assuming always on\n");
++			} else
++				disable_irq(gpio_to_irq(udc->vbus_pin));
++		} else {
++			/* gpio_request fail so use -EINVAL for gpio_is_valid */
++			udc->vbus_pin = -EINVAL;
++		}
++	}
++
++	/* if using VBUS interrupt, initialize work queue */
++	if ((pdata && pdata->vbus) || gpio_is_valid(udc->vbus_pin)) {
+ 		udc->qwork = create_singlethread_workqueue("mv_udc_queue");
+ 		if (!udc->qwork) {
+ 			dev_err(&pdev->dev, "cannot create workqueue\n");
+-- 
+2.35.3
+
