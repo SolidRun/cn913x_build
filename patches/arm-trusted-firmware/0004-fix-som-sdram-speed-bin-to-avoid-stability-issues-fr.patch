@@ -1,7 +1,7 @@
-From ac4af81936407ef29091a039257d0af8cc76cda9 Mon Sep 17 00:00:00 2001
+From 65126ab20b77ed39f3be4b16e0aebfb20fd693ab Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 7 Apr 2024 18:24:36 +0200
-Subject: [PATCH] fix som sdram speed bin to avoid stability issues from
+Subject: [PATCH 4/4] fix som sdram speed bin to avoid stability issues from
  silicon lottery
 
 The previosuly enabled timings 2400R are not appropriate for either 4GB
@@ -15,10 +15,10 @@ Signed-off-by: Josua Mayer <josua@solid-run.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
-index 53cd758e6..506e62073 100644
+index 56919eb8e..d8a53996f 100644
 --- a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
 +++ b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
-@@ -45,7 +45,7 @@ struct mv_ddr_iface dram_iface_ap0 = {
+@@ -51,7 +51,7 @@ struct mv_ddr_iface dram_iface_ap0 = {
  		      {0x1, 0x0, 0, 0},
  		      {0x1, 0x0, 0, 0},
  		      {0x1, 0x0, 0, 0} },

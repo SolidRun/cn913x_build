@@ -245,7 +245,6 @@ fi
 make olddefconfig
 make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
 install -m644 -D $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
-export BL33=$ROOTDIR/binaries/u-boot/u-boot.bin
 
 if [ "x$BOOT_LOADER" == "xuefi" ]; then
 	echo "no support for uefi yet"
@@ -253,14 +252,22 @@ fi
 
 echo "Building arm-trusted-firmware"
 cd $ROOTDIR/build/arm-trusted-firmware
-export SCP_BL2=$ROOTDIR/build/armada-firmware/mrvl_scp_bl2.img
 
 echo "Compiling U-BOOT and ATF"
 echo "CP_NUM=$CP_NUM"
 echo "DTB=$DTB_UBOOT"
 
-make PLAT=t9130 clean
-make -j${PARALLEL} USE_COHERENT_MEM=0 LOG_LEVEL=20 PLAT=t9130 MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell CP_NUM=$CP_NUM all fip
+make distclean
+make \
+	MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell \
+	SCP_BL2=$ROOTDIR/build/armada-firmware/mrvl_scp_bl2.img \
+	BL33=$ROOTDIR/binaries/u-boot/u-boot.bin \
+	USE_COHERENT_MEM=0 \
+	DEBUG=0 \
+	LOG_LEVEL=20 \
+	WORKAROUND_CVE_2018_3639=0 \
+	PLAT=t9130 \
+	all fip
 
 echo "Copying flash-image.bin to /Images folder"
 cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images/u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin
