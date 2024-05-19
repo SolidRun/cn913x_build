@@ -1,0 +1,42 @@
+From aab37045f840d598ddcf8da3bc38f9459ee620e8 Mon Sep 17 00:00:00 2001
+From: Evan Wang <xswang@marvell.com>
+Date: Fri, 26 May 2017 15:16:19 +0800
+Subject: [PATCH 32/45] fix: usb: gadget: u3d: remove HW reset from VBUS
+ session
+
+During the long time test, for SoC of armada3700, it is
+found that the HW reset could lead to CPU stuck in vbus
+session stage in USB3 device mode, and this issue is fixed
+by removing the HW reset from vbus session routine
+according to testing.
+
+The patch removes HW reset from U3D vbus session routine
+only for armada3700, which is just a WA to fix the issue.
+
+Change-Id: Idf23264fc06725a813afaeee0795ea818e9e8c79
+Signed-off-by: Evan Wang <xswang@marvell.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/40218
+Tested-by: iSoC Platform CI <ykjenk@marvell.com>
+Reviewed-by: Victor Gu <xigu@marvell.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index bb7e8617b87f..7977168347de 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -1495,7 +1495,9 @@ static int mvc2_vbus_session(struct usb_gadget *gadget, int is_active)
+ 
+ 	val = MV_CP_READ(MVCP_DMA_GLOBAL_CONFIG);
+ 	if (is_active) {
+-		mvc2_hw_reset(cp);
++		/* For Armada 3700, need to skip PHY HW reset */
++		if (cp->phy_hw_reset)
++			mvc2_hw_reset(cp);
+ 		pm_stay_awake(cp->dev);
+ 		/* turn on dma int */
+ 		val |= MVCP_DMA_GLOBAL_CONFIG_RUN
+-- 
+2.35.3
+

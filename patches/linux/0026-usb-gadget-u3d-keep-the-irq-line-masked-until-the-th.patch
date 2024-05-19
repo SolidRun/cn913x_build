@@ -1,0 +1,38 @@
+From d327a5c8dbce4325355d1e4c6ef9aa5450a246de Mon Sep 17 00:00:00 2001
+From: Grzegorz Jaszczyk <jaz@semihalf.com>
+Date: Tue, 17 Jan 2017 17:16:20 +0100
+Subject: [PATCH 26/45] usb: gadget: u3d: keep the irq line masked until the
+ threaded handler finished
+
+Adding IRQF_ONESHOT flag allows to keep the irq line masked until the
+threaded handler finshed. This prevents from multiple handling of the
+same interrupt.
+
+Change-Id: I9221a4d3ffda4f01d3198c588b1ac9b974a17ea4
+Signed-off-by: Grzegorz Jaszczyk <jaz@semihalf.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/38537
+Tested-by: iSoC Platform CI <ykjenk@marvell.com>
+Reviewed-by: Omri Itach <omrii@marvell.com>
+Reviewed-by: Hanna Hawa <hannah@marvell.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index f38ebf2577ad..d727b2c48ca8 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -2360,8 +2360,8 @@ static int mvc2_probe(struct platform_device *pdev)
+ 			ret = devm_request_any_context_irq(&pdev->dev,
+ 					       gpio_to_irq(cp->vbus_pin),
+ 					       mvc2_vbus_irq,
+-					       IRQ_TYPE_EDGE_BOTH, "mvebu-u3d",
+-					       cp);
++					       IRQ_TYPE_EDGE_BOTH | IRQF_ONESHOT,
++					       "mvebu-u3d", cp);
+ 			if (ret < 0) {
+ 				cp->vbus_pin = -ENODEV;
+ 				dev_warn(&pdev->dev,
+-- 
+2.35.3
+

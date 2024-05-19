@@ -1,0 +1,159 @@
+From dcff62a50dd89e69e6e1df5bcd7e9ba14c0fa597 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 19 May 2024 11:56:42 +0200
+Subject: [PATCH 41/45] phy: mvebu-cp110-comphy: set vbus-present bit from
+ extcon
+
+CP11x serdes have a special bit indicating vbus presence to other ip
+blocks. This bit is not set automatically but should be set according to
+external vbus detection methods, such as gpio.
+
+Support optional extcon property for each phy sub-node to set vbus
+presence according to connector state.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/phy/marvell/phy-mvebu-cp110-comphy.c | 69 ++++++++++++++++++++
+ 1 file changed, 69 insertions(+)
+
+diff --git a/drivers/phy/marvell/phy-mvebu-cp110-comphy.c b/drivers/phy/marvell/phy-mvebu-cp110-comphy.c
+index bbcdd85aaf66..2ed63b5fae8b 100644
+--- a/drivers/phy/marvell/phy-mvebu-cp110-comphy.c
++++ b/drivers/phy/marvell/phy-mvebu-cp110-comphy.c
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include <linux/arm-smccc.h>
++#include <linux/extcon.h>
+ #include <linux/io.h>
+ #include <linux/iopoll.h>
+ #include <linux/mfd/syscon.h>
+@@ -80,6 +81,10 @@ struct mvebu_comhy_conf {
+ 
+ #define COMPHY_FW_NOT_SUPPORTED		(-1)
+ 
++/* lane configuration registers */
++#define VBUS_PRESENT_REG	0x0f10
++#define VBUS_PRESENT_VAL	BIT(15)
++
+ typedef unsigned long (comphy_fn)(unsigned long, phys_addr_t,
+ 				  unsigned long, unsigned long);
+ 
+@@ -189,6 +194,7 @@ struct mvebu_comphy_data {
+ 
+ struct mvebu_comphy_priv {
+ 	phys_addr_t phys;
++	void __iomem *lane_regs;
+ 	struct device *dev;
+ 	const struct mvebu_comphy_data *data;
+ };
+@@ -199,6 +205,8 @@ struct mvebu_comphy_lane {
+ 	enum phy_mode mode;
+ 	int submode;
+ 	int port;
++	void __iomem *regs;
++	struct notifier_block vbus_nb;
+ };
+ 
+ static const struct mvebu_comphy_data a3700_data = {
+@@ -462,6 +470,31 @@ static struct phy *mvebu_comphy_xlate(struct device *dev,
+ 	return phy;
+ }
+ 
++static inline void reg_set16(void __iomem *addr, u16 data, u16 mask)
++{
++	u16 reg_data;
++
++	reg_data = ioread16(addr);
++	reg_data &= ~mask;
++	reg_data |= data;
++	iowrite16(reg_data, addr);
++}
++
++static inline void mvebu_comphy_set_vbus_present(struct mvebu_comphy_lane *lane, bool val)
++{
++	reg_set16(lane->regs + VBUS_PRESENT_REG, val ? VBUS_PRESENT_VAL : 0, VBUS_PRESENT_VAL);
++}
++
++static int mvebu_comphy_vbus_notifier(struct notifier_block *nb,
++	unsigned long event, void *ptr)
++{
++	struct mvebu_comphy_lane *lane = container_of(nb, struct mvebu_comphy_lane, vbus_nb);
++
++	mvebu_comphy_set_vbus_present(lane, !!event);
++
++	return NOTIFY_DONE;
++}
++
+ static int mvebu_comphy_probe(struct platform_device *pdev)
+ {
+ 	struct mvebu_comphy_priv *priv;
+@@ -469,6 +502,7 @@ static int mvebu_comphy_probe(struct platform_device *pdev)
+ 	struct phy_provider *provider;
+ 	struct device_node *child;
+ 	struct resource *res;
++	struct extcon_dev *edev;
+ 	int i;
+ 
+ 	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
+@@ -493,6 +527,17 @@ static int mvebu_comphy_probe(struct platform_device *pdev)
+ 		if (i == 0)
+ 			priv->phys = res->start;
+ 
++		if (i == 1) {
++			priv->lane_regs = devm_ioremap_resource(&pdev->dev, res);
++			if (IS_ERR(priv->lane_regs)) {
++				dev_err(&pdev->dev, "failed to map %s: %d\n",
++					res->name, (int)PTR_ERR(priv->lane_regs));
++				return PTR_ERR(priv->lane_regs);
++			}
++			continue;
++		}
++
++		/* request unused resources */
+ 		if (!devm_request_mem_region(&pdev->dev, res->start,
+ 					     resource_size(res), res->name)) {
+ 			dev_err(&pdev->dev, "resource %s busy\n", res->name);
+@@ -500,6 +545,12 @@ static int mvebu_comphy_probe(struct platform_device *pdev)
+ 		}
+ 	}
+ 
++	// lane configuration registers are required
++	if (!priv->lane_regs) {
++		dev_err(&pdev->dev, "missing lane configuration resource!\n");
++		return -EINVAL;
++	}
++
+ 	for_each_available_child_of_node(pdev->dev.of_node, child) {
+ 		struct mvebu_comphy_lane *lane;
+ 		struct phy *phy;
+@@ -530,8 +581,26 @@ static int mvebu_comphy_probe(struct platform_device *pdev)
+ 		lane->mode = PHY_MODE_INVALID;
+ 		lane->id = val;
+ 		lane->port = -1;
++		lane->regs = priv->lane_regs + lane->id * 0x1000;
+ 		phy_set_drvdata(phy, lane);
+ 
++		/* connect vbus notifications */
++		edev = extcon_get_edev_by_phandle(&phy->dev, 0);
++		if (IS_ERR(edev) && PTR_ERR(edev) != -ENODEV) {
++			return PTR_ERR(edev);
++		} else if (!IS_ERR(edev)) {
++			lane->vbus_nb.notifier_call = mvebu_comphy_vbus_notifier;
++			ret = devm_extcon_register_notifier(&phy->dev, edev,
++							    EXTCON_USB,
++							    &lane->vbus_nb);
++			if (ret < 0)
++				dev_err(&phy->dev, "failed to register notifier for USB\n");
++
++			/* set initial vbus state */
++			mvebu_comphy_set_vbus_present(lane,
++						      extcon_get_state(edev, EXTCON_USB));
++		}
++
+ 		if (of_get_property(phy->dev.of_node, "phy-skip-config", NULL))
+ 			continue;
+ 
+-- 
+2.35.3
+

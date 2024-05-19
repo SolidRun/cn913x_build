@@ -1,7 +1,7 @@
 From df2c663819c69a0db60d9e53d8c678a9bd0a3039 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 18 Mar 2024 15:11:40 +0100
-Subject: [PATCH 2/4] arm64: dts: add description for solidrun cn9130 som and
+Subject: [PATCH 02/45] arm64: dts: add description for solidrun cn9130 som and
  clearfog boards
 
 Add description for the SolidRun CN9130 SoM, and Clearfog Base / Pro

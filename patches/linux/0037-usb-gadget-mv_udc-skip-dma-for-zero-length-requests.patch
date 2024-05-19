@@ -1,0 +1,26 @@
+From 7b10073afc96a059eb45e62142378f677a92c22f Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 19 May 2024 10:32:40 +0200
+Subject: [PATCH 37/45] usb: gadget: mv_udc: skip dma for zero-length requests
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/usb/gadget/udc/mv_udc_core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/mv_udc_core.c b/drivers/usb/gadget/udc/mv_udc_core.c
+index a3aac3a2cb63..e23babfee140 100644
+--- a/drivers/usb/gadget/udc/mv_udc_core.c
++++ b/drivers/usb/gadget/udc/mv_udc_core.c
+@@ -1485,7 +1485,7 @@ udc_prime_status(struct mv_udc *udc, u8 direction, u16 status, bool empty)
+ 		req->req.complete = NULL;
+ 	req->dtd_count = 0;
+ 
+-	if (req->req.dma == DMA_ADDR_INVALID) {
++	if (req->req.dma == DMA_ADDR_INVALID && req->req.length) {
+ 		req->req.dma = dma_map_single(ep->udc->gadget.dev.parent,
+ 				req->req.buf, req->req.length,
+ 				ep_dir(ep) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+-- 
+2.35.3
+

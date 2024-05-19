@@ -1,0 +1,56 @@
+From 14657443fcdf02a29c55229e619946a4131f7f09 Mon Sep 17 00:00:00 2001
+From: Allen Yan <yanwei@marvell.com>
+Date: Tue, 19 Sep 2017 15:32:40 +0800
+Subject: [PATCH 34/45] fix: usb: gadget: u3d: disable USB interrupts after
+ pull down
+
+Currently, if connect the Armada3700 DB board to the usb 3.0 port
+on PC and try to run the command as following:
+insmod ./g_mass_storage.ko file=/dev/ram0 removable=1
+rmmod -f ./g_mass_storage.ko
+
+If try to remove the gadget driver while connect the Armada3700 DB board to
+PC. It will cause Kernel Crash. The reason is that if remove the gadget
+driver module, it will generate a MVCP_REF_INTEN_USB2_CNT interrupt and u3d
+will handle this interrupt. The glue layer will try to do usb_gadget_probe
+_driver. But the u30->driver pointer is setted to NULL already by running
+rmmod -f ./g_mass_storage.ko command. But the driver pointer(in the
+function mvc2_usb2_connect) is still point to the old address of
+u30->driver. So crash happened.
+
+This patch fixes this problem by skip calling mvc2_init_interrupt function
+in pulldown and it won't re-enale the MVCP_REF_INTEN_USB2_CNT interrupt
+again.
+
+Change-Id: Ie3bb55000110158f5b72c942290db68d91edb1a7
+Signed-off-by: Allen Yan <yanwei@marvell.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/44491
+Tested-by: iSoC Platform CI <ykjenk@marvell.com>
+Reviewed-by: Omri Itach <omrii@marvell.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index 544f6854e61d..c86577901bc1 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -1420,7 +1420,14 @@ static int mvc2_pullup(struct usb_gadget *gadget, int is_on)
+ 	val |= MVCP_DMA_GLOBAL_CONFIG_RUN | MVCP_DMA_GLOBAL_CONFIG_INTCLR;
+ 	MV_CP_WRITE(val, MVCP_DMA_GLOBAL_CONFIG);
+ 
+-	mvc2_init_interrupt(cp);
++	/* Don't call mvc2_init_interrupt in pull_down. So it will not re-enable
++	 * MVCP_REF_INTEN_USB2_CNT interrupt (this interrupt is enabled in mvc2_start).
++	 * The other interrupts in mvc2_init_interrupt are already enabled before
++	 * calling mvc2_init_interrupt, so we don't need to enbale these interrupt
++	 * again in pulldown.
++	 */
++	if (is_on)
++		mvc2_init_interrupt(cp);
+ 
+ 	if (is_on == 0)
+ 		stop_activity(cp, cp->driver);
+-- 
+2.35.3
+

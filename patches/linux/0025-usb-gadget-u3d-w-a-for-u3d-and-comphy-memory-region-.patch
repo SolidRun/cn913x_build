@@ -1,0 +1,46 @@
+From 94a816c8e600d02ad6922399d2822c2546fc2a44 Mon Sep 17 00:00:00 2001
+From: Grzegorz Jaszczyk <jaz@semihalf.com>
+Date: Tue, 17 Jan 2017 17:14:36 +0100
+Subject: [PATCH 25/45] usb: gadget: u3d: w/a for u3d and comphy memory region
+ overlapping
+
+The u3d node have two io spaces, the second one is the phy serdes region,
+which is already used in the cp110-comphy driver. The comphy driver already
+requests this region by calling devm_ioremap_resource. When the u3d driver
+tries to do the same, the devm_ioremap_resource returns error, which is
+assigned to phy_base. This error isn't caught in the u3d driver, because
+there is only check if the phy_base isn't NULL. This results with getting
+kernel crash with "Unable to handle kernel paging request at virtual
+address" during interrupt handling.
+
+This issue is work-arounded by using devm_ioremap(which doesn't call
+'devm_request_mem_region') instead of devm_ioremap_resource for phy_base.
+Nevertheless the correct fix should be applied by using syscon/regmap
+solution.
+
+Change-Id: I4eb063ff28e58b570d5fc876627957e6eb5ee280
+Signed-off-by: Grzegorz Jaszczyk <jaz@semihalf.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/38536
+Tested-by: iSoC Platform CI <ykjenk@marvell.com>
+Reviewed-by: Omri Itach <omrii@marvell.com>
+Reviewed-by: Hanna Hawa <hannah@marvell.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index f58f54ef4100..f38ebf2577ad 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -2308,7 +2308,7 @@ static int mvc2_probe(struct platform_device *pdev)
+ 	/* phy address for VBUS toggling */
+ 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+ 	if (res) {
+-		phy_base = devm_ioremap_resource(&pdev->dev, res);
++		phy_base = devm_ioremap(&pdev->dev, res->start, resource_size(res));
+ 		if (!phy_base) {
+ 			dev_err(&pdev->dev, "%s: register mapping failed\n", __func__);
+ 			ret = -ENXIO;
+-- 
+2.35.3
+

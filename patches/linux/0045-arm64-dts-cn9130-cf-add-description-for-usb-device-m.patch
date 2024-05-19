@@ -1,0 +1,148 @@
+From 0d9d9c7362d070e558d922215a2395053e41eb17 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Thu, 9 May 2024 21:23:52 +0200
+Subject: [PATCH 45/45] arm64: dts: cn9130-cf: add description for usb
+ device-mode
+
+CN9130 Clearfog Base and Pro can support Device mode on their type-A
+connectors using serdes 1 and utmi 1.
+
+Add descriptions with -gadget suffix supporting this configuration.
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/Makefile          |  2 +
+ .../dts/marvell/cn9130-cf-base-gadget.dts     | 16 ++++++++
+ .../boot/dts/marvell/cn9130-cf-gadget.dtsi    | 41 +++++++++++++++++++
+ .../boot/dts/marvell/cn9130-cf-pro-gadget.dts | 18 ++++++++
+ arch/arm64/boot/dts/marvell/cn9130-cf.dtsi    |  5 +++
+ 5 files changed, 82 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/marvell/cn9130-cf-base-gadget.dts
+ create mode 100644 arch/arm64/boot/dts/marvell/cn9130-cf-gadget.dtsi
+ create mode 100644 arch/arm64/boot/dts/marvell/cn9130-cf-pro-gadget.dts
+
+diff --git a/arch/arm64/boot/dts/marvell/Makefile b/arch/arm64/boot/dts/marvell/Makefile
+index a62a4706f8a1..2112b1cfa93c 100644
+--- a/arch/arm64/boot/dts/marvell/Makefile
++++ b/arch/arm64/boot/dts/marvell/Makefile
+@@ -50,7 +50,9 @@ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-crb-r1p3-A.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-crb-r1p3-B.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-crb-r1p3-C.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-base.dtb
++dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-base-gadget.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-pro.dtb
++dtb-$(CONFIG_ARCH_MVEBU) += cn9130-cf-pro-gadget.dtb
+ dtb-$(CONFIG_ARCH_MVEBU) += cn9131-cf-solidwan.dtb
+ 
+ always		:= $(dtb-y)
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-base-gadget.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-base-gadget.dts
+new file mode 100644
+index 000000000000..00feca9d3fae
+--- /dev/null
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf-base-gadget.dts
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2024 Josua Mayer <josua@solid-run.com>
++ *
++ * DTS for SolidRun CN9130 Clearfog Base as USB Gadget on USB-A Connector.
++ *
++ */
++
++#include "cn9130-cf-base.dts"
++#include "cn9130-cf-gadget.dtsi"
++
++&cp0_usb3_1 {
++	/* remove utmi phy */
++	phys = <&cp0_comphy4 1>;
++	phy-names = "comphy";
++};
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-gadget.dtsi b/arch/arm64/boot/dts/marvell/cn9130-cf-gadget.dtsi
+new file mode 100644
+index 000000000000..c4fee2d15642
+--- /dev/null
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf-gadget.dtsi
+@@ -0,0 +1,41 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2024 Josua Mayer <josua@solid-run.com>
++ *
++ * DTS for SolidRun CN9130 Clearfog as USB Gadget on USB-A Connector.
++ *
++ */
++
++/ {
++	/* Use mikrobus "int" signal for vbus presence detection. */
++	usb_vbusdet: usb-vbusdet {
++		compatible = "linux,extcon-usb-gpio";
++		pinctrl-0 = <&mikro_int_pins>;
++		vbus-gpio = <&cp0_gpio1 30 GPIO_ACTIVE_HIGH>;
++	};
++};
++
++&cp0_comphy1 {
++	extcon = <&usb_vbusdet>;
++};
++
++/* SRDS #1 - USB-3.0 Device on Type-A connector */
++&cp0_u3d {
++	phys = <&cp0_comphy1 0>;
++	phy-names = "usb";
++	status = "okay";
++};
++
++/* USB-2.0 Peripheral on Type-A connector */
++&cp0_udc {
++	pinctrl-0 = <&mikro_int_pins>, <&mikro_spi_pins>;
++	extcon = <&usb_vbusdet>;
++	phys = <&cp0_utmi1>;
++	phy-names = "usb";
++	status = "okay";
++};
++
++&cp0_utmi1 {
++	/* connect to device controller */
++	utmi-port = <UTMI_PHY_TO_USB3_DEVICE0>;
++};
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-pro-gadget.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-pro-gadget.dts
+new file mode 100644
+index 000000000000..bf152ea9b701
+--- /dev/null
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf-pro-gadget.dts
+@@ -0,0 +1,18 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2024 Josua Mayer <josua@solid-run.com>
++ *
++ * DTS for SolidRun CN9130 Clearfog Pro as USB Gadget on USB-A Connector.
++ *
++ */
++
++#include "cn9130-cf-pro.dts"
++#include "cn9130-cf-gadget.dtsi"
++
++&cp0_usb3_1 {
++	/* remove utmi phy */
++	/delete-property/ phys;
++	/delete-property/ phy-names;
++	/* disable controller */
++	status = "disabled";
++};
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi b/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
+index 80f9ae3613fd..886811ea443c 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
+@@ -129,6 +129,11 @@
+ 		marvell,function = "sdio";
+ 	};
+ 
++	mikro_int_pins: cp0-mikro-int-pins {
++		marvell,pins = "mpp30";
++		marvell,function = "spi1";
++	};
++
+ 	mikro_spi_pins: cp0-spi1-cs1-pins {
+ 		marvell,pins = "mpp12";
+ 		marvell,function = "spi1";
+-- 
+2.35.3
+

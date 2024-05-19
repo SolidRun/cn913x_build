@@ -1,7 +1,7 @@
-From 2b727b637658cadc237468a9da53ebc6c62228ad Mon Sep 17 00:00:00 2001
+From 267a4b95de679dc304c89c707ca0fb499bda80ad Mon Sep 17 00:00:00 2001
 From: Omri Itach <omrii@marvell.com>
 Date: Sun, 20 Mar 2016 19:07:12 +0200
-Subject: [PATCH 10/13] usb: gadget: mv_udc: avoid null pointer dereference in
+Subject: [PATCH 12/45] usb: gadget: mv_udc: avoid null pointer dereference in
  usb_gadget_giveback_request
 
 The recently introduced usb_gadget_giveback_request() was added in favor of
@@ -23,7 +23,7 @@ Tested-by: Star_Automation <star@marvell.com>
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/usb/gadget/udc/mv_udc_core.c b/drivers/usb/gadget/udc/mv_udc_core.c
-index e4beee0ae505..1669292ac36d 100644
+index b416226386af..8ffe6830e6d3 100644
 --- a/drivers/usb/gadget/udc/mv_udc_core.c
 +++ b/drivers/usb/gadget/udc/mv_udc_core.c
 @@ -252,7 +252,8 @@ static void done(struct mv_ep *ep, struct mv_req *req, int status)

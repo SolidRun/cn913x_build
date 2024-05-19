@@ -1,7 +1,7 @@
 From 651daceb131047a23fa5b73765de4b4792573abb Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 9 May 2024 14:43:58 +0200
-Subject: [PATCH 4/5] arm64: dts: cn913x solidrun boards: port to linux 4.14
+Subject: [PATCH 04/45] arm64: dts: cn913x solidrun boards: port to linux 4.14
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---

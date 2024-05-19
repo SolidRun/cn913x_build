@@ -1,0 +1,86 @@
+From ca36ea5463c53aed453264f04d0c55706f8ebd8a Mon Sep 17 00:00:00 2001
+From: Christine Gharzuzi <chrisg@marvell.com>
+Date: Wed, 5 Apr 2017 20:44:50 +0300
+Subject: [PATCH 22/45] usb: gadget: u3d: fix error handling
+
+Because both 'base' and 'phy_base' are ioremaped with the managed version
+(devm_) iounmaping them manually leads to situation where unmap on the
+same address is called twice and triggers bellow warning in the kernel:
+[    3.698737] Trying to vfree() nonexistent vm area (ffffff8000534000)
+[    3.705144] ------------[ cut here ]------------
+[    3.709781] WARNING: at mm/vmalloc.c:1466
+[    3.713805] Modules linked in:
+[    3.716883]
+[    3.718382] CPU: 1 PID: 46 Comm: kworker/u8:2 Not tainted 4.4.8-devel-17.01.1-02429-gbf57d52-dirty #1345
+[    3.727901] Hardware name: Marvell Armada-7040 development board A setup (DT)
+[    3.735078] Workqueue: deferwq deferred_probe_work_func
+[    3.740336] task: ffffffc0e5e84d00 ti: ffffffc0e5ea8000 task.ti: ffffffc0e5ea8000
+[    3.747853] PC is at __vunmap+0xe0/0xe8
+[    3.751704] LR is at __vunmap+0xe0/0xe8
+...
+
+This commit fixes that issue by removing the manual iounmap.
+
+Change-Id: I19bec6044d642e64e620cadf58639b170c03cb40
+Signed-off-by: Grzegorz Jaszczyk <jaz@semihalf.com>
+Signed-off-by: Christine Gharzuzi <chrisg@marvell.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/38533
+Tested-by: iSoC Platform CI <ykjenk@marvell.com>
+Reviewed-by: Omri Itach <omrii@marvell.com>
+Reviewed-by: Hanna Hawa <hannah@marvell.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index 147ab5e19a58..bc4fda7c564c 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -2321,21 +2321,21 @@ static int mvc2_probe(struct platform_device *pdev)
+ 	if (!res) {
+ 		dev_err(&pdev->dev, "missing mem resource\n");
+ 		ret = -ENODEV;
+-		goto err_phybase;
++		goto err_clk;
+ 	}
+ 
+ 	base = devm_ioremap_resource(&pdev->dev, res);
+ 	if (!base) {
+ 		dev_err(&pdev->dev, "%s: register mapping failed\n", __func__);
+ 		ret = -ENXIO;
+-		goto err_phybase;
++		goto err_clk;
+ 	}
+ 
+ 	ver = ioread32(base);
+ 	if (ver == 0) {
+ 		dev_err(&pdev->dev, "IP version error!\n");
+ 		ret = -ENXIO;
+-		goto err_base;
++		goto err_clk;
+ 	}
+ 
+ 	cp->mvc2_version = ver & 0xFFFF;
+@@ -2370,7 +2370,7 @@ static int mvc2_probe(struct platform_device *pdev)
+ 		if (!cp->qwork) {
+ 			dev_err(&pdev->dev, "cannot create workqueue\n");
+ 			ret = -ENOMEM;
+-			goto err_base;
++			goto err_clk;
+ 		}
+ 
+ 		INIT_WORK(&cp->vbus_work, mvc2_vbus_work);
+@@ -2451,10 +2451,6 @@ static int mvc2_probe(struct platform_device *pdev)
+ 		phy_power_off(cp->comphy);
+ 		phy_exit(cp->comphy);
+ 	}
+-err_base:
+-	iounmap(base);
+-err_phybase:
+-	iounmap(phy_base);
+ err_clk:
+ 	clk_disable_unprepare(cp->clk);
+ err_mem:
+-- 
+2.35.3
+

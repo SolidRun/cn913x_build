@@ -1,0 +1,51 @@
+From 20ee464641a2440013889c9e9a9430c34a8ea12b Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Fri, 10 May 2024 11:34:47 +0200
+Subject: [PATCH 38/45] phy: mvebu-cp110-comphy: add usb device-mode support
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/phy/marvell/phy-mvebu-cp110-comphy.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/phy/marvell/phy-mvebu-cp110-comphy.c b/drivers/phy/marvell/phy-mvebu-cp110-comphy.c
+index 34a54cd05c74..bbcdd85aaf66 100644
+--- a/drivers/phy/marvell/phy-mvebu-cp110-comphy.c
++++ b/drivers/phy/marvell/phy-mvebu-cp110-comphy.c
+@@ -134,6 +134,7 @@ static const struct mvebu_comhy_conf mvebu_comphy_cp110_modes[] = {
+ 	MVEBU_COMPHY_CONF(1, 0, PHY_MODE_PCIE),
+ 	MVEBU_COMPHY_CONF(1, 0, PHY_MODE_SATA),
+ 	MVEBU_COMPHY_CONF(1, 0, PHY_MODE_USB_HOST),
++	MVEBU_COMPHY_CONF(1, 0, PHY_MODE_USB_DEVICE),
+ 	/* lane 2 */
+ 	MVEBU_COMPHY_CONF_ETH(2, 0, PHY_INTERFACE_MODE_SGMII),
+ 	MVEBU_COMPHY_CONF_ETH(2, 0, PHY_INTERFACE_MODE_2500BASEX),
+@@ -167,6 +168,7 @@ static const struct mvebu_comhy_conf mvebu_comphy_cp110_modes[] = {
+ 	MVEBU_COMPHY_CONF_ETH(4, 1, PHY_INTERFACE_MODE_SGMII),
+ 	MVEBU_COMPHY_CONF(4, 1, PHY_MODE_PCIE),
+ 	MVEBU_COMPHY_CONF(4, 1, PHY_MODE_USB_HOST),
++	MVEBU_COMPHY_CONF(4, 0, PHY_MODE_USB_DEVICE),
+ 	MVEBU_COMPHY_CONF_ETH(4, 0, PHY_INTERFACE_MODE_RXAUI),
+ 	/* lane 5 */
+ 	MVEBU_COMPHY_CONF_ETH(5, 2, PHY_INTERFACE_MODE_SGMII),
+@@ -341,10 +343,17 @@ static int mvebu_comphy_power_on(struct phy *phy)
+ 				 COMPHY_FW_MODE_FORMAT(COMPHY_SATA_MODE));
+ 		break;
+ 	case PHY_MODE_USB_HOST:
++		dev_info(priv->dev, "lane %d: usb3 host mode\n", lane->id);
+ 		ret = data->comphy_smc(MV_SIP_COMPHY_POWER_ON, priv->phys,
+ 				 lane->id,
+ 				 COMPHY_FW_MODE_FORMAT(COMPHY_USB3H_MODE));
+ 		break;
++	case PHY_MODE_USB_DEVICE:
++		dev_info(priv->dev, "lane %d: usb3 device mode\n", lane->id);
++		ret = data->comphy_smc(MV_SIP_COMPHY_POWER_ON, priv->phys,
++				 lane->id,
++				 COMPHY_FW_MODE_FORMAT(COMPHY_USB3D_MODE));
++		break;
+ 	case PHY_MODE_ETHERNET:
+ 		ret = mvebu_comphy_eth_power_on(phy);
+ 		break;
+-- 
+2.35.3
+

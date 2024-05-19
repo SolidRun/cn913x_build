@@ -1,7 +1,7 @@
-From 8d4166aeb88af2e52509d63f30cbf13c7f7993ec Mon Sep 17 00:00:00 2001
+From 32fd19cb0ed4276449e0acbc8aa4f2ecc3241be2 Mon Sep 17 00:00:00 2001
 From: Hanna Hawa <hannah@marvell.com>
 Date: Tue, 22 Nov 2016 11:00:02 +0200
-Subject: [PATCH 11/13] fix: udc: fix null pointer access when UDC suspend
+Subject: [PATCH 13/45] fix: udc: fix null pointer access when UDC suspend
 
 fix null pointer access in UDC driver while running suspend to RAM
 
@@ -15,10 +15,10 @@ Reviewed-by: Omri Itach <omrii@marvell.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/drivers/usb/gadget/udc/mv_udc_core.c b/drivers/usb/gadget/udc/mv_udc_core.c
-index 1669292ac36d..dccf76402545 100644
+index 8ffe6830e6d3..def2d526f33c 100644
 --- a/drivers/usb/gadget/udc/mv_udc_core.c
 +++ b/drivers/usb/gadget/udc/mv_udc_core.c
-@@ -2399,7 +2399,7 @@ static int mv_udc_suspend(struct device *dev)
+@@ -2429,7 +2429,7 @@ static int mv_udc_suspend(struct device *dev)
  	if (udc->transceiver)
  		return 0;
  

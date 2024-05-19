@@ -1,0 +1,44 @@
+From dd8b065f15371349a35544cf40f82a7f0fe804aa Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Fri, 10 May 2024 11:37:40 +0200
+Subject: [PATCH 39/45] usb: gadget: u3d: configure common phy for device mode
+
+The driver can already power on and off the common usb phy.
+Add phy_set_mode to explicitly enable device-mode in case bootloader did
+already set it.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index 4f18aa7b7331..62c75396619f 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -2469,11 +2469,21 @@ static int mvc2_probe(struct platform_device *pdev)
+ 	cp->comphy = devm_of_phy_get(&pdev->dev, pdev->dev.of_node, "usb");
+ 	if (!IS_ERR(cp->comphy)) {
+ 		ret = phy_init(cp->comphy);
+-		if (ret)
++		if (ret) {
++			dev_err(&pdev->dev, "comphy init failed: %d\n", ret);
++			goto disable_phy;
++		}
++
++		ret = phy_set_mode(cp->comphy, PHY_MODE_USB_DEVICE);
++		if (ret) {
++			dev_err(&pdev->dev, "comphy set-mode failed: %d\n", ret);
++			phy_exit(cp->comphy);
+ 			goto disable_phy;
++		}
+ 
+ 		ret = phy_power_on(cp->comphy);
+ 		if (ret) {
++			dev_err(&pdev->dev, "comphy power-on failed: %d\n", ret);
+ 			phy_exit(cp->comphy);
+ 			goto disable_phy;
+ 		}
+-- 
+2.35.3
+

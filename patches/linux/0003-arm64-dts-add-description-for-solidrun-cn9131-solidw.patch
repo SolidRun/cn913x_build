@@ -1,8 +1,8 @@
 From 08d9f5d64dfea320105af92af5560f685f4b9520 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 4 Apr 2024 21:00:42 +0200
-Subject: [PATCH 3/4] arm64: dts: add description for solidrun cn9131 solidwan
- board
+Subject: [PATCH 03/45] arm64: dts: add description for solidrun cn9131
+ solidwan board
 
 Add description for the SolidRun CN9131 SolidWAN, based on CN9130 SoM
 with an extra communication  processor on the carrier board.

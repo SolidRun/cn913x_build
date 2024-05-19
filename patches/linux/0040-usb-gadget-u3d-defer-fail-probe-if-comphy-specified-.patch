@@ -1,0 +1,39 @@
+From c79893f4ddc86dda3b2aaaa99aad0f75a6a78b2f Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 19 May 2024 13:33:39 +0200
+Subject: [PATCH 40/45] usb: gadget: u3d: defer / fail probe if comphy
+ specified but not ready
+
+Optional common phy may be specified in device-tree for serdes
+configuration via generic phy framework.
+devm_of_phy_get may fail for various reasons, such as comphy driver
+hasn't probed (yet).
+
+Exit probe with error code unless -ENODEV indicated no comphy specified.
+
+Fixes crash during boot when u3d accesses comphy registers before comphy
+driver has configured the resources.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index 62c75396619f..f834af8fa96f 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -2467,7 +2467,9 @@ static int mvc2_probe(struct platform_device *pdev)
+ 
+ 	/* Get comphy and init if there is */
+ 	cp->comphy = devm_of_phy_get(&pdev->dev, pdev->dev.of_node, "usb");
+-	if (!IS_ERR(cp->comphy)) {
++	if (IS_ERR(cp->comphy) && PTR_ERR(cp->comphy) != -ENODEV)
++		return PTR_ERR(cp->comphy);
++	else if (!IS_ERR(cp->comphy)) {
+ 		ret = phy_init(cp->comphy);
+ 		if (ret) {
+ 			dev_err(&pdev->dev, "comphy init failed: %d\n", ret);
+-- 
+2.35.3
+

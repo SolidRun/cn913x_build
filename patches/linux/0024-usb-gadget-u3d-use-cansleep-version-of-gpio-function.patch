@@ -1,0 +1,36 @@
+From a0cf6530dab8c5d51a0e10c262a22ed7b7ed6fd9 Mon Sep 17 00:00:00 2001
+From: Grzegorz Jaszczyk <jaz@semihalf.com>
+Date: Tue, 17 Jan 2017 17:03:44 +0100
+Subject: [PATCH 24/45] usb: gadget: u3d: use 'cansleep' version of gpio
+ function
+
+Because now the vbus_pin source can be gpio from PCA9555, reading the gpio
+value is an i2c transaction which can sleep. Therefore use appropriate gpio
+function from the gpio API (gpio_get_value_cansleep) to silence Linux WARN.
+
+Change-Id: Ia17d780c046deef5670de3a2cefc3f1d3386fa10
+Signed-off-by: Grzegorz Jaszczyk <jaz@semihalf.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/38535
+Tested-by: iSoC Platform CI <ykjenk@marvell.com>
+Reviewed-by: Omri Itach <omrii@marvell.com>
+Reviewed-by: Hanna Hawa <hannah@marvell.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index d6bc8a069a96..f58f54ef4100 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -1519,7 +1519,7 @@ static void mvc2_vbus_work(struct work_struct *work)
+ 	cp = container_of(work, struct mvc2, vbus_work);
+ 
+ 	if (gpio_is_valid(cp->vbus_pin))
+-		vbus = gpio_get_value(cp->vbus_pin);
++		vbus = gpio_get_value_cansleep(cp->vbus_pin);
+ 	else {
+ 		dev_err(cp->dev, "VBUS interrupt status is missing\n");
+ 		return;
+-- 
+2.35.3
+

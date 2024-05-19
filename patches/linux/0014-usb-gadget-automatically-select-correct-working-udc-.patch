@@ -1,0 +1,62 @@
+From 027d7ea07e7378078105022e982f9c7cd5304a34 Mon Sep 17 00:00:00 2001
+From: Evan Wang <xswang@marvell.com>
+Date: Tue, 22 Nov 2016 16:48:50 +0800
+Subject: [PATCH 14/45] usb: gadget: automatically select correct/working udc
+ driver for configfs
+
+- For Kernel USB Gadget Configfs interface, a UDC driver has to be selected
+  in advance with command: echo "udc_driver_name" > UDC. It is not very
+  convenient or reasonable for SoCs that have both USB2 and USB3 device
+  controller, like Armada3700/38x/8K, since user would have to know which
+  type of USB Host (USB2 or USB3) it will be connected in advance to bind
+  the right udc driver. And if Host mode changed between USB2 and USB3,
+  user has to unbind the outdated UDC driver first, then bind the new one.
+- This patch introduces mvebu gadget glue layer driver to configfs, who:
+  * ignores which udc driver it is in configfs command, and always
+    load the correct Marvell USB2 and USB3 device driver.
+  * automatically unload the outdated udc driver and load the new one
+    when USB Host type changes between USB2 and USB3.
+
+Change-Id: I2bc50087f23ec41b08ac2dd33576560cf7c8378c
+Signed-off-by: Evan Wang <xswang@marvell.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/33945
+Reviewed-by: Omri Itach <omrii@marvell.com>
+Tested-by: Star_Automation <star@marvell.com>
+---
+ drivers/usb/gadget/udc/core.c | 20 +++-----------------
+ 1 file changed, 3 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/usb/gadget/udc/core.c b/drivers/usb/gadget/udc/core.c
+index 1369e76c9cbc..1e678b3732c7 100644
+--- a/drivers/usb/gadget/udc/core.c
++++ b/drivers/usb/gadget/udc/core.c
+@@ -1350,23 +1350,9 @@ int usb_gadget_probe_driver(struct usb_gadget_driver *driver)
+ 		return -EINVAL;
+ 
+ 	mutex_lock(&udc_lock);
+-	if (driver->udc_name) {
+-		list_for_each_entry(udc, &udc_list, list) {
+-			ret = strcmp(driver->udc_name, dev_name(&udc->dev));
+-			if (!ret)
+-				break;
+-		}
+-		if (ret)
+-			ret = -ENODEV;
+-		else if (udc->driver)
+-			ret = -EBUSY;
+-		else
+-			goto found;
+-	} else {
+-		udc = udc_detect(&udc_list, driver);
+-		if (udc)
+-			goto found;
+-	}
++	udc = udc_detect(&udc_list, driver);
++	if (udc)
++		goto found;
+ 
+ 	if (!driver->match_existing_only) {
+ 		list_add_tail(&driver->pending, &gadget_driver_pending_list);
+-- 
+2.35.3
+

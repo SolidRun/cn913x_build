@@ -1,0 +1,72 @@
+From 2b91dddfe33ee65b78aaf1f1238f618b497992f4 Mon Sep 17 00:00:00 2001
+From: Terry Zhou <bjzhou@marvell.com>
+Date: Thu, 16 Mar 2017 14:35:19 +0800
+Subject: [PATCH 19/45] u3d: Add PM support for USB3.0 device driver
+
+- Since U3D and UDC share the same device controller, need to
+  suspend/resume together with the UDC driver
+- Stop the phy driver in suspend, start again in resume
+- Stop all USB activities in suspend, start again in resume
+
+Change-Id: I0c132ee2b2806f1d1e4bc9e98f8075d1f9190563
+Signed-off-by: Terry Zhou <bjzhou@marvell.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/37506
+Reviewed-by: Omri Itach <omrii@marvell.com>
+Tested-by: iSoC Platform CI <ykjenk@marvell.com>
+Reviewed-by: Victor Gu <xigu@marvell.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 33 ++++++++++++++++++++++++++++++
+ 1 file changed, 33 insertions(+)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index af62d04d38c7..3313f13e030c 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -2461,11 +2461,44 @@ static int mvc2_probe(struct platform_device *pdev)
+ #ifdef CONFIG_PM
+ static int mvc2_suspend(struct device *dev)
+ {
++	struct mvc2 *cp = (struct mvc2 *)dev_get_drvdata(dev);
++
++	/* Stop the current activities */
++	if (cp->driver)
++		stop_activity(cp, cp->driver);
++
++	/* PHY exit if there is */
++	if (cp->comphy) {
++		phy_power_off(cp->comphy);
++		phy_exit(cp->comphy);
++	}
++
+ 	return 0;
+ }
+ 
+ static int mvc2_resume(struct device *dev)
+ {
++	struct mvc2 *cp = (struct mvc2 *)dev_get_drvdata(dev);
++	int ret;
++
++	/* PHY init if there is */
++	if (cp->comphy) {
++		ret = phy_init(cp->comphy);
++		if (ret)
++			return ret;
++
++		ret = phy_power_on(cp->comphy);
++		if (ret) {
++			phy_power_off(cp->comphy);
++			phy_exit(cp->comphy);
++			return ret;
++		}
++	}
++
++	/* Start the current device if driver is connected */
++	if (cp->driver)
++		mvc2_start(&cp->gadget, cp->driver);
++
+ 	return 0;
+ }
+ 
+-- 
+2.35.3
+

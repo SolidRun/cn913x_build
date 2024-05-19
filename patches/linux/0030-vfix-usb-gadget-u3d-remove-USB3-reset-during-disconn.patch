@@ -1,0 +1,41 @@
+From b0c119835c7948993df9f6cc7ffca3529a3e698d Mon Sep 17 00:00:00 2001
+From: Victor Gu <xigu@marvell.com>
+Date: Tue, 9 May 2017 14:48:57 +0800
+Subject: [PATCH 30/45] vfix: usb: gadget: u3d: remove USB3 reset during
+ disconnection
+
+The routine mvc2_hw_reset() is used to do whole USB3 device controller
+reset, which should be used after VBUS is on. When USB3 VBUS is on,
+it means USB3 device is plugged into host, driver should prepare to
+communicate with host, and the reset is mandatory.
+If VBUS is off, it means device is disconnected from host and the
+USB3 device functionality stops, thus it is not necessary to do reset
+during VBUS disconnection.
+This patch removes the reset during USB3 device VBUS disconnection.
+The USB3 device suspend and resume long run instability issue is fixed
+after removing this reset during disconnection.
+JIRA A3700-959.
+
+Change-Id: Idb506c9392e35f3adf81d375c31a67c49358b6b9
+Signed-off-by: Victor Gu <xigu@marvell.com>
+Reviewed-on: http://vgitil04.il.marvell.com:8080/39251
+Tested-by: iSoC Platform CI <ykjenk@marvell.com>
+---
+ drivers/usb/gadget/udc/mvebu_u3d.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/udc/mvebu_u3d.c b/drivers/usb/gadget/udc/mvebu_u3d.c
+index a23ca53b6884..a41192186bc1 100644
+--- a/drivers/usb/gadget/udc/mvebu_u3d.c
++++ b/drivers/usb/gadget/udc/mvebu_u3d.c
+@@ -2296,7 +2296,6 @@ void mvc2_connect(struct mvc2 *cp, int is_on)
+ 		val = MV_CP_READ(cp->reg->global_control);
+ 		val &= ~MVCP_GLOBAL_CONTROL_SOFT_CONNECT;
+ 		MV_CP_WRITE(val, cp->reg->global_control);
+-		mvc2_hw_reset(cp);
+ 	}
+ }
+ 
+-- 
+2.35.3
+

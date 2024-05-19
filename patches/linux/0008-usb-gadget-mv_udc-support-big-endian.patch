@@ -1,7 +1,7 @@
-From be12bd3d6164536009df8e4e35e94665442872ac Mon Sep 17 00:00:00 2001
+From f982cce3b330d00efa44df712085e9e0fdc5cb29 Mon Sep 17 00:00:00 2001
 From: Joe Zhou <shjzhou@marvell.com>
 Date: Thu, 25 Aug 2016 15:26:49 -0700
-Subject: [PATCH 09/13] usb: gadget: mv_udc: support big endian
+Subject: [PATCH 08/45] usb: gadget: mv_udc: support big endian
 
 - Make sure that dQH, dTD, and descriptor structure members are
   stored in LE in memory, and converted to BE when used in code.
