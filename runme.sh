@@ -21,6 +21,7 @@ BUILDROOT_VERSION=2020.02.1
 # 2-clearfog-pro (cn9130 SOM)
 # 3-SolidWAN (cn9130 SOM)
 # 4-BlDN MBV-A/B (cn9130 SOM)
+# 10-macchiatobin (8040)
 
 
 #UBOOT_ENVIRONMENT -
@@ -77,6 +78,8 @@ export PATH=$ROOTDIR/build/toolchain/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-lin
 export CROSS_COMPILE=aarch64-linux-gnu-
 export ARCH=arm64
 
+PLATFORM=CN9130
+PLATFORM_SD_OFFSET=4096
 case "${BOARD_CONFIG}" in
 	0)
 		echo "*** Board Configuration CEx7 CN9132 based on Clearfog CN9K ***"
@@ -120,6 +123,13 @@ case "${BOARD_CONFIG}" in
                 DTB_KERNEL=cn9131-bldn-mbv
         ;;
 
+	10)
+		echo "*** Armada 8040 MacchiatoBIN ***"
+		PLATFORM=8040
+		PLATFORM_SD_OFFSET=1
+		DTB_UBOOT=armada-8040-mcbin
+		DTB_KERNEL=armada-8040-mcbin
+	;;
 
 	*)
 		echo "Please define board configuration"
@@ -167,9 +177,9 @@ for i in $SDK_COMPONENTS; do
 			cd $ROOTDIR/build
 			git clone $SHALLOW_FLAG https://github.com/SolidRun/linux-marvell.git linux -b $RELEASE
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
-			echo "Cloning atf from mainline"
+			echo "Cloning arm-trusted-firmware from SolidRun"
 			cd $ROOTDIR/build
-			git clone https://github.com/ARM-software/arm-trusted-firmware.git arm-trusted-firmware
+			git clone https://github.com/SolidRun/atf-marvell.git arm-trusted-firmware  -b atf-v2.2-marvell-sdk-v10
 			cd arm-trusted-firmware
 			# Temporary commit waiting for a release
 			git checkout 00ad74c7afe67b2ffaf08300710f18d3dafebb45
@@ -184,11 +194,9 @@ for i in $SDK_COMPONENTS; do
 			cd $ROOTDIR/build
 			git clone https://github.com/SolidRun/armada-firmware.git armada-firmware -b marvell-sdk-v10
 		elif [ "x$i" == "xu-boot" ]; then
-			echo "Cloning u-boot from git://git.denx.de/u-boot.git"
+			echo "Cloning u-boot from SolidRun"
 			cd $ROOTDIR/build
-			git clone git://git.denx.de/u-boot.git u-boot
-			cd u-boot
-			git checkout v2019.10 -b marvell
+			git clone https://github.com/SolidRun/u-boot.git u-boot -b u-boot-v2019.10-marvell-sdk-v10
 		elif [ "x$i" == "xdpdk" ]; then
                         echo "Cloning DPDK from https://github.com/DPDK/dpdk.git"
                         cd $ROOTDIR/build
@@ -220,10 +228,11 @@ mkdir -p $ROOTDIR/images/tmp
 ###############################################################################
 
 echo "Building u-boot"
-cd $ROOTDIR/build/u-boot/
-./scripts/kconfig/merge_config.sh configs/sr_cn913x_cex7_defconfig $ROOTDIR/configs/u-boot/cn913x_additions.config
-[[ "${UBOOT_ENVIRONMENT}" =~ (.*):(.*):(.*) ]] || [[ "${UBOOT_ENVIRONMENT}" =~ (.*) ]]
-if [ "x${BASH_REMATCH[1]}" = "xspi" ]; then
+build_uboot_CN9130() {
+	cd $ROOTDIR/build/u-boot/
+	./scripts/kconfig/merge_config.sh configs/sr_cn913x_cex7_defconfig $ROOTDIR/configs/u-boot/cn913x_additions.config
+	[[ "${UBOOT_ENVIRONMENT}" =~ (.*):(.*):(.*) ]] || [[ "${UBOOT_ENVIRONMENT}" =~ (.*) ]]
+	if [ "x${BASH_REMATCH[1]}" = "xspi" ]; then
 cat >> .config << EOF
 CONFIG_ENV_IS_IN_MMC=n
 CONFIG_ENV_IS_IN_SPI_FLASH=y
@@ -231,46 +240,79 @@ CONFIG_ENV_SIZE=0x10000
 CONFIG_ENV_OFFSET=0x3f0000
 CONFIG_ENV_SECT_SIZE=0x10000
 EOF
-elif [ "x${BASH_REMATCH[1]}" = "xmmc" ]; then
+	elif [ "x${BASH_REMATCH[1]}" = "xmmc" ]; then
 cat >> .config << EOF
 CONFIG_ENV_IS_IN_MMC=y
 CONFIG_SYS_MMC_ENV_DEV=${BASH_REMATCH[2]}
 CONFIG_SYS_MMC_ENV_PART=${BASH_REMATCH[3]}
 CONFIG_ENV_IS_IN_SPI_FLASH=n
 EOF
-else
-	echo "ERROR: \$UBOOT_ENVIRONMENT setting invalid"
-	exit 1
-fi
-make olddefconfig
-make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
-install -m644 -D $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
+	else
+		echo "ERROR: \$UBOOT_ENVIRONMENT setting invalid"
+		exit 1
+	fi
+	make olddefconfig
+	make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
+	install -m644 -D $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
+}
+build_uboot_8040() {
+	cd $ROOTDIR/build/u-boot/
+	make mvebu_mcbin-88f8040_defconfig
+	make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
+	install -m644 -D $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
+}
+build_uboot_$PLATFORM
 
 if [ "x$BOOT_LOADER" == "xuefi" ]; then
 	echo "no support for uefi yet"
 fi
 
 echo "Building arm-trusted-firmware"
-cd $ROOTDIR/build/arm-trusted-firmware
+build_atf_CN9130() {
+	cd $ROOTDIR/build/arm-trusted-firmware
 
-echo "Compiling U-BOOT and ATF"
-echo "CP_NUM=$CP_NUM"
-echo "DTB=$DTB_UBOOT"
+	echo "Compiling U-BOOT and ATF"
+	echo "CP_NUM=$CP_NUM"
+	echo "DTB=$DTB_UBOOT"
 
-make distclean
-make \
-	MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell \
-	SCP_BL2=$ROOTDIR/build/armada-firmware/mrvl_scp_bl2.img \
-	BL33=$ROOTDIR/binaries/u-boot/u-boot.bin \
-	USE_COHERENT_MEM=0 \
-	DEBUG=0 \
-	LOG_LEVEL=20 \
-	WORKAROUND_CVE_2018_3639=0 \
-	PLAT=t9130 \
-	all fip
+	make distclean
+	make \
+		MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell \
+		SCP_BL2=$ROOTDIR/build/armada-firmware/mrvl_scp_bl2.img \
+		BL33=$ROOTDIR/binaries/u-boot/u-boot.bin \
+		USE_COHERENT_MEM=0 \
+		DEBUG=0 \
+		LOG_LEVEL=20 \
+		WORKAROUND_CVE_2018_3639=0 \
+		PLAT=t9130 \
+		all fip
 
-echo "Copying flash-image.bin to /Images folder"
-cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images/u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin
+	echo "Copying flash-image.bin to /Images folder"
+	cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images/u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin
+}
+build_atf_8040() {
+	cd $ROOTDIR/build/arm-trusted-firmware
+
+	echo "Compiling U-BOOT and ATF"
+	echo "CP_NUM=$CP_NUM"
+	echo "DTB=$DTB_UBOOT"
+
+	make distclean
+	make \
+		MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell \
+		SCP_BL2=$ROOTDIR/build/armada-firmware/mrvl_scp_bl2.img \
+		BL33=$ROOTDIR/binaries/u-boot/u-boot.bin \
+		USE_COHERENT_MEM=0 \
+		DEBUG=0 \
+		LOG_LEVEL=20 \
+		PLAT=a80x0_mcbin \
+		all fip
+
+	echo "Copying flash-image.bin to /Images folder"
+	cp $ROOTDIR/build/arm-trusted-firmware/build/a80x0_mcbin/release/flash-image.bin $ROOTDIR/images/u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin
+}
+build_atf_$PLATFORM
+ln -sfv u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin $ROOTDIR/images/flash-image.bin
 
 if [ "x${BUILD_ROOTFS}" != "xyes" ]; then
 	echo "U-Boot Ready, Skipping RootFS"
@@ -552,7 +594,6 @@ done
 cd -
 
 # ext4 ubuntu partition is ready
-cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images
 cd $ROOTDIR/
 ROOTFS_SIZE=$(stat -c "%s" $ROOTDIR/images/tmp/rootfs.ext4)
@@ -562,7 +603,7 @@ parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary
 # Generate the above partuuid 3030303030 which is the 4 characters of '0' in ascii
 echo "0000" | dd of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1 seek=440 conv=notrunc
 dd if=$ROOTDIR/images/tmp/rootfs.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1M seek=64 conv=notrunc,sparse
-dd if=$ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc,sparse
+dd if=$ROOTDIR/images/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=$PLATFORM_SD_OFFSET conv=notrunc,sparse
 mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/ubuntu-${DTB_KERNEL}-${UBOOT_ENVIRONMENT}.img
 
 echo "Images are ready at $ROOTDIR/image/"
