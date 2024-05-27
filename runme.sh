@@ -158,7 +158,7 @@ cd $ROOTDIR
 ###############################################################################
 # source code cloning and building 
 ###############################################################################
-SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux dpdk"
+SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux dpdk mdio-proxy-module"
 
 for i in $SDK_COMPONENTS; do
 	if [[ ! -d $ROOTDIR/build/$i ]]; then
@@ -195,6 +195,10 @@ for i in $SDK_COMPONENTS; do
 				cd dpdk
 				git am $ROOTDIR/patches/dpdk-${DPDK_RELEASE}/*.patch
 			fi
+		elif [ "x$i" == "xmdio-proxy-module" ]; then
+			echo "Cloning mdio-proxy-module from https://github.com/nxp-qoriq/mdio-proxy-module"
+			cd $ROOTDIR/build
+			git clone $SHALLOW_FLAG https://github.com/nxp-qoriq/mdio-proxy-module -b master
 		fi
 
 		echo "Checking patches for $i"
@@ -272,6 +276,7 @@ cd $ROOTDIR/build/linux
 #make defconfig
 ./scripts/kconfig/merge_config.sh arch/arm64/configs/defconfig $ROOTDIR/configs/linux/cn913x_additions.config
 make -j${PARALLEL} all #Image dtbs modules
+KRELEASE=`make kernelrelease`
 
 mkdir -p $ROOTDIR/images/tmp/boot
 make INSTALL_MOD_PATH=$ROOTDIR/images/tmp/ INSTALL_MOD_STRIP=1 modules_install
@@ -280,6 +285,18 @@ cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/cn913*.dtb $ROOTDIR/images/t
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-clearfog-gt-8k.dtb $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin.dtb $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin-singleshot.dtb $ROOTDIR/images/tmp/boot
+
+# Build mdio-proxy kernel module
+echo "Building mdio-proxy-module"
+if [[ -d ${ROOTDIR}/build/mdio-proxy-module ]]; then
+	cd "${ROOTDIR}/build/mdio-proxy-module"
+
+	make -C "${ROOTDIR}/build/linux" CROSS_COMPILE="$CROSS_COMPILE" ARCH=arm64 M="$PWD" modules
+	install -v -m644 -D mdio-proxy.ko "${ROOTDIR}/images/tmp/lib/modules/${KRELEASE}/kernel/extra/mdio-proxy.ko"
+fi
+
+# regenerate modules dependencies
+depmod -b "${ROOTDIR}/images/tmp" -F "${ROOTDIR}/build/linux/System.map" ${KRELEASE}
 
 ###############################################################################
 # File System
