@@ -1,7 +1,8 @@
-From 0641088a733d6e19541e2b868ce1d6d5b474801b Mon Sep 17 00:00:00 2001
+From 798856be205ef13ab257d4dbeae1e97ea6e93272 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Tue, 25 Jul 2023 11:52:57 +0200
-Subject: [PATCH] lib: tlv_eeprom: mac_read_from_eeprom: support 2 eeproms
+Subject: [PATCH 24/31] lib: tlv_eeprom: mac_read_from_eeprom: support 2
+ eeproms
 
 Update mac_read_from_eeprom function to read from 2 eeproms
 successively, collecting any mac addrsses found on either.

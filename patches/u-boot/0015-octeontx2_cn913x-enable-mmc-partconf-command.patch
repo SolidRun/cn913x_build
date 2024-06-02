@@ -1,7 +1,7 @@
-From 00c2e3260346b2d774b74e0d1521e3561ec22f4c Mon Sep 17 00:00:00 2001
+From 4cbd1e8ad9b34fd7969d8d50cc2d2a483f125a6a Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Tue, 22 Mar 2022 11:12:12 +0200
-Subject: [PATCH 16/16] octeontx2_cn913x: enable mmc partconf command
+Subject: [PATCH 15/31] octeontx2_cn913x: enable mmc partconf command
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---
@@ -18,5 +18,5 @@ index 30e51c0026..24219ef45d 100644
  CONFIG_CMD_TLV_EEPROM=y
 +CONFIG_SUPPORT_EMMC_BOOT=y
 -- 
-2.34.1
+2.35.3
 

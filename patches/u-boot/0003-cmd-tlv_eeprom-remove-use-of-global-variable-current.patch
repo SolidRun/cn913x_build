@@ -1,7 +1,7 @@
-From 422b8ed01432856f16a1373d235fd56fdb45d0e7 Mon Sep 17 00:00:00 2001
+From 5257bd65f19c6e0133ab41f954daa2280e5f4201 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 17 Mar 2022 11:52:34 +0200
-Subject: [PATCH 03/16] cmd: tlv_eeprom: remove use of global variable
+Subject: [PATCH 03/31] cmd: tlv_eeprom: remove use of global variable
  current_dev
 
 Make tlv_eeprom command device selection an explicit parameter of all
@@ -227,5 +227,5 @@ index 1de2fe2337..aa96c9e8d4 100644
  /**
   * read_tlvinfo_tlv_eeprom - Read the TLV from EEPROM, and validate
 -- 
-2.34.1
+2.35.3
 

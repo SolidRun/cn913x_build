@@ -1,7 +1,7 @@
-From 64d6ad6e17dbe9247bd06bab9e2988aecb1f0aa5 Mon Sep 17 00:00:00 2001
+From 971c838f817cf88931b18be8f69576c935de9bd0 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 24 Jul 2023 12:15:09 +0200
-Subject: [PATCH 20/23] arm64: dts: cn9131-cf-solidwan: fix indentation to use
+Subject: [PATCH 19/31] arm64: dts: cn9131-cf-solidwan: fix indentation to use
  only tabs
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>

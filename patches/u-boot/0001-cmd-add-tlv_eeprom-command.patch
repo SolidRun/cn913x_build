@@ -1,7 +1,7 @@
-From 474ea2a80d7910351d818b70bf5e4660790933bd Mon Sep 17 00:00:00 2001
+From 430423b6ef3bb5c0db02a03541dbadd44de09630 Mon Sep 17 00:00:00 2001
 From: Baruch Siach <baruch@tkos.co.il>
 Date: Tue, 21 Jan 2020 15:44:54 +0200
-Subject: [PATCH 01/16] cmd: add tlv_eeprom command
+Subject: [PATCH 01/31] cmd: add tlv_eeprom command
 
 Add support for read/write of ONIE "Tlvinfo" EEPROM data format. TLV
 stands for Type-Length-Value. The data format is described here:
@@ -33,10 +33,10 @@ Signed-off-by: Baruch Siach <baruch@tkos.co.il>
  create mode 100644 include/tlv_eeprom.h
 
 diff --git a/cmd/Kconfig b/cmd/Kconfig
-index 4e61565aab..f696645c91 100644
+index eb107f96d8..85f17e6e8a 100644
 --- a/cmd/Kconfig
 +++ b/cmd/Kconfig
-@@ -232,6 +232,20 @@ config CMD_REGINFO
+@@ -239,6 +239,20 @@ config CMD_REGINFO
  	help
  	  Register dump
  
@@ -58,11 +58,11 @@ index 4e61565aab..f696645c91 100644
  
  menu "Boot commands"
 diff --git a/cmd/Makefile b/cmd/Makefile
-index ac843b4b16..c10f2e308b 100644
+index 554022272a..5aef55249c 100644
 --- a/cmd/Makefile
 +++ b/cmd/Makefile
-@@ -180,6 +180,8 @@ obj-$(CONFIG_X86) += x86/
- obj-$(CONFIG_ARCH_MVEBU) += mvebu/
+@@ -184,6 +184,8 @@ obj-$(CONFIG_ARCH_OCTEONTX) += marvell/
+ 
  endif # !CONFIG_SPL_BUILD
  
 +obj-$(CONFIG_$(SPL_)CMD_TLV_EEPROM) += tlv_eeprom.o
@@ -1340,5 +1340,5 @@ index 0000000000..1de2fe2337
 +
 +#endif /* __TLV_EEPROM_H_ */
 -- 
-2.34.1
+2.35.3
 

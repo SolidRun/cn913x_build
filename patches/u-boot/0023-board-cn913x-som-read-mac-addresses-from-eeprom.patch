@@ -1,7 +1,7 @@
-From 9edaee2eb75bdeb0c2b4353cc8ac2180b6fee557 Mon Sep 17 00:00:00 2001
+From 35286c4f02d8027ca52d33925612304a2fc59c3a Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Tue, 25 Jul 2023 11:54:36 +0200
-Subject: [PATCH] board: cn913x som: read mac addresses from eeprom
+Subject: [PATCH 23/31] board: cn913x som: read mac addresses from eeprom
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---
@@ -9,10 +9,10 @@ Signed-off-by: Josua Mayer <josua@solid-run.com>
  1 file changed, 3 insertions(+)
 
 diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
-index 8c06a6c18d..4df0c33b84 100644
+index a1999bf72f..d7f6a8c464 100644
 --- a/board/Marvell/octeontx2_cn913x/board.c
 +++ b/board/Marvell/octeontx2_cn913x/board.c
-@@ -246,6 +246,9 @@ int board_late_init(void)
+@@ -252,6 +252,9 @@ int board_late_init(void)
  	if (!env_get("fdtfile"))
  		env_set("fdtfile", fdtfile);
  

@@ -1,7 +1,7 @@
-From ae8729ecbcc312b7b628b784bd43b7db3e79cc2e Mon Sep 17 00:00:00 2001
+From 977cab8cdecede1d8ec87e0da199fbd453be6a3e Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 17 Mar 2022 14:16:26 +0200
-Subject: [PATCH 08/16] cmd: tlv_eeprom: split off tlv library from command
+Subject: [PATCH 08/31] cmd: tlv_eeprom: split off tlv library from command
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---
@@ -21,10 +21,10 @@ Signed-off-by: Josua Mayer <josua@solid-run.com>
  create mode 100644 lib/tlv/tlv_eeprom.c
 
 diff --git a/cmd/Kconfig b/cmd/Kconfig
-index f696645c91..a87bcfffbb 100644
+index 85f17e6e8a..1ccd09aead 100644
 --- a/cmd/Kconfig
 +++ b/cmd/Kconfig
-@@ -234,7 +234,7 @@ config CMD_REGINFO
+@@ -241,7 +241,7 @@ config CMD_REGINFO
  
  config CMD_TLV_EEPROM
  	bool "tlv_eeprom"
@@ -1816,5 +1816,5 @@ index 0000000000..fe164cabe6
 +	return 0;
 +}
 -- 
-2.34.1
+2.35.3
 

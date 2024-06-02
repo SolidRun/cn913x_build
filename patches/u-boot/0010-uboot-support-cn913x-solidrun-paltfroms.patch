@@ -1,7 +1,7 @@
-From 4056a0e55be5c91f8d8d261c9ad0c72df17de04b Mon Sep 17 00:00:00 2001
+From 407006fe4b8d2e1597f0d502ecba5603842345a3 Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Wed, 12 Jan 2022 16:49:06 +0200
-Subject: [PATCH 11/16] uboot support cn913x solidrun paltfroms
+Subject: [PATCH 10/31] uboot support cn913x solidrun paltfroms
 
 Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---
@@ -54,7 +54,7 @@ index 61bf75a5b6..246bd4665e 100644
  dtb-$(CONFIG_ARCH_UNIPHIER_LD11) += \
  	uniphier-ld11-global.dtb \
 diff --git a/arch/arm/dts/armada-cp110.dtsi b/arch/arm/dts/armada-cp110.dtsi
-index 448cdb2f80..af55c5573d 100644
+index 130ef1e75d..24c553389b 100644
 --- a/arch/arm/dts/armada-cp110.dtsi
 +++ b/arch/arm/dts/armada-cp110.dtsi
 @@ -49,6 +49,15 @@
@@ -1985,10 +1985,10 @@ index 0000000000..514ddfa7d4
 +	status = "okay";
 +};
 diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
-index 00b475769b..27db37e86e 100644
+index a1df1e64f6..abcac6acda 100644
 --- a/board/Marvell/octeontx2_cn913x/board.c
 +++ b/board/Marvell/octeontx2_cn913x/board.c
-@@ -57,6 +57,10 @@ int board_init(void)
+@@ -61,6 +61,10 @@ int board_init(void)
  	/* address of boot parameters */
  	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
  
@@ -1999,7 +1999,7 @@ index 00b475769b..27db37e86e 100644
  #ifdef CONFIG_BOARD_CONFIG_EEPROM
  	cfg_eeprom_init();
  #endif
-@@ -64,6 +68,12 @@ int board_init(void)
+@@ -68,6 +72,12 @@ int board_init(void)
  	return 0;
  }
  
@@ -2123,5 +2123,5 @@ index 0000000000..307cefef65
 +CONFIG_OF_BOARD_FIXUP=y
 +CONFIG_CMD_MVEBU_PHY_FW_DOWNLOAD=y
 -- 
-2.34.1
+2.35.3
 

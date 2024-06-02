@@ -1,7 +1,7 @@
-From 1a7c8a9f72b123ca5ef282f5ca2e4ef671f9acf8 Mon Sep 17 00:00:00 2001
+From f79444e0d783e2c42fef6de7bf3885bf01fc676f Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Sun, 7 Apr 2024 16:25:43 +0200
-Subject: [PATCH 27/30] HACK: arm: dts: armada-cp110: disambiguate mdio bus
+Subject: [PATCH 26/31] HACK: arm: dts: armada-cp110: disambiguate mdio bus
  names with cp name
 
 Board code uses the device-tree node name (e.g. mdio@12a200) to fix
@@ -19,7 +19,7 @@ Signed-off-by: Josua Mayer <josua@solid-run.com>
  1 file changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/arch/arm/dts/armada-cp110.dtsi b/arch/arm/dts/armada-cp110.dtsi
-index 6abe8f0bea..736d0e6851 100644
+index b70295f4d4..4a776ef243 100644
 --- a/arch/arm/dts/armada-cp110.dtsi
 +++ b/arch/arm/dts/armada-cp110.dtsi
 @@ -36,7 +36,7 @@
