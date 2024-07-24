@@ -277,7 +277,7 @@ fi
 
 echo "Building u-boot"
 cd $ROOTDIR/build/u-boot/
-cp configs/sr_cn913x_cex7_defconfig .config
+./scripts/kconfig/merge_config.sh configs/sr_cn913x_cex7_defconfig $ROOTDIR/configs/u-boot/cn913x_additions.config
 [[ "${UBOOT_ENVIRONMENT}" =~ (.*):(.*):(.*) ]] || [[ "${UBOOT_ENVIRONMENT}" =~ (.*) ]]
 if [ "x${BASH_REMATCH[1]}" = "xspi" ]; then
 cat >> .config << EOF
