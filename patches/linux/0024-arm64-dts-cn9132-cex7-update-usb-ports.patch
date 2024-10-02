@@ -1,7 +1,7 @@
-From 461699bd5cfc23fee4f6715a6d12bacfd39d0dfe Mon Sep 17 00:00:00 2001
+From 8933e4b596de01b035e1c8de02eefcaeadae6392 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 16 May 2024 18:19:17 +0200
-Subject: [PATCH] arm64: dts: cn9132-cex7: update usb ports
+Subject: [PATCH 24/24] arm64: dts: cn9132-cex7: update usb ports
 
 CN9132 CEX7 routes the following usb signals:
 A45/A46: CP0-USB0
@@ -190,5 +190,5 @@ index 231b10c66a7f..890f31f6b320 100644
 -	phys = <&cp2_comphy1 0>;
  };
 -- 
-2.35.3
+2.43.0
 

@@ -1,7 +1,7 @@
-From 0b5bfbf11bf8d9efcc60e34d37d0c8fdd645e23a Mon Sep 17 00:00:00 2001
+From b0486217041f8d5f16907bf88a227f35662db1b2 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 24 Jul 2023 17:41:12 +0200
-Subject: [PATCH 17/17] arm64: dts: cn9130-som: support eeprom replacement part
+Subject: [PATCH 17/24] arm64: dts: cn9130-som: support eeprom replacement part
  for rev. 1.3
 
 SoM revision 1.3 has replaced M24C02-WMN6TP with ST24C02WP supporting
@@ -104,5 +104,5 @@ index 1016c16db0d1..efd1cf5ef906 100644
  
  /* I2C Master */
 -- 
-2.35.3
+2.43.0
 

@@ -1,7 +1,7 @@
-From db3a8f47a52bb1ad6232f1536a515a7b1ee5b6f4 Mon Sep 17 00:00:00 2001
+From 81174d7ec016aaabcdc62cf86c067cf4a4ee29d1 Mon Sep 17 00:00:00 2001
 From: Alex Leibovich <alexl@marvell.com>
 Date: Wed, 29 Dec 2021 10:00:42 +0200
-Subject: [PATCH 02/13] thermal: armada: ap806: Thermal values updated
+Subject: [PATCH 02/24] thermal: armada: ap806: Thermal values updated
 
 Added correct thermal coefficient for ap806, according to SPEC.
 
@@ -30,5 +30,5 @@ index 52d63b3997fe..b38fb04c4631 100644
  	.inverted = true,
  	.signed_sample = true,
 -- 
-2.35.3
+2.43.0
 

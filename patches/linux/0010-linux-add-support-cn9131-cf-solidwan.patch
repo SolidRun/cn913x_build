@@ -1,7 +1,7 @@
-From cbad64d18c6613eac8964321762dd6dc2fa0b145 Mon Sep 17 00:00:00 2001
+From afdeb1bd52109432b3374787b1288888480a3a59 Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Thu, 7 Jul 2022 22:02:53 +0300
-Subject: [PATCH 10/13] linux: add support cn9131-cf-solidwan
+Subject: [PATCH 10/24] linux: add support cn9131-cf-solidwan
 
 Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---
@@ -30,7 +30,7 @@ index eca656302858..eefa70f56027 100644
  dtb-$(CONFIG_ARCH_MVEBU) += cn9131-db-B.dtb
  dtb-$(CONFIG_ARCH_MVEBU) += cn9132-cex7.dtb
 diff --git a/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi b/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi
-index d6c0990a267d..c22066b018a1 100644
+index 218c059b16d9..3a14cef7d5bd 100644
 --- a/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi
 +++ b/arch/arm64/boot/dts/marvell/armada-cp11x.dtsi
 @@ -177,6 +177,16 @@ CP11X_LABEL(mdio): mdio@12a200 {
@@ -718,5 +718,5 @@ index 000000000000..7915ce2d1232
 +};
 +
 -- 
-2.35.3
+2.43.0
 

@@ -1,7 +1,7 @@
-From 70bc082beff0c17758836f6239d8872eaf5a7453 Mon Sep 17 00:00:00 2001
+From d16b53589ebc442286431ed6537b57576febdd89 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 24 Jul 2023 17:31:09 +0200
-Subject: [PATCH 16/17] arm64: dts: cn9131-cf-solidwan: update model property
+Subject: [PATCH 16/24] arm64: dts: cn9131-cf-solidwan: update model property
  to be consistent
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
@@ -37,5 +37,5 @@ index 7915ce2d1232..359e9378c929 100644
  		     "marvell,armada-ap807-quad", "marvell,armada-ap807";
  
 -- 
-2.35.3
+2.43.0
 

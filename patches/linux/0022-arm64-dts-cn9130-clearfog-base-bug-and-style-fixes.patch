@@ -1,7 +1,7 @@
-From 63de1c213edd7e11194a28a6dce8c81f6c05700d Mon Sep 17 00:00:00 2001
+From eea9e225ab06fc7214cf3d7f3800fbb8fc84cb50 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 2 Oct 2023 16:16:03 +0200
-Subject: [PATCH 22/22] arm64: dts: cn9130-clearfog-base: bug and style fixes
+Subject: [PATCH 22/24] arm64: dts: cn9130-clearfog-base: bug and style fixes
 
 A review of the original dts has revealed many style problems such as
 order of nodes and properties, as well as functional wrong IOs, dead
@@ -467,5 +467,5 @@ index 000000000000..593ae88e45ec
 +	status = "okay";
 +};
 -- 
-2.35.3
+2.43.0
 

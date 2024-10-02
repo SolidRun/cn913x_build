@@ -1,7 +1,7 @@
-From 2ba23d33f0cbb479cbbf29c3bc318dccbde6aac1 Mon Sep 17 00:00:00 2001
+From f2c0324d8c32a6b6c32550338a5eb394b8a74171 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 24 Jul 2023 17:52:09 +0200
-Subject: [PATCH] arm64: dts: cn9131-cf-solidwan: switch cp0_phy0 to
+Subject: [PATCH 19/24] arm64: dts: cn9131-cf-solidwan: switch cp0_phy0 to
  auto-negotiation
 
 CP0 MDIO bus has 3 PHys connected, one on the CN9130 SoM, plus 2x on the
@@ -69,5 +69,5 @@ index efd1cf5ef906..4c81e76a0521 100644
  
  /* SRDS #4 - USB 3.0 host on M.2 connector */
 -- 
-2.35.3
+2.43.0
 

@@ -1,8 +1,8 @@
-From 6931050969949ec28313130d8fc2fe8d335eb3d2 Mon Sep 17 00:00:00 2001
+From 5c484c6f14186624b7ba3f0d249077c3b67126c5 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Tue, 3 Oct 2023 12:19:46 +0200
-Subject: [PATCH] arm64: dts: cn9130-clearfog-base: add description for m.2 i2c
- irq pin
+Subject: [PATCH 23/24] arm64: dts: cn9130-clearfog-base: add description for
+ m.2 i2c irq pin
 
 Add pinctrl for m.2 i2c irq gpio, and mention it in i2c node comment.
 
@@ -40,5 +40,5 @@ index 593ae88e45ec..20be8732625b 100644
  			marvell,pins = "mpp0", "mpp1";
  			marvell,function = "ge";
 -- 
-2.35.3
+2.43.0
 

@@ -1,7 +1,7 @@
-From 68a3fbf5364a4889e3612572764258fef58fa1f4 Mon Sep 17 00:00:00 2001
+From 8a84f43497e009699315a307a45d554a00e8b152 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 2 Oct 2023 17:42:05 +0200
-Subject: [PATCH 21/22] arm64: dts: cn9130-clearfog-base: bug and style fixes
+Subject: [PATCH 21/24] arm64: dts: cn9130-clearfog-base: bug and style fixes
  preparation
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
@@ -444,5 +444,5 @@ index a5700d28bb93..000000000000
 -
 -
 -- 
-2.35.3
+2.43.0
 

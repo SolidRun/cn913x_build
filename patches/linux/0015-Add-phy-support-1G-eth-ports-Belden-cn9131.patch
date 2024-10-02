@@ -1,7 +1,7 @@
-From 70baa0ce5cc08942aa79ef1eae05b44344303234 Mon Sep 17 00:00:00 2001
+From 28f44228a7121b2ac3dadaec799f34a2d261f45c Mon Sep 17 00:00:00 2001
 From: Kareiman-Fadly <kareiman.fadly@solid-run.com>
 Date: Mon, 10 Jul 2023 15:13:53 +0300
-Subject: [PATCH] Add phy support - 1G eth ports - Belden cn9131
+Subject: [PATCH 15/24] Add phy support - 1G eth ports - Belden cn9131
 
 ---
  arch/arm64/boot/dts/marvell/cn9130-bldn-mbv.dts |  2 +-
@@ -91,5 +91,5 @@ index b0140000141c..a8252c1ab53b 100644
  
  &cp0_eth1 {
 -- 
-2.39.0
+2.43.0
 

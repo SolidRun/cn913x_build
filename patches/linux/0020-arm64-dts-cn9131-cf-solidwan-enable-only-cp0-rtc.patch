@@ -1,7 +1,7 @@
-From b475b0e2c65ea7c8f7d09852ea69313646a255c9 Mon Sep 17 00:00:00 2001
+From eea766274e0a08b13d4d9f9683a2ceef2b2f49e4 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 14 Aug 2023 13:22:16 +0200
-Subject: [PATCH] arm64: dts: cn9131-cf-solidwan: enable only cp0 rtc
+Subject: [PATCH 20/24] arm64: dts: cn9131-cf-solidwan: enable only cp0 rtc
 
 only the rtc of cp0 has backup battery connected and can keep time
 across power-cycle.
@@ -37,5 +37,5 @@ index 6aa5c6ac93dc..ace4518b806a 100644
 +	status = "disabled";
 +};
 -- 
-2.35.3
+2.43.0
 

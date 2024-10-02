@@ -1,7 +1,7 @@
-From d2512c4877eba0c78859a01925153a1c5db3d3fc Mon Sep 17 00:00:00 2001
+From 7f58ca330befb8ef94449f7913df2198bbc68562 Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Wed, 28 Oct 2020 14:49:20 +0200
-Subject: [PATCH 08/13] arm64: dts: cn913x: add cn913x based COM express type 7
+Subject: [PATCH 08/24] arm64: dts: cn913x: add cn913x based COM express type 7
 
 Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---
@@ -848,5 +848,5 @@ index 000000000000..45958b67aa29
 +	phys = <&cp2_comphy1 0>;
 +};
 -- 
-2.35.3
+2.43.0
 

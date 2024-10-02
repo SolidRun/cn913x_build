@@ -1,7 +1,7 @@
-From 43c4b3cab0aca8db68272730aecb457bf7ee030c Mon Sep 17 00:00:00 2001
+From 92b71db9b2b7fe52b7d74408ee8885c0619c3c4b Mon Sep 17 00:00:00 2001
 From: Alon Rotman <alon.rotman@solid-run.com>
 Date: Mon, 22 Nov 2021 13:37:46 +0200
-Subject: [PATCH 09/13] cn9130 som for clearfog base and pro
+Subject: [PATCH 09/24] cn9130 som for clearfog base and pro
 
 Signed-off-by: Alon Rotman <alon.rotman@solid-run.com>
 ---
@@ -921,5 +921,5 @@ index 000000000000..54068d75542a
 +
 +
 -- 
-2.35.3
+2.43.0
 
