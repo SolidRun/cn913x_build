@@ -170,18 +170,16 @@ for i in $SDK_COMPONENTS; do
 			echo "Cloning armada-firmware from SolidRun"
 			echo "Cloning https://github.com/SolidRun/armada-firmware.git"
 			cd $ROOTDIR/build
-			git clone https://github.com/SolidRun/armada-firmware.git armada-firmware -b marvell-sdk-v10
+			git clone https://github.com/SolidRun/armada-firmware.git armada-firmware -b marvell-sdk-v12
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
 			echo "Cloning arm-trusted-firmware from SolidRun"
 			cd $ROOTDIR/build
-			git clone https://github.com/SolidRun/atf-marvell.git arm-trusted-firmware  -b atf-v2.2-marvell-sdk-v10
+			git clone https://github.com/SolidRun/atf-marvell.git arm-trusted-firmware -b atf-v2.8-marvell-sdk-v12
 			cd arm-trusted-firmware
-			# Temporary commit waiting for a release
-			git checkout 00ad74c7afe67b2ffaf08300710f18d3dafebb45
 		elif [ "x$i" == "xmv-ddr-marvell" ]; then
 			echo "Cloning mv-ddr-marvell from SolidRun"
 			cd $ROOTDIR/build
-			git clone https://github.com/SolidRun/mv-ddr-marvell.git mv-ddr-marvell -b mv-ddr-marvell-sdk-v10
+			git clone https://github.com/SolidRun/mv-ddr-marvell.git mv-ddr-marvell -b mv-ddr-marvell-sdk-v12
 		elif [ "x$i" == "xu-boot" ]; then
 			echo "Cloning u-boot from SolidRun"
 			cd $ROOTDIR/build
