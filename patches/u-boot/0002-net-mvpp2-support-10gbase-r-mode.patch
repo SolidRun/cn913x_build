@@ -1,0 +1,36 @@
+From 98359524cce81bf34d163ef7fe0921df091e52e1 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Tue, 19 Nov 2024 19:27:41 +0100
+Subject: [PATCH 2/2] net: mvpp2: support 10gbase-r mode
+
+10gbase-r and sfi in terms of the mac are the same protocols.
+Add PHY_INTERFACE_MODE_10GBASER to the relevant switch statements.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/net/mvpp2.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/net/mvpp2.c b/drivers/net/mvpp2.c
+index 8c9afdf79ab..32b6724d441 100644
+--- a/drivers/net/mvpp2.c
++++ b/drivers/net/mvpp2.c
+@@ -3441,6 +3441,7 @@ static int gop_port_init(struct mvpp2_port *port)
+ 		gop_gmac_reset(port, 0);
+ 		break;
+ 
++	case PHY_INTERFACE_MODE_10GBASER:
+ 	case PHY_INTERFACE_MODE_SFI:
+ 		num_of_act_lanes = 2;
+ 		mac_num = 0;
+@@ -3493,6 +3494,7 @@ static void gop_port_enable(struct mvpp2_port *port, int enable)
+ 			mvpp2_port_disable(port);
+ 		break;
+ 
++	case PHY_INTERFACE_MODE_10GBASER:
+ 	case PHY_INTERFACE_MODE_SFI:
+ 		gop_xlg_mac_port_enable(port, enable);
+ 
+-- 
+2.43.0
+

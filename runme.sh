@@ -73,7 +73,6 @@ ROOTDIR=`pwd`
 PARALLEL=$(getconf _NPROCESSORS_ONLN) # Amount of parallel jobs for the builds
 TOOLS="wget tar git make 7z unsquashfs dd vim mkfs.ext4 parted mkdosfs mcopy dtc iasl mkimage e2cp truncate qemu-system-aarch64 cpio rsync bc bison flex python unzip depmod debootstrap"
 
-export PATH=$ROOTDIR/build/toolchain/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin:$PATH
 export CROSS_COMPILE=aarch64-linux-gnu-
 export ARCH=arm64
 
@@ -145,13 +144,6 @@ for i in $TOOLS; do
 done
 set -e
 
-if [[ ! -d $ROOTDIR/build/toolchain ]]; then
-	mkdir -p $ROOTDIR/build/toolchain
-	cd $ROOTDIR/build/toolchain
-	wget http://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-	tar -xvf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz 
-fi
-
 echo "Building boot loader"
 cd $ROOTDIR
 
@@ -183,7 +175,7 @@ for i in $SDK_COMPONENTS; do
 		elif [ "x$i" == "xu-boot" ]; then
 			echo "Cloning u-boot from SolidRun"
 			cd $ROOTDIR/build
-			git clone https://github.com/SolidRun/u-boot.git u-boot -b u-boot-v2019.10-marvell-sdk-v10
+			git clone https://github.com/SolidRun/u-boot.git u-boot -b u-boot-v2023.01-marvell-sdk-v12
 		elif [ "x$i" == "xdpdk" ]; then
                         echo "Cloning DPDK from https://github.com/DPDK/dpdk.git"
                         cd $ROOTDIR/build
@@ -220,7 +212,7 @@ mkdir -p $ROOTDIR/images/tmp
 
 build_uboot() {
 	cd $ROOTDIR/build/u-boot/
-	./scripts/kconfig/merge_config.sh configs/sr_cn913x_cex7_defconfig $ROOTDIR/configs/u-boot/cn913x_additions.config
+	./scripts/kconfig/merge_config.sh configs/mvebu_db_cn91xx_defconfig $ROOTDIR/configs/u-boot/cn913x_additions.config
 	[[ "${UBOOT_ENVIRONMENT}" =~ (.*):(.*):(.*) ]] || [[ "${UBOOT_ENVIRONMENT}" =~ (.*) ]]
 	if [ "x${BASH_REMATCH[1]}" = "xspi" ]; then
 cat >> .config << EOF
@@ -241,8 +233,9 @@ EOF
 		echo "ERROR: \$UBOOT_ENVIRONMENT setting invalid"
 		exit 1
 	fi
+	printf "CONFIG_DEFAULT_DEVICE_TREE=\"%s\"\n" "$DTB_UBOOT" >> .config
 	make olddefconfig
-	make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
+	make -j${PARALLEL}
 }
 
 if [ "x$BOOT_LOADER" == "xuefi" ]; then
@@ -550,7 +543,7 @@ fi
 
 cd $ROOTDIR/build/musdk-marvell-SDK11.22.07
 ./bootstrap
-./configure --host=aarch64-linux-gnu CFLAGS="-fPIC -O2"
+./configure --host=aarch64-linux-gnu CFLAGS="-fPIC -O2 -Wno-error=maybe-uninitialized -Wno-error=address -Wno-error=use-after-free"
 make -j${PARALLEL}
 make install
 cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma
@@ -563,7 +556,7 @@ make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
 ###############################################################################
 export PKG_CONFIG_PATH=$ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/lib/pkgconfig/:$PKG_CONFIG_PATH
 cd $ROOTDIR/build/dpdk
-meson build -Dexamples=all --cross-file $ROOTDIR/configs/dpdk/arm64_armada_solidrun_linux_gcc
+meson build -Dexamples=all -Dwerror=false --cross-file $ROOTDIR/configs/dpdk/arm64_armada_solidrun_linux_gcc
 ninja -C build
 
 ###############################################################################

@@ -1,0 +1,1695 @@
+From 1730057f0d4d8ba593be8cf7b5a3ffa00d9573e3 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Tue, 19 Nov 2024 17:06:15 +0100
+Subject: [PATCH 1/2] add initial support for solidrun cn9130 som based boards
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/Makefile               |   3 +
+ arch/arm/dts/cn9130-cf-base.dts     | 183 ++++++++
+ arch/arm/dts/cn9130-cf-pro.dts      | 379 ++++++++++++++++
+ arch/arm/dts/cn9130-cf.dtsi         | 213 +++++++++
+ arch/arm/dts/cn9130-sr-som.dts      |  12 +
+ arch/arm/dts/cn9130-sr-som.dtsi     | 160 +++++++
+ arch/arm/dts/cn9131-cf-solidwan.dts | 671 ++++++++++++++++++++++++++++
+ 7 files changed, 1621 insertions(+)
+ create mode 100644 arch/arm/dts/cn9130-cf-base.dts
+ create mode 100644 arch/arm/dts/cn9130-cf-pro.dts
+ create mode 100644 arch/arm/dts/cn9130-cf.dtsi
+ create mode 100644 arch/arm/dts/cn9130-sr-som.dts
+ create mode 100644 arch/arm/dts/cn9130-sr-som.dtsi
+ create mode 100644 arch/arm/dts/cn9131-cf-solidwan.dts
+
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index b0ff5bfa59e..7c65fc91e5a 100644
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -276,8 +276,11 @@ dtb-$(CONFIG_ARCH_MVEBU) +=			\
+ 	cn9130-crb-r1p3-A.dtb			\
+ 	cn9130-crb-r1p3-B.dtb			\
+ 	cn9130-crb-r1p3-C.dtb			\
++	cn9130-cf-base.dtb			\
++	cn9130-cf-pro.dtb			\
+ 	cn9131-db-A.dtb				\
+ 	cn9131-db-B.dtb				\
++	cn9131-cf-solidwan.dtb			\
+ 	cn9132-db-A.dtb				\
+ 	cn9132-db-B.dtb				\
+ 	cn9130-crb-A.dtb			\
+diff --git a/arch/arm/dts/cn9130-cf-base.dts b/arch/arm/dts/cn9130-cf-base.dts
+new file mode 100644
+index 00000000000..0d7d2ddc951
+--- /dev/null
++++ b/arch/arm/dts/cn9130-cf-base.dts
+@@ -0,0 +1,183 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2024 Josua Mayer <josua@solid-run.com>
++ *
++ * DTS for SolidRun CN9130 Clearfog Base.
++ *
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/leds/common.h>
++
++#include "cn9130.dtsi"
++#include "cn9130-sr-som.dtsi"
++#include "cn9130-cf.dtsi"
++
++/ {
++	model = "SolidRun CN9130 Clearfog Base";
++	compatible = "solidrun,cn9130-clearfog-base",
++		     "solidrun,cn9130-sr-som", "marvell,cn9130";
++
++	gpio-keys {
++		compatible = "gpio-keys";
++		pinctrl-0 = <&rear_button_pins>;
++		pinctrl-names = "default";
++
++		button-0 {
++			/* The rear SW3 button */
++			label = "Rear Button";
++			gpios = <&cp0_gpio0 31 GPIO_ACTIVE_LOW>;
++			linux,can-disable;
++			linux,code = <BTN_0>;
++		};
++	};
++
++	rfkill-m2-gnss {
++		compatible = "rfkill-gpio";
++		label = "m.2 GNSS";
++		radio-type = "gps";
++		/* rfkill-gpio inverts internally */
++		shutdown-gpios = <&expander0 9 GPIO_ACTIVE_HIGH>;
++	};
++
++	/* M.2 is B-keyed, so w-disable is for WWAN */
++	rfkill-m2-wwan {
++		compatible = "rfkill-gpio";
++		label = "m.2 WWAN";
++		radio-type = "wwan";
++		/* rfkill-gpio inverts internally */
++		shutdown-gpios = <&expander0 8 GPIO_ACTIVE_HIGH>;
++	};
++};
++
++&cp0_comphy {
++	phy4 {
++		phy-type = <COMPHY_TYPE_USB3_HOST1>;
++	};
++};
++
++/* SRDS #3 - SGMII 1GE */
++&cp0_eth1 {
++	phy = <&phy1>;
++	phy-mode = "sgmii";
++	status = "okay";
++};
++
++&cp0_eth2_phy {
++	/*
++	 * Configure LEDs default behaviour:
++	 * - LED[0]: link/activity: On/blink (green)
++	 * - LED[1]: link is 100/1000Mbps: On (yellow)
++	 * - LED[2]: high impedance (floating)
++	 */
++	marvell,reg-init = <3 16 0xf000 0x0a61>;
++
++	leds {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		led@0 {
++			reg = <0>;
++			color = <LED_COLOR_ID_GREEN>;
++			function = LED_FUNCTION_WAN;
++			default-state = "keep";
++		};
++
++		led@1 {
++			reg = <1>;
++			color = <LED_COLOR_ID_YELLOW>;
++			function = LED_FUNCTION_WAN;
++			default-state = "keep";
++		};
++	};
++};
++
++&cp0_gpio0 {
++	sim-select-hog {
++		gpio-hog;
++		gpios = <27 GPIO_ACTIVE_HIGH>;
++		output-high;
++		line-name = "sim-select";
++	};
++};
++
++&cp0_mdio {
++	phy1: ethernet-phy@1 {
++		reg = <1>;
++		/*
++		 * Configure LEDs default behaviour:
++		 * - LED[0]: link/activity: On/blink (green)
++		 * - LED[1]: link is 100/1000Mbps: On (yellow)
++		 * - LED[2]: high impedance (floating)
++		 *
++		 * Configure LEDs electrical polarity
++		 * - on-state: low
++		 * - off-state: high (not hi-z, to avoid residual glow)
++		 */
++		marvell,reg-init = <3 16 0xf000 0x0a61>,
++				   <3 17 0x003f 0x000a>;
++
++		leds {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			led@0 {
++				reg = <0>;
++				color = <LED_COLOR_ID_GREEN>;
++				function = LED_FUNCTION_LAN;
++				default-state = "keep";
++			};
++
++			led@1 {
++				reg = <1>;
++				color = <LED_COLOR_ID_YELLOW>;
++				function = LED_FUNCTION_LAN;
++				default-state = "keep";
++			};
++		};
++	};
++};
++
++&cp0_pinctrl {
++	pinctrl-0 = <&sim_select_pins>;
++	pintrl-names = "default";
++
++	rear_button_pins: cp0-rear-button-pins {
++		marvell,pins = "mpp31";
++		marvell,function = "gpio";
++	};
++
++	sim_select_pins: cp0-sim-select-pins {
++		marvell,pins = "mpp27";
++		marvell,function = "gpio";
++	};
++};
++
++/*
++ * SRDS #4 - USB 3.0 host on M.2 connector
++ * USB-2.0 Host on Type-A connector
++ */
++&cp0_usb3_1 {
++	phys = <&cp0_utmi1>;
++	phy-names = "comphy", "utmi";
++	dr_mode = "host";
++	status = "okay";
++};
++
++&expander0 {
++	m2-full-card-power-off-hog {
++		gpio-hog;
++		gpios = <2 GPIO_ACTIVE_LOW>;
++		output-low;
++		line-name = "m2-full-card-power-off";
++	};
++
++	m2-reset-hog {
++		gpio-hog;
++		gpios = <10 GPIO_ACTIVE_LOW>;
++		output-low;
++		line-name = "m2-reset";
++	};
++};
+diff --git a/arch/arm/dts/cn9130-cf-pro.dts b/arch/arm/dts/cn9130-cf-pro.dts
+new file mode 100644
+index 00000000000..9c5ffafd331
+--- /dev/null
++++ b/arch/arm/dts/cn9130-cf-pro.dts
+@@ -0,0 +1,379 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2024 Josua Mayer <josua@solid-run.com>
++ *
++ * DTS for SolidRun CN9130 Clearfog Pro.
++ *
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/leds/common.h>
++
++#include "cn9130.dtsi"
++#include "cn9130-sr-som.dtsi"
++#include "cn9130-cf.dtsi"
++
++/ {
++	model = "SolidRun CN9130 Clearfog Pro";
++	compatible = "solidrun,cn9130-clearfog-pro",
++		     "solidrun,cn9130-sr-som", "marvell,cn9130";
++
++	gpio-keys {
++		compatible = "gpio-keys";
++		pinctrl-0 = <&rear_button_pins>;
++		pinctrl-names = "default";
++
++		button-0 {
++			/* The rear SW3 button */
++			label = "Rear Button";
++			gpios = <&cp0_gpio1 0 GPIO_ACTIVE_LOW>;
++			linux,can-disable;
++			linux,code = <BTN_0>;
++		};
++	};
++};
++
++&cp0_comphy {
++	phy4 {
++		phy-type = <COMPHY_TYPE_PEX1>;
++	};
++};
++
++/* SRDS #3 - SGMII 1GE to L2 switch */
++&cp0_eth1 {
++	phy-mode = "sgmii";
++	status = "okay";
++
++	fixed-link {
++		speed = <1000>;
++		full-duplex;
++	};
++};
++
++&cp0_eth2_phy {
++	/*
++	 * Configure LEDs default behaviour similar to switch ports:
++	 * - LED[0]: link/activity: On/blink (green)
++	 * - LED[1]: link is 100/1000Mbps: On (red)
++	 * - LED[2]: high impedance (floating)
++	 *
++	 * Switch port defaults:
++	 * - LED0: link/activity: On/blink (green)
++	 * - LED1: link is 1000Mbps: On (red)
++	 *
++	 * Identical configuration is impossible with hardware offload.
++	 */
++	marvell,reg-init = <3 16 0xf000 0x0a61>;
++
++	leds {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		led@0 {
++			reg = <0>;
++			color = <LED_COLOR_ID_GREEN>;
++			function = LED_FUNCTION_WAN;
++			label = "LED2";
++			default-state = "keep";
++		};
++
++		led@1 {
++			reg = <1>;
++			color = <LED_COLOR_ID_RED>;
++			function = LED_FUNCTION_WAN;
++			label = "LED1";
++			default-state = "keep";
++		};
++	};
++};
++
++&cp0_mdio {
++	ethernet-switch@4 {
++		compatible = "marvell,mv88e6085";
++		reg = <4>;
++		pinctrl-0 = <&dsa_clk_pins &dsa_pins>;
++		pinctrl-names = "default";
++		reset-gpios = <&cp0_gpio0 27 GPIO_ACTIVE_LOW>;
++		interrupt-parent = <&cp0_gpio0>;
++		interrupts = <29 IRQ_TYPE_EDGE_FALLING>;
++
++		ethernet-ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			ethernet-port@0 {
++				reg = <0>;
++				label = "lan5";
++				phy = <&switch0phy0>;
++
++				leds {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					led@0 {
++						reg = <0>;
++						color = <LED_COLOR_ID_GREEN>;
++						function = LED_FUNCTION_LAN;
++						label = "LED12";
++						default-state = "keep";
++					};
++
++					led@1 {
++						reg = <1>;
++						color = <LED_COLOR_ID_RED>;
++						function = LED_FUNCTION_LAN;
++						label = "LED11";
++						default-state = "keep";
++					};
++				};
++			};
++
++			ethernet-port@1 {
++				reg = <1>;
++				label = "lan4";
++				phy = <&switch0phy1>;
++
++				leds {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					led@0 {
++						reg = <0>;
++						color = <LED_COLOR_ID_GREEN>;
++						function = LED_FUNCTION_LAN;
++						label = "LED10";
++						default-state = "keep";
++					};
++
++					led@1 {
++						reg = <1>;
++						color = <LED_COLOR_ID_RED>;
++						function = LED_FUNCTION_LAN;
++						label = "LED9";
++						default-state = "keep";
++					};
++				};
++			};
++
++			ethernet-port@2 {
++				reg = <2>;
++				label = "lan3";
++				phy = <&switch0phy2>;
++
++				leds {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					led@0 {
++						reg = <0>;
++						color = <LED_COLOR_ID_GREEN>;
++						function = LED_FUNCTION_LAN;
++						label = "LED8";
++						default-state = "keep";
++					};
++
++					led@1 {
++						reg = <1>;
++						color = <LED_COLOR_ID_RED>;
++						function = LED_FUNCTION_LAN;
++						label = "LED7";
++						default-state = "keep";
++					};
++				};
++			};
++
++			ethernet-port@3 {
++				reg = <3>;
++				label = "lan2";
++				phy = <&switch0phy3>;
++
++				leds {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					led@0 {
++						reg = <0>;
++						color = <LED_COLOR_ID_GREEN>;
++						function = LED_FUNCTION_LAN;
++						label = "LED6";
++						default-state = "keep";
++					};
++
++					led@1 {
++						reg = <1>;
++						color = <LED_COLOR_ID_RED>;
++						function = LED_FUNCTION_LAN;
++						label = "LED5";
++						default-state = "keep";
++					};
++				};
++			};
++
++			ethernet-port@4 {
++				reg = <4>;
++				label = "lan1";
++				phy = <&switch0phy4>;
++
++				leds {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					led@0 {
++						reg = <0>;
++						color = <LED_COLOR_ID_GREEN>;
++						function = LED_FUNCTION_LAN;
++						label = "LED4";
++						default-state = "keep";
++					};
++
++					led@1 {
++						reg = <1>;
++						color = <LED_COLOR_ID_RED>;
++						function = LED_FUNCTION_LAN;
++						label = "LED3";
++						default-state = "keep";
++					};
++				};
++			};
++
++			ethernet-port@5 {
++				reg = <5>;
++				label = "cpu";
++				ethernet = <&cp0_eth1>;
++				phy-mode = "sgmii";
++
++				fixed-link {
++					speed = <1000>;
++					full-duplex;
++				};
++			};
++
++			ethernet-port@6 {
++				reg = <6>;
++				label = "lan6";
++				phy-mode = "rgmii";
++
++				/*
++				 * Because of mdio address conflict the
++				 * external phy is not readable.
++				 * Force a fixed link instead.
++				 */
++				fixed-link {
++					speed = <1000>;
++					full-duplex;
++				};
++			};
++		};
++
++		mdio {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			switch0phy0: ethernet-phy@0 {
++				reg = <0x0>;
++			};
++
++			switch0phy1: ethernet-phy@1 {
++				reg = <0x1>;
++				/*
++				 * Indirectly configure default behaviour
++				 * for port lan6 leds behind external phy.
++				 * Internal PHYs are not using page 3,
++				 * therefore writing to it is safe.
++				 */
++				marvell,reg-init = <3 16 0xf000 0x0a61>;
++			};
++
++			switch0phy2: ethernet-phy@2 {
++				reg = <0x2>;
++			};
++
++			switch0phy3: ethernet-phy@3 {
++				reg = <0x3>;
++			};
++
++			switch0phy4: ethernet-phy@4 {
++				reg = <0x4>;
++			};
++		};
++
++		/*
++		 * There is an external phy on the switch mdio bus.
++		 * Because its mdio address collides with internal phys,
++		 * it is not readable.
++		 *
++		 * mdio-external {
++		 *	compatible = "marvell,mv88e6xxx-mdio-external";
++		 *	#address-cells = <1>;
++		 *	#size-cells = <0>;
++		 *
++		 *	ethernet-phy@1 {
++		 *		reg = <0x1>;
++		 *	};
++		 * };
++		 */
++	};
++};
++
++/* SRDS #4 - miniPCIe (CON2) */
++&cp0_pcie1 {
++	num-lanes = <1>;
++	/* dw-pcie inverts internally */
++	reset-gpios = <&expander0 2 GPIO_ACTIVE_HIGH>;
++	status = "okay";
++};
++
++&cp0_pinctrl {
++	dsa_clk_pins: cp0-dsa-clk-pins {
++		marvell,pins = "mpp40";
++		marvell,function = "synce1";
++	};
++
++	dsa_pins: cp0-dsa-pins {
++		marvell,pins = "mpp27", "mpp29";
++		marvell,function = "gpio";
++	};
++
++	rear_button_pins: cp0-rear-button-pins {
++		marvell,pins = "mpp32";
++		marvell,function = "gpio";
++	};
++
++	cp0_spi1_cs1_pins: cp0-spi1-cs1-pins {
++		marvell,pins = "mpp12";
++		marvell,function = "spi1";
++	};
++};
++
++&cp0_spi1 {
++	/* add pin for chip-select 1 on mikrobus */
++	pinctrl-0 = <&cp0_spi1_pins &cp0_spi1_cs1_pins>;
++};
++
++/* USB-2.0 Host on Type-A connector */
++&cp0_usb3_1 {
++	phys = <&cp0_utmi1>;
++	phy-names = "utmi";
++	dr_mode = "host";
++	status = "okay";
++};
++
++&expander0 {
++	/* CON2 */
++	pcie1-0-clkreq-hog {
++		gpio-hog;
++		gpios = <4 GPIO_ACTIVE_LOW>;
++		input;
++		line-name = "pcie1.0-clkreq";
++	};
++
++	/* CON2 */
++	pcie1-0-w-disable-hog {
++		gpio-hog;
++		gpios = <7 GPIO_ACTIVE_LOW>;
++		output-low;
++		line-name = "pcie1.0-w-disable";
++	};
++};
+diff --git a/arch/arm/dts/cn9130-cf.dtsi b/arch/arm/dts/cn9130-cf.dtsi
+new file mode 100644
+index 00000000000..7faa8ee57a6
+--- /dev/null
++++ b/arch/arm/dts/cn9130-cf.dtsi
+@@ -0,0 +1,213 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2024 Josua Mayer <josua@solid-run.com>
++ *
++ * DTS for common base of SolidRun CN9130 Clearfog Base and Pro.
++ *
++ */
++
++/ {
++	aliases {
++		/* label nics same order as armada 388 clearfog */
++		ethernet0 = &cp0_eth2;
++		ethernet1 = &cp0_eth1;
++		ethernet2 = &cp0_eth0;
++		i2c1 = &cp0_i2c1;
++		mmc1 = &cp0_sdhci0;
++	};
++
++	reg_usb3_vbus0: regulator-usb3-vbus0 {
++		compatible = "regulator-fixed";
++		regulator-name = "vbus0";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		gpios = <&expander0 6 GPIO_ACTIVE_LOW>;
++	};
++
++	sfp: sfp {
++		compatible = "sff,sfp";
++		i2c-bus = <&cp0_i2c1>;
++		los-gpios = <&expander0 12 GPIO_ACTIVE_HIGH>;
++		mod-def0-gpios = <&expander0 15 GPIO_ACTIVE_LOW>;
++		tx-disable-gpios = <&expander0 14 GPIO_ACTIVE_HIGH>;
++		tx-fault-gpios = <&expander0 13 GPIO_ACTIVE_HIGH>;
++		maximum-power-milliwatt = <2000>;
++	};
++};
++
++&cp0_comphy {
++	phy0 {
++		phy-type = <COMPHY_TYPE_SATA1>;
++	};
++
++	phy1 {
++		phy-type = <COMPHY_TYPE_USB3_HOST0>;
++	};
++
++	phy2 {
++		phy-type = <COMPHY_TYPE_SFI0>;
++		phy-speed = <COMPHY_SPEED_10_3125G>;
++	};
++
++	phy3 {
++		phy-type = <COMPHY_TYPE_SGMII1>;
++		phy-speed = <COMPHY_SPEED_1_25G>;
++	};
++
++	phy5 {
++		phy-type = <COMPHY_TYPE_PEX2>;
++	};
++};
++
++/* SRDS #2 - SFP+ 10GE */
++&cp0_eth0 {
++	managed = "in-band-status";
++	phy-mode = "10gbase-r";
++	sfp = <&sfp>;
++	status = "okay";
++};
++
++&cp0_i2c0 {
++	expander0: gpio-expander@20 {
++		compatible = "nxp,pca9555";
++		reg = <0x20>;
++		gpio-controller;
++		#gpio-cells = <2>;
++		pinctrl-0 = <&expander0_pins>;
++		pinctrl-names = "default";
++		interrupt-parent = <&cp0_gpio0>;
++		interrupts = <4 IRQ_TYPE_LEVEL_LOW>;
++
++		/* CON3 */
++		pcie2-0-clkreq-hog {
++			gpio-hog;
++			gpios = <0 GPIO_ACTIVE_LOW>;
++			input;
++			line-name = "pcie2.0-clkreq";
++		};
++
++		/* CON3 */
++		pcie2-0-w-disable-hog {
++			gpio-hog;
++			gpios = <3 GPIO_ACTIVE_LOW>;
++			output-low;
++			line-name = "pcie2.0-w-disable";
++		};
++
++		usb3-ilimit-hog {
++			gpio-hog;
++			gpios = <5 GPIO_ACTIVE_LOW>;
++			input;
++			line-name = "usb3-current-limit";
++		};
++
++		m2-devslp-hog {
++			gpio-hog;
++			gpios = <11 GPIO_ACTIVE_HIGH>;
++			output-low;
++			line-name = "m.2 devslp";
++		};
++	};
++
++	/* The MCP3021 supports standard and fast modes */
++	adc@4c {
++		compatible = "microchip,mcp3021";
++		reg = <0x4c>;
++	};
++
++	carrier_eeprom: eeprom@52 {
++		compatible = "atmel,24c02";
++		reg = <0x52>;
++		pagesize = <8>;
++	};
++};
++
++&cp0_i2c1 {
++	/*
++	 * Routed to SFP, M.2, mikrobus, and miniPCIe
++	 * SFP limits this to 100kHz, and requires an AT24C01A/02/04 with
++	 *  address pins tied low, which takes addresses 0x50 and 0x51.
++	 * Mikrobus doesn't specify beyond an I2C bus being present.
++	 * PCIe uses ARP to assign addresses, or 0x63-0x64.
++	 */
++	clock-frequency = <100000>;
++	pinctrl-0 = <&cp0_i2c1_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++};
++
++/* SRDS #5 - miniPCIe (CON3) */
++&cp0_pcie2 {
++	num-lanes = <1>;
++	/* dw-pcie inverts internally */
++	reset-gpios = <&expander0 1 GPIO_ACTIVE_HIGH>;
++	status = "okay";
++};
++
++&cp0_pinctrl {
++	cp0_mmc0_pins: cp0-mmc0-pins {
++		marvell,pins = "mpp43", "mpp56", "mpp57", "mpp58",
++			       "mpp59", "mpp60", "mpp61";
++		marvell,function = "sdio";
++	};
++
++	mikro_spi_pins: cp0-spi1-cs1-pins {
++		marvell,pins = "mpp12";
++		marvell,function = "spi1";
++	};
++
++	mikro_uart_pins: cp0-uart-pins {
++		marvell,pins = "mpp2", "mpp3";
++		marvell,function = "uart1";
++	};
++
++	expander0_pins: cp0-expander0-pins {
++		marvell,pins = "mpp4";
++		marvell,function = "gpio";
++	};
++};
++
++/* SRDS #0 - SATA on M.2 connector */
++&cp0_sata0 {
++	status = "okay";
++
++	/* only port 1 is available */
++	/delete-node/ sata-port@0;
++};
++
++/* microSD */
++&cp0_sdhci0 {
++	pinctrl-0 = <&cp0_mmc0_pins>;
++	pinctrl-names = "default";
++	bus-width = <4>;
++	no-1-8-v;
++	status = "okay";
++};
++
++&cp0_spi1 {
++	/* CS1 for mikrobus */
++	pinctrl-0 = <&cp0_spi1_pins &mikro_spi_pins>;
++};
++
++/*
++ * SRDS #1 - USB-3.0 Host on Type-A connector
++ * USB-2.0 Host on mPCI-e connector (CON3)
++ */
++&cp0_usb3_0 {
++	phys = <&cp0_utmi0>;
++	phy-names = "comphy", "utmi";
++	vbus-supply = <&reg_usb3_vbus0>;
++	dr_mode = "host";
++	status = "okay";
++};
++
++&cp0_utmi {
++	status = "okay";
++};
++
++/* mikrobus uart */
++&cp0_uart0 {
++	pinctrl-0 = <&mikro_uart_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++};
+diff --git a/arch/arm/dts/cn9130-sr-som.dts b/arch/arm/dts/cn9130-sr-som.dts
+new file mode 100644
+index 00000000000..70ef2541771
+--- /dev/null
++++ b/arch/arm/dts/cn9130-sr-som.dts
+@@ -0,0 +1,12 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2024 Josua Mayer <josua@solid-run.com>
++ *
++ * DTS for SolidRun CN9130 System on Module.
++ *
++ */
++
++/dts-v1/;
++
++#include "cn9130.dtsi"
++#include "cn9130-sr-som.dtsi"
+diff --git a/arch/arm/dts/cn9130-sr-som.dtsi b/arch/arm/dts/cn9130-sr-som.dtsi
+new file mode 100644
+index 00000000000..f688e4cc229
+--- /dev/null
++++ b/arch/arm/dts/cn9130-sr-som.dtsi
+@@ -0,0 +1,160 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Copyright (C) 2024 Josua Mayer <josua@solid-run.com>
++ *
++ */
++
++#include <dt-bindings/gpio/gpio.h>
++
++/ {
++	model = "SolidRun CN9130 SoM";
++	compatible = "solidrun,cn9130-sr-som", "marvell,cn9130";
++
++	aliases {
++		ethernet0 = &cp0_eth0;
++		ethernet1 = &cp0_eth1;
++		ethernet2 = &cp0_eth2;
++		i2c0 = &cp0_i2c0;
++		mmc0 = &ap_sdhci0;
++		rtc0 = &cp0_rtc;
++	};
++
++	chosen {
++		stdout-path = "serial0:115200n8";
++	};
++
++	v_1_8: regulator-1-8 {
++		compatible = "regulator-fixed";
++		regulator-name = "1v8";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++	};
++
++	/* requires assembly of R9307 */
++	vhv: regulator-vhv-1-8 {
++		compatible = "regulator-fixed";
++		regulator-name = "vhv-1v8";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		pinctrl-0 = <&cp0_reg_vhv_pins>;
++		pinctrl-names = "default";
++		gpios = <&cp0_gpio1 9 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++	};
++};
++
++&ap_pinctl {
++	ap_mmc0_pins: ap-mmc0-pins {
++		marvell,pins = "mpp0", "mpp1", "mpp2", "mpp3", "mpp4", "mpp5",
++					   "mpp6", "mpp7", "mpp8", "mpp9", "mpp10", "mpp12";
++		marvell,function = "sdio";
++		/*
++		 * mpp12 is emmc reset, function should be sdio (hw_rst),
++		 * but pinctrl-mvebu does not support this.
++		 *
++		 * From pinctrl-mvebu.h:
++		 * "The name will be used to switch to this setting in DT description, e.g.
++		 * marvell,function = "uart2". subname is only for debugging purposes."
++		 */
++	};
++
++	ap_uart0_pins: ap-uart0-pins {
++		marvell,pins = "mpp11", "mpp19";
++		marvell,function = "uart0";
++	};
++};
++
++&ap_sdhci0 {
++	bus-width = <8>;
++	pinctrl-0 = <&ap_mmc0_pins>;
++	pinctrl-names = "default";
++	vqmmc-supply = <&v_1_8>;
++	status = "okay";
++};
++
++&cp0_ethernet {
++	status = "okay";
++};
++
++/* for assembly with phy */
++&cp0_eth2 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_eth2_pins>;
++	phy-mode = "rgmii-id";
++	phy = <&cp0_eth2_phy>;
++	status = "okay";
++};
++
++&cp0_i2c0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_i2c0_pins>;
++	clock-frequency = <100000>;
++	status = "okay";
++
++	som_eeprom: eeprom@53 {
++		compatible = "atmel,24c02";
++		reg = <0x53>;
++		pagesize = <8>;
++	};
++};
++
++&cp0_mdio {
++	pinctrl-0 = <&cp0_mdio_pins>;
++	status = "okay";
++
++	/* assembly option */
++	cp0_eth2_phy: ethernet-phy@0 {
++		reg = <0>;
++	};
++};
++
++&cp0_spi1 {
++	status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <&cp0_spi1_pins>;
++	/* max speed limited by a mux */
++	spi-max-frequency = <1800000000>;
++
++	flash@0 {
++		compatible = "jedec,spi-nor";
++		reg = <0>;
++		/* read command supports max. 50MHz */
++		spi-max-frequency = <50000000>;
++	};
++};
++
++&cp0_syscon0 {
++	cp0_pinctrl: pinctrl {
++		compatible = "marvell,cp115-standalone-pinctrl";
++
++		cp0_eth2_pins: cp0-ge2-rgmii-pins {
++			marvell,pins = "mpp44", "mpp45", "mpp46", "mpp47",
++				       "mpp48", "mpp49", "mpp50", "mpp51",
++				       "mpp52", "mpp53", "mpp54", "mpp55";
++			/* docs call it "ge2", but cp110-pinctrl "ge1" */
++			marvell,function = "ge1";
++		};
++
++		cp0_mdio_pins: cp0-mdio-pins {
++			marvell,pins = "mpp40", "mpp41";
++			marvell,function = "ge";
++		};
++
++		cp0_spi1_pins: cp0-spi1-pins {
++			marvell,pins = "mpp13", "mpp14", "mpp15", "mpp16";
++			marvell,function = "spi1";
++		};
++
++		cp0_reg_vhv_pins: cp0-reg-vhv-pins {
++			marvell,pins = "mpp41";
++			marvell,function = "gpio";
++		};
++	};
++};
++
++/* AP default console */
++&uart0 {
++	pinctrl-0 = <&ap_uart0_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++};
+diff --git a/arch/arm/dts/cn9131-cf-solidwan.dts b/arch/arm/dts/cn9131-cf-solidwan.dts
+new file mode 100644
+index 00000000000..19e0cfe7739
+--- /dev/null
++++ b/arch/arm/dts/cn9131-cf-solidwan.dts
+@@ -0,0 +1,671 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2024 Josua Mayer <josua@solid-run.com>
++ *
++ * DTS for SolidRun CN9130 Clearfog Base.
++ *
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/leds/common.h>
++
++#include "cn9130.dtsi"
++#include "cn9130-sr-som.dtsi"
++
++/*
++ * Instantiate the external CP115
++ */
++
++#define CP110_NAME		cp1
++#define CP110_NUM		1
++#define CP110_PCIEx_CPU_MEM_BASE(iface)	((iface == 0) ? 0xc0000000 : \
++					 (0xe0000000 + (iface - 1) * 0x1000000))
++#define CP110_PCIEx_BUS_MEM_BASE(iface)	(CP110_PCIEx_CPU_MEM_BASE(iface))
++
++#include "armada-cp110.dtsi"
++
++
++/ {
++	model = "SolidRun CN9131 SolidWAN";
++	compatible = "solidrun,cn9131-solidwan",
++		     "solidrun,cn9130-sr-som", "marvell,cn9130";
++
++	aliases {
++		ethernet0 = &cp1_eth1;
++		ethernet1 = &cp1_eth2;
++		ethernet2 = &cp0_eth1;
++		ethernet3 = &cp0_eth2;
++		ethernet4 = &cp0_eth0;
++		ethernet5 = &cp1_eth0;
++		gpio0 = &ap_gpio0;
++		gpio1 = &cp0_gpio0;
++		gpio2 = &cp0_gpio1;
++		gpio3 = &cp1_gpio0;
++		gpio4 = &cp1_gpio1;
++		gpio5 = &expander0;
++		i2c0 = &cp0_i2c0;
++		i2c1 = &cp0_i2c1;
++		i2c2 = &cp1_i2c1;
++		mmc0 = &ap_sdhci0;
++		mmc1 = &cp0_sdhci0;
++		rtc0 = &cp0_rtc;
++		rtc1 = &carrier_rtc;
++	};
++
++	leds {
++		compatible = "gpio-leds";
++		pinctrl-names = "default";
++		pinctrl-0 = <&cp0_led_pins &cp1_led_pins>;
++
++		/* for sfp-1 (J42) */
++		led-sfp1-activity {
++			label = "sfp1:green";
++			gpios = <&cp0_gpio0 7 GPIO_ACTIVE_HIGH>;
++		};
++
++		/* for sfp-1 (J42) */
++		led-sfp1-link {
++			label = "sfp1:yellow";
++			gpios = <&cp0_gpio0 4 GPIO_ACTIVE_HIGH>;
++		};
++
++		/* (J28) */
++		led-sfp0-activity {
++			label = "sfp0:green";
++			gpios = <&cp1_gpio1 22 GPIO_ACTIVE_HIGH>;
++		};
++
++		/* (J28) */
++		led-sfp0-link {
++			label = "sfp0:yellow";
++			gpios = <&cp1_gpio1 23 GPIO_ACTIVE_HIGH>;
++		};
++	};
++
++	/* Type-A port on J53 */
++	reg_usb_a_vbus0: regulator-usb-a-vbus0 {
++		compatible = "regulator-fixed";
++		pinctrl-0 = <&cp0_reg_usb_a_vbus0_pins>;
++		pinctrl-names = "default";
++		regulator-name = "vbus0";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		gpios = <&cp0_gpio0 27 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		regulator-always-on;
++	};
++
++	reg_usb_a_vbus1: regulator-usb-a-vbus1 {
++		compatible = "regulator-fixed";
++		pinctrl-0 = <&cp0_reg_usb_a_vbus1_pins>;
++		pinctrl-names = "default";
++		regulator-name = "vbus1";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		gpios = <&cp0_gpio0 28 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		regulator-always-on;
++	};
++
++	sfp0: sfp-0 {
++		compatible = "sff,sfp";
++		pinctrl-0 = <&cp0_sfp0_pins>;
++		pinctrl-names = "default";
++		i2c-bus = <&cp0_i2c1>;
++		los-gpios = <&cp0_gpio1 2 GPIO_ACTIVE_HIGH>;
++		mod-def0-gpios = <&cp0_gpio1 0 GPIO_ACTIVE_LOW>;
++		tx-disable-gpios = <&cp0_gpio1 1 GPIO_ACTIVE_HIGH>;
++		tx-fault-gpios = <&cp0_gpio0 31 GPIO_ACTIVE_HIGH>;
++		maximum-power-milliwatt = <2000>;
++	};
++
++	sfp1: sfp-1 {
++		compatible = "sff,sfp";
++		pinctrl-0 = <&cp1_sfp1_pins>;
++		pinctrl-names = "default";
++		i2c-bus = <&cp1_i2c1>;
++		los-gpios = <&cp1_gpio1 2 GPIO_ACTIVE_HIGH>;
++		mod-def0-gpios = <&cp1_gpio1 18 GPIO_ACTIVE_LOW>;
++		tx-disable-gpios = <&cp1_gpio1 1 GPIO_ACTIVE_HIGH>;
++		tx-fault-gpios = <&cp1_gpio1 17 GPIO_ACTIVE_HIGH>;
++		maximum-power-milliwatt = <2000>;
++	};
++};
++
++&cp0_comphy {
++	phy0 {
++		phy-type = <COMPHY_TYPE_PEX0>;
++	};
++
++	phy1 {
++		phy-type = <COMPHY_TYPE_SGMII2>;
++		phy-speed = <COMPHY_SPEED_1_25G>;
++	};
++
++	phy2 {
++		phy-type = <COMPHY_TYPE_SFI0>;
++		phy-speed = <COMPHY_SPEED_10_3125G>;
++	};
++
++	phy3 {
++		phy-type = <COMPHY_TYPE_SGMII1>;
++		phy-speed = <COMPHY_SPEED_1_25G>;
++	};
++
++	phy4 {
++		phy-type = <COMPHY_TYPE_USB3_HOST1>;
++	};
++
++	phy5 {
++		phy-type = <COMPHY_TYPE_PEX2>;
++	};
++};
++
++&cp0_ethernet {
++	status = "okay";
++};
++
++/* SRDS #2 - SFP+ 10GE */
++&cp0_eth0 {
++	managed = "in-band-status";
++	phy-mode = "10gbase-r";
++	sfp = <&sfp0>;
++	status = "okay";
++};
++
++/* SRDS #3 - SGMII 1GE */
++&cp0_eth1 {
++	managed = "in-band-status";
++	phy-mode = "sgmii";
++	/* Without mdio phy access rely on sgmii auto-negotiation. */
++	status = "okay";
++};
++
++/* SRDS #1 - SGMII */
++&cp0_eth2 {
++	/delete-property/ pinctrl-0;
++	/delete-property/ pinctrl-names;
++	managed = "in-band-status";
++	phy-mode = "sgmii";
++	phy = <&cp0_phy1>;
++};
++
++&cp0_gpio0 {
++	pcie0-0-w-disable-hog {
++		gpio-hog;
++		gpios = <6 GPIO_ACTIVE_LOW>;
++		output-low;
++		line-name = "pcie0.0-w-disable";
++	};
++
++	/* J34 */
++	m2-full-card-power-off-hog {
++		gpio-hog;
++		gpios = <8 GPIO_ACTIVE_LOW>;
++		output-low;
++		line-name = "m2-full-card-power-off";
++	};
++};
++
++&cp0_i2c0 {
++	/* assembly option */
++	fan-controller@18 {
++		compatible = "ti,amc6821";
++		reg = <0x18>;
++	};
++
++	expander0: gpio@41 {
++		compatible = "nxp,pca9536";
++		reg = <0x41>;
++
++		usb-a-vbus0-ilimit-hog {
++			gpio-hog;
++			gpios = <0 GPIO_ACTIVE_LOW>;
++			input;
++			line-name = "vbus0-ilimit";
++		};
++
++		/* duplicate connection, controlled by soc gpio */
++		usb-vbus0-enable-hog {
++			gpio-hog;
++			gpios = <1 GPIO_ACTIVE_HIGH>;
++			input;
++			line-name = "vbus0-enable";
++		};
++
++		usb-a-vbus1-ilimit-hog {
++			gpio-hog;
++			gpios = <2 GPIO_ACTIVE_LOW>;
++			input;
++			line-name = "vbus1-ilimit";
++		};
++
++		/* duplicate connection, controlled by soc gpio */
++		usb-vbus1-enable-hog {
++			gpio-hog;
++			gpios = <3 GPIO_ACTIVE_HIGH>;
++			input;
++			line-name = "vbus1-enable";
++		};
++	};
++
++	carrier_eeprom: eeprom@52 {
++		compatible = "atmel,24c02";
++		reg = <0x52>;
++		pagesize = <8>;
++	};
++
++	/* usb-hub@60 */
++
++	/* assembly option */
++	carrier_rtc: rtc@68 {
++		compatible = "st,m41t83";
++		reg = <0x68>;
++		pinctrl-0 = <&cp1_rtc_pins>;
++		pinctrl-names = "default";
++		interrupt-parent = <&cp1_gpio0>;
++		interrupts = <12 IRQ_TYPE_EDGE_FALLING>;
++		reset-gpios = <&cp1_gpio0 13 GPIO_ACTIVE_LOW>;
++	};
++};
++
++&cp0_i2c1 {
++	/*
++	 * Routed to SFP.
++	 * Limit to 100kHz for compatibility with SFP modules,
++	 * featuring AT24C01A/02/04 at addresses 0x50/0x51.
++	 */
++	clock-frequency = <100000>;
++	pinctrl-0 = <&cp0_i2c1_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++};
++
++&cp0_mdio {
++	/*
++	 * SoM + Carrier each have a PHY at address 0.
++	 * Remove the SoM phy node, and skip adding the carrier node.
++	 * SGMII Auto-Negotation is enabled by bootloader for
++	 * autonomous operation without mdio control.
++	 */
++	/delete-node/ ethernet-phy@0;
++
++	/* U17016 */
++	cp0_phy1: ethernet-phy@1 {
++		reg = <1>;
++		/*
++		 * Configure LEDs default behaviour:
++		 * - LED[0]: link is 1000Mbps: On (yellow)
++		 * - LED[1]: link/activity: On/blink (green)
++		 * - LED[2]: high impedance (floating)
++		 */
++		marvell,reg-init = <3 16 0xf000 0x0a17>;
++
++		leds {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			led@0 {
++				reg = <0>;
++				color = <LED_COLOR_ID_YELLOW>;
++				function = LED_FUNCTION_LAN;
++				default-state = "keep";
++			};
++
++			led@1 {
++				reg = <1>;
++				color = <LED_COLOR_ID_GREEN>;
++				function = LED_FUNCTION_LAN;
++				default-state = "keep";
++			};
++		};
++	};
++};
++
++/* SRDS #0 - miniPCIe */
++&cp0_pcie0 {
++	num-lanes = <1>;
++	status = "okay";
++};
++
++/* SRDS #5 - M.2 B-Key (J34) */
++&cp0_pcie2 {
++	num-lanes = <1>;
++	status = "okay";
++};
++
++&cp0_pinctrl {
++	pinctrl-0 = <&cp0_m2_0_shutdown_pins &cp0_mpcie_rfkill_pins>;
++	pinctrl-names = "default";
++
++	cp0_led_pins: cp0-led-pins {
++		marvell,pins = "mpp4", "mpp7";
++		marvell,function = "gpio";
++	};
++
++	cp0_m2_0_shutdown_pins: cp0-m2-0-shutdown-pins {
++		marvell,pins = "mpp8";
++		marvell,function = "gpio";
++	};
++
++	cp0_mmc0_pins: cp0-mmc0-pins {
++		marvell,pins = "mpp43", "mpp56", "mpp57", "mpp58",
++			       "mpp59", "mpp60", "mpp61";
++		marvell,function = "sdio";
++	};
++
++	cp0_mpcie_rfkill_pins: cp0-mpcie-rfkill-pins {
++		marvell,pins = "mpp6";
++		marvell,function = "gpio";
++	};
++
++	cp0_reg_usb_a_vbus0_pins: cp0-reg-usb-a-vbus0-pins {
++		marvell,pins = "mpp27";
++		marvell,function = "gpio";
++	};
++
++	cp0_reg_usb_a_vbus1_pins: cp0-reg-usb-a-vbus1-pins {
++		marvell,pins = "mpp28";
++		marvell,function = "gpio";
++	};
++
++	cp0_sfp0_pins: cp0-sfp0-pins {
++		marvell,pins = "mpp31", "mpp32", "mpp33", "mpp34";
++		marvell,function = "gpio";
++	};
++
++	cp0_spi1_cs1_pins: cp0-spi1-cs1-pins {
++		marvell,pins = "mpp12";
++		marvell,function = "spi1";
++	};
++};
++
++/* microSD */
++&cp0_sdhci0 {
++	pinctrl-0 = <&cp0_mmc0_pins>;
++	pinctrl-names = "default";
++	bus-width = <4>;
++	no-1-8-v;
++	status = "okay";
++};
++
++&cp0_spi1 {
++	/* add pin for chip-select 1 */
++	pinctrl-0 = <&cp0_spi1_pins &cp0_spi1_cs1_pins>;
++
++	flash@1 {
++		compatible = "jedec,spi-nor";
++		reg = <1>;
++		/* read command supports max. 50MHz */
++		spi-max-frequency = <50000000>;
++	};
++};
++
++/* USB-2.0 Host to USB-Hub */
++&cp0_usb3_0 {
++	phys = <&cp0_utmi0>;
++	phy-names = "utmi";
++	dr_mode = "host";
++	status = "okay";
++};
++
++/* SRDS #4 - USB-3.0 Host to USB-Hub */
++&cp0_usb3_1 {
++	phys = <&cp0_utmi1>;
++	phy-names = "comphy", "utmi";
++	dr_mode = "host";
++	status = "okay";
++};
++
++&cp0_utmi {
++	status = "okay";
++};
++
++&cp0_utmi1 {
++	status = "disabled";
++};
++
++&cp1_comphy {
++	phy0 {
++		phy-type = <COMPHY_TYPE_PEX0>;
++	};
++
++	phy1 {
++		phy-type = <COMPHY_TYPE_SATA1>;
++	};
++
++	phy2 {
++		phy-type = <COMPHY_TYPE_USB3_HOST0>;
++	};
++
++	phy3 {
++		phy-type = <COMPHY_TYPE_SGMII1>;
++		phy-speed = <COMPHY_SPEED_1_25G>;
++	};
++
++	phy4 {
++		phy-type = <COMPHY_TYPE_SFI0>;
++		phy-speed = <COMPHY_SPEED_10_3125G>;
++	};
++
++	phy5 {
++		phy-type = <COMPHY_TYPE_SGMII2>;
++		phy-speed = <COMPHY_SPEED_1_25G>;
++	};
++};
++
++&cp1_ethernet {
++	status = "okay";
++};
++
++/* SRDS #4 - SFP+ 10GE */
++&cp1_eth0 {
++	managed = "in-band-status";
++	phy-mode = "10gbase-r";
++	sfp = <&sfp1>;
++	status = "okay";
++};
++
++/* SRDS #3 - SGMII 1GE */
++&cp1_eth1 {
++	managed = "in-band-status";
++	phy-mode = "sgmii";
++	phy = <&cp1_phy0>;
++	status = "okay";
++};
++
++/* SRDS #5 - SGMII 1GE */
++&cp1_eth2 {
++	managed = "in-band-status";
++	phy-mode = "sgmii";
++	phy = <&cp1_phy1>;
++	status = "okay";
++};
++
++&cp1_gpio0 {
++	status = "okay";
++
++	/* J30 */
++	m2-full-card-power-off-hog-0 {
++		gpio-hog;
++		gpios = <29 GPIO_ACTIVE_LOW>;
++		output-low;
++		line-name = "m2-full-card-power-off";
++	};
++
++	/* J44 */
++	m2-full-card-power-off-hog-1 {
++		gpio-hog;
++		gpios = <30 GPIO_ACTIVE_LOW>;
++		output-low;
++		line-name = "m2-full-card-power-off";
++	};
++};
++
++&cp1_gpio1 {
++	status = "okay";
++};
++
++&cp1_i2c1 {
++	/*
++	 * Routed to SFP.
++	 * Limit to 100kHz for compatibility with SFP modules,
++	 * featuring AT24C01A/02/04 at addresses 0x50/0x51.
++	 */
++	clock-frequency = <100000>;
++	pinctrl-0 = <&cp1_i2c1_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++};
++
++&cp1_mdio {
++	pinctrl-0 = <&cp1_mdio_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++
++	cp1_phy0: ethernet-phy@0 {
++		reg = <0>;
++		/*
++		 * Configure LEDs default behaviour:
++		 * - LED[0]: link is 1000Mbps: On (yellow)
++		 * - LED[1]: link/activity: On/blink (green)
++		 * - LED[2]: high impedance (floating)
++		 */
++		marvell,reg-init = <3 16 0xf000 0x0a17>;
++
++		leds {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			led@0 {
++				reg = <0>;
++				color = <LED_COLOR_ID_YELLOW>;
++				function = LED_FUNCTION_LAN;
++				default-state = "keep";
++			};
++
++			led@1 {
++				reg = <1>;
++				color = <LED_COLOR_ID_GREEN>;
++				function = LED_FUNCTION_LAN;
++				default-state = "keep";
++			};
++		};
++	};
++
++	cp1_phy1: ethernet-phy@1 {
++		reg = <1>;
++		/*
++		 * Configure LEDs default behaviour:
++		 * - LED[0]: link is 1000Mbps: On (yellow)
++		 * - LED[1]: link/activity: On/blink (green)
++		 * - LED[2]: high impedance (floating)
++		 */
++		marvell,reg-init = <3 16 0xf000 0x0a17>;
++
++		leds {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			led@0 {
++				reg = <0>;
++				color = <LED_COLOR_ID_YELLOW>;
++				function = LED_FUNCTION_LAN;
++				default-state = "keep";
++			};
++
++			led@1 {
++				reg = <1>;
++				color = <LED_COLOR_ID_GREEN>;
++				function = LED_FUNCTION_LAN;
++				default-state = "keep";
++			};
++		};
++	};
++};
++
++/* SRDS #0 - M.2 (J30) */
++&cp1_pcie0 {
++	num-lanes = <1>;
++	status = "okay";
++};
++
++&cp1_rtc {
++	status = "disabled";
++};
++
++/* SRDS #1 - SATA on M.2 (J44) */
++&cp1_sata0 {
++	status = "okay";
++
++	/* only port 0 is available */
++	/delete-node/ sata-port@1;
++};
++
++&cp1_syscon0 {
++	cp1_pinctrl: pinctrl {
++		compatible = "marvell,cp115-standalone-pinctrl";
++		pinctrl-0 = <&cp1_m2_1_shutdown_pins &cp1_m2_2_shutdown_pins>;
++		pinctrl-names = "default";
++
++		cp1_i2c1_pins: cp0-i2c1-pins {
++			marvell,pins = "mpp35", "mpp36";
++			marvell,function = "i2c1";
++		};
++
++		cp1_led_pins: cp1-led-pins {
++			marvell,pins = "mpp54", "mpp55";
++			marvell,function = "gpio";
++		};
++
++		cp1_m2_1_shutdown_pins: cp1-m2-1-shutdown-pins {
++			marvell,pins = "mpp29";
++			marvell,function = "gpio";
++		};
++
++		cp1_m2_2_shutdown_pins: cp1-m2-2-shutdown-pins {
++			marvell,pins = "mpp30";
++			marvell,function = "gpio";
++		};
++
++		cp1_mdio_pins: cp1-mdio-pins {
++			marvell,pins = "mpp37", "mpp38";
++			marvell,function = "ge";
++		};
++
++		cp1_rtc_pins: cp1-rtc-pins {
++			marvell,pins = "mpp12", "mpp13";
++			marvell,function = "gpio";
++		};
++
++		cp1_sfp1_pins: cp1-sfp1-pins {
++			marvell,pins = "mpp33", "mpp34", "mpp49", "mpp50";
++			marvell,function = "gpio";
++		};
++	};
++};
++
++/*
++ * SRDS #2 - USB-3.0 Host to M.2 (J44)
++ * USB-2.0 Host to M.2 (J30)
++ */
++&cp1_usb3_0 {
++	phys = <&cp1_utmi0>;
++	phy-names = "comphy", "utmi";
++	dr_mode = "host";
++	status = "okay";
++};
++
++/* USB-2.0 Host to M.2 (J44) */
++&cp1_usb3_1 {
++	phys = <&cp1_utmi1>;
++	phy-names = "utmi";
++	dr_mode = "host";
++	status = "okay";
++};
++
++&cp1_utmi {
++	status = "okay";
++};
+-- 
+2.43.0
+

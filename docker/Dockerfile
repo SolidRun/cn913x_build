@@ -1,4 +1,7 @@
-FROM ubuntu:20.04
+FROM debian:bookworm-slim
+
+# prevent dpkg interactive dialogues
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN set -e; \
         apt update; \
@@ -6,20 +9,18 @@ RUN set -e; \
         :
 
 # Install packages
-RUN DEBIAN_FRONTEND=noninteractive apt install -y \
+RUN apt-get --no-install-recommends -y install \
 	wget squashfs-tools build-essential git dosfstools \
 	e2fsprogs parted sudo mtools p7zip p7zip-full \
 	device-tree-compiler acpica-tools u-boot-tools \
 	e2tools libssl-dev cpio rsync bc bison flex \
-	python unzip python3 zlib1g-dev udev cmake \
+	python-is-python3 unzip python3 zlib1g-dev udev cmake \
 	libusb-1.0-0 bzip2 libbz2-dev libbz2-1.0 \
 	libusb-1.0-0-dev libzip-dev pkg-config g++ \
 	vim qemu-system-arm libtool m4 automake meson \
-        pkg-config-aarch64-linux-gnu python3-pip kmod \
-        debootstrap
-
-# Install python packages
-RUN pip3 install pyelftools
+	pkg-config python3-pyelftools kmod \
+	debootstrap libncurses-dev crossbuild-essential-arm64 \
+	openssl ca-certificates fakeroot
 
 # Set workdir
 WORKDIR /cn913x_build_dir
