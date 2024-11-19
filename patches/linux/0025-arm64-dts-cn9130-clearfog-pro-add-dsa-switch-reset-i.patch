@@ -1,0 +1,76 @@
+From 3e0544154604f8941ba6d5a59d31abb2669e3182 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 2 Oct 2024 14:03:56 +0200
+Subject: [PATCH] arm64: dts: cn9130-clearfog-pro: add dsa switch reset / irq &
+ mdio pins
+
+Add descriptions for dsa switch reset and interrupt lines;
+Add explicit pinctrl for mdio bus pins;
+Enable cpu ethernet reference clock for dsa switch & phy.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts | 27 +++++++++----------
+ 1 file changed, 13 insertions(+), 14 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts b/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts
+index a0804bbbb5ba..d1589db01ae9 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf-pro.dts
+@@ -247,15 +247,8 @@ &cp0_i2c1 {
+ 	pinctrl-0 = <&cp0_i2c1_pins>;
+ };
+ 
+-&cp0_gpio1 {
+-	phy_reset { /* Release switch reset */
+-		gpio-hog;
+-		gpios = <27 GPIO_ACTIVE_HIGH>;
+-		output-high;
+-	};
+-};
+-
+ &cp0_mdio {
++	pinctrl-0 = <&cp0_mdio_pins>;
+ 	status = "okay";
+ 	phy0: ethernet-phy@0 {
+ 		/* Green led blinks on activity, Orange LED on link */
+@@ -267,9 +260,11 @@ switch@4 {
+ 		#address-cells = <1>;
+ 		#size-cells = <0>;
+ 		reg = <4>;
+-//		pinctrl-0 = <&cp0_rcvr_clk_pins &cp0_dsa0_pins>;
+-		pinctrl-0 = <&cp0_dsa0_pins>;
++		pinctrl-0 = <&cp0_rcvr_clk_pins &cp0_dsa0_pins>;
+ 		pinctrl-names = "default";
++		reset-gpios = <&cp0_gpio1 27 GPIO_ACTIVE_LOW>;
++		interrupt-parent = <&cp0_gpio1>;
++		interrupts = <29 IRQ_TYPE_EDGE_FALLING>;
+ 
+ 		ports {
+ 			#address-cells = <1>;
+@@ -453,14 +448,18 @@ cp0_dsa0_pins: cp0-dsa0-pins {
+ 			marvell,pins = "mpp29", "mpp27";
+ 			marvell,function = "gpio";
+ 		};
+-/*		cp0_rcvr_clk_pins: cp0-rcvr-clk-pins {
+-			marvell, pins = "mpp40";
+-                        marvell,function = "synce1";
+-		};*/
++		cp0_rcvr_clk_pins: cp0-rcvr-clk-pins {
++			marvell,pins = "mpp40";
++			marvell,function = "synce1";
++		};
+ 		cp0_button_pin: cp0-button-pin {
+                 	marvell,pins = "mpp32";
+                 	marvell,function = "gpio";
+         	};
++		cp0_mdio_pins: cp0-mdio-pins {
++			marvell,pins = "mpp0", "mpp1";
++			marvell,function = "ge";
++		};
+ 	};
+ };
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,194 @@
+From 8933e4b596de01b035e1c8de02eefcaeadae6392 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Thu, 16 May 2024 18:19:17 +0200
+Subject: [PATCH 24/24] arm64: dts: cn9132-cex7: update usb ports
+
+CN9132 CEX7 routes the following usb signals:
+A45/A46: CP0-USB0
+B42/B43: CP0-USB1
+A42/A43: CP1-USB0
+B45/B46: CP2-USB0
+C6/C7/D6/D7: CP2-USBSS0
+
+Link used phys to controllers; disable unused controllers; remove
+invalid regulators.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cex7.dts | 38 +++++----------------
+ arch/arm64/boot/dts/marvell/cn9131-cex7.dts | 34 ++++--------------
+ arch/arm64/boot/dts/marvell/cn9132-cex7.dts | 37 ++------------------
+ 3 files changed, 17 insertions(+), 92 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+index 92f690288f57..5a80d737db82 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9130-cex7.dts
+@@ -47,32 +47,6 @@ ap0_reg_sd_vccq: ap0_sd_vccq@0 {
+ 		states = <1800000 0x1 3300000 0x0>;
+ 	};
+ 
+-	cp0_reg_usb3_vbus0: cp0_usb3_vbus@0 {
+-		compatible = "regulator-fixed";
+-		regulator-name = "cp0-xhci0-vbus";
+-		regulator-min-microvolt = <5000000>;
+-		regulator-max-microvolt = <5000000>;
+-		enable-active-high;
+-	};
+-
+-	cp0_usb3_0_phy0: cp0_usb3_phy@0 {
+-		compatible = "usb-nop-xceiv";
+-		vcc-supply = <&cp0_reg_usb3_vbus0>;
+-	};
+-
+-	cp0_reg_usb3_vbus1: cp0_usb3_vbus@1 {
+-		compatible = "regulator-fixed";
+-		regulator-name = "cp0-xhci1-vbus";
+-		regulator-min-microvolt = <5000000>;
+-		regulator-max-microvolt = <5000000>;
+-		enable-active-high;
+-	};
+-
+-	cp0_usb3_0_phy1: cp0_usb3_phy@1 {
+-		compatible = "usb-nop-xceiv";
+-		vcc-supply = <&cp0_reg_usb3_vbus1>;
+-	};
+-
+ 	cp0_reg_sd_vccq: cp0_sd_vccq@0 {
+ 		compatible = "regulator-gpio";
+ 		regulator-name = "cp0_sd_vccq";
+@@ -421,13 +395,17 @@ cp0_uart2_pins: uart22-pins {
+ };
+ 
+ &cp0_usb3_0 {
++	phys = <&cp0_utmi0>;
++	phy-names = "utmi";
+ 	status = "okay";
+-	usb-phy = <&cp0_usb3_0_phy0>;
+-	phy-names = "usb";
+ };
+ 
+ &cp0_usb3_1 {
++	phys = <&cp0_utmi1>;
++	phy-names = "utmi";
++	status = "okay";
++};
++
++&cp0_utmi {
+ 	status = "okay";
+-	usb-phy = <&cp0_usb3_0_phy1>;
+-	phy-names = "usb";
+ };
+diff --git a/arch/arm64/boot/dts/marvell/cn9131-cex7.dts b/arch/arm64/boot/dts/marvell/cn9131-cex7.dts
+index 37b3b3c11d90..ea785edb8872 100644
+--- a/arch/arm64/boot/dts/marvell/cn9131-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9131-cex7.dts
+@@ -17,28 +17,7 @@ aliases {
+ 		gpio4 = &cp1_gpio2;
+ 		ethernet3 = &cp1_eth0;
+ 	};
+-	cp1_reg_usb3_vbus0: cp1_usb3_vbus@0 {
+-		compatible = "regulator-fixed";
+-		regulator-name = "cp1-xhci0-vbus";
+-		regulator-min-microvolt = <5000000>;
+-		regulator-max-microvolt = <5000000>;
+-		enable-active-high;
+-	};
+-	cp1_usb3_0_phy0: cp1_usb3_phy0 {
+-		compatible = "usb-nop-xceiv";
+-		vcc-supply = <&cp1_reg_usb3_vbus0>;
+-	};
+-	cp1_reg_usb3_vbus1: cp1_usb3_vbus@1 {
+-		compatible = "regulator-fixed";
+-		regulator-name = "cp1-xhci1-vbus";
+-		regulator-min-microvolt = <5000000>;
+-		regulator-max-microvolt = <5000000>;
+-		enable-active-high;
+-	};
+-	cp1_usb3_0_phy1: cp1_usb3_phy@1 {
+-		compatible = "usb-nop-xceiv";
+-		vcc-supply = <&cp1_reg_usb3_vbus1>;
+-	};
++
+ 	cp1_sfp_eth0: sfp_eth0{
+ 		compatible = "sff,sfp";
+ 		i2c-bus = <&cp1_i2c1>;
+@@ -169,12 +148,11 @@ cp1_sfp_present_pins: cp1_sfp_present_pins-0 {
+ };
+ 
+ &cp1_usb3_0 {
++	phys = <&cp1_utmi0>;
++	phy-names = "utmi";
+ 	status = "okay";
+-	sb-phy = <&cp1_usb3_0_phy0>;
+-	phy-names = "usb";
+ };
+-&cp1_usb3_1 {
+-        status = "okay";
+-        usb-phy = <&cp1_usb3_0_phy1>;
+-        phy-names = "usb";
++
++&cp1_utmi {
++	status = "okay";
+ };
+diff --git a/arch/arm64/boot/dts/marvell/cn9132-cex7.dts b/arch/arm64/boot/dts/marvell/cn9132-cex7.dts
+index 231b10c66a7f..890f31f6b320 100644
+--- a/arch/arm64/boot/dts/marvell/cn9132-cex7.dts
++++ b/arch/arm64/boot/dts/marvell/cn9132-cex7.dts
+@@ -18,32 +18,6 @@ aliases {
+ 		ethernet5 = &cp2_eth0;
+ 	};
+ 
+-	cp2_reg_usb3_vbus0: cp2_usb3_vbus@0 {
+-		compatible = "regulator-fixed";
+-		regulator-name = "cp2-xhci0-vbus";
+-		regulator-min-microvolt = <5000000>;
+-		regulator-max-microvolt = <5000000>;
+-		enable-active-high;
+-	};
+-
+-	cp2_usb3_0_phy0: cp2_usb3_phy0 {
+-		compatible = "usb-nop-xceiv";
+-		vcc-supply = <&cp2_reg_usb3_vbus0>;
+-	};
+-
+-	cp2_reg_usb3_vbus1: cp2_usb3_vbus@1 {
+-		compatible = "regulator-fixed";
+-		regulator-name = "cp2-xhci1-vbus";
+-		regulator-min-microvolt = <5000000>;
+-		regulator-max-microvolt = <5000000>;
+-		enable-active-high;
+-	};
+-
+-	cp2_usb3_0_phy1: cp2_usb3_phy1 {
+-		compatible = "usb-nop-xceiv";
+-		vcc-supply = <&cp2_reg_usb3_vbus1>;
+-	};
+-
+ 	cp2_sfp_eth0: sfp-eth0 {
+ 		compatible = "sff,sfp";
+ 		i2c-bus = <&cp2_i2c1>;
+@@ -166,17 +140,12 @@ cp2_sfp_pins: sfp-pins {
+ 		};
+ 	};
+ };
+-
+ &cp2_usb3_0 {
++	phys = <&cp2_comphy1 0>, <&cp2_utmi0>;
++	phy-names = "comphy", "utmi";
+ 	status = "okay";
+-	usb-phy = <&cp2_usb3_0_phy0>;
+-	phy-names = "usb";
+ };
+ 
+-/* USB3 */
+-&cp2_usb3_1 {
++&cp2_utmi {
+ 	status = "okay";
+-	usb-phy = <&cp2_usb3_0_phy1>;
+-	phy-names = "usb";
+-	phys = <&cp2_comphy1 0>;
+ };
+-- 
+2.43.0
+

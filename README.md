@@ -6,12 +6,13 @@ The main intention of this repository is to provide build scripts that are easy 
 They are used in SolidRun to quickly build images for development where those images can be used to boot from SD card, SPI, eMMC, network TFTP (kernel) or used for root NFS
 
 The sources are pulled from:
-1. arm-trusted firmware: https://github.com/ARM-software/arm-trusted-firmware.git
-2. mv-ddr-marvell:  https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git
-3. u-boot: git://git.denx.de/u-boot.git v2019.10
-4. linux: https://github.com/torvalds/linux.git
-5. patches are supplied by Solid-Run in the patches/ directory
-6. binaries are supplied by Solid-Run in the binaries/ directory
+1. arm-trusted firmware: https://github.com/SolidRun/atf-marvell/tree/atf-v2.2-marvell-sdk-v10
+2. mv-ddr: https://github.com/SolidRun/mv-ddr-marvell/tree/mv-ddr-marvell-sdk-v10
+3. u-boot: https://github.com/SolidRun/u-boot/tree/u-boot-v2019.10-marvell-sdk-v10
+4. armada-firmware: https://github.com/SolidRun/armada-firmware/tree/marvell-sdk-v10
+5. linux: https://github.com/torvalds/linux.git
+6. patches are supplied by Solid-Run in the patches/ directory
+7. binaries are supplied by Solid-Run in the binaries/ directory
 
 The build script builds the u-boot, atf and linux components, integrate it with Ubuntu rootfs bootstrapped with multistrap. Buildroot is also built aside for future use.
 

@@ -21,7 +21,6 @@ BUILDROOT_VERSION=2020.02.1
 # 2-clearfog-pro (cn9130 SOM)
 # 3-SolidWAN (cn9130 SOM)
 # 4-BlDN MBV-A/B (cn9130 SOM)
-# 10-macchiatobin (8040)
 
 
 #UBOOT_ENVIRONMENT -
@@ -59,7 +58,7 @@ fi
 # Misc
 ###############################################################################
 
-RELEASE=${RELEASE:-linux-4.14.207-marvell-sdk-v10.23.01}
+RELEASE=${RELEASE:-v6.1.111}
 DPDK_RELEASE=${DPDK_RELEASE:-v22.07}
 
 SHALLOW=${SHALLOW:true}
@@ -78,8 +77,6 @@ export PATH=$ROOTDIR/build/toolchain/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-lin
 export CROSS_COMPILE=aarch64-linux-gnu-
 export ARCH=arm64
 
-PLATFORM=CN9130
-PLATFORM_SD_OFFSET=4096
 case "${BOARD_CONFIG}" in
 	0)
 		echo "*** Board Configuration CEx7 CN9132 based on Clearfog CN9K ***"
@@ -123,13 +120,6 @@ case "${BOARD_CONFIG}" in
                 DTB_KERNEL=cn9131-bldn-mbv
         ;;
 
-	10)
-		echo "*** Armada 8040 MacchiatoBIN ***"
-		PLATFORM=8040
-		PLATFORM_SD_OFFSET=1
-		DTB_UBOOT=armada-8040-mcbin
-		DTB_KERNEL=armada-8040-mcbin
-	;;
 
 	*)
 		echo "Please define board configuration"
@@ -168,14 +158,19 @@ cd $ROOTDIR
 ###############################################################################
 # source code cloning and building 
 ###############################################################################
-SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware linux armada-firmware"
+SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware armada-firmware linux dpdk mdio-proxy-module"
 
 for i in $SDK_COMPONENTS; do
 	if [[ ! -d $ROOTDIR/build/$i ]]; then
 		if [ "x$i" == "xlinux" ]; then
-			echo "Cloning https://github.com/SolidRun/linux-marvell release $RELEASE"
+			echo "Cloing https://www.github.com/torvalds/$i release $RELEASE"
 			cd $ROOTDIR/build
-			git clone $SHALLOW_FLAG https://github.com/SolidRun/linux-marvell.git linux -b $RELEASE
+			git clone $SHALLOW_FLAG https://kernel.googlesource.com/pub/scm/linux/kernel/git/stable/linux.git linux -b $RELEASE
+		elif [ "x$i" == "xarmada-firmware" ]; then
+			echo "Cloning armada-firmware from SolidRun"
+			echo "Cloning https://github.com/SolidRun/armada-firmware.git"
+			cd $ROOTDIR/build
+			git clone https://github.com/SolidRun/armada-firmware.git armada-firmware -b marvell-sdk-v10
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
 			echo "Cloning arm-trusted-firmware from SolidRun"
 			cd $ROOTDIR/build
@@ -185,14 +180,8 @@ for i in $SDK_COMPONENTS; do
 			git checkout 00ad74c7afe67b2ffaf08300710f18d3dafebb45
 		elif [ "x$i" == "xmv-ddr-marvell" ]; then
 			echo "Cloning mv-ddr-marvell from SolidRun"
-			echo "Cloning https://github.com/SolidRun/mv-ddr-marvell.git"
 			cd $ROOTDIR/build
 			git clone https://github.com/SolidRun/mv-ddr-marvell.git mv-ddr-marvell -b mv-ddr-marvell-sdk-v10
-		elif [ "x$i" == "xarmada-firmware" ]; then
-			echo "Cloning armada-firmware from SolidRun"
-			echo "Cloing https://github.com/SolidRun/armada-firmware.git"
-			cd $ROOTDIR/build
-			git clone https://github.com/SolidRun/armada-firmware.git armada-firmware -b marvell-sdk-v10
 		elif [ "x$i" == "xu-boot" ]; then
 			echo "Cloning u-boot from SolidRun"
 			cd $ROOTDIR/build
@@ -206,6 +195,10 @@ for i in $SDK_COMPONENTS; do
 				cd dpdk
 				git am $ROOTDIR/patches/dpdk-${DPDK_RELEASE}/*.patch
 			fi
+		elif [ "x$i" == "xmdio-proxy-module" ]; then
+			echo "Cloning mdio-proxy-module from https://github.com/nxp-qoriq/mdio-proxy-module"
+			cd $ROOTDIR/build
+			git clone $SHALLOW_FLAG https://github.com/nxp-qoriq/mdio-proxy-module -b master
 		fi
 
 		echo "Checking patches for $i"
@@ -227,8 +220,7 @@ mkdir -p $ROOTDIR/images/tmp
 # Building sources u-boot / atf / mv-ddr / kernel
 ###############################################################################
 
-echo "Building u-boot"
-build_uboot_CN9130() {
+build_uboot() {
 	cd $ROOTDIR/build/u-boot/
 	./scripts/kconfig/merge_config.sh configs/sr_cn913x_cex7_defconfig $ROOTDIR/configs/u-boot/cn913x_additions.config
 	[[ "${UBOOT_ENVIRONMENT}" =~ (.*):(.*):(.*) ]] || [[ "${UBOOT_ENVIRONMENT}" =~ (.*) ]]
@@ -253,22 +245,17 @@ EOF
 	fi
 	make olddefconfig
 	make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
-	install -m644 -D $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
 }
-build_uboot_8040() {
-	cd $ROOTDIR/build/u-boot/
-	make mvebu_mcbin-88f8040_defconfig
-	make -j${PARALLEL} DEVICE_TREE=$DTB_UBOOT
-	install -m644 -D $ROOTDIR/build/u-boot/u-boot.bin $ROOTDIR/binaries/u-boot/u-boot.bin
-}
-build_uboot_$PLATFORM
 
 if [ "x$BOOT_LOADER" == "xuefi" ]; then
 	echo "no support for uefi yet"
 fi
+if [ "x$BOOT_LOADER" == "xu-boot" ]; then
+	echo "Building u-boot"
+	build_uboot
+fi
 
-echo "Building arm-trusted-firmware"
-build_atf_CN9130() {
+build_atf() {
 	cd $ROOTDIR/build/arm-trusted-firmware
 
 	echo "Compiling U-BOOT and ATF"
@@ -279,7 +266,8 @@ build_atf_CN9130() {
 	make \
 		MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell \
 		SCP_BL2=$ROOTDIR/build/armada-firmware/mrvl_scp_bl2.img \
-		BL33=$ROOTDIR/binaries/u-boot/u-boot.bin \
+		BL33=$ROOTDIR/build/u-boot/u-boot.bin \
+		CP_NUM=$CP_NUM \
 		USE_COHERENT_MEM=0 \
 		DEBUG=0 \
 		LOG_LEVEL=20 \
@@ -289,30 +277,10 @@ build_atf_CN9130() {
 
 	echo "Copying flash-image.bin to /Images folder"
 	cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images/u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin
+	ln -sfv u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin $ROOTDIR/images/flash-image.bin
 }
-build_atf_8040() {
-	cd $ROOTDIR/build/arm-trusted-firmware
-
-	echo "Compiling U-BOOT and ATF"
-	echo "CP_NUM=$CP_NUM"
-	echo "DTB=$DTB_UBOOT"
-
-	make distclean
-	make \
-		MV_DDR_PATH=$ROOTDIR/build/mv-ddr-marvell \
-		SCP_BL2=$ROOTDIR/build/armada-firmware/mrvl_scp_bl2.img \
-		BL33=$ROOTDIR/binaries/u-boot/u-boot.bin \
-		USE_COHERENT_MEM=0 \
-		DEBUG=0 \
-		LOG_LEVEL=20 \
-		PLAT=a80x0_mcbin \
-		all fip
-
-	echo "Copying flash-image.bin to /Images folder"
-	cp $ROOTDIR/build/arm-trusted-firmware/build/a80x0_mcbin/release/flash-image.bin $ROOTDIR/images/u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin
-}
-build_atf_$PLATFORM
-ln -sfv u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin $ROOTDIR/images/flash-image.bin
+echo "Building arm-trusted-firmware"
+build_atf
 
 if [ "x${BUILD_ROOTFS}" != "xyes" ]; then
 	echo "U-Boot Ready, Skipping RootFS"
@@ -322,16 +290,29 @@ fi
 echo "Building the kernel"
 cd $ROOTDIR/build/linux
 #make defconfig
-./scripts/kconfig/merge_config.sh -m arch/arm64/configs/marvell_v8_sdk_defconfig $ROOTDIR/configs/linux/cn913x_additions.config
-make olddefconfig
-make savedefconfig
+./scripts/kconfig/merge_config.sh arch/arm64/configs/defconfig $ROOTDIR/configs/linux/cn913x_additions.config
 make -j${PARALLEL} all #Image dtbs modules
+KRELEASE=`make kernelrelease`
 
 mkdir -p $ROOTDIR/images/tmp/boot
 make INSTALL_MOD_PATH=$ROOTDIR/images/tmp/ INSTALL_MOD_STRIP=1 modules_install
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/cn913*.dtb $ROOTDIR/images/tmp/boot
+cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-clearfog-gt-8k.dtb $ROOTDIR/images/tmp/boot
 cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin.dtb $ROOTDIR/images/tmp/boot
+cp $ROOTDIR/build/linux/arch/arm64/boot/dts/marvell/armada-8040-mcbin-singleshot.dtb $ROOTDIR/images/tmp/boot
+
+# Build mdio-proxy kernel module
+echo "Building mdio-proxy-module"
+if [[ -d ${ROOTDIR}/build/mdio-proxy-module ]]; then
+	cd "${ROOTDIR}/build/mdio-proxy-module"
+
+	make -C "${ROOTDIR}/build/linux" CROSS_COMPILE="$CROSS_COMPILE" ARCH=arm64 M="$PWD" modules
+	install -v -m644 -D mdio-proxy.ko "${ROOTDIR}/images/tmp/lib/modules/${KRELEASE}/kernel/extra/mdio-proxy.ko"
+fi
+
+# regenerate modules dependencies
+depmod -b "${ROOTDIR}/images/tmp" -F "${ROOTDIR}/build/linux/System.map" ${KRELEASE}
 
 ###############################################################################
 # File System
@@ -555,6 +536,39 @@ EOF
 do_build_${DISTRO}
 
 ###############################################################################
+# build MUSDK
+###############################################################################
+if [[ ! -d $ROOTDIR/build/musdk-marvell-SDK11.22.07 ]]; then
+	cd $ROOTDIR/build/
+	wget https://solidrun-common.sos-de-fra-1.exo.io/cn913x/marvell/SDK11.22.07/sources-musdk-marvell-SDK11.22.07.tar.bz2
+	tar -vxf sources-musdk-marvell-SDK11.22.07.tar.bz2
+	rm -f sources-musdk-marvell-SDK11.22.07.tar.bz2
+	cd musdk-marvell-SDK11.22.07
+	for i in `find $ROOTDIR/patches/musdk/*.patch`; do
+		patch -p1 < $i
+	done
+
+fi
+
+cd $ROOTDIR/build/musdk-marvell-SDK11.22.07
+./bootstrap
+./configure --host=aarch64-linux-gnu CFLAGS="-fPIC -O2"
+make -j${PARALLEL}
+make install
+cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma
+make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
+cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2
+make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
+
+###############################################################################
+# build DPDK
+###############################################################################
+export PKG_CONFIG_PATH=$ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/lib/pkgconfig/:$PKG_CONFIG_PATH
+cd $ROOTDIR/build/dpdk
+meson build -Dexamples=all --cross-file $ROOTDIR/configs/dpdk/arm64_armada_solidrun_linux_gcc
+ninja -C build
+
+###############################################################################
 # assembling images
 ###############################################################################
 echo "Assembling kernel image"
@@ -579,6 +593,30 @@ e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/Image $ROOTDIR/images/tmp/rootfs.ext4:bo
 e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:boot/marvell
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/*.dtb $ROOTDIR/images/tmp/rootfs.ext4:boot/marvell/
 
+# Copy DPDK applications
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/app/dpdk-testpmd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l2fwd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l3fwd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
+
+# Copy MUSDK
+cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/
+for i in `find .`; do
+	if [ -d $i ]; then
+		e2mkdir -v -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:usr/$i
+	fi
+	if [ -f $i ] && ! [ -L $i ]; then
+		DIR=`dirname $i`
+		e2cp -v -G 0 -O 0 -p $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/$i $ROOTDIR/images/tmp/rootfs.ext4:usr/$DIR
+	fi
+done
+for i in `find .`; do
+       if [ -L $i ]; then
+               DIR=`dirname $i`
+               DEST=`readlink -qn $i`
+               e2ln -vf $ROOTDIR/images/tmp/rootfs.ext4:usr/$DIR/$DEST /usr/$i
+       fi
+done
+
 # Copy over kernel image
 echo "Copying kernel modules"
 cd $ROOTDIR/images/tmp/
@@ -593,6 +631,11 @@ for i in `find lib`; do
 done
 cd -
 
+# Copy MUSDK modules
+e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
+e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma/musdk_cma.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
+e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2/mv_pp_uio.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
+
 # ext4 ubuntu partition is ready
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images
 cd $ROOTDIR/
@@ -603,7 +646,7 @@ parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary
 # Generate the above partuuid 3030303030 which is the 4 characters of '0' in ascii
 echo "0000" | dd of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1 seek=440 conv=notrunc
 dd if=$ROOTDIR/images/tmp/rootfs.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1M seek=64 conv=notrunc,sparse
-dd if=$ROOTDIR/images/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=$PLATFORM_SD_OFFSET conv=notrunc,sparse
+dd if=$ROOTDIR/images/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc,sparse
 mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/ubuntu-${DTB_KERNEL}-${UBOOT_ENVIRONMENT}.img
 
 echo "Images are ready at $ROOTDIR/image/"
