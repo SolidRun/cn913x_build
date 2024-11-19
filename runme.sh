@@ -47,11 +47,13 @@ BUILDROOT_VERSION=2020.02.1
 : ${UBUNTU_ROOTFS_SIZE:=500M}
 
 # Check if git user name and git email are configured
-if [ -z "`git config user.name`" ] || [ -z "`git config user.email`" ]; then
-			echo "git is not configured, please run:"
-			echo "git config --global user.email \"you@example.com\""
-			echo "git config --global user.name \"Your Name\""
-			exit -1
+GIT_CONF=`git config user.name || true`
+if [ "x$GIT_CONF" == "x" ]; then
+	echo "git is not configured! using fake email and username ..."
+	export GIT_AUTHOR_NAME="SolidRun cn913x_build Script"
+	export GIT_AUTHOR_EMAIL="support@solid-run.com"
+	export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}"
+	export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
 fi
 
 ###############################################################################
