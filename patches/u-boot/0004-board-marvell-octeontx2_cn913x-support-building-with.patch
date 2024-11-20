@@ -1,0 +1,30 @@
+From 1f7b0c35091ea7ce923a24f385bd763411f1a542 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 20 Nov 2024 12:24:58 +0100
+Subject: [PATCH 4/5] board: marvell: octeontx2_cn913x: support building with
+ id-eeprom config
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ board/Marvell/octeontx2_cn913x/board.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index b40f70fa50d..fbcff6f11cb 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -137,3 +137,11 @@ int ft_board_setup(void *blob, bd_t *bd)
+ 	ft_cpu_setup(blob, bd);
+ 	return 0;
+ }
++
++#ifdef CONFIG_ID_EEPROM
++int do_mac(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
++{
++	puts("Not implemented.\n");
++	return 1;
++}
++#endif /* CONFIG_ID_EEPROM */
+-- 
+2.43.0
+

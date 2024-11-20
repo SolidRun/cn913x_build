@@ -1,0 +1,54 @@
+From 1d600f9fbcd316b7bae258b038b03c42eced2025 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 20 Nov 2024 12:24:19 +0100
+Subject: [PATCH 5/5] arch: arm: dts: cn9130-sr-som: define tlv eeproms
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9130-cf-base-u-boot.dtsi     | 6 ++++++
+ arch/arm/dts/cn9130-cf-pro-u-boot.dtsi      | 6 ++++++
+ arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi | 6 ++++++
+ 3 files changed, 18 insertions(+)
+ create mode 100644 arch/arm/dts/cn9130-cf-base-u-boot.dtsi
+ create mode 100644 arch/arm/dts/cn9130-cf-pro-u-boot.dtsi
+ create mode 100644 arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi
+
+diff --git a/arch/arm/dts/cn9130-cf-base-u-boot.dtsi b/arch/arm/dts/cn9130-cf-base-u-boot.dtsi
+new file mode 100644
+index 00000000000..0080896b7f9
+--- /dev/null
++++ b/arch/arm/dts/cn9130-cf-base-u-boot.dtsi
+@@ -0,0 +1,6 @@
++/ {
++	aliases {
++		tlv0 = &som_eeprom;
++		tlv1 = &carrier_eeprom;
++	};
++};
+diff --git a/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi b/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi
+new file mode 100644
+index 00000000000..0080896b7f9
+--- /dev/null
++++ b/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi
+@@ -0,0 +1,6 @@
++/ {
++	aliases {
++		tlv0 = &som_eeprom;
++		tlv1 = &carrier_eeprom;
++	};
++};
+diff --git a/arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi b/arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi
+new file mode 100644
+index 00000000000..0080896b7f9
+--- /dev/null
++++ b/arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi
+@@ -0,0 +1,6 @@
++/ {
++	aliases {
++		tlv0 = &som_eeprom;
++		tlv1 = &carrier_eeprom;
++	};
++};
+-- 
+2.43.0
+
