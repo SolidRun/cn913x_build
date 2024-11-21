@@ -1,0 +1,45 @@
+From 68af3c4a926171865fceec574e197cf3efbb549f Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Wed, 13 Dec 2023 13:00:06 +0530
+Subject: [PATCH 758/955] net/cnxk: fix max MTU limit
+
+Device can support maximum frame size up to 9212 bytes. While configuring
+mtu, overhead is considered as ethernet header size, crc and
+2 * (vlan tags) which translates to 26 bytes.
+
+Exposed overhead to the user via rte_eth_dev_info() is 18 bytes which were
+leading to set wrong Rx frame size.
+
+Fixes: 8589ec212e80 ("net/cnxk: support MTU set")
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I0df4afaa4c32916f878827a9b82b57109f7f7468
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118152
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+(cherry picked from commit d0d0dbd8446d6d314bbabb59257cd4ec93f39683)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118996
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index c4c3962820c1c..e757dcc07391c 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -20,8 +20,7 @@ cnxk_nix_info_get(struct rte_eth_dev *eth_dev, struct rte_eth_dev_info *devinfo)
+ 	devinfo->max_tx_queues = RTE_MAX_QUEUES_PER_PORT;
+ 	devinfo->max_mac_addrs = dev->max_mac_entries;
+ 	devinfo->max_vfs = pci_dev->max_vfs;
+-	devinfo->max_mtu = devinfo->max_rx_pktlen -
+-				(RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN);
++	devinfo->max_mtu = devinfo->max_rx_pktlen - CNXK_NIX_L2_OVERHEAD;
+ 	devinfo->min_mtu = devinfo->min_rx_bufsize - CNXK_NIX_L2_OVERHEAD;
+ 
+ 	devinfo->rx_offload_capa = dev->rx_offload_capa;
+-- 
+2.25.1
+

@@ -1,0 +1,65 @@
+From 06e1b02c441a912b20a29410c1ef47744d7329b3 Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Thu, 31 Aug 2023 04:04:09 -0700
+Subject: [PATCH 625/955] drivers: handle DMA queue reset failure
+
+DPI DMA queue reset might fail when queue is in enabled state
+which typically happens when application abruptly exits without
+close the DMA device.
+
+Patch disables the queue before initiating the configuration
+sequence. Also checks for queue idle state after disabling it.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: Iea32ba0c09c0992ccef07d98b20cead505d79a6e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/111162
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dpi.c  | 11 +++++++++++
+ drivers/dma/cnxk/cnxk_dmadev.c |  6 ++++++
+ 2 files changed, 17 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_dpi.c b/drivers/common/cnxk/roc_dpi.c
+index 9cb479371a7ac..9f9c667b916cb 100644
+--- a/drivers/common/cnxk/roc_dpi.c
++++ b/drivers/common/cnxk/roc_dpi.c
+@@ -47,7 +47,18 @@ roc_dpi_enable(struct roc_dpi *dpi)
+ int
+ roc_dpi_disable(struct roc_dpi *dpi)
+ {
++	uint8_t retry = 100;
++
+ 	plt_write64(0x0, dpi->rbase + DPI_VDMA_EN);
++
++	while (retry && !(plt_read64(dpi->rbase + DPI_VDMA_SADDR) & BIT_ULL(63))) {
++		retry--;
++		rte_delay_us_block(50);
++	}
++
++	if (!retry && !(plt_read64(dpi->rbase + DPI_VDMA_SADDR) & BIT_ULL(63)))
++		return -EBUSY;
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index 465290ce7adfd..588b3783a9ba4 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -124,6 +124,12 @@ cnxk_dmadev_configure(struct rte_dma_dev *dev, const struct rte_dma_conf *conf,
+ 	if (dpivf->flag & CNXK_DPI_DEV_CONFIG)
+ 		return rc;
+ 
++	rc = roc_dpi_disable(&dpivf->rdpi);
++	if (rc < 0) {
++		plt_err("DMA DPI queue disable failed err = %d", rc);
++		goto done;
++	}
++
+ 	rc = cnxk_dmadev_chunk_pool_create(dev);
+ 	if (rc < 0) {
+ 		plt_err("DMA pool configure failed err = %d", rc);
+-- 
+2.25.1
+

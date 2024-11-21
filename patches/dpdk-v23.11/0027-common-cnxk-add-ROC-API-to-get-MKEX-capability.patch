@@ -1,0 +1,131 @@
+From 1cc427648e32db533c019410802d4b6587f737bf Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Fri, 1 Dec 2023 12:10:22 +0530
+Subject: [PATCH 027/513] common/cnxk: add ROC API to get MKEX capability
+
+Added ROC API to get MKEX capability.
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I1ed0368f08ee41b6b15e3add04ba4a65f40d8084
+---
+ drivers/common/cnxk/roc_npc.c      | 24 ++++++++++++++++++++++++
+ drivers/common/cnxk/roc_npc.h      |  1 +
+ drivers/common/cnxk/roc_npc_mcam.c | 10 ++++------
+ drivers/common/cnxk/roc_npc_priv.h |  1 -
+ drivers/common/cnxk/version.map    |  1 +
+ 5 files changed, 30 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 69d74c8827f26..72404c526cbe0 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -235,6 +235,30 @@ roc_npc_profile_name_get(struct roc_npc *roc_npc)
+ 	return (char *)npc->profile_name;
+ }
+ 
++int
++roc_npc_kex_capa_get(struct roc_nix *roc_nix, uint64_t *kex_capability)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct npc npc;
++	int rc = 0;
++
++	memset(&npc, 0, sizeof(npc));
++
++	npc.mbox = (&nix->dev)->mbox;
++
++	rc = npc_mcam_fetch_kex_cfg(&npc);
++	if (rc)
++		return rc;
++
++	rc = npc_mcam_fetch_hw_cap(&npc, &npc.hash_extract_cap);
++	if (rc)
++		return rc;
++
++	*kex_capability = npc_get_kex_capability(&npc);
++
++	return 0;
++}
++
+ int
+ roc_npc_init(struct roc_npc *roc_npc)
+ {
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 7dec10da30680..ac50a10e6e211 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -425,6 +425,7 @@ struct roc_npc {
+ int __roc_api roc_npc_init(struct roc_npc *roc_npc);
+ int __roc_api roc_npc_fini(struct roc_npc *roc_npc);
+ const char *__roc_api roc_npc_profile_name_get(struct roc_npc *roc_npc);
++int __roc_api roc_npc_kex_capa_get(struct roc_nix *roc_nix, uint64_t *kex_capability);
+ 
+ struct roc_npc_flow *__roc_api roc_npc_flow_create(struct roc_npc *roc_npc,
+ 						   const struct roc_npc_attr *attr,
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index 28a90210d281e..48a624de5a2e0 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -774,7 +774,7 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 		 */
+ 		if (pst->is_second_pass_rule || (!pst->is_second_pass_rule && pst->has_eth_type)) {
+ 			la_offset = plt_popcount32(npc->keyx_supp_nmask[flow->nix_intf] &
+-						       ((1ULL << 9 /* LA offset */) - 1));
++						   ((1ULL << 9 /* LA offset */) - 1));
+ 			la_offset *= 4;
+ 
+ 			mask = ~((0xfULL << la_offset));
+@@ -820,8 +820,7 @@ npc_set_vlan_ltype(struct npc_parse_state *pst)
+ 	uint64_t val, mask;
+ 	uint8_t lb_offset;
+ 
+-	lb_offset =
+-		plt_popcount32(pst->npc->keyx_supp_nmask[pst->nix_intf] &
++	lb_offset = plt_popcount32(pst->npc->keyx_supp_nmask[pst->nix_intf] &
+ 				   ((1ULL << NPC_LTYPE_LB_OFFSET) - 1));
+ 	lb_offset *= 4;
+ 
+@@ -842,8 +841,7 @@ npc_set_ipv6ext_ltype_mask(struct npc_parse_state *pst)
+ 	uint8_t lc_offset, lcflag_offset;
+ 	uint64_t val, mask;
+ 
+-	lc_offset =
+-		plt_popcount32(pst->npc->keyx_supp_nmask[pst->nix_intf] &
++	lc_offset = plt_popcount32(pst->npc->keyx_supp_nmask[pst->nix_intf] &
+ 				   ((1ULL << NPC_LTYPE_LC_OFFSET) - 1));
+ 	lc_offset *= 4;
+ 
+@@ -867,7 +865,7 @@ npc_set_ipv6ext_ltype_mask(struct npc_parse_state *pst)
+ 	 */
+ 	if (pst->npc->keyx_supp_nmask[pst->nix_intf] & (1ULL << NPC_LFLAG_LC_OFFSET)) {
+ 		lcflag_offset = plt_popcount32(pst->npc->keyx_supp_nmask[pst->nix_intf] &
+-						   ((1ULL << NPC_LFLAG_LC_OFFSET) - 1));
++					       ((1ULL << NPC_LFLAG_LC_OFFSET) - 1));
+ 		lcflag_offset *= 4;
+ 
+ 		mask = (0xfULL << lcflag_offset);
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index f4dcc34447ded..8279eb2d13334 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -497,5 +497,4 @@ void npc_aged_flows_bitmap_free(struct roc_npc *roc_npc);
+ int npc_aging_ctrl_thread_create(struct roc_npc *roc_npc, const struct roc_npc_action_age *age,
+ 				 struct roc_npc_flow *flow);
+ void npc_aging_ctrl_thread_destroy(struct roc_npc *roc_npc);
+-int npc_free_mcast_list(struct npc *npc, uint32_t mce_index);
+ #endif /* _ROC_NPC_PRIV_H_ */
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index ad83a364d5b8f..497bcf217b9b6 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -440,6 +440,7 @@ INTERNAL {
+ 	roc_npc_flow_parse;
+ 	roc_npc_get_low_priority_mcam;
+ 	roc_npc_init;
++	roc_npc_kex_capa_get;
+ 	roc_npc_mark_actions_get;
+ 	roc_npc_mark_actions_sub_return;
+ 	roc_npc_vtag_actions_get;
+-- 
+2.25.1
+

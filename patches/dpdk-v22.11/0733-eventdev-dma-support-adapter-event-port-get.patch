@@ -1,0 +1,43 @@
+From 65fd22a867a99c0db26fac974b5e7c70820cf5b9 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Fri, 29 Sep 2023 17:20:50 +0530
+Subject: [PATCH 733/955] eventdev/dma: support adapter event port get
+
+Added support for DMA adapter event port get.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: Ifee045938004da7c67198a4d0362bfc0656e8441
+---
+ lib/eventdev/rte_event_dma_adapter.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/lib/eventdev/rte_event_dma_adapter.c b/lib/eventdev/rte_event_dma_adapter.c
+index f299914dec845..af4b5ad38828d 100644
+--- a/lib/eventdev/rte_event_dma_adapter.c
++++ b/lib/eventdev/rte_event_dma_adapter.c
+@@ -475,6 +475,22 @@ rte_event_dma_adapter_free(uint8_t id)
+ 	return 0;
+ }
+ 
++int
++rte_event_dma_adapter_event_port_get(uint8_t id, uint8_t *event_port_id)
++{
++	struct event_dma_adapter *adapter;
++
++	EVENT_DMA_ADAPTER_ID_VALID_OR_ERR_RET(id, -EINVAL);
++
++	adapter = edma_id_to_adapter(id);
++	if (adapter == NULL || event_port_id == NULL)
++		return -EINVAL;
++
++	*event_port_id = adapter->event_port_id;
++
++	return 0;
++}
++
+ static inline unsigned int
+ edma_enq_to_dma_dev(struct event_dma_adapter *adapter, struct rte_event *ev, unsigned int cnt)
+ {
+-- 
+2.25.1
+

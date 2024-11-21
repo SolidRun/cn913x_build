@@ -1,0 +1,42 @@
+From ba628ea1a82f78cd06f8e9271e6af642a90e3e16 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Mon, 20 May 2024 16:04:34 +0530
+Subject: [PATCH 865/955] common/cnxk: remove restriction to clear RPM stats
+
+Linux does not support clearing RPM stats on cn10k platform.
+Hence restriction is added that when user requests to clear
+xstats then request is discarded silently.
+
+Recently clearing RPM xstats are supported in Linux under
+https://sj1git1.cavium.com/c/IP/SW/kernel/linux/+/127910
+
+Hence removing restriction for cn10k.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I793d0475ca7520eb0683716994dde149a1a111ea
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128107
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_mac.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_mac.c b/drivers/common/cnxk/roc_nix_mac.c
+index f79aaec4a5e2f..0ffd05e4d4642 100644
+--- a/drivers/common/cnxk/roc_nix_mac.c
++++ b/drivers/common/cnxk/roc_nix_mac.c
+@@ -363,11 +363,6 @@ roc_nix_mac_stats_reset(struct roc_nix *roc_nix)
+ 	struct msg_req *req;
+ 	int rc = -ENOSPC;
+ 
+-	if (roc_model_is_cn10k()) {
+-		rc = 0;
+-		goto exit;
+-	}
+-
+ 	if (roc_nix_is_vf_or_sdp(roc_nix)) {
+ 		rc = 0;
+ 		goto exit;
+-- 
+2.25.1
+

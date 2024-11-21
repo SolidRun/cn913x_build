@@ -1,0 +1,87 @@
+From 4bfae1f527f27b8a1b1eb59904075d27d0d3e3c6 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Fri, 17 May 2024 23:39:35 +0530
+Subject: [PATCH 352/513] app/crypto-perf: fix result location for asymmetric
+ test
+
+For asymmetric op, private test data should be stored after
+rte_crypto_asym_op struct.
+
+Fixes: a538d1d2d01e ("test/crypto-perf: extend asymmetric crypto throughput test")
+Cc: stable@dpdk.org
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I5e7a085d6c1ff2cf0d3ed4612a01039f7718483f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128053
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+---
+ app/test-crypto-perf/cperf_test_common.c  |  6 ++++--
+ app/test-crypto-perf/cperf_test_latency.c | 14 +++++++++++---
+ 2 files changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/app/test-crypto-perf/cperf_test_common.c b/app/test-crypto-perf/cperf_test_common.c
+index 4681ecc791038..255fa896fbd51 100644
+--- a/app/test-crypto-perf/cperf_test_common.c
++++ b/app/test-crypto-perf/cperf_test_common.c
+@@ -150,11 +150,11 @@ cperf_alloc_common_memory(const struct cperf_options *options,
+ 	int ret;
+ 
+ 	/* Calculate the object size */
+-	uint16_t crypto_op_size = sizeof(struct rte_crypto_op) +
+-		sizeof(struct rte_crypto_sym_op);
++	uint16_t crypto_op_size = sizeof(struct rte_crypto_op);
+ 	uint16_t crypto_op_private_size;
+ 
+ 	if (options->op_type == CPERF_ASYM_MODEX || options->op_type == CPERF_ASYM_SM2) {
++		crypto_op_size += sizeof(struct rte_crypto_asym_op);
+ 		snprintf(pool_name, RTE_MEMPOOL_NAMESIZE, "perf_asym_op_pool%u",
+ 			 rte_socket_id());
+ 		*pool = rte_crypto_op_pool_create(
+@@ -171,6 +171,8 @@ cperf_alloc_common_memory(const struct cperf_options *options,
+ 		return 0;
+ 	}
+ 
++	crypto_op_size += sizeof(struct rte_crypto_sym_op);
++
+ 	/*
+ 	 * If doing AES-CCM, IV field needs to be 16 bytes long,
+ 	 * and AAD field needs to be long enough to have 18 bytes,
+diff --git a/app/test-crypto-perf/cperf_test_latency.c b/app/test-crypto-perf/cperf_test_latency.c
+index 874e7fa4dd7a2..1bc07d7ccfb9d 100644
+--- a/app/test-crypto-perf/cperf_test_latency.c
++++ b/app/test-crypto-perf/cperf_test_latency.c
+@@ -123,7 +123,11 @@ store_timestamp(struct rte_crypto_op *op, uint64_t timestamp)
+ {
+ 	struct priv_op_data *priv_data;
+ 
+-	priv_data = (struct priv_op_data *) (op->sym + 1);
++	if (op->type == RTE_CRYPTO_OP_TYPE_SYMMETRIC)
++		priv_data = (struct priv_op_data *) (op->sym + 1);
++	else
++		priv_data = (struct priv_op_data *) (op->asym + 1);
++
+ 	priv_data->result->status = op->status;
+ 	priv_data->result->tsc_end = timestamp;
+ }
+@@ -252,9 +256,13 @@ cperf_latency_test_runner(void *arg)
+ 				ctx->res[tsc_idx].tsc_start = tsc_start;
+ 				/*
+ 				 * Private data structure starts after the end of the
+-				 * rte_crypto_sym_op structure.
++				 * rte_crypto_sym_op (or rte_crypto_asym_op) structure.
+ 				 */
+-				priv_data = (struct priv_op_data *) (ops[i]->sym + 1);
++				if (ops[i]->type == RTE_CRYPTO_OP_TYPE_SYMMETRIC)
++					priv_data = (struct priv_op_data *) (ops[i]->sym + 1);
++				else
++					priv_data = (struct priv_op_data *) (ops[i]->asym + 1);
++
+ 				priv_data->result = (void *)&ctx->res[tsc_idx];
+ 				tsc_idx++;
+ 			}
+-- 
+2.25.1
+

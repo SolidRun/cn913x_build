@@ -1,0 +1,35 @@
+From 286f00919fac5d2d80ea103a0304effedd6df917 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Fri, 2 Feb 2024 16:07:27 +0530
+Subject: [PATCH 810/955] cnxk: fix representor stats
+
+Representor stats were not matching the PF/VF stats as seen
+linux kernel. This patch fixes the same.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I6b0e8a125037ec25bec03a497ab489a1b6981123
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121019
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit d462fd7908418dc586bdaace96e6028e5f874d31)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121025
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_mbox.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 7c153d2f0b083..8711148f88a1b 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -1858,6 +1858,7 @@ struct nix_get_lf_stats_req {
+ 
+ struct nix_lf_stats_rsp {
+ 	struct mbox_msghdr hdr;
++	uint16_t __io pcifunc;
+ 	struct {
+ 		uint64_t __io octs;
+ 		uint64_t __io ucast;
+-- 
+2.25.1
+

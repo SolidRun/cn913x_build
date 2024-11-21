@@ -1,0 +1,83 @@
+From a4bacfedfdf28ef97aa5eb6ff2f3acdcea579312 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Wed, 8 May 2024 00:52:22 +0530
+Subject: [PATCH 329/513] net/cnxk: add MTU set ops
+
+Adds mtu set ops for representor PF device.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Change-Id: Id59bbcd97a2d6a4ec980fe1ac58418ae487b3093
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126840
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/net/cnxk/cnxk_rep.h     |  1 +
+ drivers/net/cnxk/cnxk_rep_ops.c | 34 ++++++++++++++++++++++++++++++++-
+ 2 files changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cnxk_rep.h b/drivers/net/cnxk/cnxk_rep.h
+index 9bdea47bd412e..ad8964970298f 100644
+--- a/drivers/net/cnxk/cnxk_rep.h
++++ b/drivers/net/cnxk/cnxk_rep.h
+@@ -146,5 +146,6 @@ int cnxk_rep_xstats_get_by_id(struct rte_eth_dev *eth_dev, const uint64_t *ids,
+ 			      unsigned int n);
+ int cnxk_rep_xstats_get_names_by_id(struct rte_eth_dev *eth_dev, const uint64_t *ids,
+ 				    struct rte_eth_xstat_name *xstats_names, unsigned int n);
++int cnxk_rep_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu);
+ 
+ #endif /* __CNXK_REP_H__ */
+diff --git a/drivers/net/cnxk/cnxk_rep_ops.c b/drivers/net/cnxk/cnxk_rep_ops.c
+index ccc3b59fbd70a..3f12c108111f8 100644
+--- a/drivers/net/cnxk/cnxk_rep_ops.c
++++ b/drivers/net/cnxk/cnxk_rep_ops.c
+@@ -821,6 +821,37 @@ cnxk_rep_xstats_get_names_by_id(__rte_unused struct rte_eth_dev *eth_dev, const
+ 	return n;
+ }
+ 
++int
++cnxk_rep_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
++{
++	struct cnxk_rep_dev *rep_dev = cnxk_rep_pmd_priv(eth_dev);
++	uint32_t frame_size = mtu + CNXK_NIX_L2_OVERHEAD;
++	int rc = -EINVAL;
++
++	/* Check if MTU is within the allowed range */
++	if ((frame_size - RTE_ETHER_CRC_LEN) < NIX_MIN_HW_FRS) {
++		plt_err("MTU is lesser than minimum");
++		goto exit;
++	}
++
++	if ((frame_size - RTE_ETHER_CRC_LEN) >
++	    ((uint32_t)roc_nix_max_pkt_len(&rep_dev->parent_dev->nix))) {
++		plt_err("MTU is greater than maximum");
++		goto exit;
++	}
++
++	frame_size -= RTE_ETHER_CRC_LEN;
++
++	/* Set frame size on Rx */
++	rc = roc_nix_mac_max_rx_len_set(&rep_dev->parent_dev->nix, frame_size);
++	if (rc) {
++		plt_err("Failed to max Rx frame length, rc=%d", rc);
++		goto exit;
++	}
++exit:
++	return rc;
++}
++
+ /* CNXK platform representor dev ops */
+ struct eth_dev_ops cnxk_rep_dev_ops = {
+ 	.dev_infos_get = cnxk_rep_dev_info_get,
+@@ -844,5 +875,6 @@ struct eth_dev_ops cnxk_rep_dev_ops = {
+ 	.xstats_reset = cnxk_rep_xstats_reset,
+ 	.xstats_get_names = cnxk_rep_xstats_get_names,
+ 	.xstats_get_by_id = cnxk_rep_xstats_get_by_id,
+-	.xstats_get_names_by_id = cnxk_rep_xstats_get_names_by_id
++	.xstats_get_names_by_id = cnxk_rep_xstats_get_names_by_id,
++	.mtu_set = cnxk_rep_mtu_set
+ };
+-- 
+2.25.1
+

@@ -1,0 +1,66 @@
+From 3d4c0cabbadfbedde66e21619c3b90e316714724 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Thu, 1 Feb 2024 14:54:37 +0530
+Subject: [PATCH 184/513] net/cnxk: fix aged flows query
+
+After all aged flows are destroyed, the aged_flows bitmap
+is free-ed. Querying aged flows tries to access this bitmap
+resulting in a segmentation fault. Fixing this by not accessing
+the bitmap if no aged flows are present.
+
+Fixes: 357f5ebc8a24 ("common/cnxk: support flow aging")
+Cc: stable@dpdk.org
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I65d0a2105ed66a4de8a86ad5266c45b808289e68
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120920
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+---
+ drivers/common/cnxk/roc_npc_aging.c | 4 ++++
+ drivers/net/cnxk/cnxk_flow.c        | 3 +++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+index 254dd2139b36e..e0f2dc2291808 100644
+--- a/drivers/common/cnxk/roc_npc_aging.c
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -234,8 +234,11 @@ npc_age_flow_list_entry_delete(struct roc_npc *roc_npc,
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	struct npc_age_flow_list_head *list;
++	struct roc_npc_flow_age *flow_age;
+ 	struct npc_age_flow_entry *curr;
+ 
++	flow_age = &roc_npc->flow_age;
++
+ 	list = &npc->age_flow_list;
+ 	curr = TAILQ_FIRST(list);
+ 
+@@ -244,6 +247,7 @@ npc_age_flow_list_entry_delete(struct roc_npc *roc_npc,
+ 
+ 	while (curr) {
+ 		if (flow->mcam_id == curr->flow->mcam_id) {
++			plt_bitmap_clear(flow_age->aged_flows, flow->mcam_id);
+ 			TAILQ_REMOVE(list, curr, next);
+ 			plt_free(curr);
+ 			break;
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index fe7977b0e0982..418c18da83147 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -846,6 +846,9 @@ cnxk_flow_get_aged_flows(struct rte_eth_dev *eth_dev, void **context, uint32_t n
+ 
+ 	flow_age = &roc_npc->flow_age;
+ 
++	if (!flow_age->age_flow_refcnt)
++		return 0;
++
+ 	do {
+ 		sn = plt_seqcount_read_begin(&flow_age->seq_cnt);
+ 
+-- 
+2.25.1
+

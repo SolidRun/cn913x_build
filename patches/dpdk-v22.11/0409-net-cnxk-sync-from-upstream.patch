@@ -1,0 +1,39 @@
+From bf96ba3fc085b4179ff52a1c3e141557c12a52a4 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 15 May 2023 15:24:11 +0530
+Subject: [PATCH 409/955] net/cnxk: sync from upstream
+
+Change-Id: Ie3676eb7b60ab7b4fae5a80e4bec1340240beb29
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103475
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index 7a28cbdfe29f3..bce6d59bbce7f 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -290,7 +290,7 @@ cnxk_nix_flow_ctrl_set(struct rte_eth_dev *eth_dev,
+ 	for (i = 0; i < data->nb_rx_queues; i++) {
+ 		struct roc_nix_fc_cfg fc_cfg;
+ 
+-		/* Skip if RQ doesn't exist */
++		/* Skip if RQ does not exist */
+ 		if (!data->rx_queues[i])
+ 			continue;
+ 
+@@ -321,7 +321,7 @@ cnxk_nix_flow_ctrl_set(struct rte_eth_dev *eth_dev,
+ 	for (i = 0; i < data->nb_tx_queues; i++) {
+ 		struct roc_nix_fc_cfg fc_cfg;
+ 
+-		/* Skip if SQ doesn't exist */
++		/* Skip if SQ does not exist */
+ 		if (!data->tx_queues[i])
+ 			continue;
+ 
+-- 
+2.25.1
+

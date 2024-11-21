@@ -1,0 +1,64 @@
+From d6f73dda25f75a4bff914d52319b7533f756fa2d Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Tue, 16 May 2023 13:52:24 +0530
+Subject: [PATCH 497/955] common/cnxk: add aura ref count mechanism
+
+Each RQ can be associated with lpb_aura and spb_aura.
+lpb_aura or spb_aura is shared across multiple RQs then
+cleanup via one RQ will reset the aura context.
+
+To prevent, adding ref count mechanism.
+
+Change-Id: I2302c20211eed3b1e04ab5b0efce32eecb2d9ddd
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_fc.c   | 6 ++++++
+ drivers/common/cnxk/roc_npa_priv.h | 1 +
+ 2 files changed, 7 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index d8ca5f9996c96..1f5ef960dad46 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -537,6 +537,7 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, ui
+ 					plt_err("Enabling backpressue failed on aura 0x%" PRIx64,
+ 						pool_id);
+ 			} else {
++				lf->aura_attr[aura_id].ref_count++;
+ 				plt_info("Ignoring port=%u tc=%u config on shared aura 0x%" PRIx64,
+ 					 roc_nix->port_id, tc, pool_id);
+ 			}
+@@ -552,6 +553,8 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, ui
+ 	if (ena) {
+ 		if (roc_npa_aura_bp_configure(pool_id, nix->bpid[tc], bp_intf, bp_thresh, true))
+ 			plt_err("Enabling backpressue failed on aura 0x%" PRIx64, pool_id);
++		else
++			lf->aura_attr[aura_id].ref_count++;
+ 	} else {
+ 		bool found = !!force;
+ 
+@@ -561,6 +564,9 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, ui
+ 				found = true;
+ 		if (!found)
+ 			return;
++		else if ((lf->aura_attr[aura_id].ref_count > 0) &&
++			 --lf->aura_attr[aura_id].ref_count)
++			return;
+ 
+ 		if (roc_npa_aura_bp_configure(pool_id, 0, 0, 0, false))
+ 			plt_err("Disabling backpressue failed on aura 0x%" PRIx64, pool_id);
+diff --git a/drivers/common/cnxk/roc_npa_priv.h b/drivers/common/cnxk/roc_npa_priv.h
+index d2118cc4fb82c..704d93d5dce78 100644
+--- a/drivers/common/cnxk/roc_npa_priv.h
++++ b/drivers/common/cnxk/roc_npa_priv.h
+@@ -49,6 +49,7 @@ struct npa_aura_lim {
+ 
+ struct npa_aura_attr {
+ 	int buf_type[ROC_NPA_BUF_TYPE_END];
++	uint16_t ref_count;
+ };
+ 
+ struct dev;
+-- 
+2.25.1
+

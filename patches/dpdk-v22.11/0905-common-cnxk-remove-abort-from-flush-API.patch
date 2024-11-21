@@ -1,0 +1,65 @@
+From 0e953b9280f8147a50eb3ccc473c54de4ab723ca Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 18 Jul 2024 11:36:00 +0000
+Subject: [PATCH 905/955] common/cnxk: remove abort from flush API
+
+Instead of calling abort() return error code so that the caller can
+handle as required.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: If3387fbab48a35e7ea24eb55aef40ba36ddd251f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133003
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c     |  2 +-
+ drivers/crypto/cnxk/cn10k_ipsec.c | 12 ++++++++++--
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index 1a86fa7c08702..90433e2390647 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -826,7 +826,7 @@ roc_cpt_lf_ctx_flush(struct roc_cpt_lf *lf, void *cptr, bool inval)
+ 
+ 	if (err.s.flush_st_flt) {
+ 		plt_err("CTX flush could not complete due to store fault");
+-		abort();
++		return -EFAULT;
+ 	}
+ 
+ 	return 0;
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.c b/drivers/crypto/cnxk/cn10k_ipsec.c
+index 74d6cd70d19ae..c38e948c073b9 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.c
++++ b/drivers/crypto/cnxk/cn10k_ipsec.c
+@@ -135,7 +135,11 @@ cn10k_ipsec_outb_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 	}
+ 
+ 	/* Trigger CTX flush so that data is written back to DRAM */
+-	roc_cpt_lf_ctx_flush(lf, out_sa, false);
++	ret = roc_cpt_lf_ctx_flush(lf, out_sa, false);
++	if (ret == -EFAULT) {
++		plt_err("Could not flush outbound session");
++		goto sa_dptr_free;
++	}
+ 
+ 	sec_sess->proto = RTE_SECURITY_PROTOCOL_IPSEC;
+ 	plt_atomic_thread_fence(__ATOMIC_SEQ_CST);
+@@ -236,7 +240,11 @@ cn10k_ipsec_inb_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 	}
+ 
+ 	/* Trigger CTX flush so that data is written back to DRAM */
+-	roc_cpt_lf_ctx_flush(lf, in_sa, true);
++	ret = roc_cpt_lf_ctx_flush(lf, in_sa, true);
++	if (ret == -EFAULT) {
++		plt_err("Could not flush inbound session");
++		goto sa_dptr_free;
++	}
+ 
+ 	sec_sess->proto = RTE_SECURITY_PROTOCOL_IPSEC;
+ 	plt_atomic_thread_fence(__ATOMIC_SEQ_CST);
+-- 
+2.25.1
+

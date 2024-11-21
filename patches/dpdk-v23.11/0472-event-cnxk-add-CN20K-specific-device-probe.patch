@@ -1,0 +1,176 @@
+From eb7cebe1762d7c799edde0f80e955a9edf096231 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 19 Aug 2024 14:33:24 +0530
+Subject: [PATCH 472/513] event/cnxk: add CN20K specific device probe
+
+Add platform specific event device probe and remove, also add
+event device info get function.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: If7074b089ddc574a14b1d88224d2f0ed97722c2b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134409
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_sso.c       | 10 +++-
+ drivers/event/cnxk/cn20k_eventdev.c | 93 +++++++++++++++++++++++++++++
+ drivers/event/cnxk/meson.build      |  8 ++-
+ 3 files changed, 108 insertions(+), 3 deletions(-)
+ create mode 100644 drivers/event/cnxk/cn20k_eventdev.c
+
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index f5719dc84f31d..a3479c4d21143 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -870,7 +870,10 @@ sso_update_msix_vec_count(struct roc_sso *roc_sso, uint16_t sso_vec_cnt)
+ 	if (idev == NULL)
+ 		return -ENODEV;
+ 
+-	mbox_vec_cnt = RVU_PF_INT_VEC_AFPF_MBOX + 1;
++	if (roc_model_is_cn20k())
++		mbox_vec_cnt = RVU_MBOX_PF_INT_VEC_AFPF_MBOX + 1;
++	else
++		mbox_vec_cnt = RVU_PF_INT_VEC_AFPF_MBOX + 1;
+ 
+ 	/* Allocating vectors for the first time */
+ 	if (plt_intr_max_intr_get(pci_dev->intr_handle) == 0) {
+@@ -1010,7 +1013,10 @@ roc_sso_rsrc_init(struct roc_sso *roc_sso, uint8_t nb_hws, uint16_t nb_hwgrp, ui
+ 	}
+ 
+ 	/* 2 error interrupt per TIM LF */
+-	sso_vec_cnt += 2 * nb_tim_lfs;
++	if (roc_model_is_cn20k())
++		sso_vec_cnt += 3 * nb_tim_lfs;
++	else
++		sso_vec_cnt += 2 * nb_tim_lfs;
+ 
+ 	rc = sso_update_msix_vec_count(roc_sso, sso_vec_cnt);
+ 	if (rc < 0) {
+diff --git a/drivers/event/cnxk/cn20k_eventdev.c b/drivers/event/cnxk/cn20k_eventdev.c
+new file mode 100644
+index 0000000000000..c4b80f64f3897
+--- /dev/null
++++ b/drivers/event/cnxk/cn20k_eventdev.c
+@@ -0,0 +1,93 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "roc_api.h"
++
++#include "cnxk_eventdev.h"
++
++static void
++cn20k_sso_set_rsrc(void *arg)
++{
++	struct cnxk_sso_evdev *dev = arg;
++
++	dev->max_event_ports = dev->sso.max_hws;
++	dev->max_event_queues = dev->sso.max_hwgrp > RTE_EVENT_MAX_QUEUES_PER_DEV ?
++					RTE_EVENT_MAX_QUEUES_PER_DEV :
++					dev->sso.max_hwgrp;
++}
++
++static void
++cn20k_sso_info_get(struct rte_eventdev *event_dev, struct rte_event_dev_info *dev_info)
++{
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++
++	dev_info->driver_name = RTE_STR(EVENTDEV_NAME_CN20K_PMD);
++	cnxk_sso_info_get(dev, dev_info);
++	dev_info->max_event_port_enqueue_depth = UINT32_MAX;
++}
++
++static struct eventdev_ops cn20k_sso_dev_ops = {
++	.dev_infos_get = cn20k_sso_info_get,
++};
++
++static int
++cn20k_sso_init(struct rte_eventdev *event_dev)
++{
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	int rc;
++
++	rc = roc_plt_init();
++	if (rc < 0) {
++		plt_err("Failed to initialize platform model");
++		return rc;
++	}
++
++	event_dev->dev_ops = &cn20k_sso_dev_ops;
++	/* For secondary processes, the primary has done all the work */
++	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
++		return 0;
++
++	rc = cnxk_sso_init(event_dev);
++	if (rc < 0)
++		return rc;
++
++	cn20k_sso_set_rsrc(cnxk_sso_pmd_priv(event_dev));
++	if (!dev->max_event_ports || !dev->max_event_queues) {
++		plt_err("Not enough eventdev resource queues=%d ports=%d", dev->max_event_queues,
++			dev->max_event_ports);
++		cnxk_sso_fini(event_dev);
++		return -ENODEV;
++	}
++
++	plt_sso_dbg("Initializing %s max_queues=%d max_ports=%d", event_dev->data->name,
++		    dev->max_event_queues, dev->max_event_ports);
++
++	return 0;
++}
++
++static int
++cn20k_sso_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
++{
++	return rte_event_pmd_pci_probe(pci_drv, pci_dev, sizeof(struct cnxk_sso_evdev),
++				       cn20k_sso_init);
++}
++
++static const struct rte_pci_id cn20k_pci_sso_map[] = {
++	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN20KA, PCI_DEVID_CNXK_RVU_SSO_TIM_PF),
++	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN20KA, PCI_DEVID_CNXK_RVU_SSO_TIM_VF),
++	{
++		.vendor_id = 0,
++	},
++};
++
++static struct rte_pci_driver cn20k_pci_sso = {
++	.id_table = cn20k_pci_sso_map,
++	.drv_flags = RTE_PCI_DRV_NEED_MAPPING | RTE_PCI_DRV_NEED_IOVA_AS_VA,
++	.probe = cn20k_sso_probe,
++	.remove = cnxk_sso_remove,
++};
++
++RTE_PMD_REGISTER_PCI(event_cn20k, cn20k_pci_sso);
++RTE_PMD_REGISTER_PCI_TABLE(event_cn20k, cn20k_pci_sso_map);
++RTE_PMD_REGISTER_KMOD_DEP(event_cn20k, "vfio-pci");
+diff --git a/drivers/event/cnxk/meson.build b/drivers/event/cnxk/meson.build
+index fd36e1a63dc2f..c0a81ac045278 100644
+--- a/drivers/event/cnxk/meson.build
++++ b/drivers/event/cnxk/meson.build
+@@ -14,7 +14,7 @@ else
+         soc_type = platform
+ endif
+ 
+-if soc_type != 'cn9k' and soc_type != 'cn10k'
++if soc_type != 'cn9k' and soc_type != 'cn10k' and soc_type != 'cn20k'
+         soc_type = 'all'
+ endif
+ 
+@@ -325,6 +325,12 @@ sources += files(
+ endif
+ endif
+ 
++if soc_type == 'cn20k' or soc_type == 'all'
++sources += files(
++        'cn20k_eventdev.c',
++)
++endif
++
+ extra_flags = ['-flax-vector-conversions', '-Wno-strict-aliasing']
+ if cc.get_id() == 'clang'
+         extra_flags += ['-Wno-asm-operand-widths']
+-- 
+2.25.1
+

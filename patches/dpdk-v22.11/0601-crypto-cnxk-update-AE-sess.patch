@@ -1,0 +1,39 @@
+From eda31d0bdb42bd67ee7171f1681fdc9a9d97c960 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 16 Aug 2023 10:53:51 +0530
+Subject: [PATCH 601/955] crypto/cnxk: update AE sess
+
+The 'rte_cryptodev_asym_session' struct has a zero length array which
+makes direct inclusion in local session struct flagged by certain
+compilers in upstream. Work around the same by using an array which
+would have same size as the asym_session.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I2a023e173b0914a3f592fc6585c4c9bcf6240a3c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109847
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_ae.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_ae.h b/drivers/crypto/cnxk/cnxk_ae.h
+index a4867fc90f46d..44876c2ede4c9 100644
+--- a/drivers/crypto/cnxk/cnxk_ae.h
++++ b/drivers/crypto/cnxk/cnxk_ae.h
+@@ -13,8 +13,10 @@
+ 
+ #include "cnxk_cryptodev_ops.h"
+ 
++#define ASYM_SESS_SIZE sizeof(struct rte_cryptodev_asym_session)
++
+ struct cnxk_ae_sess {
+-	struct rte_cryptodev_asym_session rte_sess;
++	uint8_t rte_sess[ASYM_SESS_SIZE];
+ 	enum rte_crypto_asym_xform_type xfrm_type;
+ 	union {
+ 		struct rte_crypto_rsa_xform rsa_ctx;
+-- 
+2.25.1
+

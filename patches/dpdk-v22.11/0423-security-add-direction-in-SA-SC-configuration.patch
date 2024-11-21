@@ -1,0 +1,219 @@
+From 949906d892e92aa09fc3325ae9899f6b18077285 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 17 Feb 2023 15:00:22 +0530
+Subject: [PATCH 423/955] security: add direction in SA/SC configuration
+
+MACsec SC/SA ids are created based on direction of the flow.
+Hence, added the missing field for configuration and cleanup
+of the SCs and SAs.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Id1b566ccb5eca45c7be102ce2a0dfe534694ae75
+---
+ lib/security/rte_security.c        | 16 ++++++++++------
+ lib/security/rte_security.h        | 14 ++++++++++----
+ lib/security/rte_security_driver.h | 12 ++++++++++--
+ 3 files changed, 30 insertions(+), 12 deletions(-)
+
+diff --git a/lib/security/rte_security.c b/lib/security/rte_security.c
+index ff0550513e9c5..871a0194e04c3 100644
+--- a/lib/security/rte_security.c
++++ b/lib/security/rte_security.c
+@@ -181,13 +181,14 @@ rte_security_macsec_sa_create(struct rte_security_ctx *instance,
+ }
+ 
+ int
+-rte_security_macsec_sc_destroy(struct rte_security_ctx *instance, uint16_t sc_id)
++rte_security_macsec_sc_destroy(struct rte_security_ctx *instance, uint16_t sc_id,
++			       enum rte_security_macsec_direction dir)
+ {
+ 	int ret;
+ 
+ 	RTE_PTR_CHAIN3_OR_ERR_RET(instance, ops, macsec_sc_destroy, -EINVAL, -ENOTSUP);
+ 
+-	ret = instance->ops->macsec_sc_destroy(instance->device, sc_id);
++	ret = instance->ops->macsec_sc_destroy(instance->device, sc_id, dir);
+ 	if (ret != 0)
+ 		return ret;
+ 
+@@ -198,13 +199,14 @@ rte_security_macsec_sc_destroy(struct rte_security_ctx *instance, uint16_t sc_id
+ }
+ 
+ int
+-rte_security_macsec_sa_destroy(struct rte_security_ctx *instance, uint16_t sa_id)
++rte_security_macsec_sa_destroy(struct rte_security_ctx *instance, uint16_t sa_id,
++			       enum rte_security_macsec_direction dir)
+ {
+ 	int ret;
+ 
+ 	RTE_PTR_CHAIN3_OR_ERR_RET(instance, ops, macsec_sa_destroy, -EINVAL, -ENOTSUP);
+ 
+-	ret = instance->ops->macsec_sa_destroy(instance->device, sa_id);
++	ret = instance->ops->macsec_sa_destroy(instance->device, sa_id, dir);
+ 	if (ret != 0)
+ 		return ret;
+ 
+@@ -216,22 +218,24 @@ rte_security_macsec_sa_destroy(struct rte_security_ctx *instance, uint16_t sa_id
+ 
+ int
+ rte_security_macsec_sc_stats_get(struct rte_security_ctx *instance, uint16_t sc_id,
++				 enum rte_security_macsec_direction dir,
+ 				 struct rte_security_macsec_sc_stats *stats)
+ {
+ 	RTE_PTR_CHAIN3_OR_ERR_RET(instance, ops, macsec_sc_stats_get, -EINVAL, -ENOTSUP);
+ 	RTE_PTR_OR_ERR_RET(stats, -EINVAL);
+ 
+-	return instance->ops->macsec_sc_stats_get(instance->device, sc_id, stats);
++	return instance->ops->macsec_sc_stats_get(instance->device, sc_id, dir, stats);
+ }
+ 
+ int
+ rte_security_macsec_sa_stats_get(struct rte_security_ctx *instance, uint16_t sa_id,
++				 enum rte_security_macsec_direction dir,
+ 				 struct rte_security_macsec_sa_stats *stats)
+ {
+ 	RTE_PTR_CHAIN3_OR_ERR_RET(instance, ops, macsec_sa_stats_get, -EINVAL, -ENOTSUP);
+ 	RTE_PTR_OR_ERR_RET(stats, -EINVAL);
+ 
+-	return instance->ops->macsec_sa_stats_get(instance->device, sa_id, stats);
++	return instance->ops->macsec_sa_stats_get(instance->device, sa_id, dir, stats);
+ }
+ 
+ int
+diff --git a/lib/security/rte_security.h b/lib/security/rte_security.h
+index 866cd4e8ee1a0..d7dbe1da0d90e 100644
+--- a/lib/security/rte_security.h
++++ b/lib/security/rte_security.h
+@@ -772,6 +772,7 @@ rte_security_macsec_sc_create(struct rte_security_ctx *instance,
+  *
+  * @param   instance	security instance
+  * @param   sc_id	SC ID to be destroyed
++ * @param   dir		direction of the SC
+  * @return
+  *  - 0 if successful.
+  *  - -EINVAL if sc_id is invalid or instance is NULL.
+@@ -779,7 +780,8 @@ rte_security_macsec_sc_create(struct rte_security_ctx *instance,
+  */
+ __rte_experimental
+ int
+-rte_security_macsec_sc_destroy(struct rte_security_ctx *instance, uint16_t sc_id);
++rte_security_macsec_sc_destroy(struct rte_security_ctx *instance, uint16_t sc_id,
++			       enum rte_security_macsec_direction dir);
+ 
+ /**
+  * @warning
+@@ -809,6 +811,7 @@ rte_security_macsec_sa_create(struct rte_security_ctx *instance,
+  *
+  * @param   instance	security instance
+  * @param   sa_id	SA ID to be destroyed
++ * @param   dir		direction of the SA
+  * @return
+  *  - 0 if successful.
+  *  - -EINVAL if sa_id is invalid or instance is NULL.
+@@ -816,7 +819,8 @@ rte_security_macsec_sa_create(struct rte_security_ctx *instance,
+  */
+ __rte_experimental
+ int
+-rte_security_macsec_sa_destroy(struct rte_security_ctx *instance, uint16_t sa_id);
++rte_security_macsec_sa_destroy(struct rte_security_ctx *instance, uint16_t sa_id,
++			       enum rte_security_macsec_direction dir);
+ 
+ /** Device-specific metadata field type */
+ typedef uint64_t rte_security_dynfield_t;
+@@ -1114,6 +1118,7 @@ rte_security_session_stats_get(struct rte_security_ctx *instance,
+  *
+  * @param	instance	security instance
+  * @param	sa_id		SA ID for which stats are needed
++ * @param	dir		direction of the SA
+  * @param	stats		statistics
+  * @return
+  *  - On success, return 0.
+@@ -1122,7 +1127,7 @@ rte_security_session_stats_get(struct rte_security_ctx *instance,
+ __rte_experimental
+ int
+ rte_security_macsec_sa_stats_get(struct rte_security_ctx *instance,
+-				 uint16_t sa_id,
++				 uint16_t sa_id, enum rte_security_macsec_direction dir,
+ 				 struct rte_security_macsec_sa_stats *stats);
+ 
+ /**
+@@ -1133,6 +1138,7 @@ rte_security_macsec_sa_stats_get(struct rte_security_ctx *instance,
+  *
+  * @param	instance	security instance
+  * @param	sc_id		SC ID for which stats are needed
++ * @param	dir		direction of the SC
+  * @param	stats		SC statistics
+  * @return
+  *  - On success, return 0.
+@@ -1141,7 +1147,7 @@ rte_security_macsec_sa_stats_get(struct rte_security_ctx *instance,
+ __rte_experimental
+ int
+ rte_security_macsec_sc_stats_get(struct rte_security_ctx *instance,
+-				 uint16_t sc_id,
++				 uint16_t sc_id, enum rte_security_macsec_direction dir,
+ 				 struct rte_security_macsec_sc_stats *stats);
+ 
+ /**
+diff --git a/lib/security/rte_security_driver.h b/lib/security/rte_security_driver.h
+index 91e7786ab7c64..f31edeaf52f56 100644
+--- a/lib/security/rte_security_driver.h
++++ b/lib/security/rte_security_driver.h
+@@ -106,8 +106,10 @@ typedef int (*security_macsec_sc_create_t)(void *device, struct rte_security_mac
+  *
+  * @param	device		Crypto/eth device pointer
+  * @param	sc_id		MACsec SC ID
++ * @param	dir		Direction of SC
+  */
+-typedef int (*security_macsec_sc_destroy_t)(void *device, uint16_t sc_id);
++typedef int (*security_macsec_sc_destroy_t)(void *device, uint16_t sc_id,
++		enum rte_security_macsec_direction dir);
+ 
+ /**
+  * Configure a MACsec security Association (SA) on a device.
+@@ -128,8 +130,10 @@ typedef int (*security_macsec_sa_create_t)(void *device, struct rte_security_mac
+  *
+  * @param	device		Crypto/eth device pointer
+  * @param	sa_id		MACsec SA ID
++ * @param	dir		Direction of SA
+  */
+-typedef int (*security_macsec_sa_destroy_t)(void *device, uint16_t sa_id);
++typedef int (*security_macsec_sa_destroy_t)(void *device, uint16_t sa_id,
++		enum rte_security_macsec_direction dir);
+ 
+ /**
+  * Get the size of a security session
+@@ -162,6 +166,7 @@ typedef int (*security_session_stats_get_t)(void *device,
+  *
+  * @param	device		Crypto/eth device pointer
+  * @param	sc_id		secure channel ID created by rte_security_macsec_sc_create()
++ * @param	dir		direction of SC
+  * @param	stats		SC stats of the driver
+  *
+  * @return
+@@ -169,6 +174,7 @@ typedef int (*security_session_stats_get_t)(void *device,
+  *  - -EINVAL if sc_id or device is invalid.
+  */
+ typedef int (*security_macsec_sc_stats_get_t)(void *device, uint16_t sc_id,
++		enum rte_security_macsec_direction dir,
+ 		struct rte_security_macsec_sc_stats *stats);
+ 
+ /**
+@@ -176,6 +182,7 @@ typedef int (*security_macsec_sc_stats_get_t)(void *device, uint16_t sc_id,
+  *
+  * @param	device		Crypto/eth device pointer
+  * @param	sa_id		secure channel ID created by rte_security_macsec_sc_create()
++ * @param	dir		direction of SA
+  * @param	stats		SC stats of the driver
+  *
+  * @return
+@@ -183,6 +190,7 @@ typedef int (*security_macsec_sc_stats_get_t)(void *device, uint16_t sc_id,
+  *  - -EINVAL if sa_id or device is invalid.
+  */
+ typedef int (*security_macsec_sa_stats_get_t)(void *device, uint16_t sa_id,
++		enum rte_security_macsec_direction dir,
+ 		struct rte_security_macsec_sa_stats *stats);
+ 
+ 
+-- 
+2.25.1
+

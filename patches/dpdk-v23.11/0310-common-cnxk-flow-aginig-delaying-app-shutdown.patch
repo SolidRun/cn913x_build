@@ -1,0 +1,50 @@
+From 709658b387518e4edae7ae511e670d67859a903a Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Thu, 18 Apr 2024 17:22:11 +0530
+Subject: [PATCH 310/513] common/cnxk: flow aginig delaying app shutdown
+
+If flow aging is enabled application termination may take time
+equivalent to aging timeout. This is because on termination flow
+thread uses a sleep call which is uninterruptible.
+
+Change-Id: I8f764485252c8720bd26c32e6a29b17af1f2cc7f
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125690
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Reviewed-by: Ankur Dwivedi <adwivedi@marvell.com>
+---
+ drivers/common/cnxk/roc_npc_aging.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+index e0f2dc2291808..491ac3aaa43cd 100644
+--- a/drivers/common/cnxk/roc_npc_aging.c
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -139,6 +139,7 @@ npc_aged_flows_get(void *args)
+ 	uint64_t hit_status[MCAM_ARR_SIZE] = {0};
+ 	uint64_t mcam_ids[MCAM_ARR_SIZE] = {0};
+ 	struct npc_age_flow_list_head *list;
++	uint64_t timeout, sleep = 10 * 1000;
+ 	struct npc_age_flow_entry *fl_iter;
+ 	struct roc_npc *roc_npc = args;
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+@@ -197,7 +198,12 @@ npc_aged_flows_get(void *args)
+ 		plt_seqcount_write_end(&flow_age->seq_cnt);
+ 
+ lbl_sleep:
+-		sleep(flow_age->aging_poll_freq);
++		timeout = 0;
++		do {
++			plt_delay_us(sleep);
++			timeout += sleep;
++		} while (!flow_age->aged_flows_get_thread_exit &&
++			 timeout < (flow_age->aging_poll_freq * 1000 * 1000));
+ 	}
+ 
+ 	return 0;
+-- 
+2.25.1
+

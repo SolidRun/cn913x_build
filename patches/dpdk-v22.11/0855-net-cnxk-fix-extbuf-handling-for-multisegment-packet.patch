@@ -1,0 +1,36 @@
+From ab6c93567166b8094ce874a3c5fc0f5794d65b0c Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Tue, 27 Feb 2024 11:56:16 +0530
+Subject: [PATCH 855/955] net/cnxk: fix extbuf handling for multisegment packet
+
+Avoid double free of extbuf when during TX path in
+multisegmented packet with extbuf as one of segment.
+
+Fixes: dd9446991212 ("net/cnxk: add transmit completion handler")
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Ief05a72dba46b3b313395b92c9516cdf9515cf6e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122609
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/cnxk/cn9k_tx.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/cnxk/cn9k_tx.h b/drivers/net/cnxk/cn9k_tx.h
+index 6cbf6a02b24d3..5ef3814bfa471 100644
+--- a/drivers/net/cnxk/cn9k_tx.h
++++ b/drivers/net/cnxk/cn9k_tx.h
+@@ -117,6 +117,7 @@ cn9k_nix_prefree_seg(struct rte_mbuf *m, struct rte_mbuf **extm, struct cn9k_eth
+ 			send_hdr->w1.sqe_id = sqe_id &
+ 				txq->tx_compl.nb_desc_mask;
+ 			txq->tx_compl.ptr[send_hdr->w1.sqe_id] = m;
++			m->next = NULL;
+ 		}
+ 		return 1;
+ 	} else {
+-- 
+2.25.1
+

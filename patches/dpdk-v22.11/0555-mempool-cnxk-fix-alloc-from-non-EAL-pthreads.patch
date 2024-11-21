@@ -1,0 +1,43 @@
+From 3b6df4a2d849a6e3dedc7e50c771b87b1895d814 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Mon, 24 Jul 2023 12:27:23 +0530
+Subject: [PATCH 555/955] mempool/cnxk: fix alloc from non-EAL pthreads
+
+For non-EAL pthreads, rte_lcore_id() will not be valid.
+So, batch allocation cannot be used as we won't have a
+dedicated alloc buffer for the thread. So, fallback to
+bulk alloc in such cases.
+
+Fixes: 91531e63f43b ("mempool/cnxk: add cn10k batch dequeue")
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Iae8eb1a74db2cec01cb84584bc0df6bebd00040b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108133
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/mempool/cnxk/cn10k_mempool_ops.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/mempool/cnxk/cn10k_mempool_ops.c b/drivers/mempool/cnxk/cn10k_mempool_ops.c
+index 41b755b52b434..9594370ecd45b 100644
+--- a/drivers/mempool/cnxk/cn10k_mempool_ops.c
++++ b/drivers/mempool/cnxk/cn10k_mempool_ops.c
+@@ -326,6 +326,12 @@ cn10k_mempool_deq(struct rte_mempool *mp, void **obj_table, unsigned int n)
+ 	struct batch_op_data *op_data;
+ 	unsigned int count = 0;
+ 
++	/* For non-EAL threads, rte_lcore_id() will not be valid. Hence
++	 * fallback to bulk alloc
++	 */
++	if (unlikely(rte_lcore_id() == LCORE_ID_ANY))
++		return cnxk_mempool_deq(mp, obj_table, n);
++
+ 	op_data = batch_op_data_get(mp->pool_id);
+ 	if (op_data->max_async_batch)
+ 		count = mempool_deq_batch_async(mp, obj_table, n);
+-- 
+2.25.1
+

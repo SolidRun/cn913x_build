@@ -1,0 +1,173 @@
+From 7fc052e6152c8452dcd2c3a2db5808d13d480d10 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Tue, 6 Dec 2022 16:36:31 +0530
+Subject: [PATCH 067/955] net/cnxk: support flow info API
+
+Implement rte_flow_info_get API to get the maximum
+number of counters and meters.
+
+ci: skip_checkformat
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I73d0f86f981adb18d7a93a4e6dc6c7dca8067f00
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92032
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev.c    |  1 +
+ drivers/net/cnxk/cn10k_flow.c      | 16 ++++++++++++++++
+ drivers/net/cnxk/cn10k_flow.h      |  8 ++++++--
+ drivers/net/cnxk/cn9k_ethdev.c     |  1 +
+ drivers/net/cnxk/cn9k_flow.c       | 15 +++++++++++++++
+ drivers/net/cnxk/cn9k_flow.h       | 10 ++++++----
+ drivers/net/cnxk/cnxk_ethdev.h     |  1 +
+ drivers/net/cnxk/cnxk_ethdev_mtr.c |  1 -
+ 8 files changed, 46 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index 61278bb72cfb9..b84fed6d903b8 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -808,6 +808,7 @@ npc_flow_ops_override(void)
+ 	/* Update platform specific ops */
+ 	cnxk_flow_ops.create = cn10k_flow_create;
+ 	cnxk_flow_ops.destroy = cn10k_flow_destroy;
++	cnxk_flow_ops.info_get = cn10k_flow_info_get;
+ }
+ 
+ static int
+diff --git a/drivers/net/cnxk/cn10k_flow.c b/drivers/net/cnxk/cn10k_flow.c
+index 7df879a2bb8dd..2ce9e1de74d64 100644
+--- a/drivers/net/cnxk/cn10k_flow.c
++++ b/drivers/net/cnxk/cn10k_flow.c
+@@ -207,6 +207,22 @@ cn10k_flow_create(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 	return (struct rte_flow *)flow;
+ }
+ 
++int
++cn10k_flow_info_get(struct rte_eth_dev *dev, struct rte_flow_port_info *port_info,
++		    struct rte_flow_queue_info *queue_info, struct rte_flow_error *err)
++{
++	RTE_SET_USED(dev);
++	RTE_SET_USED(err);
++
++	memset(port_info, 0, sizeof(*port_info));
++	memset(queue_info, 0, sizeof(*queue_info));
++
++	port_info->max_nb_counters = CN10K_NPC_COUNTERS_MAX;
++	port_info->max_nb_meters = CNXK_NIX_MTR_COUNT_MAX;
++
++	return 0;
++}
++
+ int
+ cn10k_flow_destroy(struct rte_eth_dev *eth_dev, struct rte_flow *rte_flow,
+ 		   struct rte_flow_error *error)
+diff --git a/drivers/net/cnxk/cn10k_flow.h b/drivers/net/cnxk/cn10k_flow.h
+index f64fcf2a5e58a..316b74e6a63f8 100644
+--- a/drivers/net/cnxk/cn10k_flow.h
++++ b/drivers/net/cnxk/cn10k_flow.h
+@@ -6,12 +6,16 @@
+ 
+ #include <rte_flow_driver.h>
+ 
+-struct rte_flow *cn10k_flow_create(struct rte_eth_dev *dev,
+-				   const struct rte_flow_attr *attr,
++struct rte_flow *cn10k_flow_create(struct rte_eth_dev *dev, const struct rte_flow_attr *attr,
+ 				   const struct rte_flow_item pattern[],
+ 				   const struct rte_flow_action actions[],
+ 				   struct rte_flow_error *error);
+ int cn10k_flow_destroy(struct rte_eth_dev *dev, struct rte_flow *flow,
+ 		       struct rte_flow_error *error);
+ 
++int cn10k_flow_info_get(struct rte_eth_dev *dev, struct rte_flow_port_info *port_info,
++			struct rte_flow_queue_info *queue_info, struct rte_flow_error *err);
++
++#define CN10K_NPC_COUNTERS_MAX 512
++
+ #endif /* __CN10K_RTE_FLOW_H__ */
+diff --git a/drivers/net/cnxk/cn9k_ethdev.c b/drivers/net/cnxk/cn9k_ethdev.c
+index 749214cf2380d..e5c3074d91b09 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.c
++++ b/drivers/net/cnxk/cn9k_ethdev.c
+@@ -728,6 +728,7 @@ npc_flow_ops_override(void)
+ 	/* Update platform specific ops */
+ 	cnxk_flow_ops.create = cn9k_flow_create;
+ 	cnxk_flow_ops.destroy = cn9k_flow_destroy;
++	cnxk_flow_ops.info_get = cn9k_flow_info_get;
+ }
+ 
+ static int
+diff --git a/drivers/net/cnxk/cn9k_flow.c b/drivers/net/cnxk/cn9k_flow.c
+index 15ccdf8919cbd..a418af185d5b3 100644
+--- a/drivers/net/cnxk/cn9k_flow.c
++++ b/drivers/net/cnxk/cn9k_flow.c
+@@ -54,3 +54,18 @@ cn9k_flow_destroy(struct rte_eth_dev *eth_dev, struct rte_flow *rte_flow,
+ 
+ 	return cnxk_flow_destroy(eth_dev, flow, error);
+ }
++
++int
++cn9k_flow_info_get(struct rte_eth_dev *dev, struct rte_flow_port_info *port_info,
++		   struct rte_flow_queue_info *queue_info, struct rte_flow_error *err)
++{
++	RTE_SET_USED(dev);
++	RTE_SET_USED(err);
++
++	memset(port_info, 0, sizeof(*port_info));
++	memset(queue_info, 0, sizeof(*queue_info));
++
++	port_info->max_nb_counters = CN9K_NPC_COUNTERS_MAX;
++
++	return 0;
++}
+diff --git a/drivers/net/cnxk/cn9k_flow.h b/drivers/net/cnxk/cn9k_flow.h
+index 43d59e1eb2556..26f93ea204a44 100644
+--- a/drivers/net/cnxk/cn9k_flow.h
++++ b/drivers/net/cnxk/cn9k_flow.h
+@@ -6,12 +6,14 @@
+ 
+ #include <rte_flow_driver.h>
+ 
+-struct rte_flow *cn9k_flow_create(struct rte_eth_dev *dev,
+-				  const struct rte_flow_attr *attr,
++struct rte_flow *cn9k_flow_create(struct rte_eth_dev *dev, const struct rte_flow_attr *attr,
+ 				  const struct rte_flow_item pattern[],
+ 				  const struct rte_flow_action actions[],
+ 				  struct rte_flow_error *error);
+-int cn9k_flow_destroy(struct rte_eth_dev *dev, struct rte_flow *flow,
+-		      struct rte_flow_error *error);
++int cn9k_flow_destroy(struct rte_eth_dev *dev, struct rte_flow *flow, struct rte_flow_error *error);
++int cn9k_flow_info_get(struct rte_eth_dev *dev, struct rte_flow_port_info *port_info,
++		       struct rte_flow_queue_info *queue_info, struct rte_flow_error *err);
++
++#define CN9K_NPC_COUNTERS_MAX 512
+ 
+ #endif /* __CN9K_RTE_FLOW_H__ */
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 4ba40e52b3643..ea8c70b8b719d 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -112,6 +112,7 @@
+ 
+ /* Default mark value used when none is provided. */
+ #define CNXK_FLOW_ACTION_FLAG_DEFAULT 0xffff
++#define CNXK_NIX_MTR_COUNT_MAX	      73 /* 64(leaf) + 8(mid) + 1(top) */
+ 
+ /* Default cycle counter mask */
+ #define CNXK_CYCLECOUNTER_MASK     0xffffffffffffffffULL
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mtr.c b/drivers/net/cnxk/cnxk_ethdev_mtr.c
+index 0fa18f01c7242..dcfa4223d5830 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_mtr.c
++++ b/drivers/net/cnxk/cnxk_ethdev_mtr.c
+@@ -5,7 +5,6 @@
+ #include "cnxk_ethdev.h"
+ #include <rte_mtr_driver.h>
+ 
+-#define NIX_MTR_COUNT_MAX      73 /* 64(leaf) + 8(mid) + 1(top) */
+ #define NIX_MTR_COUNT_PER_FLOW 3  /* 1(leaf) + 1(mid) + 1(top) */
+ 
+ #define NIX_BPF_STATS_MASK_ALL                                                 \
+-- 
+2.25.1
+

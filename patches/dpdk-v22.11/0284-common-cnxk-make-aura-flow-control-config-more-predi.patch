@@ -1,0 +1,206 @@
+From 2c6f1f44762b5c1d0a104821a4634b1ee229b879 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Sun, 12 Mar 2023 16:04:27 +0530
+Subject: [PATCH 284/955] common/cnxk: make aura flow control config more
+ predictable
+
+Restrict shared BPID config only when force BP is enabled
+and make aura flow control config more predictable by not disabling
+it if there is a collision but ignore new config and log the same.
+
+Also remove BPID setup from Rx adapter as it is now evaluated and
+configured every time ethdev is stopped/started.
+
+Change-Id: Iee08e5fd1899c0295d61aa7d26074593b74fc9fe
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98966
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h            |  1 +
+ drivers/common/cnxk/roc_nix_fc.c         | 49 ++++++++++++------------
+ drivers/common/cnxk/roc_nix_inl.c        |  2 +-
+ drivers/common/cnxk/roc_npa.c            |  3 ++
+ drivers/event/cnxk/cnxk_eventdev_adptr.c | 13 +------
+ 5 files changed, 32 insertions(+), 36 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index fde8fe4ecc766..2b576f08911d1 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -451,6 +451,7 @@ struct roc_nix {
+ 	bool custom_sa_action;
+ 	bool local_meta_aura_ena;
+ 	uint32_t meta_buf_sz;
++	bool force_rx_aura_bp;
+ 	/* End of input parameters */
+ 	/* LMT line base for "Per Core Tx LMT line" mode*/
+ 	uintptr_t lmt_base;
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 98dd9a9e665af..bbc27a64210b9 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -314,13 +314,13 @@ nix_fc_rq_config_set(struct roc_nix *roc_nix, struct roc_nix_fc_cfg *fc_cfg)
+ 			pool_drop_pct = ROC_NIX_AURA_THRESH;
+ 
+ 		roc_nix_fc_npa_bp_cfg(roc_nix, fc_cfg->rq_cfg.pool,
+-				      fc_cfg->rq_cfg.enable, true,
+-				      fc_cfg->rq_cfg.tc, fc_cfg->rq_cfg.pool_drop_pct);
++				      fc_cfg->rq_cfg.enable, roc_nix->force_rx_aura_bp,
++				      fc_cfg->rq_cfg.tc, pool_drop_pct);
+ 
+ 		if (roc_nix->local_meta_aura_ena && roc_nix->meta_aura_handle)
+ 			roc_nix_fc_npa_bp_cfg(roc_nix, roc_nix->meta_aura_handle,
+-					      fc_cfg->rq_cfg.enable, true, fc_cfg->rq_cfg.tc,
+-					      fc_cfg->rq_cfg.pool_drop_pct);
++					      fc_cfg->rq_cfg.enable, roc_nix->force_rx_aura_bp,
++					      fc_cfg->rq_cfg.tc, pool_drop_pct);
+ 	}
+ 
+ 	/* Copy RQ config to CQ config as they are occupying same area */
+@@ -493,7 +493,8 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, ui
+ 	struct npa_aq_enq_rsp *rsp;
+ 	uint8_t bp_thresh, bp_intf;
+ 	struct mbox *mbox;
+-	int rc;
++	uint16_t bpid;
++	int rc, i;
+ 
+ 	if (roc_nix_is_sdp(roc_nix))
+ 		return;
+@@ -522,34 +523,25 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, ui
+ 	bp_intf = 1 << nix->is_nix1;
+ 	bp_thresh = NIX_RQ_AURA_THRESH(drop_percent, rsp->aura.limit >> rsp->aura.shift);
+ 
++	bpid = (rsp->aura.bp_ena & 0x1) ? rsp->aura.nix0_bpid : rsp->aura.nix1_bpid;
+ 	/* BP is already enabled. */
+ 	if (rsp->aura.bp_ena && ena) {
+-		uint16_t bpid =
+-			(rsp->aura.bp_ena & 0x1) ? rsp->aura.nix0_bpid : rsp->aura.nix1_bpid;
+-
+ 		/* Disable BP if BPIDs don't match and couldn't add new BPID. */
+ 		if (bpid != nix->bpid[tc]) {
+ 			uint16_t bpid_new = NIX_BPID_INVALID;
+ 
+-			if ((nix_rx_chan_multi_bpid_cfg(roc_nix, tc, bpid, &bpid_new) < 0) &&
+-			    !force) {
+-				plt_info("Disabling BP/FC on aura 0x%" PRIx64
+-					 " as it shared across ports or tc",
++			if (force && !nix_rx_chan_multi_bpid_cfg(roc_nix, tc, bpid, &bpid_new)) {
++				plt_info("Setting up shared BPID on shared aura 0x%" PRIx64,
+ 					 pool_id);
+ 
+-				if (roc_npa_aura_bp_configure(pool_id, 0, 0, 0, false))
+-					plt_nix_dbg(
+-						"Disabling backpressue failed on aura 0x%" PRIx64,
+-						pool_id);
+-			}
+-
+-			/* Configure Aura with new BPID if it is allocated. */
+-			if (bpid_new != NIX_BPID_INVALID) {
++				/* Configure Aura with new BPID if it is allocated. */
+ 				if (roc_npa_aura_bp_configure(pool_id, bpid_new, bp_intf, bp_thresh,
+ 							      true))
+-					plt_nix_dbg(
+-						"Enabling backpressue failed on aura 0x%" PRIx64,
++					plt_err("Enabling backpressue failed on aura 0x%" PRIx64,
+ 						pool_id);
++			} else {
++				plt_info("Ignoring port=%u tc=%u config on shared aura 0x%" PRIx64,
++					 roc_nix->port_id, tc, pool_id);
+ 			}
+ 		}
+ 
+@@ -562,10 +554,19 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, ui
+ 
+ 	if (ena) {
+ 		if (roc_npa_aura_bp_configure(pool_id, nix->bpid[tc], bp_intf, bp_thresh, true))
+-			plt_nix_dbg("Enabling backpressue failed on aura 0x%" PRIx64, pool_id);
++			plt_err("Enabling backpressue failed on aura 0x%" PRIx64, pool_id);
+ 	} else {
++		bool found = !!force;
++
++		/* Don't disable if existing BPID is not within this port's list */
++		for (i = 0; i < nix->chan_cnt; i++)
++			if (bpid == nix->bpid[i])
++				found = true;
++		if (!found)
++			return;
++
+ 		if (roc_npa_aura_bp_configure(pool_id, 0, 0, 0, false))
+-			plt_nix_dbg("Disabling backpressue failed on aura 0x%" PRIx64, pool_id);
++			plt_err("Disabling backpressue failed on aura 0x%" PRIx64, pool_id);
+ 	}
+ 
+ 	return;
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 329ebf94050ed..8592e1cb0b677 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -263,7 +263,7 @@ roc_nix_inl_meta_aura_check(struct roc_nix *roc_nix, struct roc_nix_rq *rq)
+ 		 */
+ 		if (aura_setup && nix->rqs[0] && nix->rqs[0]->tc != ROC_NIX_PFC_CLASS_INVALID)
+ 			roc_nix_fc_npa_bp_cfg(roc_nix, roc_nix->meta_aura_handle,
+-					      true, true, nix->rqs[0]->tc, ROC_NIX_AURA_THRESH);
++					      true, false, nix->rqs[0]->tc, ROC_NIX_AURA_THRESH);
+ 	} else {
+ 		rc = nix_inl_global_meta_buffer_validate(idev, rq);
+ 		if (rc)
+diff --git a/drivers/common/cnxk/roc_npa.c b/drivers/common/cnxk/roc_npa.c
+index 2526e25b389e4..ddbd64aaf3420 100644
+--- a/drivers/common/cnxk/roc_npa.c
++++ b/drivers/common/cnxk/roc_npa.c
+@@ -643,6 +643,9 @@ roc_npa_aura_bp_configure(uint64_t aura_handle, uint16_t bpid, uint8_t bp_intf,
+ 	struct mbox *mbox;
+ 	int rc = 0;
+ 
++	plt_npa_dbg("Setting BPID %u BP_INTF 0x%x BP_THRESH %u enable %u on aura %" PRIx64,
++		    bpid, bp_intf, bp_thresh, enable, aura_handle);
++
+ 	if (lf == NULL)
+ 		return NPA_ERR_PARAM;
+ 
+diff --git a/drivers/event/cnxk/cnxk_eventdev_adptr.c b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+index 3dc3d04a1e0e0..81e61ed856ee1 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_adptr.c
++++ b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+@@ -260,10 +260,8 @@ cnxk_sso_rx_adapter_queue_add(
+ 							     false);
+ 		}
+ 
+-		if (rxq_sp->tx_pause)
+-			roc_nix_fc_npa_bp_cfg(&cnxk_eth_dev->nix,
+-					      rxq_sp->qconf.mp->pool_id, true,
+-					      dev->force_ena_bp, rxq_sp->tc, ROC_NIX_AURA_THRESH);
++		/* Propagate force bp devarg */
++		cnxk_eth_dev->nix.force_rx_aura_bp = dev->force_ena_bp;
+ 		cnxk_sso_tstamp_cfg(eth_dev->data->port_id, cnxk_eth_dev, dev);
+ 		cnxk_eth_dev->nb_rxq_sso++;
+ 	}
+@@ -293,8 +291,6 @@ cnxk_sso_rx_adapter_queue_del(const struct rte_eventdev *event_dev,
+ 			      int32_t rx_queue_id)
+ {
+ 	struct cnxk_eth_dev *cnxk_eth_dev = eth_dev->data->dev_private;
+-	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+-	struct cnxk_eth_rxq_sp *rxq_sp;
+ 	int i, rc = 0;
+ 
+ 	RTE_SET_USED(event_dev);
+@@ -302,12 +298,7 @@ cnxk_sso_rx_adapter_queue_del(const struct rte_eventdev *event_dev,
+ 		for (i = 0; i < eth_dev->data->nb_rx_queues; i++)
+ 			cnxk_sso_rx_adapter_queue_del(event_dev, eth_dev, i);
+ 	} else {
+-		rxq_sp = cnxk_eth_rxq_to_sp(
+-			eth_dev->data->rx_queues[rx_queue_id]);
+ 		rc = cnxk_sso_rxq_disable(cnxk_eth_dev, (uint16_t)rx_queue_id);
+-		roc_nix_fc_npa_bp_cfg(&cnxk_eth_dev->nix,
+-				      rxq_sp->qconf.mp->pool_id, false,
+-				      dev->force_ena_bp, 0, ROC_NIX_AURA_THRESH);
+ 		cnxk_eth_dev->nb_rxq_sso--;
+ 
+ 		/* Enable drop_re if it was disabled earlier */
+-- 
+2.25.1
+

@@ -1,0 +1,54 @@
+From 877ec47bc06cf5cab7bdb838776c44a1c0ef7880 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Mon, 19 Jun 2023 17:36:39 +0530
+Subject: [PATCH 507/955] common/cnxk: cleanup mbox on NPA errors
+
+Cleanup mbox properly on errors during NPA
+pool/aura tear down.
+
+Fixes: 5005c842eb99 ("common/cnxk: add NPA aura create/destroy ROC APIs")
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: If44683376d9f149241562187a8f5e34eb3a007c7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105870
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npa.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npa.c b/drivers/common/cnxk/roc_npa.c
+index dd2ec21eed871..6675eaf30a1f8 100644
+--- a/drivers/common/cnxk/roc_npa.c
++++ b/drivers/common/cnxk/roc_npa.c
+@@ -199,8 +199,10 @@ npa_aura_pool_fini(struct mbox *m_box, uint32_t aura_id, uint64_t aura_handle)
+ 	off = mbox->rx_start + pool_rsp->hdr.next_msgoff;
+ 	aura_rsp = (struct npa_aq_enq_rsp *)((uintptr_t)mdev->mbase + off);
+ 
+-	if (aura_rsp->hdr.rc != 0 || pool_rsp->hdr.rc != 0)
+-		return NPA_ERR_AURA_POOL_FINI;
++	if (aura_rsp->hdr.rc != 0 || pool_rsp->hdr.rc != 0) {
++		rc = NPA_ERR_AURA_POOL_FINI;
++		goto exit;
++	}
+ 
+ 	/* Sync NDC-NPA for LF */
+ 	ndc_req = mbox_alloc_msg_ndc_sync_op(mbox);
+@@ -247,8 +249,10 @@ npa_aura_fini(struct mbox *m_box, uint32_t aura_id)
+ 	if (rc < 0)
+ 		goto exit;
+ 
+-	if (aura_rsp->hdr.rc != 0)
+-		return NPA_ERR_AURA_POOL_FINI;
++	if (aura_rsp->hdr.rc != 0) {
++		rc = NPA_ERR_AURA_POOL_FINI;
++		goto exit;
++	}
+ 
+ 	/* Sync NDC-NPA for LF */
+ 	ndc_req = mbox_alloc_msg_ndc_sync_op(mbox);
+-- 
+2.25.1
+

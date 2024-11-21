@@ -1,0 +1,103 @@
+From 2f9203f4e1fa1bffea8a44b754066b0fa565a21a Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Tue, 4 Jul 2023 18:50:08 +0530
+Subject: [PATCH 609/955] ci: use device tree to identify variations of cn10k
+
+Also skip inline device bind if it is not cn10ka.
+
+Change-Id: I1c846fdbfad12d04d17a1a21d639e02e332989bb
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/odp/+/79050
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107129
+---
+ marvell-ci/test/board/cnxk-target-setup.sh | 27 +++++++++++++++-------
+ 1 file changed, 19 insertions(+), 8 deletions(-)
+
+diff --git a/marvell-ci/test/board/cnxk-target-setup.sh b/marvell-ci/test/board/cnxk-target-setup.sh
+index ceb53e240b89b..a7e0b2d43894a 100755
+--- a/marvell-ci/test/board/cnxk-target-setup.sh
++++ b/marvell-ci/test/board/cnxk-target-setup.sh
+@@ -48,7 +48,13 @@ function get_cpu_string() {
+ 	elif [[ $cpu_impl == 0x43 ]] && [[ $cpu_pn == 0x0b4 ]]; then
+ 		cpu_str="95xx"
+ 	elif [[ $cpu_impl == 0x41 ]] && [[ $cpu_pn == 0xd49 ]]; then
+-		cpu_str="106xx"
++		cpu_str="cn10ka"
++		compatible=`cat /proc/device-tree/compatible`
++		IFS=',' read -ra list <<< "$compatible"
++		if [[ "${list[0]}" = "marvell" ]]
++		then
++			cpu_str=${list[1]}
++		fi
+ 	else
+ 		echo "Invalid CPU (Implementer=$cpu_impl Part Number=$cpu_pn"
+ 		exit 1
+@@ -75,8 +81,8 @@ function setup_hp() {
+ function setup_devices() {
+ 	local npa_pf
+ 	local sso_pf
+-	local cpt_pf
+-	local cpt_vf
++	local cpt_pf=""
++	local cpt_vf=""
+ 	local inl_pf
+ 	local devs
+ 	local nix_lbk_vfs
+@@ -85,10 +91,10 @@ function setup_devices() {
+ 	nix_lbk_vfs="0002:01:00.1 0002:01:00.2 0002:01:00.3"
+ 	devs=${DEVS:-$nix_lbk_vfs}
+ 
+-	if [[ $CPU == "106xx" ]]; then
++	if [[ $CPU == "cn10ka" ]]; then
+ 		cpt_pf="0002:20:00.0"
+ 		cpt_vf="0002:20:00.1"
+-	else
++	elif [[ $IS_CN9K -eq 1 ]]; then
+ 		cpt_pf="0002:10:00.0"
+ 		cpt_vf="0002:10:00.1"
+ 	fi
+@@ -110,7 +116,7 @@ function setup_devices() {
+ 	devs+=" $sso_pf"
+ 	devs+=" $npa_pf"
+ 
+-	if [[ $CPU == "106xx" ]]; then
++	if [[ $CPU == "cn10ka" ]]; then
+ 		inl_pf=${INL_DEV:-$(lspci -d :a0f0 | tail -1 | awk -e '{ print $1 }')}
+ 		devs+=" $inl_pf"
+ 	fi
+@@ -125,7 +131,7 @@ function setup_devices() {
+ 		$VFIO_DEVBIND -b vfio-pci $d || exit 1
+ 	done
+ 
+-	if [[ $CPU == "106xx" ]]; then
++	if [[ $IS_CN9K -eq 0 ]]; then
+ 		echo "Skipping limits configuration on 106xx"
+ 		return
+ 	fi
+@@ -166,7 +172,7 @@ function setup_tm() {
+ 	local count
+ 	local per_pf
+ 
+-	if [[ -z $TM_SETUP ]] || [[ $CPU == "106xx" ]]; then
++	if [[ -z $TM_SETUP ]] || [[ $IS_CN9K -eq 0 ]]; then
+ 		echo "Skipping TM setup"
+ 		return
+ 	fi
+@@ -247,6 +253,11 @@ fi
+ 
+ # Get CPU
+ CPU=$(get_cpu_string)
++IS_CN9K=0
++if [[ "$CPU" == "98xx" ]] || [[ "$CPU" == "96xx" ]] || [[ "$CPU" == "cnf10ka" ]]
++then
++	IS_CN9K=1
++fi
+ 
+ mount_hugetlbfs
+ setup_hp
+-- 
+2.25.1
+

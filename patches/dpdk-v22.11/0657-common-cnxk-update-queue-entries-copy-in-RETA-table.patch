@@ -1,0 +1,44 @@
+From eead3b71eb09edfb67393295d840ec99af74b807 Mon Sep 17 00:00:00 2001
+From: Kommula Shiva Shankar <kshankar@marvell.com>
+Date: Wed, 18 Oct 2023 13:05:59 +0530
+Subject: [PATCH 657/955] common/cnxk: update queue entries copy in RETA table
+
+This patch updates queue entries copy in reta table
+based on data type
+
+Signed-off-by: Kommula Shiva Shankar <kshankar@marvell.com>
+Change-Id: I1c1d5ed272b2d67f2bcc26b0ceac2208de80aea5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114162
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_rss.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_rss.c b/drivers/common/cnxk/roc_nix_rss.c
+index 3599eb9baef30..2b88e1360d32a 100644
+--- a/drivers/common/cnxk/roc_nix_rss.c
++++ b/drivers/common/cnxk/roc_nix_rss.c
+@@ -196,7 +196,7 @@ roc_nix_rss_reta_set(struct roc_nix *roc_nix, uint8_t group,
+ 	if (rc)
+ 		return rc;
+ 
+-	memcpy(&nix->reta[group], reta, ROC_NIX_RSS_RETA_MAX);
++	memcpy(&nix->reta[group], reta, sizeof(uint16_t) * ROC_NIX_RSS_RETA_MAX);
+ 	return 0;
+ }
+ 
+@@ -209,7 +209,7 @@ roc_nix_rss_reta_get(struct roc_nix *roc_nix, uint8_t group,
+ 	if (group >= ROC_NIX_RSS_GRPS)
+ 		return NIX_ERR_PARAM;
+ 
+-	memcpy(reta, &nix->reta[group], ROC_NIX_RSS_RETA_MAX);
++	memcpy(reta, &nix->reta[group], sizeof(uint16_t) * ROC_NIX_RSS_RETA_MAX);
+ 	return 0;
+ }
+ 
+-- 
+2.25.1
+

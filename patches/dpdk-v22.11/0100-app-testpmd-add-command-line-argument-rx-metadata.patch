@@ -1,0 +1,115 @@
+From e66c24307ac7d787288b4e055fff2af41999f9a4 Mon Sep 17 00:00:00 2001
+From: Hanumanth Pothula <hpothula@marvell.com>
+Date: Fri, 15 Jul 2022 16:31:48 +0530
+Subject: [PATCH 100/955] app/testpmd: add command line argument 'rx-metadata'
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Presently, rx metadata is sent to PMD by default, leading
+to a performance drop as processing for the same in rx path
+takes extra cycles.
+
+Hence, introducing command line argument, 'rx-metadata' to
+control passing rx metadata to PMD. By default it’s disabled.
+
+Also, updating flow_regression ci test case by passing
+'rx-metadata' argument to testpmd.
+
+Signed-off-by: Hanumanth Pothula <hpothula@marvell.com>
+Change-Id: If7b6bbc7489d3e9df89c63e000d71ea2f7fe9afd
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/81796
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/82961
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91793
+---
+ app/test-pmd/parameters.c                                   | 4 ++++
+ app/test-pmd/testpmd.c                                      | 6 +++++-
+ app/test-pmd/testpmd.h                                      | 2 ++
+ .../test/cnxk-tests/flow_regression/cnxk_flow_regression.sh | 2 +-
+ 4 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/app/test-pmd/parameters.c b/app/test-pmd/parameters.c
+index d597c209ba5e0..e36d94e178eb1 100644
+--- a/app/test-pmd/parameters.c
++++ b/app/test-pmd/parameters.c
+@@ -204,6 +204,7 @@ usage(char* progname)
+ 	printf("  --hairpin-mode=0xXX: bitmask set the hairpin port mode.\n"
+ 	       "    0x10 - explicit Tx rule, 0x02 - hairpin ports paired\n"
+ 	       "    0x01 - hairpin ports loop, 0x00 - hairpin port self\n");
++	printf(" --rx-metadata: send rx  metadata to driver \n");
+ }
+ 
+ #ifdef RTE_LIB_CMDLINE
+@@ -705,6 +706,7 @@ launch_args_parse(int argc, char** argv)
+ 		{ "record-burst-stats",         0, 0, 0 },
+ 		{ PARAM_NUM_PROCS,              1, 0, 0 },
+ 		{ PARAM_PROC_ID,                1, 0, 0 },
++		{ "rx-metadata",                0, 0, 0 },
+ 		{ 0, 0, 0, 0 },
+ 	};
+ 
+@@ -1458,6 +1460,8 @@ launch_args_parse(int argc, char** argv)
+ 				num_procs = atoi(optarg);
+ 			if (!strcmp(lgopts[opt_idx].name, PARAM_PROC_ID))
+ 				proc_id = atoi(optarg);
++			if (!strcmp(lgopts[opt_idx].name, "rx-metadata"))
++				rx_metadata_negotiate = 1;
+ 			break;
+ 		case 'h':
+ 			usage(argv[0]);
+diff --git a/app/test-pmd/testpmd.c b/app/test-pmd/testpmd.c
+index 134d79a555478..c2a322a3b9a49 100644
+--- a/app/test-pmd/testpmd.c
++++ b/app/test-pmd/testpmd.c
+@@ -414,6 +414,9 @@ uint8_t clear_ptypes = true;
+ /* Hairpin ports configuration mode. */
+ uint32_t hairpin_mode;
+ 
++/* send rx metadata */
++uint8_t rx_metadata_negotiate;
++
+ /* Pretty printing of ethdev events */
+ static const char * const eth_event_desc[] = {
+ 	[RTE_ETH_EVENT_UNKNOWN] = "unknown",
+@@ -1604,7 +1607,8 @@ init_config_port_offloads(portid_t pid, uint32_t socket_id)
+ 	int ret;
+ 	int i;
+ 
+-	eth_rx_metadata_negotiate_mp(pid);
++	if (rx_metadata_negotiate)
++		eth_rx_metadata_negotiate_mp(pid);
+ 
+ 	port->dev_conf.txmode = tx_mode;
+ 	port->dev_conf.rxmode = rx_mode;
+diff --git a/app/test-pmd/testpmd.h b/app/test-pmd/testpmd.h
+index 7d24d25970d2f..78c6719fd832d 100644
+--- a/app/test-pmd/testpmd.h
++++ b/app/test-pmd/testpmd.h
+@@ -648,6 +648,8 @@ extern struct rte_ether_addr peer_eth_addrs[RTE_MAX_ETHPORTS];
+ extern uint32_t burst_tx_delay_time; /**< Burst tx delay time(us) for mac-retry. */
+ extern uint32_t burst_tx_retry_num;  /**< Burst tx retry number for mac-retry. */
+ 
++extern uint8_t rx_metadata_negotiate;
++
+ #ifdef RTE_LIB_GRO
+ #define GRO_DEFAULT_ITEM_NUM_PER_FLOW 32
+ #define GRO_DEFAULT_FLOW_NUM (RTE_GRO_MAX_BURST_ITEM_NUM / \
+diff --git a/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh b/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh
+index 33d28021c4143..29cd29eb10296 100755
+--- a/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh
++++ b/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh
+@@ -191,7 +191,7 @@ function testpmd_check_vlan_flags()
+ echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
+ testpmd_launch $PRFX \
+ 		" -c $TESTPMD_COREMASK -a $TESTPMD_PORT" \
+-		" --no-flush-rx --nb-cores=1 --rxq 8 --txq 8" \
++		" --no-flush-rx --rx-metadata --nb-cores=1 --rxq 8 --txq 8" \
+ 		" --port-topology=loop"
+ 
+ testpmd_test_flow $PRFX FLOW_ETH "flow create 0 ingress pattern eth dst is \
+-- 
+2.25.1
+

@@ -1,0 +1,32 @@
+From 8b863eb9898abdbd764e14d10faee8d0a5c76b49 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 28 Nov 2022 15:24:42 +0530
+Subject: [PATCH 055/955] common/cnxk: disable drop re in A1 chip revision
+
+Disable drop re in CN10KA A1 as enabling it would leak
+event vector buffers.
+
+ci: skip_checkformat
+
+Change-Id: Ifb3f13fe17860c4bdf49eee12afc14a3764b2095
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+---
+ drivers/common/cnxk/roc_errata.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_errata.h b/drivers/common/cnxk/roc_errata.h
+index a39796e894906..36e6db467a488 100644
+--- a/drivers/common/cnxk/roc_errata.h
++++ b/drivers/common/cnxk/roc_errata.h
+@@ -9,7 +9,7 @@ static inline bool
+ roc_errata_nix_has_no_drop_re(void)
+ {
+ 	return (roc_model_is_cn10ka_a0() || roc_model_is_cnf10ka_a0() ||
+-		roc_model_is_cnf10kb_a0());
++		roc_model_is_cnf10kb_a0() || roc_model_is_cn10ka_a1());
+ }
+ 
+ /* Errata NIX-34873 */
+-- 
+2.25.1
+

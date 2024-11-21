@@ -1,0 +1,262 @@
+From cafda4541c9a35bdf9c9abe07f7ff1bf912ef2f1 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 12 Oct 2023 18:25:04 +0530
+Subject: [PATCH 655/955] net/cnxk: sync from upstream
+
+Change-Id: Ia0124cd5a6f27092133ae58414a8ea826bbdf8e0
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113983
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl_priv.h |   2 +-
+ drivers/common/cnxk/roc_nix_tm.c       |   2 +-
+ drivers/common/cnxk/roc_nix_tm_utils.c |   2 +-
+ drivers/common/cnxk/roc_platform.h     |   7 ++
+ drivers/net/cnxk/cn10k_rx.h            |   2 +-
+ drivers/net/cnxk/cn9k_rx.h             |   2 +-
+ drivers/net/cnxk/cnxk_ethdev.c         |   2 +-
+ drivers/net/cnxk/cnxk_ethdev_sec.c     |   2 +-
+ lib/eal/include/rte_bitops.h           | 108 +++++++++++++++++++++++++
+ 9 files changed, 122 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl_priv.h b/drivers/common/cnxk/roc_nix_inl_priv.h
+index b0a8976c6b691..3217f4ebc17b3 100644
+--- a/drivers/common/cnxk/roc_nix_inl_priv.h
++++ b/drivers/common/cnxk/roc_nix_inl_priv.h
+@@ -67,7 +67,7 @@ struct nix_inl_dev {
+ 	struct roc_cpt_lf cpt_lf;
+ 
+ 	/* OUTB soft expiry poll thread */
+-	pthread_t soft_exp_poll_thread;
++	plt_thread_t soft_exp_poll_thread;
+ 	uint32_t soft_exp_poll_freq;
+ 	uint64_t *sa_soft_exp_ring;
+ 	bool set_soft_exp_poll;
+diff --git a/drivers/common/cnxk/roc_nix_tm.c b/drivers/common/cnxk/roc_nix_tm.c
+index ce1e44ac4f5a1..ece88b5e99421 100644
+--- a/drivers/common/cnxk/roc_nix_tm.c
++++ b/drivers/common/cnxk/roc_nix_tm.c
+@@ -11,7 +11,7 @@ bitmap_ctzll(uint64_t slab)
+ 	if (slab == 0)
+ 		return 0;
+ 
+-	return __builtin_ctzll(slab);
++	return plt_ctz64(slab);
+ }
+ 
+ void
+diff --git a/drivers/common/cnxk/roc_nix_tm_utils.c b/drivers/common/cnxk/roc_nix_tm_utils.c
+index ce26ddff50283..8e3da95a45b67 100644
+--- a/drivers/common/cnxk/roc_nix_tm_utils.c
++++ b/drivers/common/cnxk/roc_nix_tm_utils.c
+@@ -927,7 +927,7 @@ nix_tm_resource_avail(struct nix *nix, uint8_t hw_lvl, bool contig)
+ 	/* Count bit set */
+ 	start_pos = pos;
+ 	do {
+-		count += __builtin_popcountll(slab);
++		count += plt_popcount64(slab);
+ 		if (!plt_bitmap_scan(bmp, &pos, &slab))
+ 			break;
+ 	} while (pos != start_pos);
+diff --git a/drivers/common/cnxk/roc_platform.h b/drivers/common/cnxk/roc_platform.h
+index a7d83f45a2d3e..e86795aeee4f7 100644
+--- a/drivers/common/cnxk/roc_platform.h
++++ b/drivers/common/cnxk/roc_platform.h
+@@ -203,6 +203,11 @@
+ #define plt_bit_relaxed_set64   rte_bit_relaxed_set64
+ #define plt_bit_relaxed_clear64 rte_bit_relaxed_clear64
+ 
++#define plt_popcount32		rte_popcount32
++#define plt_popcount64		rte_popcount64
++#define plt_clz32		rte_clz32
++#define plt_ctz64		rte_ctz64
++
+ #define plt_mmap       mmap
+ #define PLT_PROT_READ  PROT_READ
+ #define PLT_PROT_WRITE PROT_WRITE
+@@ -239,6 +244,8 @@
+ #define plt_tel_data_add_dict_u64    rte_tel_data_add_dict_u64
+ #define plt_telemetry_register_cmd   rte_telemetry_register_cmd
+ 
++#define plt_thread_t pthread_t
++
+ /* Log */
+ extern int cnxk_logtype_base;
+ extern int cnxk_logtype_mbox;
+diff --git a/drivers/net/cnxk/cn10k_rx.h b/drivers/net/cnxk/cn10k_rx.h
+index 7467e142208a5..7bb4c86d75c53 100644
+--- a/drivers/net/cnxk/cn10k_rx.h
++++ b/drivers/net/cnxk/cn10k_rx.h
+@@ -1955,7 +1955,7 @@ cn10k_nix_recv_pkts_vector(void *args, struct rte_mbuf **mbufs, uint16_t pkts,
+ 				 * timestamp.
+ 				 */
+ 				tstamp->rx_ready = 1;
+-				tstamp->rx_tstamp = ts[31 - __builtin_clz(res)];
++				tstamp->rx_tstamp = ts[31 - rte_clz32(res)];
+ 			}
+ 		}
+ 
+diff --git a/drivers/net/cnxk/cn9k_rx.h b/drivers/net/cnxk/cn9k_rx.h
+index 4d476d0a02fa8..d8bb65c643b92 100644
+--- a/drivers/net/cnxk/cn9k_rx.h
++++ b/drivers/net/cnxk/cn9k_rx.h
+@@ -788,7 +788,7 @@ cn9k_nix_recv_pkts_vector(void *rx_queue, struct rte_mbuf **rx_pkts,
+ 				 */
+ 				rxq->tstamp->rx_ready = 1;
+ 				rxq->tstamp->rx_tstamp =
+-					ts[31 - __builtin_clz(res)];
++					ts[31 - rte_clz32(res)];
+ 			}
+ 		}
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 3b2ad5ff7d14d..5e11bbb017ea7 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1130,7 +1130,7 @@ nix_set_nop_rxtx_function(struct rte_eth_dev *eth_dev)
+ {
+ 	/* These dummy functions are required for supporting
+ 	 * some applications which reconfigure queues without
+-	 * stopping tx burst and rx burst threads(eg kni app)
++	 * stopping tx burst and rx burst threads.
+ 	 * When the queues context is saved, txq/rxqs are released
+ 	 * which caused app crash since rx/tx burst is still
+ 	 * on different lcores
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index dc17c128def86..b02dac49527c3 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -36,7 +36,7 @@ bitmap_ctzll(uint64_t slab)
+ 	if (slab == 0)
+ 		return 0;
+ 
+-	return __builtin_ctzll(slab);
++	return rte_ctz64(slab);
+ }
+ 
+ int
+diff --git a/lib/eal/include/rte_bitops.h b/lib/eal/include/rte_bitops.h
+index f50dbe43880cc..fac246bd961b4 100644
+--- a/lib/eal/include/rte_bitops.h
++++ b/lib/eal/include/rte_bitops.h
+@@ -275,6 +275,114 @@ rte_bit_relaxed_test_and_clear64(unsigned int nr, volatile uint64_t *addr)
+ 	return val & mask;
+ }
+ 
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
++ *
++ * Get the count of leading 0-bits in v.
++ *
++ * @param v
++ *   The value.
++ * @return
++ *   The count of leading zero bits.
++ */
++__rte_experimental
++static inline unsigned int
++rte_clz32(uint32_t v)
++{
++	return (unsigned int)__builtin_clz(v);
++}
++
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
++ *
++ * Get the count of leading 0-bits in v.
++ *
++ * @param v
++ *   The value.
++ * @return
++ *   The count of leading zero bits.
++ */
++__rte_experimental
++static inline unsigned int
++rte_clz64(uint64_t v)
++{
++	return (unsigned int)__builtin_clzll(v);
++}
++
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
++ *
++ * Get the count of trailing 0-bits in v.
++ *
++ * @param v
++ *   The value.
++ * @return
++ *   The count of trailing zero bits.
++ */
++__rte_experimental
++static inline unsigned int
++rte_ctz32(uint32_t v)
++{
++	return (unsigned int)__builtin_ctz(v);
++}
++
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
++ *
++ * Get the count of trailing 0-bits in v.
++ *
++ * @param v
++ *   The value.
++ * @return
++ *   The count of trailing zero bits.
++ */
++__rte_experimental
++static inline unsigned int
++rte_ctz64(uint64_t v)
++{
++	return (unsigned int)__builtin_ctzll(v);
++}
++
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
++ *
++ * Get the count of 1-bits in v.
++ *
++ * @param v
++ *   The value.
++ * @return
++ *   The count of 1-bits.
++ */
++__rte_experimental
++static inline unsigned int
++rte_popcount32(uint32_t v)
++{
++	return (unsigned int)__builtin_popcount(v);
++}
++
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
++ *
++ * Get the count of 1-bits in v.
++ *
++ * @param v
++ *   The value.
++ * @return
++ *   The count of 1-bits.
++ */
++__rte_experimental
++static inline unsigned int
++rte_popcount64(uint64_t v)
++{
++	return (unsigned int)__builtin_popcountll(v);
++}
++
+ #ifdef __cplusplus
+ }
+ #endif
+-- 
+2.25.1
+

@@ -1,0 +1,65 @@
+From 4ec545e2e8df9d563a08043169e053af8b834298 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 28 Nov 2022 15:24:39 +0530
+Subject: [PATCH 052/955] common/cnxk: use lcore LMT line for CPT context write
+
+Use lcore LMT line for CPT context write as no one else
+is using it.
+
+ci: skip_checkformat
+
+Change-Id: If3dd87287c090c73c39ef073820d9cff86430d35
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c | 3 ++-
+ drivers/common/cnxk/roc_io.h  | 5 +++++
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index f9b03afc402e5..ea9712904b490 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -1023,7 +1023,8 @@ roc_cpt_ctx_write(struct roc_cpt_lf *lf, void *sa_dptr, void *sa_cptr,
+ 	uint64_t *dptr;
+ 	int i;
+ 
+-	ROC_LMT_CPT_BASE_ID_GET(lmt_base, lmt_id);
++	/* Use this lcore's LMT line as no one else is using it */
++	ROC_LMT_BASE_ID_GET(lmt_base, lmt_id);
+ 	inst = (struct cpt_inst_s *)lmt_base;
+ 
+ 	memset(inst, 0, sizeof(struct cpt_inst_s));
+diff --git a/drivers/common/cnxk/roc_io.h b/drivers/common/cnxk/roc_io.h
+index 13f98ed549fd1..1e5c1f8c04af3 100644
+--- a/drivers/common/cnxk/roc_io.h
++++ b/drivers/common/cnxk/roc_io.h
+@@ -7,6 +7,7 @@
+ 
+ #include "roc_platform.h" /* for __plt_always_inline macro */
+ 
++#ifndef ROC_LMT_BASE_ID_GET
+ #define ROC_LMT_BASE_ID_GET(lmt_addr, lmt_id)                                  \
+ 	do {                                                                   \
+ 		/* 32 Lines per core */                                        \
+@@ -14,7 +15,10 @@
+ 		/* Each line is of 128B */                                     \
+ 		(lmt_addr) += ((uint64_t)lmt_id << ROC_LMT_LINE_SIZE_LOG2);    \
+ 	} while (0)
++#endif
+ 
++/* Define it if not defined in roc_platform.h */
++#ifndef ROC_LMT_CPT_BASE_ID_GET
+ #define ROC_LMT_CPT_BASE_ID_GET(lmt_addr, lmt_id)                              \
+ 	do {                                                                   \
+ 		/* 16 Lines per core */                                        \
+@@ -23,6 +27,7 @@
+ 		/* Each line is of 128B */                                     \
+ 		(lmt_addr) += ((uint64_t)lmt_id << ROC_LMT_LINE_SIZE_LOG2);    \
+ 	} while (0)
++#endif
+ 
+ #define roc_load_pair(val0, val1, addr)                                        \
+ 	({                                                                     \
+-- 
+2.25.1
+

@@ -1,0 +1,44 @@
+From b0d082f56ba48fdac808c02beaa7be022daff0f2 Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Wed, 1 Feb 2023 17:37:59 +0530
+Subject: [PATCH 219/955] net/cnxk: add spec for SPI to SA action for cnxk
+
+Adding spec for MS_28_25 Flow action for cnxk device.
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Change-Id: Ic00fccc91dc162c438ac4c669690404d4eb2b2cf
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95826
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/rte_pmd_cnxk.h | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index 8770425dfb0b6..d7eadd582d107 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -34,12 +34,17 @@ enum rte_pmd_cnxk_sec_action_alg {
+ 	 *  SA_alg = { 7'b0, SA_mcam[24:0] + SPI[27:25]}
+ 	 */
+ 	RTE_PMD_CNXK_SEC_ACTION_ALG2,
++	/** SPI<28:25> segment the sequence number space.
++	 * Initial SA_index is from SA_XOR if enabled.
++	 * SA_alg = { 7'b0, SA_mcam[24:0] + SPI[28:25]}
++	 */
++	RTE_PMD_CNXK_SEC_ACTION_ALG3,
+ 	/** The inbound SPI maybe "random", therefore we want the MCAM to be
+ 	 * capable of remapping the SPI to an arbitrary SA_index.
+ 	 * SPI to SA is done using a lookup in NIX/NPC cam entry with key as
+ 	 * SPI, MATCH_ID, LFID.
+ 	 */
+-	RTE_PMD_CNXK_SEC_ACTION_ALG3,
++	RTE_PMD_CNXK_SEC_ACTION_ALG4,
+ };
+ 
+ struct rte_pmd_cnxk_sec_action {
+-- 
+2.25.1
+

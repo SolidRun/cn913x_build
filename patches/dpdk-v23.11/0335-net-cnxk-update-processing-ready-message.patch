@@ -1,0 +1,35 @@
+From ffdc5714730babd0a16fbe2c2eb8ccf827f42685 Mon Sep 17 00:00:00 2001
+From: Hanumanth Pothula <hpothula@marvell.com>
+Date: Tue, 21 May 2024 15:55:45 +0530
+Subject: [PATCH 335/513] net/cnxk: update processing ready message
+
+Now, dpu offload application sends READY measage with only MAC port's
+hw_funcs. Hence, process the READY message accordingly.
+
+Signed-off-by: Hanumanth Pothula <hpothula@marvell.com>
+Change-Id: Ied1023129c3d8d746b2bf0442558b1fbc37b650d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128172
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/net/cnxk/cnxk_rep_msg.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cnxk_rep_msg.c b/drivers/net/cnxk/cnxk_rep_msg.c
+index b7a8c0aaac94f..23a8cb2d00cfc 100644
+--- a/drivers/net/cnxk/cnxk_rep_msg.c
++++ b/drivers/net/cnxk/cnxk_rep_msg.c
+@@ -373,7 +373,7 @@ notify_rep_dev_ready(cnxk_rep_msg_ready_data_t *rdata, void *data,
+ 		goto fail;
+ 	}
+ 
+-	for (i = 0; i < rdata->nb_ports / 2; i++) {
++	for (i = 0; i < rdata->nb_ports; i++) {
+ 		rep_id = UINT16_MAX;
+ 		rc = cnxk_rep_state_update(eswitch_dev, rdata->data[i], &rep_id);
+ 		if (rc) {
+-- 
+2.25.1
+

@@ -1,0 +1,66 @@
+From a98174c8528016c9436e1da91b28c817a2b33037 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Mon, 24 Jun 2024 17:29:55 +0530
+Subject: [PATCH 387/513] net/cnxk: fix clang build for multiseg eswitch
+
+Removing unused len argument which was set but not used, clang compiler
+reported the build failure
+
+Fixes: 8d62f73db09f ("net/cnxk: add multi seg support in eswitch")
+
+Change-Id: Iad47ea76a551055906c879404f75c1963a87ef87
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130742
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit a7674a6e1129f40858e51be1bb389387d69bb883)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130784
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_eswitch_rxtx.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_eswitch_rxtx.c b/drivers/net/cnxk/cnxk_eswitch_rxtx.c
+index efb3f91063c58..832c4e5d5cb7b 100644
+--- a/drivers/net/cnxk/cnxk_eswitch_rxtx.c
++++ b/drivers/net/cnxk/cnxk_eswitch_rxtx.c
+@@ -50,8 +50,7 @@ nix_cn9k_xmit_one(uint64_t *cmd, void *lmt_addr, const plt_iova_t io_addr, uint1
+ }
+ 
+ static __rte_always_inline uint16_t
+-cnxk_eswitch_prepare_mseg(struct rte_mbuf *m, union nix_send_sg_s *sg, uint64_t *cmd, uint64_t len,
+-			  uint8_t off)
++cnxk_eswitch_prepare_mseg(struct rte_mbuf *m, union nix_send_sg_s *sg, uint64_t *cmd, uint8_t off)
+ {
+ 	union nix_send_sg_s l_sg;
+ 	struct rte_mbuf *m_next;
+@@ -66,7 +65,6 @@ cnxk_eswitch_prepare_mseg(struct rte_mbuf *m, union nix_send_sg_s *sg, uint64_t
+ 
+ 	dlen = m->data_len;
+ 	l_sg.u |= dlen;
+-	len -= dlen;
+ 	nb_segs = m->nb_segs - 1;
+ 	m_next = m->next;
+ 	m->next = NULL;
+@@ -84,7 +82,6 @@ cnxk_eswitch_prepare_mseg(struct rte_mbuf *m, union nix_send_sg_s *sg, uint64_t
+ 		m_next = m->next;
+ 		iova = rte_mbuf_data_iova(m);
+ 		dlen = m->data_len;
+-		len -= dlen;
+ 
+ 		nb_segs--;
+ 		m->next = NULL;
+@@ -193,7 +190,7 @@ cnxk_eswitch_dev_tx_burst(struct cnxk_eswitch_dev *eswitch_dev, uint16_t qid,
+ 			send_hdr->w0.df = 1;
+ 		}
+ 
+-		segdw = cnxk_eswitch_prepare_mseg(m, sg, cmd, len, off);
++		segdw = cnxk_eswitch_prepare_mseg(m, sg, cmd, off);
+ 		send_hdr->w0.sizem1 = segdw - 1;
+ 
+ 		plt_esw_dbg("Transmitting pkt %d (%p) vlan tci %x on sq %d esw qid %d", pkt,
+-- 
+2.25.1
+

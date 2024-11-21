@@ -1,0 +1,384 @@
+From 42e0f24aa8cd9a7a4852644ef8dba37ea1ffe1f7 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Thu, 24 Nov 2022 14:46:00 +0530
+Subject: [PATCH 075/955] drivers: limit cnxk SSO interrupt allocation count
+
+Each SSO device supports 1024 MSI-X interrupt vectors and driver
+allocates that many by default during init. But this many vectors won't
+be used by an application for most runs. Required number of vectors can
+be calculated during init and allocation can be limited to that number.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I845681bea3e049ce2d12f2ef4bc117564215890c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91311
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92506
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c       | 12 ++---
+ drivers/common/cnxk/roc_dev_priv.h  |  5 ++
+ drivers/common/cnxk/roc_irq.c       | 11 ++++
+ drivers/common/cnxk/roc_sso.c       | 78 ++++++++++++++++++++++++++++-
+ drivers/common/cnxk/roc_sso.h       |  4 +-
+ drivers/common/cnxk/roc_tim.c       | 43 ++++++++++++----
+ drivers/common/cnxk/roc_tim_priv.h  |  2 +
+ drivers/event/cnxk/cn10k_eventdev.c |  5 +-
+ drivers/event/cnxk/cn9k_eventdev.c  |  5 +-
+ 9 files changed, 143 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 32a6d2ca0cc65..826887a97b6f9 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -740,8 +740,8 @@ mbox_register_vf_irq(struct plt_pci_device *pci_dev, struct dev *dev)
+ 	return rc;
+ }
+ 
+-static int
+-mbox_register_irq(struct plt_pci_device *pci_dev, struct dev *dev)
++int
++dev_mbox_register_irq(struct plt_pci_device *pci_dev, struct dev *dev)
+ {
+ 	if (dev_is_vf(dev))
+ 		return mbox_register_vf_irq(pci_dev, dev);
+@@ -885,8 +885,8 @@ vf_flr_unregister_irqs(struct plt_pci_device *pci_dev, struct dev *dev)
+ 	return 0;
+ }
+ 
+-static int
+-vf_flr_register_irqs(struct plt_pci_device *pci_dev, struct dev *dev)
++int
++dev_vf_flr_register_irqs(struct plt_pci_device *pci_dev, struct dev *dev)
+ {
+ 	struct plt_intr_handle *handle = pci_dev->intr_handle;
+ 	int i, rc;
+@@ -1204,7 +1204,7 @@ dev_init(struct dev *dev, struct plt_pci_device *pci_dev)
+ 		goto mbox_fini;
+ 
+ 	/* Register mbox interrupts */
+-	rc = mbox_register_irq(pci_dev, dev);
++	rc = dev_mbox_register_irq(pci_dev, dev);
+ 	if (rc)
+ 		goto mbox_fini;
+ 
+@@ -1247,7 +1247,7 @@ dev_init(struct dev *dev, struct plt_pci_device *pci_dev)
+ 
+ 	/* Register VF-FLR irq handlers */
+ 	if (!dev_is_vf(dev)) {
+-		rc = vf_flr_register_irqs(pci_dev, dev);
++		rc = dev_vf_flr_register_irqs(pci_dev, dev);
+ 		if (rc)
+ 			goto iounmap;
+ 	}
+diff --git a/drivers/common/cnxk/roc_dev_priv.h b/drivers/common/cnxk/roc_dev_priv.h
+index e21a7154c0e9c..27bf68fddbe4f 100644
+--- a/drivers/common/cnxk/roc_dev_priv.h
++++ b/drivers/common/cnxk/roc_dev_priv.h
+@@ -93,6 +93,7 @@ struct dev {
+ 	struct dev_ops *ops;
+ 	void *roc_nix;
+ 	void *roc_cpt;
++	void *roc_tim;
+ 	bool disable_shared_lmt; /* false(default): shared lmt mode enabled */
+ 	const struct plt_memzone *lmt_mz;
+ } __plt_cache_aligned;
+@@ -114,5 +115,9 @@ int dev_irq_register(struct plt_intr_handle *intr_handle,
+ void dev_irq_unregister(struct plt_intr_handle *intr_handle,
+ 			plt_intr_callback_fn cb, void *data, unsigned int vec);
+ int dev_irqs_disable(struct plt_intr_handle *intr_handle);
++int dev_irq_reconfigure(struct plt_intr_handle *intr_handle, uint16_t max_intr);
++
++int dev_mbox_register_irq(struct plt_pci_device *pci_dev, struct dev *dev);
++int dev_vf_flr_register_irqs(struct plt_pci_device *pci_dev, struct dev *dev);
+ 
+ #endif /* _ROC_DEV_PRIV_H */
+diff --git a/drivers/common/cnxk/roc_irq.c b/drivers/common/cnxk/roc_irq.c
+index 010b121176b97..a709c4047d956 100644
+--- a/drivers/common/cnxk/roc_irq.c
++++ b/drivers/common/cnxk/roc_irq.c
+@@ -124,6 +124,17 @@ dev_irqs_disable(struct plt_intr_handle *intr_handle)
+ 	return plt_intr_disable(intr_handle);
+ }
+ 
++int
++dev_irq_reconfigure(struct plt_intr_handle *intr_handle, uint16_t max_intr)
++{
++	/* Disable interrupts if enabled. */
++	if (plt_intr_max_intr_get(intr_handle))
++		dev_irqs_disable(intr_handle);
++
++	plt_intr_max_intr_set(intr_handle, max_intr);
++	return irq_init(intr_handle);
++}
++
+ int
+ dev_irq_register(struct plt_intr_handle *intr_handle, plt_intr_callback_fn cb,
+ 		 void *data, unsigned int vec)
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index 868c736eb5929..123bef2cb9db6 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -768,11 +768,57 @@ roc_sso_hwgrp_stash_config(struct roc_sso *roc_sso,
+ 	return rc;
+ }
+ 
++static int
++sso_update_msix_vec_count(struct roc_sso *roc_sso, uint16_t sso_vec_cnt)
++{
++	struct plt_pci_device *pci_dev = roc_sso->pci_dev;
++	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
++	uint16_t mbox_vec_cnt, npa_vec_cnt;
++	struct dev *dev = &sso->dev;
++	struct idev_cfg *idev;
++	int rc;
++
++	idev = idev_get_cfg();
++	if (idev == NULL)
++		return -ENODEV;
++
++	mbox_vec_cnt = RVU_PF_INT_VEC_AFPF_MBOX + 1;
++
++	/* Allocating vectors for the first time */
++	if (plt_intr_max_intr_get(pci_dev->intr_handle) == 0) {
++		npa_vec_cnt = idev->npa_refcnt ? 0 : NPA_LF_INT_VEC_POISON + 1;
++		return dev_irq_reconfigure(pci_dev->intr_handle, mbox_vec_cnt + npa_vec_cnt);
++	}
++
++	npa_vec_cnt = (dev->npa.pci_dev == pci_dev) ? NPA_LF_INT_VEC_POISON + 1 : 0;
++
++	/* Re-configure to include SSO vectors */
++	rc = dev_irq_reconfigure(pci_dev->intr_handle, mbox_vec_cnt + npa_vec_cnt + sso_vec_cnt);
++	if (rc)
++		return rc;
++
++	rc = dev_mbox_register_irq(pci_dev, dev);
++	if (rc)
++		return rc;
++
++	if (!dev_is_vf(dev)) {
++		rc = dev_vf_flr_register_irqs(pci_dev, dev);
++		if (rc)
++			return rc;
++	}
++
++	if (npa_vec_cnt)
++		rc = npa_register_irqs(&dev->npa);
++
++	return rc;
++}
++
+ int
+-roc_sso_rsrc_init(struct roc_sso *roc_sso, uint8_t nb_hws, uint16_t nb_hwgrp)
++roc_sso_rsrc_init(struct roc_sso *roc_sso, uint8_t nb_hws, uint16_t nb_hwgrp, uint16_t nb_tim_lfs)
+ {
+ 	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
+ 	struct sso_lf_alloc_rsp *rsp_hwgrp;
++	uint16_t sso_vec_cnt, free_tim_lfs;
+ 	int rc;
+ 
+ 	if (!nb_hwgrp || roc_sso->max_hwgrp < nb_hwgrp)
+@@ -816,6 +862,30 @@ roc_sso_rsrc_init(struct roc_sso *roc_sso, uint8_t nb_hws, uint16_t nb_hwgrp)
+ 		goto sso_msix_fail;
+ 	}
+ 
++	/* 1 error interrupt per SSO HWS/HWGRP */
++	sso_vec_cnt = nb_hws + nb_hwgrp;
++
++	if (sso->dev.roc_tim) {
++		nb_tim_lfs = ((struct roc_tim *)sso->dev.roc_tim)->nb_lfs;
++	} else {
++		rc = tim_free_lf_count_get(&sso->dev, &free_tim_lfs);
++		if (rc < 0) {
++			plt_err("Failed to get TIM resource count");
++			goto sso_msix_fail;
++		}
++
++		nb_tim_lfs = nb_tim_lfs ? PLT_MIN(nb_tim_lfs, free_tim_lfs) : free_tim_lfs;
++	}
++
++	/* 2 error interrupt per TIM LF */
++	sso_vec_cnt += 2 * nb_tim_lfs;
++
++	rc = sso_update_msix_vec_count(roc_sso, sso_vec_cnt);
++	if (rc < 0) {
++		plt_err("Failed to update SSO MSIX vector count");
++		goto sso_msix_fail;
++	}
++
+ 	rc = sso_register_irqs_priv(roc_sso, sso->pci_dev->intr_handle, nb_hws,
+ 				    nb_hwgrp);
+ 	if (rc < 0) {
+@@ -880,6 +950,12 @@ roc_sso_dev_init(struct roc_sso *roc_sso)
+ 	pci_dev = roc_sso->pci_dev;
+ 	plt_spinlock_init(&sso->mbox_lock);
+ 
++	rc = sso_update_msix_vec_count(roc_sso, 0);
++	if (rc < 0) {
++		plt_err("Failed to set SSO MSIX vector count");
++		return rc;
++	}
++
+ 	rc = dev_init(&sso->dev, pci_dev);
+ 	if (rc < 0) {
+ 		plt_err("Failed to init roc device");
+diff --git a/drivers/common/cnxk/roc_sso.h b/drivers/common/cnxk/roc_sso.h
+index 0bd4c6aef6ea8..6d94ca43b5266 100644
+--- a/drivers/common/cnxk/roc_sso.h
++++ b/drivers/common/cnxk/roc_sso.h
+@@ -90,8 +90,8 @@ int __roc_api roc_sso_dev_init(struct roc_sso *roc_sso);
+ int __roc_api roc_sso_dev_fini(struct roc_sso *roc_sso);
+ 
+ /* SSO device configuration */
+-int __roc_api roc_sso_rsrc_init(struct roc_sso *roc_sso, uint8_t nb_hws,
+-				uint16_t nb_hwgrp);
++int __roc_api roc_sso_rsrc_init(struct roc_sso *roc_sso, uint8_t nb_hws, uint16_t nb_hwgrp,
++				uint16_t nb_tim_lfs);
+ void __roc_api roc_sso_rsrc_fini(struct roc_sso *roc_sso);
+ int __roc_api roc_sso_hwgrp_qos_config(struct roc_sso *roc_sso,
+ 				       struct roc_sso_hwgrp_qos *qos,
+diff --git a/drivers/common/cnxk/roc_tim.c b/drivers/common/cnxk/roc_tim.c
+index 90ce72cfa04d6..62e77ac3ae4fb 100644
+--- a/drivers/common/cnxk/roc_tim.c
++++ b/drivers/common/cnxk/roc_tim.c
+@@ -307,14 +307,33 @@ roc_tim_lf_free(struct roc_tim *roc_tim, uint8_t ring_id)
+ 	return rc;
+ }
+ 
++int
++tim_free_lf_count_get(struct dev *dev, uint16_t *nb_lfs)
++{
++	struct mbox *mbox = mbox_get(dev->mbox);
++	struct free_rsrcs_rsp *rsrc_cnt;
++	int rc;
++
++	mbox_alloc_msg_free_rsrc_cnt(mbox);
++	rc = mbox_process_msg(mbox, (void **)&rsrc_cnt);
++	if (rc) {
++		plt_err("Failed to get free resource count\n");
++		mbox_put(mbox);
++		return -EIO;
++	}
++
++	*nb_lfs = rsrc_cnt->tim;
++	mbox_put(mbox);
++	return 0;
++}
++
+ int
+ roc_tim_init(struct roc_tim *roc_tim)
+ {
+ 	struct rsrc_attach_req *attach_req;
+ 	struct rsrc_detach_req *detach_req;
+-	struct free_rsrcs_rsp *free_rsrc;
++	uint16_t nb_lfs, nb_free_lfs;
+ 	struct sso *sso;
+-	uint16_t nb_lfs;
+ 	struct dev *dev;
+ 	int rc;
+ 
+@@ -323,30 +342,31 @@ roc_tim_init(struct roc_tim *roc_tim)
+ 
+ 	sso = roc_sso_to_sso_priv(roc_tim->roc_sso);
+ 	dev = &sso->dev;
++	dev->roc_tim = roc_tim;
+ 	PLT_STATIC_ASSERT(sizeof(struct tim) <= TIM_MEM_SZ);
+ 	nb_lfs = roc_tim->nb_lfs;
+-	mbox_alloc_msg_free_rsrc_cnt(mbox_get(dev->mbox));
+-	rc = mbox_process_msg(dev->mbox, (void *)&free_rsrc);
++
++	rc = tim_free_lf_count_get(dev, &nb_free_lfs);
+ 	if (rc) {
+-		plt_err("Unable to get free rsrc count.");
++		plt_tim_dbg("Failed to get TIM resource count");
+ 		nb_lfs = 0;
+-		goto fail;
++		return nb_lfs;
+ 	}
+ 
+-	if (nb_lfs && (free_rsrc->tim < nb_lfs)) {
+-		plt_tim_dbg("Requested LFs : %d Available LFs : %d", nb_lfs,
+-			    free_rsrc->tim);
++	if (nb_lfs && (nb_free_lfs < nb_lfs)) {
++		plt_tim_dbg("Requested LFs : %d Available LFs : %d", nb_lfs, nb_free_lfs);
+ 		nb_lfs = 0;
+-		goto fail;
++		return nb_lfs;
+ 	}
+ 
++	mbox_get(dev->mbox);
+ 	attach_req = mbox_alloc_msg_attach_resources(dev->mbox);
+ 	if (attach_req == NULL) {
+ 		nb_lfs = 0;
+ 		goto fail;
+ 	}
+ 	attach_req->modify = true;
+-	attach_req->timlfs = nb_lfs ? nb_lfs : free_rsrc->tim;
++	attach_req->timlfs = nb_lfs ? nb_lfs : nb_free_lfs;
+ 	nb_lfs = attach_req->timlfs;
+ 
+ 	rc = mbox_process(dev->mbox);
+@@ -377,6 +397,7 @@ roc_tim_init(struct roc_tim *roc_tim)
+ fail:
+ 	mbox_put(dev->mbox);
+ done:
++	roc_tim->nb_lfs = nb_lfs;
+ 	return nb_lfs;
+ }
+ 
+diff --git a/drivers/common/cnxk/roc_tim_priv.h b/drivers/common/cnxk/roc_tim_priv.h
+index cc083d2b4a827..f6191d2a0e612 100644
+--- a/drivers/common/cnxk/roc_tim_priv.h
++++ b/drivers/common/cnxk/roc_tim_priv.h
+@@ -19,6 +19,8 @@ roc_tim_to_tim_priv(struct roc_tim *roc_tim)
+ 	return (struct tim *)&roc_tim->reserved[0];
+ }
+ 
++int tim_free_lf_count_get(struct dev *dev, uint16_t *nb_lfs);
++
+ /* TIM IRQ*/
+ int tim_register_irq_priv(struct roc_tim *roc_tim,
+ 			  struct plt_intr_handle *handle, uint8_t ring_id,
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index 604bef8afeb50..1233a09159000 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -252,9 +252,12 @@ cn10k_sso_set_rsrc(void *arg)
+ static int
+ cn10k_sso_rsrc_init(void *arg, uint8_t hws, uint8_t hwgrp)
+ {
++	struct cnxk_tim_evdev *tim_dev = cnxk_tim_priv_get();
+ 	struct cnxk_sso_evdev *dev = arg;
++	uint16_t nb_tim_lfs;
+ 
+-	return roc_sso_rsrc_init(&dev->sso, hws, hwgrp);
++	nb_tim_lfs = tim_dev ? tim_dev->nb_rings : 0;
++	return roc_sso_rsrc_init(&dev->sso, hws, hwgrp, nb_tim_lfs);
+ }
+ 
+ static int
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 7b09f27644abd..8d021a225fc0c 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -241,12 +241,15 @@ cn9k_sso_hws_reset(void *arg, void *hws)
+ static int
+ cn9k_sso_rsrc_init(void *arg, uint8_t hws, uint8_t hwgrp)
+ {
++	struct cnxk_tim_evdev *tim_dev = cnxk_tim_priv_get();
+ 	struct cnxk_sso_evdev *dev = arg;
++	uint16_t nb_tim_lfs;
+ 
+ 	if (dev->dual_ws)
+ 		hws = hws * CN9K_DUAL_WS_NB_WS;
+ 
+-	return roc_sso_rsrc_init(&dev->sso, hws, hwgrp);
++	nb_tim_lfs = tim_dev ? tim_dev->nb_rings : 0;
++	return roc_sso_rsrc_init(&dev->sso, hws, hwgrp, nb_tim_lfs);
+ }
+ 
+ static int
+-- 
+2.25.1
+

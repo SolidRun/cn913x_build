@@ -1,0 +1,125 @@
+From 49a7f6c5c8d79f8c2adbb522a83b4529da87dd3f Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Thu, 15 Dec 2022 18:25:17 +0530
+Subject: [PATCH 093/955] common/cnxk: update CPT inbound inline IPsec mailbox
+
+Updates CPT inbound inline configuration mailbox message
+format to set CPT credit threshold and bpid, which are
+introduced for CN10KB.
+This patch also fixes inline inbound config read API.
+
+Fixes: 37da58509579 ("common/cnxk: update inbound inline
+IPsec config mailbox")
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I91634107a141cc6587d066c6bb09fc5775353d4d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92717
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c  | 14 +++++++++++++-
+ drivers/common/cnxk/roc_cpt.h  | 16 ++++++++++++----
+ drivers/common/cnxk/roc_mbox.h |  4 ++++
+ 3 files changed, 29 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index 8569564536f1a..168b6bb946a8e 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -268,9 +268,10 @@ roc_cpt_inline_ipsec_cfg(struct dev *cpt_dev, uint8_t lf_id,
+ 
+ int
+ roc_cpt_inline_ipsec_inb_cfg_read(struct roc_cpt *roc_cpt,
+-				  struct nix_inline_ipsec_cfg *inb_cfg)
++				  struct roc_cpt_inline_ipsec_inb_cfg *cfg)
+ {
+ 	struct cpt *cpt = roc_cpt_to_cpt_priv(roc_cpt);
++	struct nix_inline_ipsec_cfg *inb_cfg;
+ 	struct dev *dev = &cpt->dev;
+ 	struct mbox *mbox = mbox_get(dev->mbox);
+ 	struct msg_req *req;
+@@ -283,6 +284,17 @@ roc_cpt_inline_ipsec_inb_cfg_read(struct roc_cpt *roc_cpt,
+ 	}
+ 
+ 	rc = mbox_process_msg(mbox, (void *)&inb_cfg);
++	if (rc) {
++		rc = -EIO;
++		goto exit;
++	}
++	cfg->cpt_credit = inb_cfg->cpt_credit;
++	cfg->egrp = inb_cfg->gen_cfg.egrp;
++	cfg->opcode = inb_cfg->gen_cfg.opcode;
++	cfg->param1 = inb_cfg->gen_cfg.param1;
++	cfg->param2 = inb_cfg->gen_cfg.param2;
++	cfg->bpid = inb_cfg->bpid;
++	cfg->credit_th = inb_cfg->credit_th;
+ exit:
+ 	mbox_put(mbox);
+ 	return rc;
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index f243254fc5159..352f3287b20d5 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -9,8 +9,6 @@
+ 
+ #include "roc_platform.h"
+ 
+-struct nix_inline_ipsec_cfg;
+-
+ #define ROC_AE_CPT_BLOCK_TYPE1 0
+ #define ROC_AE_CPT_BLOCK_TYPE2 1
+ 
+@@ -148,6 +146,16 @@ struct roc_cpt_rxc_time_cfg {
+ 	uint16_t zombie_thres;
+ };
+ 
++struct roc_cpt_inline_ipsec_inb_cfg {
++	uint32_t cpt_credit;
++	uint16_t opcode;
++	uint16_t param1;
++	uint16_t param2;
++	uint16_t bpid;
++	uint32_t credit_th;
++	uint8_t egrp;
++};
++
+ int __roc_api roc_cpt_rxc_time_cfg(struct roc_cpt *roc_cpt,
+ 				   struct roc_cpt_rxc_time_cfg *cfg);
+ int __roc_api roc_cpt_dev_init(struct roc_cpt *roc_cpt);
+@@ -163,8 +171,8 @@ int __roc_api roc_cpt_lf_ctx_flush(struct roc_cpt_lf *lf, void *cptr,
+ int __roc_api roc_cpt_lf_ctx_reload(struct roc_cpt_lf *lf, void *cptr);
+ int __roc_api roc_cpt_inline_ipsec_cfg(struct dev *dev, uint8_t slot,
+ 				       struct roc_nix *nix);
+-int __roc_api roc_cpt_inline_ipsec_inb_cfg_read(
+-	struct roc_cpt *roc_cpt, struct nix_inline_ipsec_cfg *inb_cfg);
++int __roc_api roc_cpt_inline_ipsec_inb_cfg_read(struct roc_cpt *roc_cpt,
++					struct roc_cpt_inline_ipsec_inb_cfg *cfg);
+ int __roc_api roc_cpt_inline_ipsec_inb_cfg(struct roc_cpt *roc_cpt,
+ 					   uint16_t param1, uint16_t param2,
+ 					   uint16_t opcode);
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 8657e14f31d17..92a29f4446134 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -1199,6 +1199,8 @@ struct nix_inline_ipsec_cfg {
+ 		uint8_t __io cpt_slot;
+ 	} inst_qsel;
+ 	uint8_t __io enable;
++	uint16_t __io bpid;
++	uint32_t __io credit_th;
+ };
+ 
+ /* Per NIX LF inline IPSec configuration */
+@@ -1512,6 +1514,8 @@ struct cpt_rx_inline_lf_cfg_msg {
+ 	uint16_t __io param2;
+ 	uint16_t __io opcode;
+ 	uint32_t __io credit;
++	uint32_t __io credit_th;
++	uint16_t __io bpid;
+ 	uint32_t __io reserved;
+ };
+ 
+-- 
+2.25.1
+

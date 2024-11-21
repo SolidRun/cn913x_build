@@ -1,0 +1,179 @@
+From e262095cbbea9fb116551dc3b25cc972419d482e Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Wed, 15 Feb 2023 15:12:25 +0530
+Subject: [PATCH 294/955] cryptodev: drop export of internal tracepoints
+
+The file rte_cryptodev_trace.h contains tracepoints which are internal to
+the cryptodev library. This file is renamed to cryptodev_trace.h, and is
+made an internal header. The tracepoints in this file are removed from the
+experimental and internal section in version.map file.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Acked-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: I496bbffb0b1f8f7233c873b56752fc03d0b7e722
+---
+ ...te_cryptodev_trace.h => cryptodev_trace.h} |  6 +-
+ lib/cryptodev/cryptodev_trace_points.c        |  2 +-
+ lib/cryptodev/meson.build                     |  1 -
+ lib/cryptodev/rte_cryptodev.c                 |  2 +-
+ lib/cryptodev/version.map                     | 62 -------------------
+ 5 files changed, 5 insertions(+), 68 deletions(-)
+ rename lib/cryptodev/{rte_cryptodev_trace.h => cryptodev_trace.h} (99%)
+
+diff --git a/lib/cryptodev/rte_cryptodev_trace.h b/lib/cryptodev/cryptodev_trace.h
+similarity index 99%
+rename from lib/cryptodev/rte_cryptodev_trace.h
+rename to lib/cryptodev/cryptodev_trace.h
+index 5e694379b1d02..aab44af96b787 100644
+--- a/lib/cryptodev/rte_cryptodev_trace.h
++++ b/lib/cryptodev/cryptodev_trace.h
+@@ -2,8 +2,8 @@
+  * Copyright(C) 2020 Marvell International Ltd.
+  */
+ 
+-#ifndef _RTE_CRYPTODEV_TRACE_H_
+-#define _RTE_CRYPTODEV_TRACE_H_
++#ifndef CRYPTODEV_TRACE_H
++#define CRYPTODEV_TRACE_H
+ 
+ /**
+  * @file
+@@ -530,4 +530,4 @@ RTE_TRACE_POINT(
+ }
+ #endif
+ 
+-#endif /* _RTE_CRYPTODEV_TRACE_H_ */
++#endif /* CRYPTODEV_TRACE_H */
+diff --git a/lib/cryptodev/cryptodev_trace_points.c b/lib/cryptodev/cryptodev_trace_points.c
+index 4980bcc9be2f8..e2303fdb5226b 100644
+--- a/lib/cryptodev/cryptodev_trace_points.c
++++ b/lib/cryptodev/cryptodev_trace_points.c
+@@ -4,7 +4,7 @@
+ 
+ #include <rte_trace_point_register.h>
+ 
+-#include "rte_cryptodev_trace.h"
++#include "cryptodev_trace.h"
+ 
+ RTE_TRACE_POINT_REGISTER(rte_cryptodev_trace_configure,
+ 	lib.cryptodev.configure)
+diff --git a/lib/cryptodev/meson.build b/lib/cryptodev/meson.build
+index 19de3073bbb8a..4734acf321fb6 100644
+--- a/lib/cryptodev/meson.build
++++ b/lib/cryptodev/meson.build
+@@ -8,7 +8,6 @@ sources = files(
+ )
+ headers = files(
+         'rte_cryptodev.h',
+-        'rte_cryptodev_trace.h',
+         'rte_cryptodev_trace_fp.h',
+         'rte_crypto.h',
+         'rte_crypto_sym.h',
+diff --git a/lib/cryptodev/rte_cryptodev.c b/lib/cryptodev/rte_cryptodev.c
+index a76c16e586654..d5ecea9bc69ba 100644
+--- a/lib/cryptodev/rte_cryptodev.c
++++ b/lib/cryptodev/rte_cryptodev.c
+@@ -29,7 +29,7 @@
+ #include "rte_crypto.h"
+ #include "rte_cryptodev.h"
+ #include "cryptodev_pmd.h"
+-#include "rte_cryptodev_trace.h"
++#include "cryptodev_trace.h"
+ 
+ static uint8_t nb_drivers;
+ 
+diff --git a/lib/cryptodev/version.map b/lib/cryptodev/version.map
+index 798846554212f..846b5c0fdb091 100644
+--- a/lib/cryptodev/version.map
++++ b/lib/cryptodev/version.map
+@@ -64,16 +64,6 @@ EXPERIMENTAL {
+ 	rte_crypto_asym_xform_strings;
+ 
+ 	# added in 20.05
+-	__rte_cryptodev_trace_configure;
+-	__rte_cryptodev_trace_start;
+-	__rte_cryptodev_trace_stop;
+-	__rte_cryptodev_trace_close;
+-	__rte_cryptodev_trace_queue_pair_setup;
+-	__rte_cryptodev_trace_sym_session_pool_create;
+-	__rte_cryptodev_trace_sym_session_create;
+-	__rte_cryptodev_trace_asym_session_create;
+-	__rte_cryptodev_trace_sym_session_free;
+-	__rte_cryptodev_trace_asym_session_free;
+ 	__rte_cryptodev_trace_dequeue_burst;
+ 	__rte_cryptodev_trace_enqueue_burst;
+ 
+@@ -98,59 +88,11 @@ EXPERIMENTAL {
+ 	rte_cryptodev_asym_session_get_user_data;
+ 	rte_cryptodev_asym_session_pool_create;
+ 	rte_cryptodev_asym_session_set_user_data;
+-	__rte_cryptodev_trace_asym_session_pool_create;
+ 
+ 	#added in 22.07
+ 	rte_cryptodev_session_event_mdata_set;
+ 	rte_crypto_asym_ke_strings;
+ 
+-	#added in 22.11
+-	__rte_cryptodev_trace_add_deq_callback;
+-	__rte_cryptodev_trace_add_enq_callback;
+-	__rte_cryptodev_trace_allocate_driver;
+-	__rte_cryptodev_trace_asym_capability_get;
+-	__rte_cryptodev_trace_asym_get_private_session_size;
+-	__rte_cryptodev_trace_asym_get_xform_enum;
+-	__rte_cryptodev_trace_asym_session_get_user_data;
+-	__rte_cryptodev_trace_asym_session_set_user_data;
+-	__rte_cryptodev_trace_asym_xform_capability_check_modlen;
+-	__rte_cryptodev_trace_asym_xform_capability_check_optype;
+-	__rte_cryptodev_trace_callback_register;
+-	__rte_cryptodev_trace_callback_unregister;
+-	__rte_cryptodev_trace_configure_raw_dp_ctx;
+-	__rte_cryptodev_trace_device_count_by_driver;
+-	__rte_cryptodev_trace_devices_get;
+-	__rte_cryptodev_trace_driver_id_get;
+-	__rte_cryptodev_trace_driver_name_get;
+-	__rte_cryptodev_trace_get_aead_algo_enum;
+-	__rte_cryptodev_trace_get_auth_algo_enum;
+-	__rte_cryptodev_trace_get_cipher_algo_enum;
+-	__rte_cryptodev_trace_get_dev_id;
+-	__rte_cryptodev_trace_get_feature_name;
+-	__rte_cryptodev_trace_get_qp_status;
+-	__rte_cryptodev_trace_get_raw_dp_ctx_size;
+-	__rte_cryptodev_trace_get_sec_ctx;
+-	__rte_cryptodev_trace_info_get;
+-	__rte_cryptodev_trace_is_valid_dev;
+-	__rte_cryptodev_trace_name_get;
+-	__rte_cryptodev_trace_op_pool_create;
+-	__rte_cryptodev_trace_queue_pair_count;
+-	__rte_cryptodev_trace_remove_deq_callback;
+-	__rte_cryptodev_trace_remove_enq_callback;
+-	__rte_cryptodev_trace_session_event_mdata_set;
+-	__rte_cryptodev_trace_socket_id;
+-	__rte_cryptodev_trace_stats_get;
+-	__rte_cryptodev_trace_stats_reset;
+-	__rte_cryptodev_trace_sym_capability_check_aead;
+-	__rte_cryptodev_trace_sym_capability_check_auth;
+-	__rte_cryptodev_trace_sym_capability_check_cipher;
+-	__rte_cryptodev_trace_sym_capability_get;
+-	__rte_cryptodev_trace_sym_cpu_crypto_process;
+-	__rte_cryptodev_trace_sym_get_private_session_size;
+-	__rte_cryptodev_trace_sym_session_get_user_data;
+-	__rte_cryptodev_trace_sym_session_set_user_data;
+-	__rte_cryptodev_trace_count;
+-
+ 	# added in 23.03
+ 	rte_cryptodev_asym_get_xform_string;
+ 	rte_cryptodev_get_aead_algo_string;
+@@ -162,10 +104,6 @@ EXPERIMENTAL {
+ INTERNAL {
+ 	global:
+ 
+-	__rte_cryptodev_trace_asym_get_xform_string;
+-	__rte_cryptodev_trace_get_aead_algo_string;
+-	__rte_cryptodev_trace_get_auth_algo_string;
+-	__rte_cryptodev_trace_get_cipher_algo_string;
+ 	cryptodev_fp_ops_reset;
+ 	cryptodev_fp_ops_set;
+ 	rte_cryptodev_allocate_driver;
+-- 
+2.25.1
+

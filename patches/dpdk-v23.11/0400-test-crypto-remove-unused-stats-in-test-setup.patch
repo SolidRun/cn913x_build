@@ -1,0 +1,54 @@
+From 59b8f4b814029d60b94884a19521b265a0f2948a Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Fri, 12 Jul 2024 14:51:41 +0530
+Subject: [PATCH 400/513] test/crypto: remove unused stats in test setup
+
+Remove unused stats in test setup.
+
+Coverity issue: 373869
+Fixes: 2c6dab9cd93 ("test/crypto: add RSA and Mod tests")
+Cc: stable@dpdk.org
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Iada97be02461f81f5af3d72ad87172e392e3b22b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131239
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev_asym.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/app/test/test_cryptodev_asym.c b/app/test/test_cryptodev_asym.c
+index 96e7209fd1916..b17f577700b8c 100644
+--- a/app/test/test_cryptodev_asym.c
++++ b/app/test/test_cryptodev_asym.c
+@@ -547,8 +547,6 @@ ut_setup_asym(void)
+ 			qp_id, ts_params->valid_devs[0]);
+ 	}
+ 
+-	rte_cryptodev_stats_reset(ts_params->valid_devs[0]);
+-
+ 	/* Start the device */
+ 	TEST_ASSERT_SUCCESS(rte_cryptodev_start(ts_params->valid_devs[0]),
+ 						"Failed to start cryptodev %u",
+@@ -561,7 +559,6 @@ static void
+ ut_teardown_asym(void)
+ {
+ 	struct crypto_testsuite_params_asym *ts_params = &testsuite_params;
+-	struct rte_cryptodev_stats stats;
+ 	uint8_t dev_id = ts_params->valid_devs[0];
+ 
+ 	if (self->sess != NULL)
+@@ -571,8 +568,6 @@ ut_teardown_asym(void)
+ 	self->op = NULL;
+ 	self->result_op = NULL;
+ 
+-	rte_cryptodev_stats_get(ts_params->valid_devs[0], &stats);
+-
+ 	/* Stop the device */
+ 	rte_cryptodev_stop(ts_params->valid_devs[0]);
+ }
+-- 
+2.25.1
+

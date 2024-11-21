@@ -1,0 +1,46 @@
+From 6a00e04ed1bff268ea7e9a12eafa1c00029d58b0 Mon Sep 17 00:00:00 2001
+From: Sibaranjan Pattnayak <spattnayak@marvell.com>
+Date: Wed, 8 Mar 2023 15:16:42 -0800
+Subject: [PATCH 307/955] common/cnxk: stop and reconfigure DPI VF
+
+Previous DMA operations (if any) needs to be stopped for
+queue reset of DPI VF.
+
+Change-Id: I287d70293fe88869112be802f7053b5d6991b918
+Signed-off-by: Sibaranjan Pattnayak <spattnayak@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98945
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/common/cnxk/roc_dpi.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_dpi.c b/drivers/common/cnxk/roc_dpi.c
+index 0e2f803077edc..82518a8194346 100644
+--- a/drivers/common/cnxk/roc_dpi.c
++++ b/drivers/common/cnxk/roc_dpi.c
+@@ -63,6 +63,7 @@ roc_dpi_configure(struct roc_dpi *roc_dpi)
+ 	uint64_t aura_handle;
+ 	plt_iova_t iova;
+ 	char name[32];
++	uint64_t reg;
+ 
+ 	if (!roc_dpi) {
+ 		plt_err("roc_dpi is NULL");
+@@ -112,6 +113,11 @@ roc_dpi_configure(struct roc_dpi *roc_dpi)
+ 		goto err2;
+ 	}
+ 
++	roc_dpi_disable(roc_dpi);
++	reg = plt_read64(roc_dpi->rbase + DPI_VDMA_SADDR);
++	while (!(reg & BIT_ULL(63)))
++		reg = plt_read64(roc_dpi->rbase + DPI_VDMA_SADDR);
++
+ 	roc_dpi->aura_handle = aura_handle;
+ 	/* subtract 2 as they have already been alloc'ed above */
+ 	roc_dpi->pool_size_m1 = (DPI_CMD_QUEUE_SIZE >> 3) - 2;
+-- 
+2.25.1
+

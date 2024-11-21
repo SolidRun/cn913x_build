@@ -1,0 +1,51 @@
+From 3adacefa33c8042536ac40aa9bc4ab57a5934c87 Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Wed, 1 Feb 2023 17:36:14 +0530
+Subject: [PATCH 218/955] common/cnxk: add support for SPI to SA action
+
+Adding support for SPI to SA index translation action
+with SPI bits MS_28_25.
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Change-Id: I526138678ccc9508f4de74166918b172f5c4b131
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95825
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satheesh Paul Antonysamy <psatheesh@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c | 4 ++++
+ drivers/common/cnxk/roc_npc.h | 1 +
+ 2 files changed, 5 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 46fa8cae50e22..6bcfd2c6cebd7 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -421,6 +421,10 @@ npc_parse_spi_to_sa_action(struct roc_npc *roc_npc, const struct roc_npc_action
+ 		vtag_act.act.vtag1_lid = ROC_NPC_SEC_ACTION_ALG2;
+ 		break;
+ 	case ROC_NPC_SEC_ACTION_ALG3:
++		vtag_act.act.vtag1_valid = false;
++		vtag_act.act.vtag1_lid = ROC_NPC_SEC_ACTION_ALG3;
++		break;
++	case ROC_NPC_SEC_ACTION_ALG4:
+ 		vtag_act.act.vtag1_valid = false;
+ 		vtag_act.act.vtag1_lid = 0;
+ 		mbox = inl_dev->dev.mbox;
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index cea627e16cfbb..f16759227b65a 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -224,6 +224,7 @@ enum roc_npc_sec_action_alg {
+ 	ROC_NPC_SEC_ACTION_ALG1,
+ 	ROC_NPC_SEC_ACTION_ALG2,
+ 	ROC_NPC_SEC_ACTION_ALG3,
++	ROC_NPC_SEC_ACTION_ALG4,
+ };
+ 
+ struct roc_npc_sec_action {
+-- 
+2.25.1
+

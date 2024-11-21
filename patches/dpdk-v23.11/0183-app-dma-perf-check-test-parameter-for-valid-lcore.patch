@@ -1,0 +1,59 @@
+From a9dee132dd4ca514d2b153cba278f9364e7bc7a0 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Tue, 10 Oct 2023 13:36:16 +0530
+Subject: [PATCH 183/513] app/dma-perf: check test parameter for valid lcore
+
+Check test parameter for valid lcore id.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I0185359c08e42009ee8df5d05fd1acdcfe3ebf0b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113495
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120905
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test-dma-perf/main.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/app/test-dma-perf/main.c b/app/test-dma-perf/main.c
+index e81eca14e1daa..1c1893d0d5fe7 100644
+--- a/app/test-dma-perf/main.c
++++ b/app/test-dma-perf/main.c
+@@ -665,6 +665,8 @@ main(int argc, char *argv[])
+ 			printf("Fork case %d failed.\n", i + 1);
+ 			exit(EXIT_FAILURE);
+ 		} else if (cpid == 0) {
++			uint32_t mcore_id, lcore_id;
++
+ 			printf("\nRunning case %u\n\n", i + 1);
+ 
+ 			new_argc = append_eal_args(argc, argv, test_cases[i].eal_args, pargs);
+@@ -678,6 +680,22 @@ main(int argc, char *argv[])
+ 				rte_exit(EXIT_FAILURE,
+ 					"There should be at least 2 worker lcores.\n");
+ 
++			mcore_id = rte_get_main_lcore();
++			for (int j = 0; j < test_cases[i].lcore_dma_map.cnt; j++) {
++				lcore_id = test_cases[i].lcore_dma_map.lcores[j];
++				if (lcore_id == mcore_id) {
++					printf("Case %d error, lcore parameters can not use main core id %d\n",
++						   i + 1, mcore_id);
++					return 0;
++				}
++
++				if (rte_eal_lcore_role(lcore_id) == ROLE_OFF) {
++					printf("Case %d error, lcore parameters can not use offline core id %d\n",
++					       i + 1, lcore_id);
++					return 0;
++				}
++			}
++
+ 			fd = fopen(rst_path_ptr, "a");
+ 			if (!fd) {
+ 				printf("Open output CSV file error.\n");
+-- 
+2.25.1
+

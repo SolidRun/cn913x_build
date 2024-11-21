@@ -1,0 +1,40 @@
+From 0880dc88e594e98cbc05291d554e67f4f31f77bf Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 9 Nov 2023 15:34:37 +0530
+Subject: [PATCH 072/513] net/cnxk: reduce Tx queue release time
+
+Invoked newly added roc API to disable
+SQB aura FC during TX queue start and TX queue
+stop. This fix reduces ethdev teardown time
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I3a5f7dbde753fb6d43f956e7f7634a8b3340ab93
+---
+ drivers/net/cnxk/cnxk_ethdev.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 5e11bbb017ea7..2372a4e7932d6 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1521,7 +1521,7 @@ cnxk_nix_tx_queue_start(struct rte_eth_dev *eth_dev, uint16_t qid)
+ 	if (data->tx_queue_state[qid] == RTE_ETH_QUEUE_STATE_STARTED)
+ 		return 0;
+ 
+-	rc = roc_nix_tm_sq_aura_fc(sq, true);
++	rc = roc_nix_sq_ena_dis(sq, true);
+ 	if (rc) {
+ 		plt_err("Failed to enable sq aura fc, txq=%u, rc=%d", qid, rc);
+ 		goto done;
+@@ -1543,7 +1543,7 @@ cnxk_nix_tx_queue_stop(struct rte_eth_dev *eth_dev, uint16_t qid)
+ 	if (data->tx_queue_state[qid] == RTE_ETH_QUEUE_STATE_STOPPED)
+ 		return 0;
+ 
+-	rc = roc_nix_tm_sq_aura_fc(sq, false);
++	rc = roc_nix_sq_ena_dis(sq, false);
+ 	if (rc) {
+ 		plt_err("Failed to disable sqb aura fc, txq=%u, rc=%d", qid,
+ 			rc);
+-- 
+2.25.1
+

@@ -1,0 +1,61 @@
+From 0e83918b44a34fc3bd53f5cc8901beafa9ac1cfe Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 1 Aug 2024 22:44:12 +0530
+Subject: [PATCH 425/513] ci: add cn20k configs
+
+Add cn20k configs.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Id44e10574d234cf7a190da5fa6392042398df3a7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132654
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ .../config/arm64_cn20k_linux_gcc-marvell      | 19 +++++++++++++++++++
+ marvell-ci/build/env/cn20k-gcc-marvell.env    |  6 ++++++
+ 2 files changed, 25 insertions(+)
+ create mode 100644 marvell-ci/build/config/arm64_cn20k_linux_gcc-marvell
+ create mode 100644 marvell-ci/build/env/cn20k-gcc-marvell.env
+
+diff --git a/marvell-ci/build/config/arm64_cn20k_linux_gcc-marvell b/marvell-ci/build/config/arm64_cn20k_linux_gcc-marvell
+new file mode 100644
+index 0000000000000..dbc04fdb1148b
+--- /dev/null
++++ b/marvell-ci/build/config/arm64_cn20k_linux_gcc-marvell
+@@ -0,0 +1,19 @@
++[binaries]
++c = 'aarch64-marvell-linux-gnu-gcc'
++cpp = 'aarch64-marvell-linux-gnu-cpp'
++ar = 'aarch64-marvell-linux-gnu-gcc-ar'
++strip = 'aarch64-marvell-linux-gnu-strip'
++pkgconfig = 'aarch64-linux-gnu-pkg-config'
++pcap-config = ''
++#exe_wrapper = '/tmp/exe_wrapper.sh'
++
++[host_machine]
++system = 'linux'
++cpu_family = 'aarch64'
++cpu = 'armv8.7-a'
++endian = 'little'
++
++[properties]
++platform = 'cn20k'
++
++[built-in options]
+diff --git a/marvell-ci/build/env/cn20k-gcc-marvell.env b/marvell-ci/build/env/cn20k-gcc-marvell.env
+new file mode 100644
+index 0000000000000..400473685a2ef
+--- /dev/null
++++ b/marvell-ci/build/env/cn20k-gcc-marvell.env
+@@ -0,0 +1,6 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2024 Marvell.
++
++source "$PROJECT_ROOT/marvell-ci/build/env/cn9k-gcc-marvell.env"
++
++CROSSFILE="$PROJECT_ROOT/marvell-ci/build/config/arm64_cn20k_linux_gcc-marvell"
+-- 
+2.25.1
+

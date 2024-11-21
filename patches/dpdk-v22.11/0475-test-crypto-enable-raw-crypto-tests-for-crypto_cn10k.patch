@@ -1,0 +1,48 @@
+From 15a2599f3a0fc823c0da00aecca4876b3fbd2743 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 11 May 2023 09:44:05 +0000
+Subject: [PATCH 475/955] test/crypto: enable raw crypto tests for crypto_cn10k
+
+Enable raw crypto tests with crypto_cn10k.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I0009981bccc9cc99c8ed162573ee666d2f56cd4c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103256
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 871ac36b1873d749ed9ea4750aee562be0a989e2)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104556
+---
+ app/test/test_cryptodev.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index fde1e55409699..112dab2df5e82 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -17159,6 +17159,12 @@ test_cryptodev_cn10k(void)
+ 	return run_cryptodev_testsuite(RTE_STR(CRYPTODEV_NAME_CN10K_PMD));
+ }
+ 
++static int
++test_cryptodev_cn10k_raw_api(void)
++{
++	return run_cryptodev_raw_testsuite(RTE_STR(CRYPTODEV_NAME_CN10K_PMD));
++}
++
+ static int
+ test_cryptodev_dpaa2_sec_raw_api(void)
+ {
+@@ -17171,6 +17177,8 @@ test_cryptodev_dpaa_sec_raw_api(void)
+ 	return run_cryptodev_raw_testsuite(RTE_STR(CRYPTODEV_NAME_DPAA_SEC_PMD));
+ }
+ 
++REGISTER_TEST_COMMAND(cryptodev_cn10k_raw_api_autotest,
++		test_cryptodev_cn10k_raw_api);
+ REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_raw_api_autotest,
+ 		test_cryptodev_dpaa2_sec_raw_api);
+ REGISTER_TEST_COMMAND(cryptodev_dpaa_sec_raw_api_autotest,
+-- 
+2.25.1
+

@@ -1,0 +1,48 @@
+From 805d3a567c0591dfcb2b542d514a1e79132c9989 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Fri, 17 Mar 2023 13:07:42 +0530
+Subject: [PATCH 329/955] net/octeon_ep: remove packet length checks
+
+packet length checks have been removed in the
+data path, since these checks have impact on the
+performance.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I5978aeabd8582378f2b307364161e4e79dfd203b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99373
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_rxtx.c | 14 --------------
+ 1 file changed, 14 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 8ac339e636cf7..9084ef2e93f3f 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -985,21 +985,7 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 	droq_pkt->l3_len = hdr_lens.l3_len;
+ 	droq_pkt->l4_len = hdr_lens.l4_len;
+ 
+-	if (droq_pkt->pkt_len > otx_ep->eth_dev->data->mtu) {
+-		rte_pktmbuf_free(droq_pkt);
+-		goto oq_read_fail;
+-	}
+-
+-	if (droq_pkt->nb_segs > 1 &&
+-	    !(otx_ep->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)) {
+-		rte_pktmbuf_free(droq_pkt);
+-		goto oq_read_fail;
+-	}
+-
+ 	return droq_pkt;
+-
+-oq_read_fail:
+-	return NULL;
+ }
+ 
+ static inline uint32_t
+-- 
+2.25.1
+

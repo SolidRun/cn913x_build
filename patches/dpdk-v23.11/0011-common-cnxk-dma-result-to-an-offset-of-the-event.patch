@@ -1,0 +1,132 @@
+From 8c50c1ea60dc5630ebe2c02c3407f09e4853ca39 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Tue, 22 Aug 2023 16:14:23 +0530
+Subject: [PATCH 011/513] common/cnxk: dma result to an offset of the event
+
+Adds support to configure writing result to offset of the DMA
+response event.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I458b4ce5844357dd172386e7bb969978c91a611f
+---
+ drivers/common/cnxk/roc_dpi.c       |  6 +++++-
+ drivers/common/cnxk/roc_dpi.h       |  2 +-
+ drivers/common/cnxk/roc_dpi_priv.h  |  4 ++++
+ drivers/common/cnxk/roc_idev.c      | 20 ++++++++++++++++++++
+ drivers/common/cnxk/roc_idev_priv.h |  3 +++
+ 5 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dpi.c b/drivers/common/cnxk/roc_dpi.c
+index c2411682945b5..1ee777d7792c1 100644
+--- a/drivers/common/cnxk/roc_dpi.c
++++ b/drivers/common/cnxk/roc_dpi.c
+@@ -83,6 +83,9 @@ roc_dpi_configure(struct roc_dpi *roc_dpi, uint32_t chunk_sz, uint64_t aura, uin
+ 	mbox_msg.s.aura = aura;
+ 	mbox_msg.s.sso_pf_func = idev_sso_pffunc_get();
+ 	mbox_msg.s.npa_pf_func = idev_npa_pffunc_get();
++	mbox_msg.s.wqecsoff = idev_dma_cs_offset_get();
++	if (mbox_msg.s.wqecsoff)
++		mbox_msg.s.wqecs = 1;
+ 
+ 	rc = send_msg_to_pf(&pci_dev->addr, (const char *)&mbox_msg,
+ 			    sizeof(dpi_mbox_msg_t));
+@@ -94,7 +97,7 @@ roc_dpi_configure(struct roc_dpi *roc_dpi, uint32_t chunk_sz, uint64_t aura, uin
+ }
+ 
+ int
+-roc_dpi_dev_init(struct roc_dpi *roc_dpi)
++roc_dpi_dev_init(struct roc_dpi *roc_dpi, uint8_t offset)
+ {
+ 	struct plt_pci_device *pci_dev = roc_dpi->pci_dev;
+ 	uint16_t vfid;
+@@ -103,6 +106,7 @@ roc_dpi_dev_init(struct roc_dpi *roc_dpi)
+ 	vfid = ((pci_dev->addr.devid & 0x1F) << 3) | (pci_dev->addr.function & 0x7);
+ 	vfid -= 1;
+ 	roc_dpi->vfid = vfid;
++	idev_dma_cs_offset_set(offset);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/common/cnxk/roc_dpi.h b/drivers/common/cnxk/roc_dpi.h
+index 4ebde5b8a655f..978e2badb2304 100644
+--- a/drivers/common/cnxk/roc_dpi.h
++++ b/drivers/common/cnxk/roc_dpi.h
+@@ -11,7 +11,7 @@ struct roc_dpi {
+ 	uint16_t vfid;
+ } __plt_cache_aligned;
+ 
+-int __roc_api roc_dpi_dev_init(struct roc_dpi *roc_dpi);
++int __roc_api roc_dpi_dev_init(struct roc_dpi *roc_dpi, uint8_t offset);
+ int __roc_api roc_dpi_dev_fini(struct roc_dpi *roc_dpi);
+ 
+ int __roc_api roc_dpi_configure(struct roc_dpi *dpi, uint32_t chunk_sz, uint64_t aura,
+diff --git a/drivers/common/cnxk/roc_dpi_priv.h b/drivers/common/cnxk/roc_dpi_priv.h
+index 518a3e73517c2..52962c8bc039c 100644
+--- a/drivers/common/cnxk/roc_dpi_priv.h
++++ b/drivers/common/cnxk/roc_dpi_priv.h
+@@ -31,6 +31,10 @@ typedef union dpi_mbox_msg_t {
+ 		uint64_t sso_pf_func : 16;
+ 		/* NPA PF function */
+ 		uint64_t npa_pf_func : 16;
++		/* WQE queue DMA completion status enable */
++		uint64_t wqecs : 1;
++		/* WQE queue DMA completion status offset */
++		uint64_t wqecsoff : 8;
+ 	} s;
+ } dpi_mbox_msg_t;
+ 
+diff --git a/drivers/common/cnxk/roc_idev.c b/drivers/common/cnxk/roc_idev.c
+index e6c6b34d78f7e..7b922c8bae627 100644
+--- a/drivers/common/cnxk/roc_idev.c
++++ b/drivers/common/cnxk/roc_idev.c
+@@ -301,6 +301,26 @@ idev_sso_set(struct roc_sso *sso)
+ 		__atomic_store_n(&idev->sso, sso, __ATOMIC_RELEASE);
+ }
+ 
++void
++idev_dma_cs_offset_set(uint8_t offset)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++
++	if (idev != NULL)
++		idev->dma_cs_offset = offset;
++}
++
++uint8_t
++idev_dma_cs_offset_get(void)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++
++	if (idev != NULL)
++		return idev->dma_cs_offset;
++
++	return 0;
++}
++
+ uint64_t
+ roc_idev_nix_inl_meta_aura_get(void)
+ {
+diff --git a/drivers/common/cnxk/roc_idev_priv.h b/drivers/common/cnxk/roc_idev_priv.h
+index 80f8465e1c7e7..cf63c58d92d3f 100644
+--- a/drivers/common/cnxk/roc_idev_priv.h
++++ b/drivers/common/cnxk/roc_idev_priv.h
+@@ -37,6 +37,7 @@ struct idev_cfg {
+ 	struct roc_nix_list roc_nix_list;
+ 	plt_spinlock_t nix_inl_dev_lock;
+ 	plt_spinlock_t npa_dev_lock;
++	uint8_t dma_cs_offset;
+ };
+ 
+ /* Generic */
+@@ -55,6 +56,8 @@ void idev_sso_pffunc_set(uint16_t sso_pf_func);
+ uint16_t idev_sso_pffunc_get(void);
+ struct roc_sso *idev_sso_get(void);
+ void idev_sso_set(struct roc_sso *sso);
++void idev_dma_cs_offset_set(uint8_t offset);
++uint8_t idev_dma_cs_offset_get(void);
+ 
+ /* idev lmt */
+ uint16_t idev_lmt_pffunc_get(void);
+-- 
+2.25.1
+

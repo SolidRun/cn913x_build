@@ -1,0 +1,79 @@
+From 78829fe0da246a80afceeea7bc66707740359f08 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Sun, 12 Feb 2023 14:58:57 +0530
+Subject: [PATCH 250/955] ci: add warning to extbuf application
+
+added warning message to extbuf application if application
+is trying to use use-tx-completion as argument and not
+providing tx_compl_ena as devargs
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Ia383fd222380f35f8d244a2ac366b791aa751701
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96680
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/extbuf/extbuf.c | 18 +++++++++++-------
+ 1 file changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/extbuf/extbuf.c b/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
+index dfd306e2b8429..4942fa7a983b1 100644
+--- a/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
++++ b/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
+@@ -65,7 +65,7 @@ static bool keep_running = true;
+ struct app_arg {
+ 	bool tx_mode;
+ 	bool perf_mode;
+-	bool use_static_buffer;
++	bool use_tx_compl;
+ 	bool event_tx_compl;
+ 	unsigned int n_queue;
+ 	unsigned int n_desc;
+@@ -637,6 +637,10 @@ launch_lcore_tx_perf_compl(void *args)
+ 	NOTICE("Entering TX Perf Completion main loop on lcore %u portid=%u qid=%u\n",
+ 	       lcore, portid, qid);
+ 	fflush(stdout);
++	NOTICE("\nWARNING: Please use tx_compl_ena=1 as devargs to support");
++	NOTICE("\n         transmit completion else completion is invoked");
++	NOTICE("\n         before packet is actually transmitted");
++	fflush(stdout);
+ 
+ 	while (keep_running) {
+ 		if (rte_pktmbuf_alloc_bulk(pinfo->pool, m, MAX_PKT_BURST)) {
+@@ -785,7 +789,7 @@ parse_args(int argc, char **argv, struct app_arg *arg)
+ {
+ 	arg->tx_mode = true;
+ 	arg->perf_mode = false;
+-	arg->use_static_buffer = false;
++	arg->use_tx_compl = false;
+ 	arg->event_tx_compl = false;
+ 	arg->n_queue = 1;
+ 	arg->n_desc = 1024;
+@@ -797,8 +801,8 @@ parse_args(int argc, char **argv, struct app_arg *arg)
+ 			arg->tx_mode = false;
+ 		} else if (strncmp(argv[1], "--perf", 6) == 0) {
+ 			arg->perf_mode = true;
+-			if (strncmp(argv[3], "--use-static-buffer", 19) == 0)
+-				arg->use_static_buffer = true;
++			if (strncmp(argv[3], "--use-tx-completion", 19) == 0)
++				arg->use_tx_compl = true;
+ 			argv = argv + 2;
+ 			argc = argc - 2;
+ 		} else if (strncmp(argv[1], "--event-tx-compl", 16) == 0) {
+@@ -896,9 +900,9 @@ main(int argc, char **argv)
+ 			lcore_function_t *f;
+ 			if (arg.tx_mode) {
+ 				if (arg.perf_mode)
+-					f = arg.use_static_buffer ?
+-						launch_lcore_tx_perf :
+-						launch_lcore_tx_perf_compl;
++					f = arg.use_tx_compl ?
++						launch_lcore_tx_perf_compl :
++						launch_lcore_tx_perf;
+ 				else
+ 					f = launch_lcore_tx;
+ 			} else {
+-- 
+2.25.1
+

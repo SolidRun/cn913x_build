@@ -1,0 +1,1492 @@
+From 9bbcdd5cf14c8ec2df4f706a0995d7caf41b4c50 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Mon, 2 Jan 2023 06:00:22 -0800
+Subject: [PATCH 141/955] net/octeon_ep: add mailbox support for SDP VF
+
+add mailbox support for Octeon SDP PMD driver
+
+ci: skip_klocwork
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I956df091b555896155051fdaa2650a5f994de410
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93784
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_vf.c    | 163 ++++++++++--
+ drivers/net/octeon_ep/cnxk_ep_vf.h    |   5 +
+ drivers/net/octeon_ep/meson.build     |   1 +
+ drivers/net/octeon_ep/otx2_ep_vf.c    | 121 +++++++++
+ drivers/net/octeon_ep/otx2_ep_vf.h    |   5 +
+ drivers/net/octeon_ep/otx_ep_common.h | 157 ++++++++++++
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 346 ++++++++++++++++++++++++--
+ drivers/net/octeon_ep/otx_ep_irq.c    | 182 ++++++++++++++
+ drivers/net/octeon_ep/otx_ep_vf.c     | 134 +++++++++-
+ drivers/net/octeon_ep/otx_ep_vf.h     |  19 ++
+ 10 files changed, 1091 insertions(+), 42 deletions(-)
+ create mode 100644 drivers/net/octeon_ep/otx_ep_irq.c
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.c b/drivers/net/octeon_ep/cnxk_ep_vf.c
+index 1f9f97524ccd8..bd3c870189b09 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.c
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.c
+@@ -7,6 +7,10 @@
+ #include <rte_common.h>
+ #include <rte_cycles.h>
+ #include <rte_memzone.h>
++#include <rte_spinlock.h>
++#include <rte_interrupts.h>
++
++#include "otx_ep_common.h"
+ #include "cnxk_ep_vf.h"
+ #include "common/cnxk/hw/sdp.h"
+ 
+@@ -170,8 +174,8 @@ cnxk_ep_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_OUT_CONTROL(oq_no));
+ 
+ 	while ((!(reg_val & CNXK_EP_R_OUT_CTL_IDLE)) && loop--) {
+-		reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_OUT_CONTROL(oq_no));
+-		rte_delay_ms(1);
++		reg_val = oct_ep_read64(otx_ep->hw_addr +
++				CNXK_EP_R_OUT_CONTROL(oq_no));
+ 	}
+ 
+ 	if (!loop) {
+@@ -179,10 +183,13 @@ cnxk_ep_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 		return -EIO;
+ 	}
+ 
+-	oct_ep_write64(droq->desc_ring_dma, otx_ep->hw_addr + CNXK_EP_R_OUT_SLIST_BADDR(oq_no));
+-	oct_ep_write64(droq->nb_desc, otx_ep->hw_addr + CNXK_EP_R_OUT_SLIST_RSIZE(oq_no));
++	oct_ep_write64(droq->desc_ring_dma, otx_ep->hw_addr +
++			CNXK_EP_R_OUT_SLIST_BADDR(oq_no));
++	oct_ep_write64(droq->nb_desc, otx_ep->hw_addr +
++			CNXK_EP_R_OUT_SLIST_RSIZE(oq_no));
+ 
+-	oq_ctl = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_OUT_CONTROL(oq_no));
++	oq_ctl = oct_ep_read64(otx_ep->hw_addr +
++			CNXK_EP_R_OUT_CONTROL(oq_no));
+ 
+ 	/* Clear the ISIZE and BSIZE (22-0) */
+ 	oq_ctl &= ~(OTX_EP_CLEAR_ISIZE_BSIZE);
+@@ -190,17 +197,20 @@ cnxk_ep_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 	/* Populate the BSIZE (15-0) */
+ 	oq_ctl |= (droq->buffer_size & OTX_EP_DROQ_BUFSZ_MASK);
+ 
+-	oct_ep_write64(oq_ctl, otx_ep->hw_addr + CNXK_EP_R_OUT_CONTROL(oq_no));
++	oct_ep_write64(oq_ctl, otx_ep->hw_addr +
++			CNXK_EP_R_OUT_CONTROL(oq_no));
+ 
+ 	/* Mapped address of the pkt_sent and pkts_credit regs */
+-	droq->pkts_sent_reg = (uint8_t *)otx_ep->hw_addr + CNXK_EP_R_OUT_CNTS(oq_no);
++	droq->pkts_sent_reg = (uint8_t *)otx_ep->hw_addr +
++				CNXK_EP_R_OUT_CNTS(oq_no);
+ 	droq->pkts_credit_reg = (uint8_t *)otx_ep->hw_addr + CNXK_EP_R_OUT_SLIST_DBELL(oq_no);
+ 
+-	rte_write64(OTX_EP_CLEAR_OUT_INT_LVLS, otx_ep->hw_addr + CNXK_EP_R_OUT_INT_LEVELS(oq_no));
++	rte_write64(OTX_EP_CLEAR_OUT_INT_LVLS,
++			otx_ep->hw_addr + CNXK_EP_R_OUT_INT_LEVELS(oq_no));
+ 
+ 	/* Clear PKT_CNT register */
+ 	rte_write64(OTX_EP_CLEAR_SDP_OUT_PKT_CNT, (uint8_t *)otx_ep->hw_addr +
+-		    CNXK_EP_R_OUT_PKT_CNT(oq_no));
++			CNXK_EP_R_OUT_PKT_CNT(oq_no));
+ 
+ 	/* Clear the OQ doorbell  */
+ 	rte_write32(OTX_EP_CLEAR_SLIST_DBELL, droq->pkts_credit_reg);
+@@ -215,25 +225,26 @@ cnxk_ep_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 		return -EIO;
+ 	}
+ 
+-	otx_ep_dbg("SDP_R[%d]_credit:%x", oq_no, rte_read32(droq->pkts_credit_reg));
++	otx_ep_dbg("SDP_R[%d]_credit:%x", oq_no,
++		   rte_read32(droq->pkts_credit_reg));
+ 
+ 	/* Clear the OQ_OUT_CNTS doorbell  */
+ 	reg_val = rte_read32(droq->pkts_sent_reg);
+ 	rte_write32((uint32_t)reg_val, droq->pkts_sent_reg);
+ 
+ 	otx_ep_dbg("SDP_R[%d]_sent: %x", oq_no,
+-		   rte_read32(droq->pkts_sent_reg));
++			rte_read32(droq->pkts_sent_reg));
+ 	/* Set up ISM registers and structures */
+ 	ism_addr = (otx_ep->ism_buffer_mz->iova | CNXK_EP_ISM_EN
+-		    | CNXK_EP_ISM_MSIX_DIS)
+-		    + CNXK_EP_OQ_ISM_OFFSET(oq_no);
++			| CNXK_EP_ISM_MSIX_DIS)
++			+ CNXK_EP_OQ_ISM_OFFSET(oq_no);
+ 	rte_write64(ism_addr, (uint8_t *)otx_ep->hw_addr +
+-		    SDP_VF_R_OUT_CNTS_ISM(oq_no));
++			SDP_VF_R_OUT_CNTS_ISM(oq_no));
+ 	droq->pkts_sent_ism =
+-		(uint32_t *)((uint8_t *)otx_ep->ism_buffer_mz->addr
+-			     + CNXK_EP_OQ_ISM_OFFSET(oq_no));
++			(uint32_t *)((uint8_t *)otx_ep->ism_buffer_mz->addr
++			+ CNXK_EP_OQ_ISM_OFFSET(oq_no));
+ 	otx_ep_err("SDP_R[%d] OQ ISM virt: %p, dma: %p", oq_no,
+-		   (void *)droq->pkts_sent_ism, (void *)ism_addr);
++		(void *)droq->pkts_sent_ism, (void *)ism_addr);
+ 	*droq->pkts_sent_ism = 0;
+ 	droq->pkts_sent_ism_prev = 0;
+ 
+@@ -250,7 +261,8 @@ cnxk_ep_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 		return -EIO;
+ 	}
+ 
+-	otx_ep_dbg("SDP_R[%d]_sent: %x", oq_no, rte_read32(droq->pkts_sent_reg));
++	otx_ep_dbg("SDP_R[%d]_sent: %x", oq_no,
++			rte_read32(droq->pkts_sent_reg));
+ 
+ 	return 0;
+ }
+@@ -383,6 +395,114 @@ cnxk_ep_get_defconf(struct otx_ep_device *otx_ep_dev __rte_unused)
+ 	return default_conf;
+ }
+ 
++static int
++cnxk_vf_send_mbox_cmd_nolock(struct otx_ep_device *otx_ep,
++			 union otx_vf_mbox_word cmd,
++			 union otx_vf_mbox_word *rsp)
++{
++	volatile uint64_t reg_val = 0ull;
++	int retry_count = 0;
++	int count = 0;
++
++	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
++	cmd.s.version = OTX_VF_MBOX_VERSION;
++	otx_ep->mbox_cmd_id = ~otx_ep->mbox_cmd_id;
++	cmd.s.id = otx_ep->mbox_cmd_id;
++retry:
++	oct_ep_write64(cmd.u64, otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
++		rte_delay_ms(1);
++		reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++		if (reg_val != cmd.u64) {
++			rsp->u64 = reg_val;
++			if (rsp->s.id == cmd.s.id)
++				break;
++			/* resp for previous cmd. retry */
++			retry_count++;
++			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
++				break;
++			goto retry;
++		}
++	}
++	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
++	    retry_count == OTX_VF_MBOX_MAX_RETRIES)
++		return -ETIMEDOUT;
++	rsp->u64 = reg_val;
++	return 0;
++}
++
++static int
++cnxk_vf_send_mbox_cmd(struct otx_ep_device *otx_ep,
++		      union otx_vf_mbox_word cmd,
++		      union otx_vf_mbox_word *rsp)
++{
++	volatile uint64_t reg_val = 0ull;
++	int retry_count = 0;
++	int count = 0;
++
++	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
++	cmd.s.version = OTX_VF_MBOX_VERSION;
++	rte_spinlock_lock(&otx_ep->mbox_lock);
++	otx_ep->mbox_cmd_id = ~otx_ep->mbox_cmd_id;
++	cmd.s.id = otx_ep->mbox_cmd_id;
++retry:
++	oct_ep_write64(cmd.u64, otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
++		rte_delay_ms(1);
++		reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++		if (reg_val != cmd.u64) {
++			rsp->u64 = reg_val;
++			if (rsp->s.id == cmd.s.id)
++				break;
++			/* resp for previous cmd. retry */
++			retry_count++;
++			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
++				break;
++			goto retry;
++		}
++	}
++	rte_spinlock_unlock(&otx_ep->mbox_lock);
++	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
++	    retry_count == OTX_VF_MBOX_MAX_RETRIES)
++		return -ETIMEDOUT;
++	rsp->u64 = reg_val;
++	return 0;
++}
++
++static void
++cnxk_ep_vf_enable_mbox_interrupt(struct otx_ep_device *otx_ep)
++{
++	rte_write64(0x2, (uint8_t *)otx_ep->hw_addr +
++		   OTX_EP_R_MBOX_PF_VF_INT(0));
++}
++
++static void
++cnxk_ep_vf_disable_mbox_interrupt(struct otx_ep_device *otx_ep)
++{
++	rte_write64(0x00, (uint8_t *)otx_ep->hw_addr +
++		   OTX_EP_R_MBOX_PF_VF_INT(0));
++}
++
++static int
++cnxk_ep_register_interrupt(struct otx_ep_device *otx_ep,
++		rte_intr_callback_fn cb, void *data, unsigned int vec)
++{
++	int rc = -1;
++
++	rc = otx_ep_register_irq(otx_ep, cb, data, vec);
++	return rc;
++}
++
++static int
++cnxk_ep_unregister_interrupt(struct otx_ep_device *otx_ep,
++		rte_intr_callback_fn cb, void *data)
++{
++	int rc = -1;
++
++	rc = otx_ep_unregister_irq(otx_ep, cb, data);
++	return rc;
++}
++
+ int
+ cnxk_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ {
+@@ -419,6 +539,13 @@ cnxk_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 
+ 	otx_ep->fn_list.enable_oq           = cnxk_ep_vf_enable_oq;
+ 	otx_ep->fn_list.disable_oq          = cnxk_ep_vf_disable_oq;
++	otx_ep->fn_list.send_mbox_cmd       =  cnxk_vf_send_mbox_cmd;
++	otx_ep->fn_list.send_mbox_cmd_nolock    =  cnxk_vf_send_mbox_cmd_nolock;
++
++	otx_ep->fn_list.enable_mbox_interrupt   = cnxk_ep_vf_enable_mbox_interrupt;
++	otx_ep->fn_list.disable_mbox_interrupt  = cnxk_ep_vf_disable_mbox_interrupt;
++	otx_ep->fn_list.register_interrupt        = cnxk_ep_register_interrupt;
++	otx_ep->fn_list.unregister_interrupt      = cnxk_ep_unregister_interrupt;
+ 
+ 	return 0;
+ }
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.h b/drivers/net/octeon_ep/cnxk_ep_vf.h
+index 95303fe962f99..7d92a34f1469a 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.h
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.h
+@@ -165,4 +165,9 @@ struct cnxk_ep_instr_64B {
+ #define CNXK_EP_ISM_EN                  (0x1)
+ #define CNXK_EP_ISM_MSIX_DIS            (0x2)
+ #define CNXK_EP_MAX_RX_PKT_LEN          (16384)
++#define OTX_EP_R_MBOX_PF_VF_INT_START        (0x10220)
++#define OTX_EP_RING_OFFSET                   (0x1ull << 17)
++#define OTX_EP_R_MBOX_PF_VF_INT(ring) \
++	(OTX_EP_R_MBOX_PF_VF_INT_START + ((ring) * OTX_EP_RING_OFFSET))
++
+ #endif /*_CNXK_EP_VF_H_ */
+diff --git a/drivers/net/octeon_ep/meson.build b/drivers/net/octeon_ep/meson.build
+index a3bfed09ee1b1..2c499591ba787 100644
+--- a/drivers/net/octeon_ep/meson.build
++++ b/drivers/net/octeon_ep/meson.build
+@@ -10,4 +10,5 @@ sources = files(
+         'otx_ep_vf.c',
+         'otx2_ep_vf.c',
+         'cnxk_ep_vf.c',
++        'otx_ep_irq.c',
+ )
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.c b/drivers/net/octeon_ep/otx2_ep_vf.c
+index 351530e2f01a3..053dd173b8665 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.c
++++ b/drivers/net/octeon_ep/otx2_ep_vf.c
+@@ -6,10 +6,17 @@
+ 
+ #include <rte_common.h>
+ #include <rte_cycles.h>
++#include <rte_spinlock.h>
++#include <rte_interrupts.h>
++
+ #include "otx_ep_common.h"
+ #include "common/cnxk/roc_api.h"
+ #include "otx2_ep_vf.h"
+ 
++#define MAX_INTR_VEC_ID RTE_MAX_RXTX_INTR_VEC_ID
++#define MSIX_IRQ_SET_BUF_LEN (sizeof(struct vfio_irq_set) + \
++			      sizeof(int) * (MAX_INTR_VEC_ID))
++
+ static int otx2_vf_enable_rxq_intr(struct otx_ep_device *otx_epvf,
+ 				   uint16_t q_no);
+ 
+@@ -60,6 +67,7 @@ otx2_vf_reset_iq(struct otx_ep_device *otx_ep, int q_no)
+ 	return 0;
+ }
+ 
++
+ static int
+ otx2_vf_reset_oq(struct otx_ep_device *otx_ep, int q_no)
+ {
+@@ -561,6 +569,113 @@ static int otx2_vf_disable_rxq_intr(struct otx_ep_device *otx_epvf,
+ 	return 0;
+ }
+ 
++static int
++otx2_vf_send_mbox_cmd_nolock(struct otx_ep_device *otx_ep,
++			 union otx_vf_mbox_word cmd,
++			 union otx_vf_mbox_word *rsp)
++{
++	volatile uint64_t reg_val = 0ull;
++	int retry_count = 0;
++	int count = 0;
++
++	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
++	cmd.s.version = OTX_VF_MBOX_VERSION;
++	otx_ep->mbox_cmd_id = ~otx_ep->mbox_cmd_id;
++	cmd.s.id = otx_ep->mbox_cmd_id;
++retry:
++	otx2_write64(cmd.u64, otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
++		rte_delay_ms(1);
++		reg_val = otx2_read64(otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++		if (reg_val != cmd.u64) {
++			rsp->u64 = reg_val;
++			if (rsp->s.id == cmd.s.id)
++				break;
++			/* resp for previous cmd. retry */
++			retry_count++;
++			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
++				break;
++			goto retry;
++		}
++	}
++	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
++	    retry_count == OTX_VF_MBOX_MAX_RETRIES)
++		return -ETIMEDOUT;
++	rsp->u64 = reg_val;
++	return 0;
++}
++
++static int
++otx2_vf_send_mbox_cmd(struct otx_ep_device *otx_ep,
++		      union otx_vf_mbox_word cmd,
++		      union otx_vf_mbox_word *rsp)
++{
++	volatile uint64_t reg_val = 0ull;
++	int retry_count = 0;
++	int count = 0;
++
++	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
++	cmd.s.version = OTX_VF_MBOX_VERSION;
++	rte_spinlock_lock(&otx_ep->mbox_lock);
++	otx_ep->mbox_cmd_id = ~otx_ep->mbox_cmd_id;
++	cmd.s.id = otx_ep->mbox_cmd_id;
++retry:
++	otx2_write64(cmd.u64, otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
++		rte_delay_ms(1);
++		reg_val = otx2_read64(otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++		if (reg_val != cmd.u64) {
++			rsp->u64 = reg_val;
++			if (rsp->s.id == cmd.s.id)
++				break;
++			/* resp for previous cmd. retry */
++			retry_count++;
++			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
++				break;
++			goto retry;
++		}
++	}
++	rte_spinlock_unlock(&otx_ep->mbox_lock);
++	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
++	    retry_count == OTX_VF_MBOX_MAX_RETRIES)
++		return -ETIMEDOUT;
++	rsp->u64 = reg_val;
++	return 0;
++}
++
++static void
++otx2_ep_vf_enable_mbox_interrupt(struct otx_ep_device *otx_ep)
++{
++	rte_write64(0x2, (uint8_t *)otx_ep->hw_addr +
++		   OTX_EP_R_MBOX_PF_VF_INT(0));
++}
++
++static void
++otx2_ep_vf_disable_mbox_interrupt(struct otx_ep_device *otx_ep)
++{
++	rte_write64(0x00, (uint8_t *)otx_ep->hw_addr +
++		   OTX_EP_R_MBOX_PF_VF_INT(0));
++}
++
++static int
++otx2_ep_register_interrupt(struct otx_ep_device *otx_ep,
++		rte_intr_callback_fn cb, void *data, unsigned int vec)
++{
++	int rc = -1;
++
++	rc = otx_ep_register_irq(otx_ep, cb, data, vec);
++	return rc;
++}
++
++static int
++otx2_ep_unregister_interrupt(struct otx_ep_device *otx_ep,
++		rte_intr_callback_fn cb, void *data)
++{
++	int rc = -1;
++
++	rc = otx_ep_unregister_irq(otx_ep, cb, data);
++	return rc;
++}
+ int
+ otx2_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ {
+@@ -599,6 +714,12 @@ otx2_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 	otx_ep->fn_list.disable_oq          = otx2_vf_disable_oq;
+ 	otx_ep->fn_list.enable_rxq_intr     = otx2_vf_enable_rxq_intr;
+ 	otx_ep->fn_list.disable_rxq_intr    = otx2_vf_disable_rxq_intr;
++	otx_ep->fn_list.send_mbox_cmd       =  otx2_vf_send_mbox_cmd;
++	otx_ep->fn_list.send_mbox_cmd_nolock    =  otx2_vf_send_mbox_cmd_nolock;
++	otx_ep->fn_list.enable_mbox_interrupt   = otx2_ep_vf_enable_mbox_interrupt;
++	otx_ep->fn_list.disable_mbox_interrupt  = otx2_ep_vf_disable_mbox_interrupt;
++	otx_ep->fn_list.register_interrupt        = otx2_ep_register_interrupt;
++	otx_ep->fn_list.unregister_interrupt      = otx2_ep_unregister_interrupt;
+ 
+ 	return 0;
+ }
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.h b/drivers/net/octeon_ep/otx2_ep_vf.h
+index 40d35b6d8e2dc..f4fde214310df 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.h
++++ b/drivers/net/octeon_ep/otx2_ep_vf.h
+@@ -90,4 +90,9 @@ union out_cnts_t {
+ 
+ #define CN93XX_INTR_R_OUT_INT        (1ULL << 62)
+ #define CN93XX_INTR_R_IN_INT         (1ULL << 61)
++#define OTX_EP_R_MBOX_PF_VF_INT_START        (0x10220)
++#define OTX_EP_RING_OFFSET                   (0x1ull << 17)
++#define OTX_EP_R_MBOX_PF_VF_INT(ring) \
++	(OTX_EP_R_MBOX_PF_VF_INT_START + ((ring) * OTX_EP_RING_OFFSET))
++
+ #endif /*_OTX2_EP_VF_H_ */
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 2085cb2a90b74..cffd320e43e6d 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -425,6 +425,123 @@ struct otx_ep_config {
+ 	uint32_t oqdef_buf_size;
+ };
+ 
++#define MBOX_MAX_DATA_SIZE  6
++#define MBOX_MORE_FRAG_FLAG 1
++#define MBOX_MAX_DATA_BUF_SIZE 256
++typedef enum {
++	OTX_VF_MBOX_CMD_SET_MTU,
++	OTX_VF_MBOX_CMD_SET_MAC_ADDR,
++	OTX_VF_MBOX_CMD_START_QUEUE,
++	OTX_VF_MBOX_CMD_STOP_QUEUE,
++	OTX_VF_MBOX_CMD_GET_LINK,
++	OTX_VF_MBOX_CMD_BULK_SEND,
++	OTX_VF_MBOX_CMD_BULK_GET,
++	OTX_VF_MBOX_CMD_LAST,
++} otx_vf_mbox_opcode_t;
++
++typedef enum {
++	OTX_VF_MBOX_TYPE_CMD,
++	OTX_VF_MBOX_TYPE_RSP_ACK,
++	OTX_VF_MBOX_TYPE_RSP_NACK,
++} otx_vf_mbox_word_type_t;
++
++union otx_vf_mbox_word {
++	uint64_t u64;
++	struct {
++		uint64_t version:3;
++		uint64_t rsvd1:2;
++		uint64_t opcode:5;
++		uint64_t rsvd2:3;
++		uint64_t id:1;
++		uint64_t type:2;
++		uint64_t data:48;
++	} s;
++	struct {
++		uint64_t version:3;
++		uint64_t rsvd1:2;
++		uint64_t opcode:5;
++		uint64_t rsvd2:2;
++		uint64_t frag:1;
++		uint64_t id:1;
++		uint64_t type:2;
++		uint8_t data[6];
++	} s_data;
++	struct {
++		uint64_t version:3;
++		uint64_t rsvd1:2;
++		uint64_t opcode:5;
++		uint64_t rsvd2:3;
++		uint64_t id:1;
++		uint64_t type:2;
++		uint8_t mac_addr[6];
++	} s_set_mac;
++	struct {
++		uint64_t version:3;
++		uint64_t rsvd1:2;
++		uint64_t opcode:5;
++		uint64_t rsvd2:3;
++		uint64_t id:1;
++		uint64_t type:2;
++		uint64_t mtu:48;
++	} s_set_mtu;
++	struct {
++		uint64_t version:3;
++		uint64_t rsvd1:2;
++		uint64_t opcode:5;
++		uint64_t rsvd2:3;
++		uint64_t id:1;
++		uint64_t type:2;
++		uint64_t link_status:1;
++		uint64_t link_speed:8;
++		uint64_t duplex:1;
++		uint64_t autoneg:1;
++		uint64_t rsvd:37;
++	} s_get_link;
++} __rte_packed;
++
++typedef enum {
++	OTX_VF_LINK_STATUS_DOWN,
++	OTX_VF_LINK_STATUS_UP,
++} otx_vf_link_status_t;
++
++typedef enum {
++	OTX_VF_LINK_SPEED_NONE,
++	OTX_VF_LINK_SPEED_10,
++	OTX_VF_LINK_SPEED_100,
++	OTX_VF_LINK_SPEED_1000,
++	OTX_VF_LINK_SPEED_2500,
++	OTX_VF_LINK_SPEED_5000,
++	OTX_VF_LINK_SPEED_10000,
++	OTX_VF_LINK_SPEED_20000,
++	OTX_VF_LINK_SPEED_25000,
++	OTX_VF_LINK_SPEED_40000,
++	OTX_VF_LINK_SPEED_50000,
++	OTX_VF_LINK_SPEED_100000,
++	OTX_VF_LINK_SPEED_LAST,
++} otx_vf_link_speed_t;
++
++typedef enum {
++	OTX_VF_LINK_HALF_DUPLEX,
++	OTX_VF_LINK_FULL_DUPLEX,
++} otx_vf_link_duplex_t;
++
++typedef enum {
++	OTX_VF_LINK_AUTONEG,
++	OTX_VF_LINK_FIXED,
++} otx_vf_link_autoneg_t;
++
++struct otx_vf_mbox_link {
++	uint64_t link_status:1;
++	uint64_t link_speed:8;
++	uint64_t duplex:1;
++	uint64_t autoneg:1;
++	uint64_t rsvd:37;
++} __rte_packed;
++
++#define OTX_VF_MBOX_TIMEOUT_MS 10
++#define OTX_VF_MBOX_MAX_RETRIES 2
++#define OTX_VF_MBOX_VERSION 0
++
+ /* SRIOV information */
+ struct otx_ep_sriov_info {
+ 	/* Number of rings assigned to VF */
+@@ -452,6 +569,19 @@ struct otx_ep_fn_list {
+ 	void (*disable_oq)(struct otx_ep_device *otx_ep, uint32_t q_no);
+ 	int (*enable_rxq_intr)(struct otx_ep_device *otx_epvf, uint16_t q_no);
+ 	int (*disable_rxq_intr)(struct otx_ep_device *otx_epvf, uint16_t q_no);
++	int (*send_mbox_cmd)(struct otx_ep_device *otx_epvf, union
++		otx_vf_mbox_word cmd, union otx_vf_mbox_word *rsp);
++	int (*send_mbox_cmd_nolock)(struct otx_ep_device *otx_epvf, union
++		otx_vf_mbox_word cmd, union otx_vf_mbox_word *rsp);
++	void (*enable_mbox_interrupt)(struct otx_ep_device *otx_epvf);
++	void (*disable_mbox_interrupt)(struct otx_ep_device *otx_epvf);
++	int (*register_pf_vf_mbox_interrupt)(struct otx_ep_device *otx_epvf);
++	int (*unregister_pf_vf_mbox_interrupt)(struct otx_ep_device *otx_epvf);
++	int (*register_interrupt)(struct otx_ep_device *otx_ep,
++		rte_intr_callback_fn cb, void *data, unsigned int vec);
++	int (*unregister_interrupt)(struct otx_ep_device *otx_ep,
++		rte_intr_callback_fn cb, void *data);
++
+ };
+ 
+ /* OTX_EP EP VF device data structure */
+@@ -460,6 +590,8 @@ struct otx_ep_device {
+ 	struct rte_pci_device *pdev;
+ 
+ 	uint16_t chip_id;
++	uint16_t pf_num;
++	uint16_t vf_num;
+ 
+ 	uint32_t pkind;
+ 
+@@ -497,6 +629,16 @@ struct otx_ep_device {
+ 	/* Device configuration */
+ 	const struct otx_ep_config *conf;
+ 
++	rte_spinlock_t mbox_lock;
++
++	int mbox_cmd_id;
++
++	uint8_t mbox_data_buf[MBOX_MAX_DATA_BUF_SIZE];
++
++	int32_t mbox_data_index;
++
++	int32_t mbox_rcv_message_len;
++
+ 	uint64_t rx_offloads;
+ 
+ 	uint64_t tx_offloads;
+@@ -516,6 +658,17 @@ int otx_ep_setup_oqs(struct otx_ep_device *otx_ep, int oq_no, int num_descs,
+ 		     int desc_size, struct rte_mempool *mpool,
+ 		     unsigned int socket_id);
+ int otx_ep_delete_oqs(struct otx_ep_device *otx_ep, uint32_t oq_no);
++int otx_ep_register_irq(struct otx_ep_device *otx_ep,
++			rte_intr_callback_fn cb, void *data, unsigned int vec);
++int otx_ep_unregister_irq(struct otx_ep_device *otx_ep,
++			rte_intr_callback_fn cb, void *data);
++int otx_ep_send_vf_pf_config_data(struct rte_eth_dev *eth_dev,
++					otx_vf_mbox_opcode_t opcode,
++					uint8_t *data, int32_t size);
++int otx_ep_get_pf_vf_data(struct rte_eth_dev *eth_dev,
++					otx_vf_mbox_opcode_t opcode,
++					uint8_t *data, int32_t *size);
++
+ 
+ struct otx_ep_sg_entry {
+ 	/** The first 64 bit gives the size of data in each dptr. */
+@@ -559,6 +712,10 @@ struct otx_ep_buf_free_info {
+ #define OTX_EP_CLEAR_SLIST_DBELL 0xFFFFFFFF
+ #define OTX_EP_CLEAR_SDP_OUT_PKT_CNT 0xFFFFFFFFF
+ 
++#define OTX_EP_ETH_OVERHEAD \
++	(RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN + 8)
++#define OTX_EP_FRAME_SIZE_MAX       9000
++
+ /* PCI IDs */
+ #define PCI_VENDOR_ID_CAVIUM			0x177D
+ 
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 8832275ee825d..bf7f659482a6e 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -3,7 +3,10 @@
+  */
+ 
+ #include <ethdev_pci.h>
++#include <rte_ether.h>
+ #include <rte_kvargs.h>
++#include <rte_spinlock.h>
++#include <eal_interrupts.h>
+ 
+ #include "common/cnxk/roc_api.h"
+ #include "otx_ep_common.h"
+@@ -56,6 +59,295 @@ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 	return 0;
+ }
+ 
++static int
++otx_ep_send_mbox_cmd(struct otx_ep_device *otx_epvf, union otx_vf_mbox_word cmd,
++		     union otx_vf_mbox_word *rsp)
++{
++	return otx_epvf->fn_list.send_mbox_cmd(otx_epvf, cmd, rsp);
++}
++
++static int
++otx_ep_send_mbox_cmd_nolock(struct otx_ep_device *otx_epvf,
++			    union otx_vf_mbox_word cmd,
++			    union otx_vf_mbox_word *rsp)
++{
++	return otx_epvf->fn_list.send_mbox_cmd_nolock(otx_epvf, cmd, rsp);
++}
++
++static int
++otx_ep_dev_link_update(struct rte_eth_dev *eth_dev,
++		    int wait_to_complete __rte_unused)
++{
++	struct rte_eth_link link;
++	struct otx_ep_device *otx_epvf =
++		(struct otx_ep_device *)OTX_EP_DEV(eth_dev);
++	union otx_vf_mbox_word cmd;
++	union otx_vf_mbox_word rsp;
++	int ret;
++
++	memset(&link, 0, sizeof(link));
++	link.link_status = RTE_ETH_LINK_DOWN;
++	link.link_duplex = RTE_ETH_LINK_HALF_DUPLEX;
++	link.link_autoneg = RTE_ETH_LINK_AUTONEG;
++	cmd.u64 = 0;
++	cmd.s_get_link.opcode = OTX_VF_MBOX_CMD_GET_LINK;
++
++	ret = otx_ep_send_mbox_cmd(otx_epvf, cmd, &rsp);
++	if (ret)
++		return ret;
++	if (rsp.s_get_link.type != OTX_VF_MBOX_TYPE_RSP_ACK)
++		return -EINVAL;
++	if (rsp.s_get_link.link_status == OTX_VF_LINK_STATUS_DOWN)
++		return rte_eth_linkstatus_set(eth_dev, &link);
++
++
++	link.link_status = RTE_ETH_LINK_UP;
++	link.link_duplex = (rsp.s_get_link.duplex ==
++			    OTX_VF_LINK_HALF_DUPLEX) ?
++			    RTE_ETH_LINK_HALF_DUPLEX :
++			    RTE_ETH_LINK_FULL_DUPLEX;
++	link.link_autoneg = (rsp.s_get_link.autoneg ==
++			     OTX_VF_LINK_AUTONEG) ?
++				RTE_ETH_LINK_AUTONEG :
++				RTE_ETH_LINK_FIXED;
++
++	switch (rsp.s_get_link.link_speed) {
++	case OTX_VF_LINK_SPEED_10:
++		link.link_speed = RTE_ETH_SPEED_NUM_10M;
++		break;
++	case OTX_VF_LINK_SPEED_100:
++		link.link_speed = RTE_ETH_SPEED_NUM_100M;
++		break;
++	case OTX_VF_LINK_SPEED_1000:
++		link.link_speed = RTE_ETH_SPEED_NUM_1G;
++		break;
++	case OTX_VF_LINK_SPEED_2500:
++		link.link_speed = RTE_ETH_SPEED_NUM_2_5G;
++		break;
++	case OTX_VF_LINK_SPEED_5000:
++		link.link_speed = RTE_ETH_SPEED_NUM_5G;
++		break;
++	case OTX_VF_LINK_SPEED_10000:
++		link.link_speed = RTE_ETH_SPEED_NUM_10G;
++		break;
++	case OTX_VF_LINK_SPEED_20000:
++		link.link_speed = RTE_ETH_SPEED_NUM_20G;
++		break;
++	case OTX_VF_LINK_SPEED_25000:
++		link.link_speed = RTE_ETH_SPEED_NUM_25G;
++		break;
++	case OTX_VF_LINK_SPEED_40000:
++		link.link_speed = RTE_ETH_SPEED_NUM_40G;
++		break;
++	case OTX_VF_LINK_SPEED_50000:
++		link.link_speed = RTE_ETH_SPEED_NUM_50G;
++		break;
++	case OTX_VF_LINK_SPEED_100000:
++		link.link_speed = RTE_ETH_SPEED_NUM_100G;
++		break;
++	default:
++		link.link_speed = RTE_ETH_SPEED_NUM_NONE;
++		break;
++	}
++	otx_ep_dbg("link status resp link %d duplex %d autoneg %d link_speed %d\n",
++		   link.link_status, link.link_duplex, link.link_autoneg, link.link_speed);
++	return rte_eth_linkstatus_set(eth_dev, &link);
++}
++
++static int
++otx_ep_dev_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
++{
++	struct otx_ep_device *otx_epvf =
++			(struct otx_ep_device *)OTX_EP_DEV(eth_dev);
++	uint32_t frame_size = mtu + OTX_EP_ETH_OVERHEAD;
++	union otx_vf_mbox_word cmd;
++	union otx_vf_mbox_word rsp;
++	int ret = 0;
++
++	if (mtu < RTE_ETHER_MIN_MTU || frame_size > OTX_EP_FRAME_SIZE_MAX)
++		return -EINVAL;
++
++	cmd.u64 = 0;
++	cmd.s_set_mtu.opcode = OTX_VF_MBOX_CMD_SET_MTU;
++	cmd.s_set_mtu.mtu = mtu;
++
++	ret = otx_ep_send_mbox_cmd(otx_epvf, cmd, &rsp);
++	if (ret)
++		return ret;
++	if (rsp.s_set_mtu.type != OTX_VF_MBOX_TYPE_RSP_ACK)
++		return -EINVAL;
++
++	if (frame_size > RTE_ETHER_MAX_LEN)
++		eth_dev->data->dev_conf.rxmode.offloads |=
++				DEV_RX_OFFLOAD_JUMBO_FRAME;
++	else
++		eth_dev->data->dev_conf.rxmode.offloads &=
++				~DEV_RX_OFFLOAD_JUMBO_FRAME;
++	otx_ep_dbg("mtu set  success mtu %u\n", mtu);
++
++	return 0;
++}
++
++int
++otx_ep_send_vf_pf_config_data(struct rte_eth_dev *eth_dev,
++				otx_vf_mbox_opcode_t opcode,
++				uint8_t *data, int32_t size)
++{
++	struct otx_ep_device *otx_epvf = OTX_EP_DEV(eth_dev);
++	union otx_vf_mbox_word cmd;
++	union otx_vf_mbox_word rsp;
++	int32_t read_cnt, num_bytes_written = 0, ret;
++
++	cmd.u64 = 0;
++	cmd.s_data.opcode = opcode;
++	cmd.s_data.frag = 0;
++	rte_spinlock_lock(&otx_epvf->mbox_lock);
++	cmd.s_data.frag = MBOX_MORE_FRAG_FLAG;
++	*((int32_t *)cmd.s_data.data) = size;
++	ret = otx_ep_send_mbox_cmd_nolock(otx_epvf, cmd, &rsp);
++	if (ret) {
++		otx_ep_err("send mbox cmd fail for length\n");
++		rte_spinlock_unlock(&otx_epvf->mbox_lock);
++		return ret;
++	}
++	if (rsp.s_data.type != OTX_VF_MBOX_TYPE_RSP_ACK) {
++		otx_ep_err("send mbox cmd ACK receive fail for length\n");
++		rte_spinlock_unlock(&otx_epvf->mbox_lock);
++		return -EINVAL;
++	}
++	cmd.u64 = 0;
++	cmd.s_data.opcode = opcode;
++	cmd.s_data.frag = 0;
++
++	for (read_cnt = 0; read_cnt < size; read_cnt++) {
++		cmd.s_data.data[num_bytes_written] = data[read_cnt];
++		num_bytes_written++;
++		if (num_bytes_written == MBOX_MAX_DATA_SIZE ||
++				(read_cnt == (size - 1))) {
++			if (num_bytes_written == MBOX_MAX_DATA_SIZE &&
++					(read_cnt != (size - 1))) {
++				cmd.s_data.frag = MBOX_MORE_FRAG_FLAG;
++				num_bytes_written = 0;
++			}
++			ret = otx_ep_send_mbox_cmd_nolock(otx_epvf, cmd, &rsp);
++			if (ret) {
++				otx_ep_err("send mbox cmd nolock fail\n");
++				rte_spinlock_unlock(&otx_epvf->mbox_lock);
++				return ret;
++			}
++			if (rsp.s_set_mac.type != OTX_VF_MBOX_TYPE_RSP_ACK) {
++				otx_ep_err("send mbox cmd nolock ACK fail\n");
++				rte_spinlock_unlock(&otx_epvf->mbox_lock);
++				return -EINVAL;
++			}
++			cmd.u64 = 0;
++			cmd.s_data.opcode = OTX_VF_MBOX_CMD_BULK_SEND;
++			cmd.s_data.frag = 0;
++		}
++	}
++	rte_spinlock_unlock(&otx_epvf->mbox_lock);
++	return 0;
++}
++
++int
++otx_ep_get_pf_vf_data(struct rte_eth_dev *eth_dev,
++			otx_vf_mbox_opcode_t opcode,
++			uint8_t *data, int32_t *size)
++{
++	struct otx_ep_device *otx_epvf = OTX_EP_DEV(eth_dev);
++	union otx_vf_mbox_word cmd;
++	union otx_vf_mbox_word rsp;
++	int32_t read_cnt, i = 0, ret;
++	int32_t data_len = 0, tmp_len = 0;
++
++	cmd.u64 = 0;
++	cmd.s_data.opcode = opcode;
++	cmd.s_data.frag = 0;
++	rte_spinlock_lock(&otx_epvf->mbox_lock);
++
++	/* Send cmd to read data from PF */
++	ret = otx_ep_send_mbox_cmd_nolock(otx_epvf, cmd, &rsp);
++	if (ret) {
++		otx_ep_err("send mbox cmd fail for data request\n");
++		rte_spinlock_unlock(&otx_epvf->mbox_lock);
++		return ret;
++	}
++	if (rsp.s_data.type != OTX_VF_MBOX_TYPE_RSP_ACK) {
++		otx_ep_err("send mbox cmd ACK receive fail for data request\n");
++		rte_spinlock_unlock(&otx_epvf->mbox_lock);
++		return -EINVAL;
++	}
++	/*  PF sends the data length of requested CMD
++	 *  in  ACK
++	 */
++	data_len = *((int32_t *)rsp.s_data.data);
++	tmp_len = data_len;
++	otx_ep_err("data length %d:\n", data_len);
++	cmd.u64 = 0;
++	rsp.u64 = 0;
++	cmd.s_data.opcode = opcode;
++	cmd.s_data.frag = 1;
++	while (data_len) {
++		ret = otx_ep_send_mbox_cmd_nolock(otx_epvf, cmd, &rsp);
++		if (ret) {
++			otx_ep_err("send mbox cmd fail for data request\n");
++			rte_spinlock_unlock(&otx_epvf->mbox_lock);
++			return ret;
++		}
++		if (rsp.s_set_mac.type != OTX_VF_MBOX_TYPE_RSP_ACK) {
++			otx_ep_err("send mbox cmd ACK receive fail for data request\n");
++			rte_spinlock_unlock(&otx_epvf->mbox_lock);
++			return -EINVAL;
++		}
++		if (data_len > MBOX_MAX_DATA_SIZE) {
++			data_len -= MBOX_MAX_DATA_SIZE;
++			read_cnt = MBOX_MAX_DATA_SIZE;
++		} else {
++			read_cnt = data_len;
++			data_len = 0;
++		}
++		for (i = 0; i < read_cnt; i++) {
++			otx_epvf->mbox_data_buf[otx_epvf->mbox_data_index] = rsp.s_data.data[i];
++			otx_epvf->mbox_data_index++;
++		}
++		cmd.u64 = 0;
++		rsp.u64 = 0;
++		cmd.s_data.opcode = opcode;
++		cmd.s_data.frag = 1;
++	}
++	memcpy(data, otx_epvf->mbox_data_buf, tmp_len);
++	*size = tmp_len;
++	otx_epvf->mbox_data_index = 0;
++	memset(otx_epvf->mbox_data_buf, 0, MBOX_MAX_DATA_BUF_SIZE);
++	rte_spinlock_unlock(&otx_epvf->mbox_lock);
++	return 0;
++}
++
++static int
++otx_ep_dev_set_default_mac_addr(struct rte_eth_dev *eth_dev,
++				struct rte_ether_addr *mac_addr)
++{
++	struct otx_ep_device *otx_epvf = OTX_EP_DEV(eth_dev);
++	union otx_vf_mbox_word cmd;
++	union otx_vf_mbox_word rsp;
++	int i, ret;
++
++	cmd.u64 = 0;
++	cmd.s_set_mac.opcode = OTX_VF_MBOX_CMD_SET_MAC_ADDR;
++	for (i = 0; i < RTE_ETHER_ADDR_LEN; i++)
++		cmd.s_set_mac.mac_addr[i] = mac_addr->addr_bytes[i];
++	ret = otx_ep_send_mbox_cmd(otx_epvf, cmd, &rsp);
++	if (ret)
++		return ret;
++	if (rsp.s_set_mac.type != OTX_VF_MBOX_TYPE_RSP_ACK)
++		return -EINVAL;
++	otx_ep_dbg("mac addr  set  success addr %02x:%02x:%02x:%02x:%02x:%02x\n",
++		  mac_addr->addr_bytes[0], mac_addr->addr_bytes[1], mac_addr->addr_bytes[2],
++		  mac_addr->addr_bytes[3], mac_addr->addr_bytes[4], mac_addr->addr_bytes[5]);
++	rte_ether_addr_copy(eth_dev->data->mac_addrs, mac_addr);
++	return 0;
++}
++
+ static int
+ otx_ep_dev_start(struct rte_eth_dev *eth_dev)
+ {
+@@ -80,6 +372,7 @@ otx_ep_dev_start(struct rte_eth_dev *eth_dev)
+ 		rte_read32(otx_epvf->droq[q]->pkts_credit_reg));
+ 	}
+ 
++	otx_ep_dev_link_update(eth_dev, 0);
+ 	otx_ep_info("dev started\n");
+ 
+ 	return 0;
+@@ -166,12 +459,29 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 	return ret;
+ }
+ 
++static void
++otx_ep_interrupt_handler(void *param)
++{
++	struct otx_ep_device *otx_epvf = (struct otx_ep_device *)param;
++	uint64_t reg_val;
++	if (otx_epvf) {
++		/* Clear Mbox interrupts */
++		reg_val = rte_read64((uint8_t *)otx_epvf->hw_addr + OTX_EP_R_MBOX_PF_VF_INT(0));
++		rte_write64(reg_val, (uint8_t *)otx_epvf->hw_addr + OTX_EP_R_MBOX_PF_VF_INT(0));
++		otx_ep_info("otx_epdev_interrupt_handler is called pf_num: %d vf_num: %d port_id: %d\n",
++		otx_epvf->pf_num, otx_epvf->vf_num, otx_epvf->port_id);
++	} else {
++		otx_ep_err("otx_epdev_interrupt_handler is called with dev NULL\n");
++	}
++}
++
+ /* OTX_EP VF device initialization */
+ static int
+ otx_epdev_init(struct otx_ep_device *otx_epvf)
+ {
+ 	uint32_t ethdev_queues;
+ 	int ret = 0;
++	uint32_t vec = 0;
+ 
+ 	ret = otx_ep_chip_specific_setup(otx_epvf);
+ 	if (ret) {
+@@ -201,9 +511,10 @@ otx_epdev_init(struct otx_ep_device *otx_epvf)
+ 	ethdev_queues = (uint32_t)(otx_epvf->sriov_info.rings_per_vf);
+ 	otx_epvf->max_rx_queues = ethdev_queues;
+ 	otx_epvf->max_tx_queues = ethdev_queues;
+-
++	otx_epvf->fn_list.register_interrupt(otx_epvf, otx_ep_interrupt_handler,
++						(void *)otx_epvf, vec);
++	otx_epvf->fn_list.enable_mbox_interrupt(otx_epvf);
+ 	otx_ep_info("OTX_EP Device is Ready\n");
+-
+ setup_fail:
+ 	return ret;
+ }
+@@ -450,23 +761,6 @@ otx_ep_dev_stats_get(struct rte_eth_dev *eth_dev,
+ 	return 0;
+ }
+ 
+-static int
+-otx_ep_dev_link_update(struct rte_eth_dev *eth_dev, int wait_to_complete)
+-{
+-	RTE_SET_USED(wait_to_complete);
+-
+-	if (!eth_dev->data->dev_started)
+-		return 0;
+-	struct rte_eth_link link;
+-
+-	memset(&link, 0, sizeof(link));
+-	link.link_speed  = RTE_ETH_SPEED_NUM_10G;
+-	link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
+-	link.link_autoneg = RTE_ETH_LINK_AUTONEG;
+-	link.link_status = RTE_ETH_LINK_UP;
+-	return rte_eth_linkstatus_set(eth_dev, &link);
+-}
+-
+ /* Define our ethernet definitions */
+ static const struct eth_dev_ops otx_ep_eth_dev_ops = {
+ 	.dev_configure		= otx_ep_dev_configure,
+@@ -480,6 +774,8 @@ static const struct eth_dev_ops otx_ep_eth_dev_ops = {
+ 	.stats_get		= otx_ep_dev_stats_get,
+ 	.stats_reset		= otx_ep_dev_stats_reset,
+ 	.link_update		= otx_ep_dev_link_update,
++	.mtu_set                = otx_ep_dev_mtu_set,
++	.mac_addr_set           = otx_ep_dev_set_default_mac_addr,
+ };
+ 
+ static int
+@@ -491,9 +787,10 @@ otx_epdev_exit(struct rte_eth_dev *eth_dev)
+ 	otx_ep_info("%s:\n", __func__);
+ 
+ 	otx_epvf = OTX_EP_DEV(eth_dev);
+-
++	otx_epvf->fn_list.disable_mbox_interrupt(otx_epvf);
++	otx_epvf->fn_list.unregister_interrupt(otx_epvf, otx_ep_interrupt_handler,
++						(void *)otx_epvf);
+ 	otx_epvf->fn_list.disable_io_queues(otx_epvf);
+-
+ 	num_queues = otx_epvf->nb_rx_queues;
+ 	for (q = 0; q < num_queues; q++) {
+ 		if (otx_ep_delete_oqs(otx_epvf, q)) {
+@@ -502,7 +799,6 @@ otx_epdev_exit(struct rte_eth_dev *eth_dev)
+ 		}
+ 	}
+ 	otx_ep_info("Num OQs:%d freed\n", otx_epvf->nb_rx_queues);
+-
+ 	num_queues = otx_epvf->nb_tx_queues;
+ 	for (q = 0; q < num_queues; q++) {
+ 		if (otx_ep_delete_iqs(otx_epvf, q)) {
+@@ -593,6 +889,7 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	otx_epvf->eth_dev = eth_dev;
+ 	otx_epvf->port_id = eth_dev->data->port_id;
+ 	eth_dev->dev_ops = &otx_ep_eth_dev_ops;
++	rte_spinlock_init(&otx_epvf->mbox_lock);
+ 	eth_dev->data->mac_addrs = rte_zmalloc("otx_ep", RTE_ETHER_ADDR_LEN, 0);
+ 	if (eth_dev->data->mac_addrs == NULL) {
+ 		otx_ep_err("MAC addresses memory allocation failed\n");
+@@ -630,7 +927,12 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		otx_ep_err("Invalid chip id\n");
+ 		return -EINVAL;
+ 	}
++	if (otx_ep_dev_set_default_mac_addr(eth_dev,
++				(struct rte_ether_addr *)&vf_mac_addr)) {
+ 
++		otx_ep_err("set mac addr failed\n");
++		return -ENODEV;
++	}
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/octeon_ep/otx_ep_irq.c b/drivers/net/octeon_ep/otx_ep_irq.c
+new file mode 100644
+index 0000000000000..36fc0056e3cda
+--- /dev/null
++++ b/drivers/net/octeon_ep/otx_ep_irq.c
+@@ -0,0 +1,182 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2021 Marvell.
++ */
++
++#include <rte_interrupts.h>
++#include <eal_interrupts.h>
++#include <ethdev_pci.h>
++#include <rte_ether.h>
++#include <linux/vfio.h>
++#include <sys/eventfd.h>
++#include <sys/ioctl.h>
++#include "otx_ep_common.h"
++
++
++#define MAX_INTR_VEC_ID RTE_MAX_RXTX_INTR_VEC_ID
++#define MSIX_IRQ_SET_BUF_LEN (sizeof(struct vfio_irq_set) + \
++			      sizeof(int) * (MAX_INTR_VEC_ID))
++static int
++otx_ep_irq_get_info(struct rte_intr_handle *intr_handle)
++{
++	struct vfio_irq_info irq = { .argsz = sizeof(irq) };
++	int rc;
++
++	irq.index = VFIO_PCI_MSIX_IRQ_INDEX;
++
++	rc = ioctl(intr_handle->dev_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq);
++	if (rc < 0) {
++		otx_ep_err("Failed to get IRQ info rc=%d errno=%d", rc, errno);
++		return rc;
++	}
++
++	otx_ep_dbg("Flags=0x%x index=0x%x count=0x%x max_intr_vec_id=0x%x",
++			irq.flags, irq.index, irq.count, MAX_INTR_VEC_ID);
++
++	if (irq.count > MAX_INTR_VEC_ID) {
++		otx_ep_err("HW max=%d > MAX_INTR_VEC_ID: %d",
++				intr_handle->max_intr, MAX_INTR_VEC_ID);
++		intr_handle->max_intr = MAX_INTR_VEC_ID;
++	} else {
++		intr_handle->max_intr = irq.count;
++	}
++	otx_ep_info("Flags=0x%x index=0x%x count=0x%x max_intr_vec_id=0x%x intr_handle->max_intr+0x%x",
++			irq.flags, irq.index, irq.count, MAX_INTR_VEC_ID, intr_handle->max_intr);
++
++	return 0;
++}
++
++static int
++otx_ep_irq_init(struct rte_intr_handle *intr_handle)
++{
++	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
++	struct vfio_irq_set *irq_set;
++	int32_t *fd_ptr;
++	int len, rc;
++	uint32_t i;
++
++	if (intr_handle->max_intr > MAX_INTR_VEC_ID) {
++		otx_ep_err("Max_intr=%d greater than MAX_INTR_VEC_ID=%d",
++				intr_handle->max_intr, MAX_INTR_VEC_ID);
++		return -ERANGE;
++	}
++
++	len = sizeof(struct vfio_irq_set) +
++		sizeof(int32_t) * intr_handle->max_intr;
++
++	irq_set = (struct vfio_irq_set *)irq_set_buf;
++	irq_set->argsz = len;
++	irq_set->start = 0;
++	irq_set->count = intr_handle->max_intr;
++	irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD |
++			VFIO_IRQ_SET_ACTION_TRIGGER;
++	irq_set->index = VFIO_PCI_MSIX_IRQ_INDEX;
++
++	fd_ptr = (int32_t *)&irq_set->data[0];
++	for (i = 0; i < irq_set->count; i++)
++		fd_ptr[i] = -1;
++
++	rc = ioctl(intr_handle->dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
++	if (rc)
++		otx_ep_err("Failed to set irqs vector rc=%d", rc);
++
++	return rc;
++}
++
++static int
++otx_ep_irq_config(struct rte_intr_handle *intr_handle, unsigned int vec)
++{
++	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
++	struct vfio_irq_set *irq_set;
++	int32_t *fd_ptr;
++	int len, rc;
++
++	if (vec > intr_handle->max_intr) {
++		otx_ep_err("vector=%d greater than max_intr=%d", vec,
++				intr_handle->max_intr);
++		return -EINVAL;
++	}
++
++	len = sizeof(struct vfio_irq_set) + sizeof(int32_t);
++
++	irq_set = (struct vfio_irq_set *)irq_set_buf;
++	irq_set->argsz = len;
++
++	irq_set->start = vec;
++	irq_set->count = 1;
++	irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD |
++			VFIO_IRQ_SET_ACTION_TRIGGER;
++	irq_set->index = VFIO_PCI_MSIX_IRQ_INDEX;
++
++	/* Use vec fd to set interrupt vectors */
++	fd_ptr = (int32_t *)&irq_set->data[0];
++	fd_ptr[0] = intr_handle->efds[vec];
++
++	rc = ioctl(intr_handle->dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
++	if (rc)
++		otx_ep_err("Failed to set_irqs vector=0x%x rc=%d", vec, rc);
++
++	return rc;
++}
++
++int
++otx_ep_register_irq(struct otx_ep_device *otx_ep,
++			rte_intr_callback_fn cb, void *data, unsigned int vec)
++{
++	struct rte_pci_device *pci_dev      = otx_ep->pdev;
++	struct rte_intr_handle *intr_handle = pci_dev->intr_handle;
++	struct rte_intr_handle tmp_handle;
++	int rc = -1;
++
++	/* If no max_intr read from VFIO */
++	if (intr_handle->max_intr == 0) {
++		otx_ep_irq_get_info(intr_handle);
++		otx_ep_irq_init(intr_handle);
++	}
++
++	if (vec > intr_handle->max_intr) {
++		otx_ep_err("Vector=%d greater than max_intr=%d", vec,
++				intr_handle->max_intr);
++		return -EINVAL;
++	}
++
++	tmp_handle = *intr_handle;
++	/* Create new eventfd for interrupt vector */
++	tmp_handle.fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
++	if (tmp_handle.fd == -1)
++		return -ENODEV;
++
++	/* Register vector interrupt callback */
++	rc = rte_intr_callback_register(&tmp_handle, cb, data);
++	if (rc) {
++		otx_ep_err("Failed to register vector:0x%x irq callback.", vec);
++		return rc;
++	}
++
++	intr_handle->efds[vec] = tmp_handle.fd;
++	intr_handle->nb_efd = (vec > intr_handle->nb_efd) ?
++			vec : intr_handle->nb_efd;
++	if ((intr_handle->nb_efd + 1) > intr_handle->max_intr)
++		intr_handle->max_intr = intr_handle->nb_efd + 1;
++	otx_ep_info("Enable vector:0x%x for vfio (efds: %d, max:%d) type: %x dev_fd: %x",
++			vec, intr_handle->nb_efd, intr_handle->max_intr, intr_handle->type,
++			intr_handle->dev_fd);
++
++	/* Enable MSIX vectors to VFIO */
++	return otx_ep_irq_config(intr_handle, vec);
++}
++
++int
++otx_ep_unregister_irq(struct otx_ep_device *otx_ep,
++			rte_intr_callback_fn cb, void *data)
++{
++	struct rte_pci_device *pci_dev = otx_ep->pdev;
++	struct rte_intr_handle *intr_handle = pci_dev->intr_handle;
++	int rc = -1;
++
++	rc = rte_intr_callback_unregister(intr_handle, cb, data);
++	if (rc) {
++		otx_ep_err("Failed to unregister irq callback.\n");
++		return rc;
++	}
++	return 0;
++}
+diff --git a/drivers/net/octeon_ep/otx_ep_vf.c b/drivers/net/octeon_ep/otx_ep_vf.c
+index 219cca1bedbc6..7de44d0eddb40 100644
+--- a/drivers/net/octeon_ep/otx_ep_vf.c
++++ b/drivers/net/octeon_ep/otx_ep_vf.c
+@@ -5,8 +5,8 @@
+ #include <rte_common.h>
+ #include <rte_cycles.h>
+ #include <rte_io.h>
+-#include <ethdev_driver.h>
+-#include <ethdev_pci.h>
++#include <rte_spinlock.h>
++#include <rte_interrupts.h>
+ 
+ #include "otx_ep_common.h"
+ #include "otx_ep_vf.h"
+@@ -388,6 +388,130 @@ otx_ep_get_defconf(struct otx_ep_device *otx_ep_dev __rte_unused)
+ 	return default_conf;
+ }
+ 
++static int
++otx_vf_send_mbox_cmd(struct otx_ep_device *otx_ep,
++			 union otx_vf_mbox_word cmd,
++			 union otx_vf_mbox_word *rsp)
++{
++	volatile uint64_t reg_val = 0ull;
++	int retry_count = 0;
++	int count = 0;
++
++	rsp->u64 = 0;
++	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
++	cmd.s.version = OTX_VF_MBOX_VERSION;
++	rte_spinlock_lock(&otx_ep->mbox_lock);
++	/* only 1 outstanding cmd at a time */
++	otx_ep->mbox_cmd_id = ~otx_ep->mbox_cmd_id;
++	cmd.s.id = otx_ep->mbox_cmd_id;
++retry:
++	otx_ep_dbg("send mbox cmd %p\n", (void *)cmd.u64);
++	otx_ep_write64(cmd.u64, otx_ep->hw_addr, OTX_EP_R_MBOX_VF_PF_DATA(0));
++	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
++		rte_delay_ms(1);
++		reg_val = rte_read64(otx_ep->hw_addr +
++				      OTX_EP_R_MBOX_VF_PF_DATA(0));
++		if (reg_val != cmd.u64) {
++			rsp->u64 = reg_val;
++			if (rsp->s.id == cmd.s.id)
++				break;
++			/* resp for previous cmd. retry */
++			retry_count++;
++			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
++				break;
++			goto retry;
++		}
++	}
++	rte_spinlock_unlock(&otx_ep->mbox_lock);
++	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
++	    retry_count == OTX_VF_MBOX_MAX_RETRIES) {
++		otx_ep_err("mbox timeout failure\n");
++		return -ETIMEDOUT;
++	}
++	rsp->u64 = reg_val;
++	otx_ep_dbg("mbox success\n");
++	return 0;
++}
++
++static int
++otx_vf_send_mbox_cmd_nolock(struct otx_ep_device *otx_ep,
++			 union otx_vf_mbox_word cmd,
++			 union otx_vf_mbox_word *rsp)
++{
++	volatile uint64_t reg_val = 0ull;
++	int retry_count = 0;
++	int count = 0;
++
++	rsp->u64 = 0;
++	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
++	cmd.s.version = OTX_VF_MBOX_VERSION;
++	/* only 1 outstanding cmd at a time */
++	otx_ep->mbox_cmd_id = ~otx_ep->mbox_cmd_id;
++	cmd.s.id = otx_ep->mbox_cmd_id;
++retry:
++	otx_ep_dbg("send mbox cmd nolock %p\n", (void *)cmd.u64);
++	otx_ep_write64(cmd.u64, otx_ep->hw_addr, OTX_EP_R_MBOX_VF_PF_DATA(0));
++	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
++		rte_delay_ms(1);
++		reg_val = rte_read64(otx_ep->hw_addr +
++				      OTX_EP_R_MBOX_VF_PF_DATA(0));
++		if (reg_val != cmd.u64) {
++			rsp->u64 = reg_val;
++			if (rsp->s.id == cmd.s.id)
++				break;
++			/* resp for previous cmd. retry */
++			retry_count++;
++			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
++				break;
++			goto retry;
++		}
++	}
++	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
++	    retry_count == OTX_VF_MBOX_MAX_RETRIES) {
++		otx_ep_err("mbox timeout failure\n");
++		return -ETIMEDOUT;
++	}
++	rsp->u64 = reg_val;
++	otx_ep_dbg("mbox success\n");
++	return 0;
++}
++
++static void
++otx_ep_vf_enable_mbox_interrupt(struct otx_ep_device *otx_ep)
++{
++	rte_write64(0x2, (uint8_t *)otx_ep->hw_addr +
++		   OTX_EP_R_MBOX_PF_VF_INT(0));
++}
++
++static void
++otx_ep_vf_disable_mbox_interrupt(struct otx_ep_device *otx_ep)
++{
++	rte_write64(0x00, (uint8_t *)otx_ep->hw_addr +
++		   OTX_EP_R_MBOX_PF_VF_INT(0));
++}
++
++static int
++otx_ep_register_interrupt(struct otx_ep_device *otx_ep,
++			rte_intr_callback_fn cb,
++			void *data, unsigned int vec)
++{
++	int rc = -1;
++
++	rc = otx_ep_register_irq(otx_ep, cb, data, vec);
++	return rc;
++}
++
++static int
++otx_ep_unregister_interrupt(struct otx_ep_device *otx_ep,
++				rte_intr_callback_fn cb,
++				void *data)
++{
++	int rc = -1;
++
++	rc = otx_ep_unregister_irq(otx_ep, cb, data);
++	return rc;
++}
++
+ int
+ otx_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ {
+@@ -425,6 +549,12 @@ otx_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 	otx_ep->fn_list.enable_oq           = otx_ep_enable_oq;
+ 	otx_ep->fn_list.disable_oq          = otx_ep_disable_oq;
+ 
++	otx_ep->fn_list.send_mbox_cmd       =  otx_vf_send_mbox_cmd;
++	otx_ep->fn_list.send_mbox_cmd_nolock    = otx_vf_send_mbox_cmd_nolock;
+ 
++	otx_ep->fn_list.enable_mbox_interrupt   = otx_ep_vf_enable_mbox_interrupt;
++	otx_ep->fn_list.disable_mbox_interrupt  = otx_ep_vf_disable_mbox_interrupt;
++	otx_ep->fn_list.register_interrupt        = otx_ep_register_interrupt;
++	otx_ep->fn_list.unregister_interrupt      = otx_ep_unregister_interrupt;
+ 	return 0;
+ }
+diff --git a/drivers/net/octeon_ep/otx_ep_vf.h b/drivers/net/octeon_ep/otx_ep_vf.h
+index d38850b222285..75f1b24fa1b53 100644
+--- a/drivers/net/octeon_ep/otx_ep_vf.h
++++ b/drivers/net/octeon_ep/otx_ep_vf.h
+@@ -53,6 +53,10 @@
+ #define OTX_EP_R_OUT_CONTROL_START           (0x10150)
+ #define OTX_EP_R_OUT_ENABLE_START            (0x10160)
+ 
++#define OTX_EP_R_MBOX_PF_VF_DATA_START	     (0x10210)
++#define OTX_EP_R_MBOX_VF_PF_DATA_START	     (0x10230)
++#define OTX_EP_R_MBOX_PF_VF_INT_START	     (0x10220)
++
+ #define OTX_EP_R_OUT_CONTROL(ring)    \
+ 	(OTX_EP_R_OUT_CONTROL_START + ((ring) * OTX_EP_RING_OFFSET))
+ 
+@@ -74,6 +78,21 @@
+ #define OTX_EP_R_OUT_INT_LEVELS(ring)   \
+ 	(OTX_EP_R_OUT_INT_LEVELS_START + ((ring) * OTX_EP_RING_OFFSET))
+ 
++#define OTX_EP_R_OUT_PKT_CNT(ring)   \
++	(OTX_EP_R_OUT_PKT_CNT_START + ((ring) * OTX_EP_RING_OFFSET))
++
++#define OTX_EP_R_OUT_BYTE_CNT(ring)   \
++	(OTX_EP_R_OUT_BYTE_CNT_START + ((ring) * OTX_EP_RING_OFFSET))
++
++#define OTX_EP_R_MBOX_PF_VF_DATA(ring) \
++	(OTX_EP_R_MBOX_PF_VF_DATA_START + ((ring) * OTX_EP_RING_OFFSET))
++
++#define OTX_EP_R_MBOX_VF_PF_DATA(ring) \
++	(OTX_EP_R_MBOX_VF_PF_DATA_START + ((ring) * OTX_EP_RING_OFFSET))
++#define OTX_EP_R_MBOX_PF_VF_INT(ring) \
++	(OTX_EP_R_MBOX_PF_VF_INT_START + ((ring) * OTX_EP_RING_OFFSET))
++
++
+ /* OTX_EP VF OQ Masks */
+ 
+ #define OTX_EP_R_OUT_CTL_IDLE         (1ull << 36)
+-- 
+2.25.1
+

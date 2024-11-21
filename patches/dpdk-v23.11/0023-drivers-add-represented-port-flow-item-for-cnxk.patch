@@ -1,0 +1,608 @@
+From 840b8454a5ca5e2d1cb6fabe51cdf4ae42c43314 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Fri, 1 Dec 2023 11:44:31 +0530
+Subject: [PATCH 023/513] drivers: add represented port flow item for cnxk
+
+Adding support for represented port flow item for cnxk device.
+
+ci: skip_checkformat
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I10e165ec4c50d560c8e67391877a1f5ae5ccfdab
+---
+ doc/guides/nics/features/cnxk.ini    |   1 +
+ doc/guides/nics/features/cnxk_vf.ini |   1 +
+ drivers/common/cnxk/roc_npc.c        |  59 ++++++++++++---
+ drivers/common/cnxk/roc_npc.h        |  13 +++-
+ drivers/common/cnxk/roc_npc_mcam.c   |  62 ++++++++--------
+ drivers/common/cnxk/roc_npc_parse.c  |  11 +++
+ drivers/common/cnxk/roc_npc_priv.h   |   1 +
+ drivers/net/cnxk/cnxk_flow.c         | 106 ++++++++++++++-------------
+ 8 files changed, 162 insertions(+), 92 deletions(-)
+
+diff --git a/doc/guides/nics/features/cnxk.ini b/doc/guides/nics/features/cnxk.ini
+index ac7de9a0f0aa3..1c7d804aab8e0 100644
+--- a/doc/guides/nics/features/cnxk.ini
++++ b/doc/guides/nics/features/cnxk.ini
+@@ -72,6 +72,7 @@ mark                 = Y
+ mpls                 = Y
+ nvgre                = Y
+ raw                  = Y
++represented_port     = Y
+ sctp                 = Y
+ tcp                  = Y
+ tx_queue             = Y
+diff --git a/doc/guides/nics/features/cnxk_vf.ini b/doc/guides/nics/features/cnxk_vf.ini
+index b03e8b35c3f8c..96bfd86ac82de 100644
+--- a/doc/guides/nics/features/cnxk_vf.ini
++++ b/doc/guides/nics/features/cnxk_vf.ini
+@@ -63,6 +63,7 @@ mark                 = Y
+ mpls                 = Y
+ nvgre                = Y
+ raw                  = Y
++represented_port     = Y
+ sctp                 = Y
+ tcp                  = Y
+ tx_queue             = Y
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index a0d88c0743c66..b650d73342995 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -498,6 +498,8 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	flow->ctr_id = NPC_COUNTER_NONE;
+ 	flow->mtr_id = ROC_NIX_MTR_ID_INVALID;
+ 	pf_func = npc->pf_func;
++	if (flow->has_rep)
++		pf_func = flow->rep_pf_func;
+ 
+ 	for (; actions->type != ROC_NPC_ACTION_TYPE_END; actions++) {
+ 		switch (actions->type) {
+@@ -793,10 +795,14 @@ npc_parse_pattern(struct npc *npc, const struct roc_npc_item_info pattern[],
+ 		  struct roc_npc_flow *flow, struct npc_parse_state *pst)
+ {
+ 	npc_parse_stage_func_t parse_stage_funcs[] = {
+-		npc_parse_meta_items, npc_parse_mark_item, npc_parse_pre_l2, npc_parse_cpt_hdr,
+-		npc_parse_higig2_hdr, npc_parse_tx_queue,  npc_parse_la,     npc_parse_lb,
+-		npc_parse_lc,	      npc_parse_ld,	   npc_parse_le,     npc_parse_lf,
+-		npc_parse_lg,	      npc_parse_lh,
++		npc_parse_meta_items, npc_parse_port_representor_id,
++		npc_parse_mark_item,  npc_parse_pre_l2,
++		npc_parse_cpt_hdr,    npc_parse_higig2_hdr,
++		npc_parse_tx_queue,   npc_parse_la,
++		npc_parse_lb,	      npc_parse_lc,
++		npc_parse_ld,	      npc_parse_le,
++		npc_parse_lf,	      npc_parse_lg,
++		npc_parse_lh,
+ 	};
+ 	uint8_t layer = 0;
+ 	int key_offset;
+@@ -1035,15 +1041,18 @@ npc_rss_action_program(struct roc_npc *roc_npc,
+ 		       struct roc_npc_flow *flow)
+ {
+ 	const struct roc_npc_action_rss *rss;
++	struct roc_npc *npc = roc_npc;
+ 	uint32_t rss_grp;
+ 	uint8_t alg_idx;
+ 	int rc;
+ 
++	if (flow->has_rep)
++		npc = roc_npc->rep_npc;
++
+ 	for (; actions->type != ROC_NPC_ACTION_TYPE_END; actions++) {
+ 		if (actions->type == ROC_NPC_ACTION_TYPE_RSS) {
+ 			rss = (const struct roc_npc_action_rss *)actions->conf;
+-			rc = npc_rss_action_configure(roc_npc, rss, &alg_idx,
+-						      &rss_grp, flow->mcam_id);
++			rc = npc_rss_action_configure(npc, rss, &alg_idx, &rss_grp, flow->mcam_id);
+ 			if (rc)
+ 				return rc;
+ 
+@@ -1066,7 +1075,7 @@ npc_vtag_cfg_delete(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 	struct roc_nix *roc_nix = roc_npc->roc_nix;
+ 	struct nix_vtag_config *vtag_cfg;
+ 	struct nix_vtag_config_rsp *rsp;
+-	struct mbox *mbox;
++	struct mbox *mbox, *ombox;
+ 	struct nix *nix;
+ 	int rc = 0;
+ 
+@@ -1076,7 +1085,10 @@ npc_vtag_cfg_delete(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 	} tx_vtag_action;
+ 
+ 	nix = roc_nix_to_nix_priv(roc_nix);
+-	mbox = mbox_get((&nix->dev)->mbox);
++	ombox = (&nix->dev)->mbox;
++	if (flow->has_rep)
++		ombox = flow->rep_mbox;
++	mbox = mbox_get(ombox);
+ 
+ 	tx_vtag_action.reg = flow->vtag_action;
+ 	vtag_cfg = mbox_alloc_msg_nix_vtag_cfg(mbox);
+@@ -1327,6 +1339,8 @@ npc_vtag_action_program(struct roc_npc *roc_npc,
+ 
+ 	nix = roc_nix_to_nix_priv(roc_nix);
+ 	mbox = (&nix->dev)->mbox;
++	if (flow->has_rep)
++		mbox = flow->rep_mbox;
+ 
+ 	memset(vlan_info, 0, sizeof(vlan_info));
+ 
+@@ -1482,6 +1496,17 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	memset(flow, 0, sizeof(*flow));
+ 	memset(&parse_state, 0, sizeof(parse_state));
+ 
++	flow->port_id = -1;
++	if (roc_npc->rep_npc) {
++		flow->rep_channel = roc_nix_to_nix_priv(roc_npc->rep_npc->roc_nix)->rx_chan_base;
++		flow->rep_pf_func = roc_npc->rep_pf_func;
++		flow->rep_mbox = roc_npc_to_npc_priv(roc_npc->rep_npc)->mbox;
++		flow->has_rep = true;
++		flow->is_rep_vf = !roc_nix_is_pf(roc_npc->rep_npc->roc_nix);
++		flow->port_id = roc_npc->rep_port_id;
++		flow->rep_npc = roc_npc_to_npc_priv(roc_npc->rep_npc);
++	}
++
+ 	parse_state.dst_pf_func = dst_pf_func;
+ 
+ 	rc = npc_parse_rule(roc_npc, attr, pattern, actions, flow, &parse_state);
+@@ -1509,6 +1534,7 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		*errcode = rc;
+ 		goto set_rss_failed;
+ 	}
++	roc_npc->rep_npc = NULL;
+ 
+ 	if (flow->has_age_action)
+ 		npc_age_flow_list_entry_add(roc_npc, flow);
+@@ -1521,6 +1547,7 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	TAILQ_FOREACH(flow_iter, list, next) {
+ 		if (flow_iter->mcam_id > flow->mcam_id) {
+ 			TAILQ_INSERT_BEFORE(flow_iter, flow, next);
++			roc_npc->rep_npc = NULL;
+ 			return flow;
+ 		}
+ 	}
+@@ -1529,6 +1556,7 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	return flow;
+ 
+ set_rss_failed:
++	roc_npc->rep_npc = NULL;
+ 	if (flow->use_pre_alloc == 0) {
+ 		rc = roc_npc_mcam_free_entry(roc_npc, flow->mcam_id);
+ 		if (rc != 0) {
+@@ -1540,6 +1568,7 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		npc_inline_dev_ipsec_action_free(npc, flow);
+ 	}
+ err_exit:
++	roc_npc->rep_npc = NULL;
+ 	plt_free(flow);
+ 	return NULL;
+ }
+@@ -1547,15 +1576,19 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ int
+ npc_rss_group_free(struct npc *npc, struct roc_npc_flow *flow)
+ {
++	struct npc *lnpc = npc;
+ 	uint32_t rss_grp;
+ 
++	if (flow->has_rep)
++		lnpc = flow->rep_npc;
++
+ 	if ((flow->npc_action & 0xF) == NIX_RX_ACTIONOP_RSS) {
+ 		rss_grp = (flow->npc_action >> NPC_RSS_ACT_GRP_OFFSET) &
+ 			  NPC_RSS_ACT_GRP_MASK;
+ 		if (rss_grp == 0 || rss_grp >= npc->rss_grps)
+ 			return -EINVAL;
+ 
+-		plt_bitmap_clear(npc->rss_grp_entries, rss_grp);
++		plt_bitmap_clear(lnpc->rss_grp_entries, rss_grp);
+ 	}
+ 
+ 	return 0;
+@@ -1636,7 +1669,7 @@ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ }
+ 
+ void
+-roc_npc_flow_dump(FILE *file, struct roc_npc *roc_npc)
++roc_npc_flow_dump(FILE *file, struct roc_npc *roc_npc, int rep_port_id)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	struct roc_npc_flow *flow_iter;
+@@ -1650,12 +1683,14 @@ roc_npc_flow_dump(FILE *file, struct roc_npc *roc_npc)
+ 
+ 		/* List in ascending order of mcam entries */
+ 		TAILQ_FOREACH(flow_iter, list, next) {
+-			roc_npc_flow_mcam_dump(file, roc_npc, flow_iter);
++			if (rep_port_id == -1 || rep_port_id == flow_iter->port_id)
++				roc_npc_flow_mcam_dump(file, roc_npc, flow_iter);
+ 		}
+ 	}
+ 
+ 	TAILQ_FOREACH(flow_iter, &npc->ipsec_list, next) {
+-		roc_npc_flow_mcam_dump(file, roc_npc, flow_iter);
++		if (rep_port_id == -1 || rep_port_id == flow_iter->port_id)
++			roc_npc_flow_mcam_dump(file, roc_npc, flow_iter);
+ 	}
+ }
+ 
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index b71ddd1578ea3..e9870a162a65e 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -41,6 +41,7 @@ enum roc_npc_item_type {
+ 	ROC_NPC_ITEM_TYPE_MARK,
+ 	ROC_NPC_ITEM_TYPE_TX_QUEUE,
+ 	ROC_NPC_ITEM_TYPE_IPV6_ROUTING_EXT,
++	ROC_NPC_ITEM_TYPE_REPRESENTED_PORT,
+ 	ROC_NPC_ITEM_TYPE_END,
+ };
+ 
+@@ -321,6 +322,13 @@ struct roc_npc_flow {
+ 	void *age_context;
+ 	uint32_t timeout;
+ 	bool has_age_action;
++	uint16_t rep_pf_func;
++	uint16_t rep_channel;
++	struct mbox *rep_mbox;
++	bool has_rep;
++	bool is_rep_vf;
++	struct npc *rep_npc;
++	int port_id;
+ 
+ 	TAILQ_ENTRY(roc_npc_flow) next;
+ };
+@@ -389,6 +397,9 @@ struct roc_npc {
+ 	uint16_t sdp_channel;
+ 	uint16_t sdp_channel_mask;
+ 	struct roc_npc_flow_age flow_age;
++	struct roc_npc *rep_npc;
++	uint16_t rep_pf_func;
++	int rep_port_id;
+ 
+ #define ROC_NPC_MEM_SZ (6 * 1024)
+ 	uint8_t reserved[ROC_NPC_MEM_SZ];
+@@ -426,7 +437,7 @@ int __roc_api roc_npc_mcam_clear_counter(struct roc_npc *roc_npc, uint32_t ctr_i
+ int __roc_api roc_npc_inl_mcam_read_counter(uint32_t ctr_id, uint64_t *count);
+ int __roc_api roc_npc_inl_mcam_clear_counter(uint32_t ctr_id);
+ int __roc_api roc_npc_mcam_free_all_resources(struct roc_npc *roc_npc);
+-void __roc_api roc_npc_flow_dump(FILE *file, struct roc_npc *roc_npc);
++void __roc_api roc_npc_flow_dump(FILE *file, struct roc_npc *roc_npc, int rep_port_id);
+ void __roc_api roc_npc_flow_mcam_dump(FILE *file, struct roc_npc *roc_npc,
+ 				      struct roc_npc_flow *mcam);
+ int __roc_api roc_npc_mark_actions_get(struct roc_npc *roc_npc);
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index 41edec7d8d046..18d3c3ac9e067 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -143,8 +143,8 @@ npc_lid_lt_in_kex(struct npc *npc, uint8_t lid, uint8_t lt)
+ }
+ 
+ static void
+-npc_construct_ldata_mask(struct npc *npc, struct plt_bitmap *bmap, uint8_t lid,
+-			 uint8_t lt, uint8_t ld)
++npc_construct_ldata_mask(struct npc *npc, struct plt_bitmap *bmap, uint8_t lid, uint8_t lt,
++			 uint8_t ld)
+ {
+ 	struct npc_xtract_info *x_info, *infoflag;
+ 	int hdr_off, keylen;
+@@ -197,8 +197,7 @@ npc_construct_ldata_mask(struct npc *npc, struct plt_bitmap *bmap, uint8_t lid,
+  * @param len length of the match
+  */
+ static bool
+-npc_is_kex_enabled(struct npc *npc, uint8_t lid, uint8_t lt, int offset,
+-		   int len)
++npc_is_kex_enabled(struct npc *npc, uint8_t lid, uint8_t lt, int offset, int len)
+ {
+ 	struct plt_bitmap *bmap;
+ 	uint32_t bmap_sz;
+@@ -349,8 +348,8 @@ npc_mcam_alloc_entries(struct mbox *mbox, int ref_mcam, int *alloc_entry, int re
+ }
+ 
+ int
+-npc_mcam_alloc_entry(struct npc *npc, struct roc_npc_flow *mcam,
+-		     struct roc_npc_flow *ref_mcam, int prio, int *resp_count)
++npc_mcam_alloc_entry(struct npc *npc, struct roc_npc_flow *mcam, struct roc_npc_flow *ref_mcam,
++		     int prio, int *resp_count)
+ {
+ 	struct npc_mcam_alloc_entry_req *req;
+ 	struct npc_mcam_alloc_entry_rsp *rsp;
+@@ -450,22 +449,17 @@ npc_mcam_write_entry(struct mbox *mbox, struct roc_npc_flow *mcam)
+ static void
+ npc_mcam_process_mkex_cfg(struct npc *npc, struct npc_get_kex_cfg_rsp *kex_rsp)
+ {
+-	volatile uint64_t(
+-		*q)[NPC_MAX_INTF][NPC_MAX_LID][NPC_MAX_LT][NPC_MAX_LD];
++	volatile uint64_t(*q)[NPC_MAX_INTF][NPC_MAX_LID][NPC_MAX_LT][NPC_MAX_LD];
+ 	struct npc_xtract_info *x_info = NULL;
+ 	int lid, lt, ld, fl, ix;
+ 	npc_dxcfg_t *p;
+ 	uint64_t keyw;
+ 	uint64_t val;
+ 
+-	npc->keyx_supp_nmask[NPC_MCAM_RX] =
+-		kex_rsp->rx_keyx_cfg & 0x7fffffffULL;
+-	npc->keyx_supp_nmask[NPC_MCAM_TX] =
+-		kex_rsp->tx_keyx_cfg & 0x7fffffffULL;
+-	npc->keyx_len[NPC_MCAM_RX] =
+-		npc_supp_key_len(npc->keyx_supp_nmask[NPC_MCAM_RX]);
+-	npc->keyx_len[NPC_MCAM_TX] =
+-		npc_supp_key_len(npc->keyx_supp_nmask[NPC_MCAM_TX]);
++	npc->keyx_supp_nmask[NPC_MCAM_RX] = kex_rsp->rx_keyx_cfg & 0x7fffffffULL;
++	npc->keyx_supp_nmask[NPC_MCAM_TX] = kex_rsp->tx_keyx_cfg & 0x7fffffffULL;
++	npc->keyx_len[NPC_MCAM_RX] = npc_supp_key_len(npc->keyx_supp_nmask[NPC_MCAM_RX]);
++	npc->keyx_len[NPC_MCAM_TX] = npc_supp_key_len(npc->keyx_supp_nmask[NPC_MCAM_TX]);
+ 
+ 	keyw = (kex_rsp->rx_keyx_cfg >> 32) & 0x7ULL;
+ 	npc->keyw[NPC_MCAM_RX] = keyw;
+@@ -485,8 +479,7 @@ npc_mcam_process_mkex_cfg(struct npc *npc, struct npc_get_kex_cfg_rsp *kex_rsp)
+ 
+ 	/* Update LID, LT and LDATA cfg */
+ 	p = &npc->prx_dxcfg;
+-	q = (volatile uint64_t(*)[][NPC_MAX_LID][NPC_MAX_LT][NPC_MAX_LD])(
+-		&kex_rsp->intf_lid_lt_ld);
++	q = (volatile uint64_t(*)[][NPC_MAX_LID][NPC_MAX_LT][NPC_MAX_LD])(&kex_rsp->intf_lid_lt_ld);
+ 	for (ix = 0; ix < NPC_MAX_INTF; ix++) {
+ 		for (lid = 0; lid < NPC_MAX_LID; lid++) {
+ 			for (lt = 0; lt < NPC_MAX_LT; lt++) {
+@@ -539,8 +532,7 @@ npc_mcam_fetch_kex_cfg(struct npc *npc)
+ 		goto done;
+ 	}
+ 
+-	mbox_memcpy((char *)npc->profile_name, kex_rsp->mkex_pfl_name,
+-		    MKEX_NAME_LEN);
++	mbox_memcpy((char *)npc->profile_name, kex_rsp->mkex_pfl_name, MKEX_NAME_LEN);
+ 
+ 	npc->exact_match_ena = (kex_rsp->rx_keyx_cfg >> 40) & 0xF;
+ 	npc_mcam_process_mkex_cfg(npc, kex_rsp);
+@@ -551,9 +543,8 @@ npc_mcam_fetch_kex_cfg(struct npc *npc)
+ }
+ 
+ static void
+-npc_mcam_set_channel(struct roc_npc_flow *flow,
+-		     struct npc_mcam_write_entry_req *req, uint16_t channel,
+-		     uint16_t chan_mask, bool is_second_pass)
++npc_mcam_set_channel(struct roc_npc_flow *flow, struct npc_mcam_write_entry_req *req,
++		     uint16_t channel, uint16_t chan_mask, bool is_second_pass)
+ {
+ 	uint16_t chan = 0, mask = 0;
+ 
+@@ -710,6 +701,9 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 	if (flow->nix_intf == NIX_INTF_TX) {
+ 		uint16_t pf_func = (flow->npc_action >> 4) & 0xffff;
+ 
++		if (flow->has_rep)
++			pf_func = flow->rep_pf_func;
++
+ 		pf_func = plt_cpu_to_be_16(pf_func);
+ 
+ 		rc = npc_mcam_set_pf_func(npc, flow, pf_func);
+@@ -733,6 +727,14 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 
+ 			npc_mcam_set_channel(flow, req, inl_dev->channel, inl_dev->chan_mask,
+ 					     false);
++		} else if (flow->has_rep) {
++			pf_func = flow->rep_pf_func;
++			req->entry_data.action &= ~(GENMASK(19, 4));
++			req->entry_data.action |= (uint64_t)pf_func << 4;
++			flow->npc_action &= ~(GENMASK(19, 4));
++			flow->npc_action |= (uint64_t)pf_func << 4;
++			npc_mcam_set_channel(flow, req, flow->rep_channel, (BIT_ULL(12) - 1),
++					     false);
+ 		} else if (npc->is_sdp_link) {
+ 			npc_mcam_set_channel(flow, req, npc->sdp_channel, npc->sdp_channel_mask,
+ 					     pst->is_second_pass_rule);
+@@ -903,13 +905,11 @@ npc_program_mcam(struct npc *npc, struct npc_parse_state *pst, bool mcam_alloc)
+ 						data_off = 0;
+ 						index++;
+ 					}
+-					key_data[index] |=
+-						((uint64_t)data << data_off);
++					key_data[index] |= ((uint64_t)data << data_off);
+ 
+ 					if (lt == 0)
+ 						mask = 0;
+-					key_mask[index] |=
+-						((uint64_t)mask << data_off);
++					key_mask[index] |= ((uint64_t)mask << data_off);
+ 					data_off += 4;
+ 				}
+ 			}
+@@ -934,8 +934,12 @@ npc_program_mcam(struct npc *npc, struct npc_parse_state *pst, bool mcam_alloc)
+ 	    (pst->flow->npc_action & NIX_RX_ACTIONOP_UCAST_IPSEC))
+ 		skip_base_rule = true;
+ 
+-	if (pst->is_vf && pst->flow->nix_intf == NIX_INTF_RX && !skip_base_rule) {
+-		mbox = mbox_get(npc->mbox);
++	if ((pst->is_vf || pst->flow->is_rep_vf) && pst->flow->nix_intf == NIX_INTF_RX &&
++	    !skip_base_rule) {
++		if (pst->flow->has_rep)
++			mbox = mbox_get(pst->flow->rep_mbox);
++		else
++			mbox = mbox_get(npc->mbox);
+ 		(void)mbox_alloc_msg_npc_read_base_steer_rule(mbox);
+ 		rc = mbox_process_msg(mbox, (void *)&base_rule_rsp);
+ 		if (rc) {
+diff --git a/drivers/common/cnxk/roc_npc_parse.c b/drivers/common/cnxk/roc_npc_parse.c
+index ecd1b3e13bd04..40ed3a55c678a 100644
+--- a/drivers/common/cnxk/roc_npc_parse.c
++++ b/drivers/common/cnxk/roc_npc_parse.c
+@@ -35,6 +35,17 @@ npc_parse_mark_item(struct npc_parse_state *pst)
+ 	return 0;
+ }
+ 
++int
++npc_parse_port_representor_id(struct npc_parse_state *pst)
++{
++	if (pst->pattern->type != ROC_NPC_ITEM_TYPE_REPRESENTED_PORT)
++		return 0;
++
++	pst->pattern++;
++
++	return 0;
++}
++
+ static int
+ npc_flow_raw_item_prepare(const struct roc_npc_flow_item_raw *raw_spec,
+ 			  const struct roc_npc_flow_item_raw *raw_mask,
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 424f8e207adc6..009b1d7b3e7fa 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -456,6 +456,7 @@ int npc_mask_is_supported(const char *mask, const char *hw_mask, int len);
+ int npc_parse_item_basic(const struct roc_npc_item_info *item, struct npc_parse_item_info *info);
+ int npc_parse_meta_items(struct npc_parse_state *pst);
+ int npc_parse_mark_item(struct npc_parse_state *pst);
++int npc_parse_port_representor_id(struct npc_parse_state *pst);
+ int npc_parse_pre_l2(struct npc_parse_state *pst);
+ int npc_parse_higig2_hdr(struct npc_parse_state *pst);
+ int npc_parse_cpt_hdr(struct npc_parse_state *pst);
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index 08ab75e2bbb91..94cca880c7a12 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -4,65 +4,45 @@
+ #include <cnxk_flow.h>
+ 
+ const struct cnxk_rte_flow_term_info term[] = {
+-	[RTE_FLOW_ITEM_TYPE_ETH] = {ROC_NPC_ITEM_TYPE_ETH,
+-				    sizeof(struct rte_flow_item_eth)},
+-	[RTE_FLOW_ITEM_TYPE_VLAN] = {ROC_NPC_ITEM_TYPE_VLAN,
+-				     sizeof(struct rte_flow_item_vlan)},
+-	[RTE_FLOW_ITEM_TYPE_E_TAG] = {ROC_NPC_ITEM_TYPE_E_TAG,
+-				      sizeof(struct rte_flow_item_e_tag)},
+-	[RTE_FLOW_ITEM_TYPE_IPV4] = {ROC_NPC_ITEM_TYPE_IPV4,
+-				     sizeof(struct rte_flow_item_ipv4)},
+-	[RTE_FLOW_ITEM_TYPE_IPV6] = {ROC_NPC_ITEM_TYPE_IPV6,
+-				     sizeof(struct rte_flow_item_ipv6)},
+-	[RTE_FLOW_ITEM_TYPE_IPV6_FRAG_EXT] = {
+-			ROC_NPC_ITEM_TYPE_IPV6_FRAG_EXT,
+-			sizeof(struct rte_flow_item_ipv6_frag_ext)},
+-	[RTE_FLOW_ITEM_TYPE_ARP_ETH_IPV4] = {
+-			ROC_NPC_ITEM_TYPE_ARP_ETH_IPV4,
+-			sizeof(struct rte_flow_item_arp_eth_ipv4)},
+-	[RTE_FLOW_ITEM_TYPE_MPLS] = {ROC_NPC_ITEM_TYPE_MPLS,
+-				     sizeof(struct rte_flow_item_mpls)},
+-	[RTE_FLOW_ITEM_TYPE_ICMP] = {ROC_NPC_ITEM_TYPE_ICMP,
+-				     sizeof(struct rte_flow_item_icmp)},
+-	[RTE_FLOW_ITEM_TYPE_UDP] = {ROC_NPC_ITEM_TYPE_UDP,
+-				    sizeof(struct rte_flow_item_udp)},
+-	[RTE_FLOW_ITEM_TYPE_TCP] = {ROC_NPC_ITEM_TYPE_TCP,
+-				    sizeof(struct rte_flow_item_tcp)},
+-	[RTE_FLOW_ITEM_TYPE_SCTP] = {ROC_NPC_ITEM_TYPE_SCTP,
+-				     sizeof(struct rte_flow_item_sctp)},
+-	[RTE_FLOW_ITEM_TYPE_ESP] = {ROC_NPC_ITEM_TYPE_ESP,
+-				    sizeof(struct rte_flow_item_esp)},
+-	[RTE_FLOW_ITEM_TYPE_GRE] = {ROC_NPC_ITEM_TYPE_GRE,
+-				    sizeof(struct rte_flow_item_gre)},
+-	[RTE_FLOW_ITEM_TYPE_NVGRE] = {ROC_NPC_ITEM_TYPE_NVGRE,
+-				      sizeof(struct rte_flow_item_nvgre)},
+-	[RTE_FLOW_ITEM_TYPE_VXLAN] = {ROC_NPC_ITEM_TYPE_VXLAN,
+-				      sizeof(struct rte_flow_item_vxlan)},
+-	[RTE_FLOW_ITEM_TYPE_GTPC] = {ROC_NPC_ITEM_TYPE_GTPC,
+-				     sizeof(struct rte_flow_item_gtp)},
+-	[RTE_FLOW_ITEM_TYPE_GTPU] = {ROC_NPC_ITEM_TYPE_GTPU,
+-				     sizeof(struct rte_flow_item_gtp)},
++	[RTE_FLOW_ITEM_TYPE_ETH] = {ROC_NPC_ITEM_TYPE_ETH, sizeof(struct rte_flow_item_eth)},
++	[RTE_FLOW_ITEM_TYPE_VLAN] = {ROC_NPC_ITEM_TYPE_VLAN, sizeof(struct rte_flow_item_vlan)},
++	[RTE_FLOW_ITEM_TYPE_E_TAG] = {ROC_NPC_ITEM_TYPE_E_TAG, sizeof(struct rte_flow_item_e_tag)},
++	[RTE_FLOW_ITEM_TYPE_IPV4] = {ROC_NPC_ITEM_TYPE_IPV4, sizeof(struct rte_flow_item_ipv4)},
++	[RTE_FLOW_ITEM_TYPE_IPV6] = {ROC_NPC_ITEM_TYPE_IPV6, sizeof(struct rte_flow_item_ipv6)},
++	[RTE_FLOW_ITEM_TYPE_IPV6_FRAG_EXT] = {ROC_NPC_ITEM_TYPE_IPV6_FRAG_EXT,
++					      sizeof(struct rte_flow_item_ipv6_frag_ext)},
++	[RTE_FLOW_ITEM_TYPE_ARP_ETH_IPV4] = {ROC_NPC_ITEM_TYPE_ARP_ETH_IPV4,
++					     sizeof(struct rte_flow_item_arp_eth_ipv4)},
++	[RTE_FLOW_ITEM_TYPE_MPLS] = {ROC_NPC_ITEM_TYPE_MPLS, sizeof(struct rte_flow_item_mpls)},
++	[RTE_FLOW_ITEM_TYPE_ICMP] = {ROC_NPC_ITEM_TYPE_ICMP, sizeof(struct rte_flow_item_icmp)},
++	[RTE_FLOW_ITEM_TYPE_UDP] = {ROC_NPC_ITEM_TYPE_UDP, sizeof(struct rte_flow_item_udp)},
++	[RTE_FLOW_ITEM_TYPE_TCP] = {ROC_NPC_ITEM_TYPE_TCP, sizeof(struct rte_flow_item_tcp)},
++	[RTE_FLOW_ITEM_TYPE_SCTP] = {ROC_NPC_ITEM_TYPE_SCTP, sizeof(struct rte_flow_item_sctp)},
++	[RTE_FLOW_ITEM_TYPE_ESP] = {ROC_NPC_ITEM_TYPE_ESP, sizeof(struct rte_flow_item_esp)},
++	[RTE_FLOW_ITEM_TYPE_GRE] = {ROC_NPC_ITEM_TYPE_GRE, sizeof(struct rte_flow_item_gre)},
++	[RTE_FLOW_ITEM_TYPE_NVGRE] = {ROC_NPC_ITEM_TYPE_NVGRE, sizeof(struct rte_flow_item_nvgre)},
++	[RTE_FLOW_ITEM_TYPE_VXLAN] = {ROC_NPC_ITEM_TYPE_VXLAN, sizeof(struct rte_flow_item_vxlan)},
++	[RTE_FLOW_ITEM_TYPE_GTPC] = {ROC_NPC_ITEM_TYPE_GTPC, sizeof(struct rte_flow_item_gtp)},
++	[RTE_FLOW_ITEM_TYPE_GTPU] = {ROC_NPC_ITEM_TYPE_GTPU, sizeof(struct rte_flow_item_gtp)},
+ 	[RTE_FLOW_ITEM_TYPE_GENEVE] = {ROC_NPC_ITEM_TYPE_GENEVE,
+ 				       sizeof(struct rte_flow_item_geneve)},
+-	[RTE_FLOW_ITEM_TYPE_VXLAN_GPE] = {
+-			ROC_NPC_ITEM_TYPE_VXLAN_GPE,
+-			sizeof(struct rte_flow_item_vxlan_gpe)},
++	[RTE_FLOW_ITEM_TYPE_VXLAN_GPE] = {ROC_NPC_ITEM_TYPE_VXLAN_GPE,
++					  sizeof(struct rte_flow_item_vxlan_gpe)},
+ 	[RTE_FLOW_ITEM_TYPE_IPV6_EXT] = {ROC_NPC_ITEM_TYPE_IPV6_EXT,
+ 					 sizeof(struct rte_flow_item_ipv6_ext)},
+ 	[RTE_FLOW_ITEM_TYPE_VOID] = {ROC_NPC_ITEM_TYPE_VOID, 0},
+ 	[RTE_FLOW_ITEM_TYPE_ANY] = {ROC_NPC_ITEM_TYPE_ANY, 0},
+-	[RTE_FLOW_ITEM_TYPE_GRE_KEY] = {ROC_NPC_ITEM_TYPE_GRE_KEY,
+-					sizeof(uint32_t)},
++	[RTE_FLOW_ITEM_TYPE_GRE_KEY] = {ROC_NPC_ITEM_TYPE_GRE_KEY, sizeof(uint32_t)},
+ 	[RTE_FLOW_ITEM_TYPE_HIGIG2] = {ROC_NPC_ITEM_TYPE_HIGIG2,
+ 				       sizeof(struct rte_flow_item_higig2_hdr)},
+-	[RTE_FLOW_ITEM_TYPE_RAW] = {ROC_NPC_ITEM_TYPE_RAW,
+-				    sizeof(struct rte_flow_item_raw)},
+-	[RTE_FLOW_ITEM_TYPE_MARK] = {ROC_NPC_ITEM_TYPE_MARK,
+-				     sizeof(struct rte_flow_item_mark)},
++	[RTE_FLOW_ITEM_TYPE_RAW] = {ROC_NPC_ITEM_TYPE_RAW, sizeof(struct rte_flow_item_raw)},
++	[RTE_FLOW_ITEM_TYPE_MARK] = {ROC_NPC_ITEM_TYPE_MARK, sizeof(struct rte_flow_item_mark)},
+ 	[RTE_FLOW_ITEM_TYPE_IPV6_ROUTING_EXT] = {ROC_NPC_ITEM_TYPE_IPV6_ROUTING_EXT,
+-				     sizeof(struct rte_flow_item_ipv6_routing_ext)},
++						 sizeof(struct rte_flow_item_ipv6_routing_ext)},
+ 	[RTE_FLOW_ITEM_TYPE_TX_QUEUE] = {ROC_NPC_ITEM_TYPE_TX_QUEUE,
+-				     sizeof(struct rte_flow_item_tx_queue)}};
++					 sizeof(struct rte_flow_item_tx_queue)},
++	[RTE_FLOW_ITEM_TYPE_REPRESENTED_PORT] = {ROC_NPC_ITEM_TYPE_REPRESENTED_PORT,
++						 sizeof(struct rte_flow_item_ethdev)}};
+ 
+ static int
+ npc_rss_action_validate(struct rte_eth_dev *eth_dev,
+@@ -264,6 +244,11 @@ cnxk_map_flow_data(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr
+ 		   struct roc_npc_attr *in_attr, struct roc_npc_item_info in_pattern[],
+ 		   struct roc_npc_action in_actions[], uint32_t *flowkey_cfg, uint16_t *dst_pf_func)
+ {
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	const struct rte_flow_item_ethdev *rep_eth_dev;
++	struct rte_eth_dev *portid_eth_dev;
++	char if_name[RTE_ETH_NAME_MAX_LEN];
++	struct cnxk_eth_dev *hw_dst;
+ 	int i = 0;
+ 
+ 	in_attr->priority = attr->priority;
+@@ -276,6 +261,27 @@ cnxk_map_flow_data(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr
+ 		in_pattern[i].mask = pattern->mask;
+ 		in_pattern[i].type = term[pattern->type].item_type;
+ 		in_pattern[i].size = term[pattern->type].item_size;
++		if (pattern->type == RTE_FLOW_ITEM_TYPE_REPRESENTED_PORT) {
++			rep_eth_dev = (const struct rte_flow_item_ethdev *)pattern->spec;
++			if (rte_eth_dev_get_name_by_port(rep_eth_dev->port_id, if_name)) {
++				plt_err("Name not found for output port id");
++				return -EINVAL;
++			}
++			portid_eth_dev = rte_eth_dev_allocated(if_name);
++			if (!portid_eth_dev) {
++				plt_err("eth_dev not found for output port id");
++				return -EINVAL;
++			}
++			if (strcmp(portid_eth_dev->device->driver->name,
++				   eth_dev->device->driver->name) != 0) {
++				plt_err("Output port not under same driver");
++				return -EINVAL;
++			}
++			hw_dst = portid_eth_dev->data->dev_private;
++			dev->npc.rep_npc = &hw_dst->npc;
++			dev->npc.rep_port_id = rep_eth_dev->port_id;
++			dev->npc.rep_pf_func = hw_dst->npc.pf_func;
++		}
+ 		pattern++;
+ 		i++;
+ 	}
+@@ -481,7 +487,7 @@ cnxk_flow_dev_dump(struct rte_eth_dev *eth_dev, struct rte_flow *flow,
+ 		return -EINVAL;
+ 	}
+ 
+-	roc_npc_flow_dump(file, npc);
++	roc_npc_flow_dump(file, npc, -1);
+ 
+ 	return 0;
+ }
+-- 
+2.25.1
+

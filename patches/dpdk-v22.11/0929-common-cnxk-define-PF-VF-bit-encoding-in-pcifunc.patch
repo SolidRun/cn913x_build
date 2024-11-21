@@ -1,0 +1,116 @@
+From b302cd789d729939f742fb0e2126afbe5237ffc8 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Mon, 2 Sep 2024 11:59:39 +0530
+Subject: [PATCH 929/955] common/cnxk: define PF VF bit encoding in pcifunc
+
+In cn20k, PF and VF bit encoding format in a pcifunc has changed to
+accommodate more no of PFs. Hence defining the pf/vf encoding
+parameters for cn20k and cn9k/10k platforms.
+
+Change-Id: I546fa8101f1769ad7c6911e993ebf1270cc323a8
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c      |  1 +
+ drivers/common/cnxk/roc_dev_priv.h | 31 ++++++++++++++++++++++++------
+ drivers/common/cnxk/roc_npc.c      |  5 ++++-
+ 3 files changed, 30 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index c1b06a1cb3a1a..463eb42006e10 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -23,6 +23,7 @@
+ /* VF interrupt message pending bits - mbox or flr */
+ #define ROC_DEV_MBOX_PEND BIT_ULL(0)
+ #define ROC_DEV_FLR_PEND  BIT_ULL(1)
++
+ static void *
+ mbox_mem_map(off_t off, size_t size)
+ {
+diff --git a/drivers/common/cnxk/roc_dev_priv.h b/drivers/common/cnxk/roc_dev_priv.h
+index 456f89e28cff3..6bc5efacb4f5e 100644
+--- a/drivers/common/cnxk/roc_dev_priv.h
++++ b/drivers/common/cnxk/roc_dev_priv.h
+@@ -7,12 +7,19 @@
+ 
+ #define DEV_HWCAP_F_VF BIT_ULL(0) /* VF device */
+ 
++/* PF and VF bit encoding parameters in pcifunc */
++#define RVU_PFVF_PF_SHIFT_CN20K	  9
++#define RVU_PFVF_PF_MASK_CN20K	  0x7F
++#define RVU_PFVF_FUNC_SHIFT_CN20K 0
++#define RVU_PFVF_FUNC_MASK_CN20K  0x1FF
++
+ #define RVU_PFVF_PF_SHIFT   10
+ #define RVU_PFVF_PF_MASK    0x3F
+ #define RVU_PFVF_FUNC_SHIFT 0
+ #define RVU_PFVF_FUNC_MASK  0x3FF
+-#define RVU_MAX_VF	    64 /* RVU_PF_VFPF_MBOX_INT(0..1) */
+-#define RVU_MAX_INT_RETRY   3
++
++#define RVU_MAX_VF	  64 /* RVU_PF_VFPF_MBOX_INT(0..1) */
++#define RVU_MAX_INT_RETRY 3
+ 
+ /* PF/VF message handling timer */
+ #define VF_PF_MBOX_TIMER_MS (20 * 1000)
+@@ -52,25 +59,37 @@ struct dev_ops {
+ static inline int
+ dev_get_vf(uint16_t pf_func)
+ {
+-	return (((pf_func >> RVU_PFVF_FUNC_SHIFT) & RVU_PFVF_FUNC_MASK) - 1);
++	if (roc_model_is_cn20k())
++		return (((pf_func >> RVU_PFVF_FUNC_SHIFT_CN20K) & RVU_PFVF_FUNC_MASK_CN20K) - 1);
++	else
++		return (((pf_func >> RVU_PFVF_FUNC_SHIFT) & RVU_PFVF_FUNC_MASK) - 1);
+ }
+ 
+ static inline int
+ dev_get_pf(uint16_t pf_func)
+ {
+-	return (pf_func >> RVU_PFVF_PF_SHIFT) & RVU_PFVF_PF_MASK;
++	if (roc_model_is_cn20k())
++		return (pf_func >> RVU_PFVF_PF_SHIFT_CN20K) & RVU_PFVF_PF_MASK_CN20K;
++	else
++		return (pf_func >> RVU_PFVF_PF_SHIFT) & RVU_PFVF_PF_MASK;
+ }
+ 
+ static inline int
+ dev_pf_func(int pf, int vf)
+ {
+-	return (pf << RVU_PFVF_PF_SHIFT) | ((vf << RVU_PFVF_FUNC_SHIFT) + 1);
++	if (roc_model_is_cn20k())
++		return (pf << RVU_PFVF_PF_SHIFT_CN20K) | ((vf << RVU_PFVF_FUNC_SHIFT_CN20K) + 1);
++	else
++		return (pf << RVU_PFVF_PF_SHIFT) | ((vf << RVU_PFVF_FUNC_SHIFT) + 1);
+ }
+ 
+ static inline int
+ dev_is_afvf(uint16_t pf_func)
+ {
+-	return !(pf_func & ~RVU_PFVF_FUNC_MASK);
++	if (roc_model_is_cn20k())
++		return !(pf_func & ~RVU_PFVF_FUNC_MASK_CN20K);
++	else
++		return !(pf_func & ~RVU_PFVF_FUNC_MASK);
+ }
+ 
+ struct mbox_sync {
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 42a23f40510b5..ca943eed641d6 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -592,7 +592,10 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		case ROC_NPC_ACTION_TYPE_VF:
+ 			vf_act = (const struct roc_npc_action_vf *)actions->conf;
+ 			req_act |= ROC_NPC_ACTION_TYPE_VF;
+-			vf_id = vf_act->id & RVU_PFVF_FUNC_MASK;
++			if (roc_model_is_cn20k())
++				vf_id = vf_act->id & RVU_PFVF_FUNC_MASK_CN20K;
++			else
++				vf_id = vf_act->id & RVU_PFVF_FUNC_MASK;
+ 			pf_func &= (0xfc00);
+ 			pf_func = (pf_func | (vf_id + 1));
+ 			break;
+-- 
+2.25.1
+

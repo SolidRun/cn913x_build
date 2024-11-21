@@ -1,0 +1,94 @@
+From 6e4996141c959c4b6d1ba219b83b059c697e2f74 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Thu, 20 Apr 2023 23:32:30 +0530
+Subject: [PATCH 378/955] ci: update MAC test link status
+
+Few boards enabling loopback on RPM interface tooks more time,
+added poll function to get link status up to continue packet
+test. Don't consider default unicast MAC address when RPM
+interface is down.
+
+Change-Id: Ia63b74df4d5d2b9108a27c8f696235cbf337bba3
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101914
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/mac_test/cnxk_mac_test.sh | 26 ++++++++++++++++++-
+ marvell-ci/test/env/cn10k.env                 |  1 -
+ 2 files changed, 25 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+index 7c1da64637109..0d625efd38e56 100755
+--- a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
++++ b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+@@ -179,12 +179,35 @@ function macfltr_pkt_test_verify()
+ 		exit 1
+ 	fi
+ }
++function check_port_status()
++{
++	# Wait for receiving all packets
++	start_ts=`date +%s`
++	start_ts=$((start_ts + 60))
++	link_status=""
++	while [[ "$link_status" != " up" ]]
++	do
++		testpmd_cmd $PRFX "show port info $1"
++		sleep 3
++		link_status=`testpmd_log $PRFX | tail -60 | \
++			grep "Link status: " | cut --complement -f 1 -d ":"`
++		ts=`date +%s`
++		if (( $ts > $start_ts ))
++		then
++			echo "Timeout port is down"
++			cleanup_interface
++			exit 1
++		fi
++		echo "link status $link_status"
++	done
++}
+ 
+ function macfltr_pkt_test()
+ {
+ 	testpmd_cmd_refresh $PRFX "port stop $1"
+ 	testpmd_cmd_refresh $PRFX "port config $1 loopback 1"
+ 	testpmd_cmd_refresh $PRFX "port start $1"
++	check_port_status $1
+ 
+ 	if [[ $3 == "mcast" ]]
+ 	then
+@@ -231,6 +254,7 @@ function xmit_pkts()
+ 	testpmd_cmd_refresh $PRFX "port stop $1"
+ 	testpmd_cmd_refresh $PRFX "port config $1 loopback 1"
+ 	testpmd_cmd_refresh $PRFX "port start $1"
++	check_port_status $1
+ 	testpmd_cmd_refresh $PRFX "clear port stats all"
+ 	testpmd_cmd_refresh $PRFX "start"
+ }
+@@ -342,7 +366,7 @@ testpmd_cmd $PRFX "show port $MACFLTR_PORT_INDEX macs"
+ sleep 1
+ CNT=$(macfltr_mac_cnt)
+ if [[ $CNT -eq $NUM_MAX_UCAST_MAC ]] || \
+-	[[ $CNT -eq $(expr $NUM_MAX_UCAST_MAC + 1) ]]
++	[[ $CNT -eq $(expr $NUM_MAX_UCAST_MAC - 1) ]]
+ then
+ 	echo "Total $CNT unicast MAC addresses add successful"
+ else
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index b64c143f98654..90616302c0336 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -70,7 +70,6 @@ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
+ 	cnxk_mtr_test_config
+-	cnxk_mac_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+-- 
+2.25.1
+

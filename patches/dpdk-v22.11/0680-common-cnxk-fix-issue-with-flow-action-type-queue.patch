@@ -1,0 +1,51 @@
+From a7f9dcb393921612bae64305e6dca9526144997a Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Thu, 9 Nov 2023 19:13:54 +0530
+Subject: [PATCH 680/955] common/cnxk: fix issue with flow action type queue
+
+Adding changes to fix RTE Flow action queue for
+cnxk device. While writing the entry rq index is
+not being updated properly. Added changes to fix
+this.
+
+Fixes: 0c3b7e1fe183 ("common/cnxk: support mirror flow action")
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Ibf00215ea914d126c1f21f3494450b59dd325709
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115935
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 85aaa6954e228b5f290826763f27bcddce7341db)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116267
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/common/cnxk/roc_npc_mcam.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index df5c711bb0550..0e6b640cc674a 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -719,6 +719,8 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 
+ 	req->intf = (flow->nix_intf == NIX_INTF_RX) ? NPC_MCAM_RX : NPC_MCAM_TX;
+ 	req->enable_entry = 1;
++	if (flow->nix_intf == NIX_INTF_RX)
++		flow->npc_action |= (uint64_t)flow->recv_queue << 20;
+ 	req->entry_data.action = flow->npc_action;
+ 
+ 	/*
+@@ -741,7 +743,6 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 	}
+ 
+ 	if (flow->nix_intf == NIX_INTF_RX) {
+-		flow->npc_action |= (uint64_t)flow->recv_queue << 20;
+ 		if (inl_dev && inl_dev->is_multi_channel &&
+ 		    (flow->npc_action & NIX_RX_ACTIONOP_UCAST_IPSEC)) {
+ 			pf_func = nix_inl_dev_pffunc_get();
+-- 
+2.25.1
+

@@ -1,0 +1,34 @@
+From cf745d8126c5ebdeda224c656c8b046e40f1103e Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 20 Dec 2023 04:21:18 -0800
+Subject: [PATCH 110/513] ci: crypto autotests update
+
+Enable Rx Inject test
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I808ae5a7f628260afd0bd6c282408e71ccb18281
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118637
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+index 2093c6f3dd8fd..0711c8a39ad2a 100755
+--- a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
++++ b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+@@ -10,7 +10,7 @@ CNXK_MEMPOOL_DEVICE=$(lspci -d :a0fb | tail -1 | awk -e '{ print $1 }')
+ CNXK_EAL_VDEV_OPENSSL="--vdev crypto_openssl"
+ 
+ CN10K_CRYPTO_DEVICE="0002:20:00.1"
+-CN10K_EAL_ARGS="-a $CN10K_CRYPTO_DEVICE,max_qps_limit=4 -a $CNXK_MEMPOOL_DEVICE"
++CN10K_EAL_ARGS="-a $CN10K_CRYPTO_DEVICE,max_qps_limit=4,rx_inj_lf=1 -a $CNXK_MEMPOOL_DEVICE"
+ CN10K_EAL_ARGS+=" --log-level=7"
+ 
+ CN9K_CRYPTO_DEVICE="0002:10:00.1"
+-- 
+2.25.1
+

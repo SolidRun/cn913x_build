@@ -1,0 +1,47 @@
+From fd94fb136c643d7e471f8b0e7f253b0372e4ef32 Mon Sep 17 00:00:00 2001
+From: Jerin Jacob <jerinj@marvell.com>
+Date: Fri, 2 Jun 2023 16:36:59 +0530
+Subject: [PATCH 511/955] doc: remove warning with Doxygen 1.9.7
+
+Since doxygen 1.9.7 version, HTML_TIMESTAMP configuration option
+changed to TIMESTAMP [2]. Fixed the following warning[1] by
+removing TIMESTAMP options all together as all new versions(since 1.8.9)
+of doxygen this option is disabled by default. Another option was
+considered to have this configuration option based on version check, which
+may not be worth having it, especially, external_program.version()
+API introduced in 0.62.0 version of meson.
+
+[1]
+Warning: Tag 'HTML_TIMESTAMP' at line 115 of file 'doc/api/doxy-api.conf'
+has become obsolete.
+
+[2]
+https://www.doxygen.nl/manual/config.html#cfg_timestamp
+
+Cc: stable@dpdk.org
+
+Change-Id: I6d19c0fcc3deb570fb45d2d731ba185324e57393
+Signed-off-by: Jerin Jacob <jerinj@marvell.com>
+Acked-by: Bruce Richardson <bruce.richardson@intel.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106292
+(cherry picked from commit 7c95ef8cccead708e0334346cdcbe6fdf03893f4)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106293
+---
+ doc/api/doxy-api.conf.in | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/doc/api/doxy-api.conf.in b/doc/api/doxy-api.conf.in
+index 4078515010d26..b4bbae12442f8 100644
+--- a/doc/api/doxy-api.conf.in
++++ b/doc/api/doxy-api.conf.in
+@@ -100,7 +100,6 @@ GENERATE_DEPRECATEDLIST = YES
+ VERBATIM_HEADERS        = NO
+ ALPHABETICAL_INDEX      = NO
+ 
+-HTML_TIMESTAMP          = NO
+ HTML_DYNAMIC_SECTIONS   = YES
+ HTML_EXTRA_STYLESHEET   = @TOPDIR@/doc/api/custom.css
+ SEARCHENGINE            = YES
+-- 
+2.25.1
+

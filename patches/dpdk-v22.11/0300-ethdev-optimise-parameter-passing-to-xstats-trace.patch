@@ -1,0 +1,51 @@
+From c9a15145888d6d1f8281bbf65c09ca707db89ca0 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Fri, 3 Mar 2023 17:01:37 +0530
+Subject: [PATCH 300/955] ethdev: optimise parameter passing to xstats trace
+
+The rte_eth_xstat_name structure is of size 64 bytes. Instead of passing
+the structure as value it is passed as a pointer, to avoid copy of 64 bytes
+in function call stack.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Acked-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Change-Id: Icc7519e09a308e6148a39044116abc1aa0ef3b1f
+---
+ lib/ethdev/ethdev_trace.h | 4 ++--
+ lib/ethdev/rte_ethdev.c   | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/lib/ethdev/ethdev_trace.h b/lib/ethdev/ethdev_trace.h
+index aca3335ac0ca6..66ca26b03d6a5 100644
+--- a/lib/ethdev/ethdev_trace.h
++++ b/lib/ethdev/ethdev_trace.h
+@@ -513,11 +513,11 @@ RTE_TRACE_POINT(
+ RTE_TRACE_POINT(
+ 	rte_eth_trace_xstats_get_names,
+ 	RTE_TRACE_POINT_ARGS(uint16_t port_id, int i,
+-		struct rte_eth_xstat_name xstats_names,
++		const struct rte_eth_xstat_name *xstats_names,
+ 		unsigned int size, int cnt_used_entries),
+ 	rte_trace_point_emit_u16(port_id);
+ 	rte_trace_point_emit_int(i);
+-	rte_trace_point_emit_string(xstats_names.name);
++	rte_trace_point_emit_string(xstats_names->name);
+ 	rte_trace_point_emit_u32(size);
+ 	rte_trace_point_emit_int(cnt_used_entries);
+ )
+diff --git a/lib/ethdev/rte_ethdev.c b/lib/ethdev/rte_ethdev.c
+index 6c7aa1801a937..9ac9d7a15747a 100644
+--- a/lib/ethdev/rte_ethdev.c
++++ b/lib/ethdev/rte_ethdev.c
+@@ -3259,7 +3259,7 @@ rte_eth_xstats_get_names(uint16_t port_id,
+ 	}
+ 
+ 	for (i = 0; i < cnt_used_entries; i++)
+-		rte_eth_trace_xstats_get_names(port_id, i, xstats_names[i],
++		rte_eth_trace_xstats_get_names(port_id, i, &xstats_names[i],
+ 					       size, cnt_used_entries);
+ 
+ 	return cnt_used_entries;
+-- 
+2.25.1
+

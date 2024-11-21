@@ -1,0 +1,130 @@
+From 694be07a3734e154d963f087f97dd86cfdf0892c Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 10 Jan 2023 18:35:58 +0530
+Subject: [PATCH 165/955] ci/crypto_perf: update reference numbers for CN10K
+
+Updated reference numbers for CN10K new perf setup with CORECLK
+2500 Mhz and SCLK 1100 Mhz.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I7398ab1c7d5df34433a7ab3bdb61c6ca1f9f4d40
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94227
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../test/cnxk-tests/crypto_perf/meson.build   |  2 +-
+ .../ref_numbers/cn10k/rclk2000_sclk1000.106xx | 40 ------------------
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx | 41 +++++++++++++++++++
+ 3 files changed, 42 insertions(+), 41 deletions(-)
+ delete mode 100644 marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2000_sclk1000.106xx
+ create mode 100644 marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/meson.build b/marvell-ci/test/cnxk-tests/crypto_perf/meson.build
+index 0de48f36dc4f1..080e662ec4b59 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/meson.build
+@@ -16,7 +16,7 @@ test_dir = meson.current_build_dir()
+ # Copy the required scripts to build directory.
+ run_command(copy_data, test_script)
+ run_command(copy_data, 'ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2000_sclk1000.106xx')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx')
+ 
+ # Add the meson test
+ test(
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2000_sclk1000.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2000_sclk1000.106xx
+deleted file mode 100644
+index bb285949cd078..0000000000000
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2000_sclk1000.106xx
++++ /dev/null
+@@ -1,40 +0,0 @@
+-aes-cbc-only
+-64: 18.533 33.789 57.409
+-384: 18.444 31.615 31.627
+-1504: 11.652 11.656 11.692
+-<end>
+-aes-cbc_sha1-hmac
+-64: 17.894 34.680 47.692
+-384: 17.185 29.804 29.919
+-1504: 11.414 11.433 11.451
+-<end>
+-aes-gcm
+-64: 11.435 22.934 24.525
+-384: 11.412 18.936 18.832
+-1504: 8.186 8.221 8.164
+-<end>
+-aes-cbc_sha1-hmac-ipsec
+-64: 26.510 37.191 39.235
+-384: 25.542 27.316 29.258
+-1504: 10.119 10.665 11.228
+-<end>
+-aes-gcm-ipsec
+-64: 26.471 46.066 50.290
+-384: 26.498 32.095 33.956
+-1504: 10.909 11.415 12.008
+-<end>
+-zuc-eia3
+-64: 14.617 22.968 22.480
+-384: 14.538 16.763 16.545
+-1504: 9.260 9.300 9.271
+-<end>
+-zuc-eea3
+-64: 17.094 34.622 41.621
+-384: 17.073 25.031 25.041
+-1504: 10.601 10.634 10.628
+-<end>
+-modex
+-64: 1.215 1.214 1.212
+-384: 1.215 1.214 1.212
+-1504: 1.215 1.214 1.212
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+new file mode 100644
+index 0000000000000..3fe743e55b8de
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+@@ -0,0 +1,41 @@
++aes-cbc-only
++64: 27.529 54.352 78.153
++384: 26.797 40.724 41.192
++1504: 14.319 14.414 14.378
++<end>
++aes-cbc_sha1-hmac
++64: 23.644 46.06 47.021
++384: 23.925 33.904 33.983
++1504: 13.623 13.677 13.665
++<end>
++aes-gcm
++64: 13.958 27.221 27.575
++384: 13.841 22.638 22.873
++1504: 9.798 9.836 9.873
++<end>
++aes-cbc_sha1-hmac-ipsec
++64: 31.951 43.329 45.253
++384: 28.768 31.425 33.531
++1504: 11.401 12.002 12.8
++<end>
++aes-gcm-ipsec
++64: 31.979 46.894 52.529
++384: 31.77 34.26 36
++1504: 11.28 11.869 12.558
++<end>
++zuc-eia3
++64: 18.147 25.186 24.776
++384: 18.001 18.588 18.446
++1504: 9.948 9.983 9.955
++<end>
++zuc-eea3
++64: 27.808 52.624 52.692
++384: 27.363 30.495 30.583
++1504: 12.041 12.06 12.068
++<end>
++modex
++64: 1.255 1.259 1.259
++384: 1.255 1.259 1.259
++1504: 1.255 1.259 1.259
++<end>
++
+-- 
+2.25.1
+

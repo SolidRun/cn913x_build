@@ -1,0 +1,255 @@
+From 51b19ef9a3d129627f753162c4e0f28599e99bbc Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Mon, 8 Jul 2024 03:19:07 -0700
+Subject: [PATCH 418/513] net/octeon_ep: add device removal event callback
+
+Patch adds an event callback to catch any device removal
+event occurred during driver probe. This callback helps
+in terminating the execution if there is any device removal
+event during the driver probe.
+
+Patch also moves global register configuration into dev_configure()
+routine and also validates register reads for any invalid
+return values from hardware during driver probe.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: Iac2ec110265022e674cd3a5799ed710850363946
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132541
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_vf.c    |  2 +
+ drivers/net/octeon_ep/otx2_ep_vf.c    |  2 +
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 58 +++++++++++++++++++--------
+ drivers/net/octeon_ep/otx_ep_mbox.c   | 11 +++++
+ drivers/net/octeon_ep/otx_ep_vf.c     |  2 +
+ 5 files changed, 59 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.c b/drivers/net/octeon_ep/cnxk_ep_vf.c
+index 39f357ee8162b..643e7acf40f23 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.c
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.c
+@@ -408,6 +408,8 @@ cnxk_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 
+ 	/* Get IOQs (RPVF] count */
+ 	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_IN_CONTROL(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
+ 
+ 	otx_ep->sriov_info.rings_per_vf =
+ 		((reg_val >> CNXK_EP_R_IN_CTL_RPVF_POS) & CNXK_EP_R_IN_CTL_RPVF_MASK);
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.c b/drivers/net/octeon_ep/otx2_ep_vf.c
+index 25e0e5a500dfc..fc79c6cbbca1b 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.c
++++ b/drivers/net/octeon_ep/otx2_ep_vf.c
+@@ -587,6 +587,8 @@ otx2_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 
+ 	/* Get IOQs (RPVF] count */
+ 	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_IN_CONTROL(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
+ 
+ 	otx_ep->sriov_info.rings_per_vf = ((reg_val >> SDP_VF_R_IN_CTL_RPVF_POS)
+ 					  & SDP_VF_R_IN_CTL_RPVF_MASK);
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 35746d389aa38..f116a49a2bb98 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -319,7 +319,6 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 	case PCI_DEVID_OCTEONTX_EP_VF:
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = otx_ep_vf_setup_device(otx_epvf);
+-		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+ 		break;
+ 	case PCI_DEVID_CN9K_EP_NET_VF:
+ 	case PCI_DEVID_CN98XX_EP_NET_VF:
+@@ -327,9 +326,6 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 	case PCI_DEVID_CNF95O_EP_NET_VF:
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = otx2_ep_vf_setup_device(otx_epvf);
+-		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+-		if (otx_ep_ism_setup(otx_epvf))
+-			ret = -EINVAL;
+ 		break;
+ 	case PCI_DEVID_CN10KA_EP_NET_VF:
+ 	case PCI_DEVID_CN10KB_EP_NET_VF:
+@@ -337,9 +333,6 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 	case PCI_DEVID_CNF10KB_EP_NET_VF:
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = cnxk_ep_vf_setup_device(otx_epvf);
+-		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+-		if (otx_ep_ism_setup(otx_epvf))
+-			ret = -EINVAL;
+ 		break;
+ 	default:
+ 		otx_ep_err("Unsupported device\n");
+@@ -348,6 +341,11 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 
+ 	if (!ret)
+ 		otx_ep_info("OTX_EP dev_id[%d]\n", dev_id);
++	else
++		return ret;
++
++	if (dev_id != PCI_DEVID_OCTEONTX_EP_VF)
++		ret = otx_ep_ism_setup(otx_epvf);
+ 
+ 	return ret;
+ }
+@@ -365,8 +363,6 @@ otx_epdev_init(struct otx_ep_device *otx_epvf)
+ 		goto setup_fail;
+ 	}
+ 
+-	otx_epvf->fn_list.setup_device_regs(otx_epvf);
+-
+ 	otx_epvf->eth_dev->tx_pkt_burst = &cnxk_ep_xmit_pkts;
+ 	otx_epvf->eth_dev->rx_pkt_burst = &otx_ep_recv_pkts;
+ 	if (otx_epvf->chip_id == PCI_DEVID_OCTEONTX_EP_VF) {
+@@ -416,6 +412,10 @@ otx_ep_dev_configure(struct rte_eth_dev *eth_dev)
+ 		otx_ep_err("invalid num queues\n");
+ 		return -EINVAL;
+ 	}
++
++	otx_epvf->fn_list.setup_device_regs(otx_epvf);
++	otx_epvf->fn_list.disable_io_queues(otx_epvf);
++
+ 	otx_ep_info("OTX_EP Device is configured with num_txq %d num_rxq %d\n",
+ 		    eth_dev->data->nb_rx_queues, eth_dev->data->nb_tx_queues);
+ 
+@@ -734,6 +734,16 @@ otx_ep_eth_dev_uninit(struct rte_eth_dev *eth_dev)
+ 	return 0;
+ }
+ 
++static void
++otx_epdev_event_callback(const char *device_name, enum rte_dev_event_type type,
++			 __rte_unused void *arg)
++{
++	if (type == RTE_DEV_EVENT_REMOVE)
++		otx_ep_info("Octeon epdev: %s has been removed!\n", device_name);
++
++	RTE_VERIFY(type != RTE_DEV_EVENT_REMOVE);
++}
++
+ static int otx_ep_eth_dev_query_set_vf_mac(struct rte_eth_dev *eth_dev,
+ 					   struct rte_ether_addr *mac_addr)
+ {
+@@ -771,6 +781,7 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(eth_dev);
+ 	struct otx_ep_device *otx_epvf = OTX_EP_DEV(eth_dev);
+ 	struct rte_ether_addr vf_mac_addr;
++	int ret = 0;
+ 
+ 	/* Single process support */
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+@@ -808,8 +819,16 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	otx_epvf->hw_addr = pdev->mem_resource[0].addr;
+ 	otx_epvf->pdev = pdev;
+ 
+-	if (otx_epdev_init(otx_epvf))
+-		return -ENOMEM;
++	if (rte_dev_event_callback_register(pdev->name, otx_epdev_event_callback, NULL)) {
++		otx_ep_err("Failed  to register a device event callback\n");
++			return -EINVAL;
++	}
++
++	if (otx_epdev_init(otx_epvf)) {
++		ret = -ENOMEM;
++		goto exit;
++	}
++
+ 	if (otx_epvf->chip_id == PCI_DEVID_CN9K_EP_NET_VF ||
+ 	    otx_epvf->chip_id == PCI_DEVID_CN98XX_EP_NET_VF ||
+ 	    otx_epvf->chip_id == PCI_DEVID_CNF95N_EP_NET_VF ||
+@@ -825,20 +844,27 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		otx_ep_info("Using pkind %d.\n", otx_epvf->pkind);
+ 	} else {
+ 		otx_ep_err("Invalid chip id\n");
+-		return -EINVAL;
++		ret = -EINVAL;
++		goto exit;
+ 	}
+ 
+-	if (otx_ep_mbox_init(eth_dev))
+-		return -EINVAL;
++	if (otx_ep_mbox_init(eth_dev)) {
++		ret = -EINVAL;
++		goto exit;
++	}
+ 
+ 	if (otx_ep_eth_dev_query_set_vf_mac(eth_dev,
+ 				(struct rte_ether_addr *)&vf_mac_addr)) {
+ 		otx_ep_err("set mac addr failed\n");
+-		return -ENODEV;
++		ret = -ENODEV;
++		goto exit;
+ 	}
+ 	rte_ether_addr_copy(&vf_mac_addr, eth_dev->data->mac_addrs);
+ 
+-	return 0;
++exit:
++	rte_dev_event_callback_unregister(pdev->name, otx_epdev_event_callback, NULL);
++
++	return ret;
+ }
+ 
+ static int
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index 04744195997fc..ad8e21c75f74e 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -31,6 +31,10 @@ __otx_ep_send_mbox_cmd(struct otx_ep_device *otx_ep,
+ 	volatile uint64_t reg_val = 0ull;
+ 	int count = 0;
+ 
++	reg_val = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
++
+ 	cmd.s.type = OTX_EP_MBOX_TYPE_CMD;
+ 	otx2_write64(cmd.u64, otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
+ 
+@@ -41,6 +45,8 @@ __otx_ep_send_mbox_cmd(struct otx_ep_device *otx_ep,
+ 	for (count = 0; count < OTX_EP_MBOX_TIMEOUT_MS; count++) {
+ 		rte_delay_ms(1);
+ 		reg_val = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
++		if (reg_val == (uint64_t)-1)
++			return -ENODEV;
+ 		if (reg_val != cmd.u64) {
+ 			rsp->u64 = reg_val;
+ 			break;
+@@ -351,6 +357,7 @@ otx_ep_mbox_init(struct rte_eth_dev *eth_dev)
+ {
+ 	struct otx_ep_device *otx_ep = (struct otx_ep_device *)eth_dev->data->dev_private;
+ 	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(eth_dev);
++	uint64_t reg_val;
+ 
+ 	otx_ep_mbox_version_check(otx_ep);
+ 
+@@ -361,6 +368,10 @@ otx_ep_mbox_init(struct rte_eth_dev *eth_dev)
+ 		return -1;
+ 	}
+ 
++	reg_val = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
++
+ 	/* Enable pf-vf mbox interrupt & clear the status */
+ 	otx2_write64(CNXK_EP_MBOX_ENAB | CNXK_EP_MBOX_INTR,
+ 		     otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0));
+diff --git a/drivers/net/octeon_ep/otx_ep_vf.c b/drivers/net/octeon_ep/otx_ep_vf.c
+index 236b7a874c621..935f63e917103 100644
+--- a/drivers/net/octeon_ep/otx_ep_vf.c
++++ b/drivers/net/octeon_ep/otx_ep_vf.c
+@@ -410,6 +410,8 @@ otx_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 
+ 	/* Get IOQs (RPVF] count */
+ 	reg_val = rte_read64(otx_ep->hw_addr + OTX_EP_R_IN_CONTROL(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
+ 
+ 	otx_ep->sriov_info.rings_per_vf = ((reg_val >> OTX_EP_R_IN_CTL_RPVF_POS)
+ 					  & OTX_EP_R_IN_CTL_RPVF_MASK);
+-- 
+2.25.1
+

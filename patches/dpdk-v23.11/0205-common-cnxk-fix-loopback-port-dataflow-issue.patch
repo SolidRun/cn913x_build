@@ -1,0 +1,46 @@
+From e89c92f20ddd588b3d05d8b19d5532943a2e7d52 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Mon, 5 Feb 2024 17:58:48 +0530
+Subject: [PATCH 205/513] common/cnxk: fix loopback port dataflow issue
+
+With loopback interface and IPsec Inbound traffic, getting
+NIX_CQERRINT_CPT_DROP interrupt and dataflow is stopped.
+This is due to flow control configuration is skipped as
+roc_nix_is_esw() returns true for loopback device also.
+
+Fixes: a3ebbfac9518 ("common/cnxk: base support for eswitch VF")
+Fixes: 1295d03b22fe ("net/cnxk: eswitch VF as ethernet device")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ia3b0df457d012050bb9643ced6861b35247a907e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121225
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit dac7ba52ec43d5359ab8dad3a0fab49ac2f7c5e0)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121360
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.c b/drivers/common/cnxk/roc_nix.c
+index 20202788b5fdb..041621dfaa394 100644
+--- a/drivers/common/cnxk/roc_nix.c
++++ b/drivers/common/cnxk/roc_nix.c
+@@ -385,8 +385,9 @@ sdp_lbk_id_update(struct plt_pci_device *pci_dev, struct nix *nix)
+ 		nix->sdp_link = true;
+ 		break;
+ 	case PCI_DEVID_CNXK_RVU_AF_VF:
+-	case PCI_DEVID_CNXK_RVU_ESWITCH_VF:
+ 		nix->lbk_link = true;
++		break;
++	case PCI_DEVID_CNXK_RVU_ESWITCH_VF:
+ 		nix->esw_link = true;
+ 		break;
+ 	default:
+-- 
+2.25.1
+

@@ -1,0 +1,652 @@
+From c6be44c45b70b314601b221bfa9867232646ce34 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Thu, 18 May 2023 20:19:56 +0530
+Subject: [PATCH 425/955] common/cnxk: add ROC MACsec initialization
+
+Added ROC init and fini APIs for supporting MACsec.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ib4d63ca3bed77b36e4e8cde5b9abbf8091767696
+---
+ drivers/common/cnxk/meson.build     |   1 +
+ drivers/common/cnxk/roc_api.h       |   3 +
+ drivers/common/cnxk/roc_features.h  |   6 +
+ drivers/common/cnxk/roc_idev.c      |  21 +++
+ drivers/common/cnxk/roc_idev.h      |   2 +
+ drivers/common/cnxk/roc_idev_priv.h |   1 +
+ drivers/common/cnxk/roc_mbox.h      |  65 +++++++-
+ drivers/common/cnxk/roc_mcs.c       | 245 ++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_mcs.h       |  39 +++++
+ drivers/common/cnxk/roc_mcs_priv.h  |  65 ++++++++
+ drivers/common/cnxk/roc_priv.h      |   3 +
+ drivers/common/cnxk/roc_utils.c     |   5 +
+ drivers/common/cnxk/version.map     |   6 +
+ 13 files changed, 461 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/common/cnxk/roc_mcs.c
+ create mode 100644 drivers/common/cnxk/roc_mcs.h
+ create mode 100644 drivers/common/cnxk/roc_mcs_priv.h
+
+diff --git a/drivers/common/cnxk/meson.build b/drivers/common/cnxk/meson.build
+index 849735921c71b..50a94bb8be071 100644
+--- a/drivers/common/cnxk/meson.build
++++ b/drivers/common/cnxk/meson.build
+@@ -26,6 +26,7 @@ sources = files(
+         'roc_irq.c',
+         'roc_ie_ot.c',
+         'roc_mbox.c',
++        'roc_mcs.c',
+         'roc_model.c',
+         'roc_nix.c',
+         'roc_nix_bpf.c',
+diff --git a/drivers/common/cnxk/roc_api.h b/drivers/common/cnxk/roc_api.h
+index 993a2f7a6895c..e1ea5c9627b86 100644
+--- a/drivers/common/cnxk/roc_api.h
++++ b/drivers/common/cnxk/roc_api.h
+@@ -110,4 +110,7 @@
+ #include "roc_nix_inl_dp.h"
+ #include "roc_nix_inl.h"
+ 
++/* MACsec */
++#include "roc_mcs.h"
++
+ #endif /* _ROC_API_H_ */
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index 36ef315f5a080..fa75e0af02aa0 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -59,4 +59,10 @@ roc_feature_nix_has_age_drop_stats(void)
+ {
+ 	return (roc_model_is_cn10kb() || roc_model_is_cn10ka_b0());
+ }
++
++static inline bool
++roc_feature_nix_has_macsec(void)
++{
++	return roc_model_is_cn10kb();
++}
+ #endif
+diff --git a/drivers/common/cnxk/roc_idev.c b/drivers/common/cnxk/roc_idev.c
+index f420f0158d247..c5ce0265de067 100644
+--- a/drivers/common/cnxk/roc_idev.c
++++ b/drivers/common/cnxk/roc_idev.c
+@@ -38,6 +38,7 @@ idev_set_defaults(struct idev_cfg *idev)
+ 	idev->num_lmtlines = 0;
+ 	idev->bphy = NULL;
+ 	idev->cpt = NULL;
++	idev->mcs = NULL;
+ 	idev->nix_inl_dev = NULL;
+ 	TAILQ_INIT(&idev->roc_nix_list);
+ 	plt_spinlock_init(&idev->nix_inl_dev_lock);
+@@ -187,6 +188,26 @@ roc_idev_cpt_get(void)
+ 	return NULL;
+ }
+ 
++struct roc_mcs *
++roc_idev_mcs_get(void)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++
++	if (idev != NULL)
++		return idev->mcs;
++
++	return NULL;
++}
++
++void
++roc_idev_mcs_set(struct roc_mcs *mcs)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++
++	if (idev != NULL)
++		__atomic_store_n(&idev->mcs, mcs, __ATOMIC_RELEASE);
++}
++
+ uint64_t *
+ roc_nix_inl_outb_ring_base_get(struct roc_nix *roc_nix)
+ {
+diff --git a/drivers/common/cnxk/roc_idev.h b/drivers/common/cnxk/roc_idev.h
+index 640ca97708591..86fd31408aef0 100644
+--- a/drivers/common/cnxk/roc_idev.h
++++ b/drivers/common/cnxk/roc_idev.h
+@@ -19,4 +19,6 @@ struct roc_nix *__roc_api roc_idev_npa_nix_get(void);
+ uint64_t __roc_api roc_idev_nix_inl_meta_aura_get(void);
+ struct roc_nix_list *__roc_api roc_idev_nix_list_get(void);
+ 
++struct roc_mcs *__roc_api roc_idev_mcs_get(void);
++void __roc_api roc_idev_mcs_set(struct roc_mcs *mcs);
+ #endif /* _ROC_IDEV_H_ */
+diff --git a/drivers/common/cnxk/roc_idev_priv.h b/drivers/common/cnxk/roc_idev_priv.h
+index 4983578fc6aa8..6b37537e1131f 100644
+--- a/drivers/common/cnxk/roc_idev_priv.h
++++ b/drivers/common/cnxk/roc_idev_priv.h
+@@ -31,6 +31,7 @@ struct idev_cfg {
+ 	struct roc_bphy *bphy;
+ 	struct roc_cpt *cpt;
+ 	struct roc_sso *sso;
++	struct roc_mcs *mcs;
+ 	struct nix_inl_dev *nix_inl_dev;
+ 	struct idev_nix_inl_cfg inl_cfg;
+ 	struct roc_nix_list roc_nix_list;
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 93c5451c0f6a9..ef7a7d6513e98 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -295,7 +295,12 @@ struct mbox_msghdr {
+ 	  nix_bpids)                                                           \
+ 	M(NIX_FREE_BPIDS, 0x8029, nix_free_bpids, nix_bpids, msg_rsp)          \
+ 	M(NIX_RX_CHAN_CFG, 0x802a, nix_rx_chan_cfg, nix_rx_chan_cfg,           \
+-	  nix_rx_chan_cfg)
++	  nix_rx_chan_cfg)                                                     \
++	/* MCS mbox IDs (range 0xa000 - 0xbFFF) */                                                 \
++	M(MCS_ALLOC_RESOURCES, 0xa000, mcs_alloc_resources, mcs_alloc_rsrc_req,                    \
++	  mcs_alloc_rsrc_rsp)                                                                      \
++	M(MCS_FREE_RESOURCES, 0xa001, mcs_free_resources, mcs_free_rsrc_req, msg_rsp)              \
++	M(MCS_GET_HW_INFO, 0xa00b, mcs_get_hw_info, msg_req, mcs_hw_info)                          \
+ 
+ /* Messages initiated by AF (range 0xC00 - 0xDFF) */
+ #define MBOX_UP_CGX_MESSAGES                                                   \
+@@ -673,6 +678,64 @@ struct cgx_set_link_mode_rsp {
+ 	int __io status;
+ };
+ 
++/* MCS mbox structures */
++enum mcs_direction {
++	MCS_RX,
++	MCS_TX,
++};
++
++enum mcs_rsrc_type {
++	MCS_RSRC_TYPE_FLOWID,
++	MCS_RSRC_TYPE_SECY,
++	MCS_RSRC_TYPE_SC,
++	MCS_RSRC_TYPE_SA,
++};
++
++struct mcs_alloc_rsrc_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io rsrc_type;
++	uint8_t __io rsrc_cnt; /* Resources count */
++	uint8_t __io mcs_id;   /* MCS block ID */
++	uint8_t __io dir;      /* Macsec ingress or egress side */
++	uint8_t __io all;      /* Allocate all resource type one each */
++	uint64_t __io rsvd;
++};
++
++struct mcs_alloc_rsrc_rsp {
++	struct mbox_msghdr hdr;
++	uint8_t __io flow_ids[128]; /* Index of reserved entries */
++	uint8_t __io secy_ids[128];
++	uint8_t __io sc_ids[128];
++	uint8_t __io sa_ids[256];
++	uint8_t __io rsrc_type;
++	uint8_t __io rsrc_cnt; /* No of entries reserved */
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint8_t __io all;
++	uint8_t __io rsvd[256];
++};
++
++struct mcs_free_rsrc_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io rsrc_id; /* Index of the entry to be freed */
++	uint8_t __io rsrc_type;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint8_t __io all; /* Free all the cam resources */
++	uint64_t __io rsvd;
++};
++
++struct mcs_hw_info {
++	struct mbox_msghdr hdr;
++	uint8_t __io num_mcs_blks; /* Number of MCS blocks */
++	uint8_t __io tcam_entries; /* RX/TX Tcam entries per mcs block */
++	uint8_t __io secy_entries; /* RX/TX SECY entries per mcs block */
++	uint8_t __io sc_entries;   /* RX/TX SC CAM entries per mcs block */
++	uint16_t __io sa_entries;  /* PN table entries = SA entries */
++	uint64_t __io rsvd[16];
++};
++
++
+ /* NPA mbox message formats */
+ 
+ /* NPA mailbox error codes
+diff --git a/drivers/common/cnxk/roc_mcs.c b/drivers/common/cnxk/roc_mcs.c
+new file mode 100644
+index 0000000000000..ce92a6cd470e4
+--- /dev/null
++++ b/drivers/common/cnxk/roc_mcs.c
+@@ -0,0 +1,245 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "roc_api.h"
++#include "roc_priv.h"
++
++TAILQ_HEAD(roc_mcs_head, roc_mcs);
++/* Local mcs tailq list */
++static struct roc_mcs_head roc_mcs_head = TAILQ_HEAD_INITIALIZER(roc_mcs_head);
++
++int
++roc_mcs_hw_info_get(struct roc_mcs_hw_info *hw_info)
++{
++	struct mcs_hw_info *hw;
++	struct npa_lf *npa;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	if (hw_info == NULL)
++		return -EINVAL;
++
++	/* Use mbox handler of first probed pci_func for
++	 * initial mcs mbox communication.
++	 */
++	npa = idev_npa_obj_get();
++	if (!npa)
++		return MCS_ERR_DEVICE_NOT_FOUND;
++
++	mbox_alloc_msg_mcs_get_hw_info(npa->mbox);
++	rc = mbox_process_msg(npa->mbox, (void *)&hw);
++	if (rc)
++		return rc;
++
++	hw_info->num_mcs_blks = hw->num_mcs_blks;
++	hw_info->tcam_entries = hw->tcam_entries;
++	hw_info->secy_entries = hw->secy_entries;
++	hw_info->sc_entries = hw->sc_entries;
++	hw_info->sa_entries = hw->sa_entries;
++
++	return rc;
++}
++
++static int
++mcs_alloc_bmap(uint16_t entries, void **mem, struct plt_bitmap **bmap)
++{
++	size_t bmap_sz;
++	int rc = 0;
++
++	bmap_sz = plt_bitmap_get_memory_footprint(entries);
++	*mem = plt_zmalloc(bmap_sz, PLT_CACHE_LINE_SIZE);
++	if (*mem == NULL)
++		rc = -ENOMEM;
++
++	*bmap = plt_bitmap_init(entries, *mem, bmap_sz);
++	if (!*bmap) {
++		plt_free(*mem);
++		*mem = NULL;
++		rc = -ENOMEM;
++	}
++
++	return rc;
++}
++
++static void
++rsrc_bmap_free(struct mcs_rsrc *rsrc)
++{
++	plt_bitmap_free(rsrc->tcam_bmap);
++	plt_free(rsrc->tcam_bmap_mem);
++	plt_bitmap_free(rsrc->secy_bmap);
++	plt_free(rsrc->secy_bmap_mem);
++	plt_bitmap_free(rsrc->sc_bmap);
++	plt_free(rsrc->sc_bmap_mem);
++	plt_bitmap_free(rsrc->sa_bmap);
++	plt_free(rsrc->sa_bmap_mem);
++}
++
++static int
++rsrc_bmap_alloc(struct mcs_priv *priv, struct mcs_rsrc *rsrc)
++{
++	int rc;
++
++	rc = mcs_alloc_bmap(priv->tcam_entries << 1, &rsrc->tcam_bmap_mem, &rsrc->tcam_bmap);
++	if (rc)
++		goto exit;
++
++	rc = mcs_alloc_bmap(priv->secy_entries << 1, &rsrc->secy_bmap_mem, &rsrc->secy_bmap);
++	if (rc)
++		goto exit;
++
++	rc = mcs_alloc_bmap(priv->sc_entries << 1, &rsrc->sc_bmap_mem, &rsrc->sc_bmap);
++	if (rc)
++		goto exit;
++
++	rc = mcs_alloc_bmap(priv->sa_entries << 1, &rsrc->sa_bmap_mem, &rsrc->sa_bmap);
++	if (rc)
++		goto exit;
++
++	return rc;
++exit:
++	rsrc_bmap_free(rsrc);
++
++	return rc;
++}
++
++static int
++mcs_alloc_rsrc_bmap(struct roc_mcs *mcs)
++{
++	struct mcs_priv *priv = roc_mcs_to_mcs_priv(mcs);
++	struct mcs_hw_info *hw;
++	int i, rc;
++
++	mbox_alloc_msg_mcs_get_hw_info(mcs->mbox);
++	rc = mbox_process_msg(mcs->mbox, (void *)&hw);
++	if (rc)
++		return rc;
++
++	priv->num_mcs_blks = hw->num_mcs_blks;
++	priv->tcam_entries = hw->tcam_entries;
++	priv->secy_entries = hw->secy_entries;
++	priv->sc_entries = hw->sc_entries;
++	priv->sa_entries = hw->sa_entries;
++
++	rc = rsrc_bmap_alloc(priv, &priv->dev_rsrc);
++	if (rc)
++		return rc;
++
++	priv->port_rsrc = plt_zmalloc(sizeof(struct mcs_rsrc) * 4, 0);
++	if (priv->port_rsrc == NULL) {
++		rsrc_bmap_free(&priv->dev_rsrc);
++		return -ENOMEM;
++	}
++
++	for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
++		rc = rsrc_bmap_alloc(priv, &priv->port_rsrc[i]);
++		if (rc)
++			goto exit;
++
++		priv->port_rsrc[i].sc_conf =
++			plt_zmalloc(priv->sc_entries * sizeof(struct mcs_sc_conf), 0);
++		if (priv->port_rsrc[i].sc_conf == NULL) {
++			rsrc_bmap_free(&priv->port_rsrc[i]);
++			goto exit;
++		}
++	}
++
++	return rc;
++
++exit:
++	while (i--) {
++		rsrc_bmap_free(&priv->port_rsrc[i]);
++		plt_free(priv->port_rsrc[i].sc_conf);
++	}
++	plt_free(priv->port_rsrc);
++
++	return -ENOMEM;
++}
++
++struct roc_mcs *
++roc_mcs_dev_get(uint8_t mcs_idx)
++{
++	struct roc_mcs *mcs = NULL;
++
++	TAILQ_FOREACH(mcs, &roc_mcs_head, next) {
++		if (mcs->idx == mcs_idx)
++			break;
++	}
++
++	return mcs;
++}
++
++struct roc_mcs *
++roc_mcs_dev_init(uint8_t mcs_idx)
++{
++	struct roc_mcs *mcs;
++	struct npa_lf *npa;
++
++	if (roc_model_is_cn10kb()) {
++		mcs = roc_idev_mcs_get();
++		if (mcs) {
++			plt_info("Skipping device, mcs device already probed");
++			mcs->refcount++;
++			return mcs;
++		}
++	}
++
++	mcs = plt_zmalloc(sizeof(struct roc_mcs), PLT_CACHE_LINE_SIZE);
++	if (!mcs)
++		return NULL;
++
++	if (roc_model_is_cnf10kb() || roc_model_is_cn10kb()) {
++		npa = idev_npa_obj_get();
++		if (!npa)
++			goto exit;
++
++		mcs->mbox = npa->mbox;
++	} else {
++		/* Retrieve mbox handler for other roc models */
++		;
++	}
++
++	mcs->idx = mcs_idx;
++
++	/* Add any per mcsv initialization */
++	if (mcs_alloc_rsrc_bmap(mcs))
++		goto exit;
++
++	TAILQ_INSERT_TAIL(&roc_mcs_head, mcs, next);
++
++	roc_idev_mcs_set(mcs);
++	mcs->refcount++;
++
++	return mcs;
++exit:
++	plt_free(mcs);
++	return NULL;
++}
++
++void
++roc_mcs_dev_fini(struct roc_mcs *mcs)
++{
++	struct mcs_priv *priv;
++
++	mcs->refcount--;
++	if (mcs->refcount > 0)
++		return;
++
++	priv = roc_mcs_to_mcs_priv(mcs);
++
++	TAILQ_REMOVE(&roc_mcs_head, mcs, next);
++
++	rsrc_bmap_free(&priv->dev_rsrc);
++
++	for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++		rsrc_bmap_free(&priv->port_rsrc[i]);
++		plt_free(priv->port_rsrc[i].sc_conf);
++	}
++
++	plt_free(priv->port_rsrc);
++
++	plt_free(mcs);
++
++	roc_idev_mcs_set(NULL);
++}
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+new file mode 100644
+index 0000000000000..504671a833109
+--- /dev/null
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -0,0 +1,39 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#ifndef _ROC_MCS_H_
++#define _ROC_MCS_H_
++
++#define MCS_AES_GCM_256_KEYLEN 32
++
++struct roc_mcs_hw_info {
++	uint8_t num_mcs_blks; /* Number of MCS blocks */
++	uint8_t tcam_entries; /* RX/TX Tcam entries per mcs block */
++	uint8_t secy_entries; /* RX/TX SECY entries per mcs block */
++	uint8_t sc_entries;   /* RX/TX SC CAM entries per mcs block */
++	uint16_t sa_entries;  /* PN table entries = SA entries */
++	uint64_t rsvd[16];
++};
++
++
++struct roc_mcs {
++	TAILQ_ENTRY(roc_mcs) next;
++	struct plt_pci_device *pci_dev;
++	struct mbox *mbox;
++	void *userdata;
++	uint8_t idx;
++	uint8_t refcount;
++
++#define ROC_MCS_MEM_SZ (1 * 1024)
++	uint8_t reserved[ROC_MCS_MEM_SZ] __plt_cache_aligned;
++} __plt_cache_aligned;
++
++/* Initialization */
++__roc_api struct roc_mcs *roc_mcs_dev_init(uint8_t mcs_idx);
++__roc_api void roc_mcs_dev_fini(struct roc_mcs *mcs);
++/* Get roc mcs dev structure */
++__roc_api struct roc_mcs *roc_mcs_dev_get(uint8_t mcs_idx);
++/* HW info get */
++__roc_api int roc_mcs_hw_info_get(struct roc_mcs_hw_info *hw_info);
++#endif /* _ROC_MCS_H_ */
+diff --git a/drivers/common/cnxk/roc_mcs_priv.h b/drivers/common/cnxk/roc_mcs_priv.h
+new file mode 100644
+index 0000000000000..22915d206f182
+--- /dev/null
++++ b/drivers/common/cnxk/roc_mcs_priv.h
+@@ -0,0 +1,65 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#ifndef _ROC_MCS_PRIV_H_
++#define _ROC_MCS_PRIV_H_
++
++#define MAX_PORTS_PER_MCS 4
++
++enum mcs_error_status {
++	MCS_ERR_PARAM = -900,
++	MCS_ERR_HW_NOTSUP = -901,
++	MCS_ERR_DEVICE_NOT_FOUND = -902,
++};
++
++#define MCS_SUPPORT_CHECK                                                                          \
++	do {                                                                                       \
++		if (!(roc_model_is_cnf10kb() || roc_model_is_cn10kb_a0()))                         \
++			return MCS_ERR_HW_NOTSUP;                                                  \
++	} while (0)
++
++struct mcs_sc_conf {
++	struct {
++		uint64_t sci;
++		uint16_t sa_idx0;
++		uint16_t sa_idx1;
++		uint8_t rekey_enb;
++	} tx;
++	struct {
++		uint16_t sa_idx;
++		uint8_t an;
++	} rx;
++};
++
++struct mcs_rsrc {
++	struct plt_bitmap *tcam_bmap;
++	void *tcam_bmap_mem;
++	struct plt_bitmap *secy_bmap;
++	void *secy_bmap_mem;
++	struct plt_bitmap *sc_bmap;
++	void *sc_bmap_mem;
++	struct plt_bitmap *sa_bmap;
++	void *sa_bmap_mem;
++	struct mcs_sc_conf *sc_conf;
++};
++
++struct mcs_priv {
++	struct mcs_rsrc *port_rsrc;
++	struct mcs_rsrc dev_rsrc;
++	uint64_t default_sci;
++	uint32_t lmac_bmap;
++	uint8_t num_mcs_blks;
++	uint8_t tcam_entries;
++	uint8_t secy_entries;
++	uint8_t sc_entries;
++	uint16_t sa_entries;
++};
++
++static inline struct mcs_priv *
++roc_mcs_to_mcs_priv(struct roc_mcs *roc_mcs)
++{
++	return (struct mcs_priv *)&roc_mcs->reserved[0];
++}
++
++#endif /* _ROC_MCS_PRIV_H_ */
+diff --git a/drivers/common/cnxk/roc_priv.h b/drivers/common/cnxk/roc_priv.h
+index 122d411fe7a07..b2b4aecedc509 100644
+--- a/drivers/common/cnxk/roc_priv.h
++++ b/drivers/common/cnxk/roc_priv.h
+@@ -44,6 +44,9 @@
+ /* DPI */
+ #include "roc_dpi_priv.h"
+ 
++/* MCS */
++#include "roc_mcs_priv.h"
++
+ /* REE */
+ #include "roc_ree_priv.h"
+ 
+diff --git a/drivers/common/cnxk/roc_utils.c b/drivers/common/cnxk/roc_utils.c
+index fe291fce96540..9af2ae9b6909b 100644
+--- a/drivers/common/cnxk/roc_utils.c
++++ b/drivers/common/cnxk/roc_utils.c
+@@ -16,6 +16,7 @@ roc_error_msg_get(int errorcode)
+ 	case NPA_ERR_PARAM:
+ 	case NPC_ERR_PARAM:
+ 	case SSO_ERR_PARAM:
++	case MCS_ERR_PARAM:
+ 	case UTIL_ERR_PARAM:
+ 		err_msg = "Invalid parameter";
+ 		break;
+@@ -35,6 +36,7 @@ roc_error_msg_get(int errorcode)
+ 		err_msg = "Operation not supported";
+ 		break;
+ 	case NIX_ERR_HW_NOTSUP:
++	case MCS_ERR_HW_NOTSUP:
+ 		err_msg = "Hardware does not support";
+ 		break;
+ 	case NIX_ERR_QUEUE_INVALID_RANGE:
+@@ -223,6 +225,9 @@ roc_error_msg_get(int errorcode)
+ 	case SSO_ERR_DEVICE_NOT_BOUNDED:
+ 		err_msg = "SSO pf/vf not found";
+ 		break;
++	case MCS_ERR_DEVICE_NOT_FOUND:
++		err_msg = "MCS device not found";
++		break;
+ 	case UTIL_ERR_FS:
+ 		err_msg = "file operation failed";
+ 		break;
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 73151ebb89152..7f07203e40173 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -93,6 +93,8 @@ INTERNAL {
+ 	roc_idev_cpt_get;
+ 	roc_idev_cpt_set;
+ 	roc_idev_lmt_base_addr_get;
++	roc_idev_mcs_get;
++	roc_idev_mcs_set;
+ 	roc_idev_npa_maxpools_get;
+ 	roc_idev_npa_maxpools_set;
+ 	roc_idev_npa_nix_get;
+@@ -103,6 +105,10 @@ INTERNAL {
+ 	roc_se_auth_key_set;
+ 	roc_se_ciph_key_set;
+ 	roc_se_ctx_init;
++	roc_mcs_dev_init;
++	roc_mcs_dev_fini;
++	roc_mcs_dev_get;
++	roc_mcs_hw_info_get;
+ 	roc_nix_bpf_alloc;
+ 	roc_nix_bpf_config;
+ 	roc_nix_bpf_connect;
+-- 
+2.25.1
+

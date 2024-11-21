@@ -1,0 +1,50 @@
+From 986b4ed4e13de70943cf16180a31ddff0c4a3592 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Tue, 30 Jan 2024 19:32:03 +0530
+Subject: [PATCH 186/513] marvell-ci: enable multi seg and checksum tests
+
+Enable multi seg and checksum tests in CI debug build tests.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I39e6b4a6226280fef06a338f1b5e84dd1128f41c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120695
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn10k-debug.env | 3 +++
+ marvell-ci/test/env/cn9k-debug.env  | 3 +++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/marvell-ci/test/env/cn10k-debug.env b/marvell-ci/test/env/cn10k-debug.env
+index 0afc3ac0b27f2..296f67a1af5c4 100644
+--- a/marvell-ci/test/env/cn10k-debug.env
++++ b/marvell-ci/test/env/cn10k-debug.env
+@@ -8,6 +8,9 @@ source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
+ RUN_TESTS="
+ 	mbuf_autotest
+ 	mempool_autotest
++	cnxk_tx_chksum
++	cnxk_mseg_tx_chksum
++	cnxk_rx_chksum
+ "
+ 
+ # Export the path to this conf so that other scripts can source this conf.
+diff --git a/marvell-ci/test/env/cn9k-debug.env b/marvell-ci/test/env/cn9k-debug.env
+index d6de22a4b7b3a..e8eea1197eac2 100644
+--- a/marvell-ci/test/env/cn9k-debug.env
++++ b/marvell-ci/test/env/cn9k-debug.env
+@@ -8,6 +8,9 @@ source $PROJECT_ROOT/marvell-ci/test/env/cn9k.env
+ RUN_TESTS="
+ 	mbuf_autotest
+ 	mempool_autotest
++	cnxk_tx_chksum
++	cnxk_mseg_tx_chksum
++	cnxk_rx_chksum
+ "
+ 
+ # Export the path to this conf so that other scripts can source this conf.
+-- 
+2.25.1
+

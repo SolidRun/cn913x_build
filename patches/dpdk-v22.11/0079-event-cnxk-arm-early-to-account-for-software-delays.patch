@@ -1,0 +1,44 @@
+From 47f58fa2229472df9339b772d50005dc015d773b Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Wed, 28 Sep 2022 18:20:52 +0530
+Subject: [PATCH 079/955] event/cnxk: arm early to account for software delays
+
+Arm a bucket early to account for software delays in arm routine.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I366476acd010015455601d4b97f508b8cb7d79bb
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/87346
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 318b9284d7d493b3e3e1160a530b08531dfb7505)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92496
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cnxk_tim_worker.h | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/event/cnxk/cnxk_tim_worker.h b/drivers/event/cnxk/cnxk_tim_worker.h
+index 87ac91f387e4a..a326d5526afee 100644
+--- a/drivers/event/cnxk/cnxk_tim_worker.h
++++ b/drivers/event/cnxk/cnxk_tim_worker.h
+@@ -139,11 +139,13 @@ cnxk_tim_get_target_bucket(struct cnxk_tim_ring *const tim_ring,
+ {
+ 	const uint64_t bkt_cyc =
+ 		tim_ring->tick_fn(tim_ring->tbase) - tim_ring->ring_start_cyc;
+-	uint64_t bucket =
+-		rte_reciprocal_divide_u64(bkt_cyc, &tim_ring->fast_div) +
+-		rel_bkt;
++	uint64_t bucket = rte_reciprocal_divide_u64(bkt_cyc, &tim_ring->fast_div);
+ 	uint64_t mirr_bucket = 0;
+ 
++	if ((bkt_cyc - bucket * tim_ring->tck_int) < tim_ring->tck_int / 2)
++		bucket--;
++
++	bucket += rel_bkt;
+ 	bucket = cnxk_tim_bkt_fast_mod(bucket, tim_ring->nb_bkts,
+ 				       tim_ring->fast_bkt);
+ 	mirr_bucket =
+-- 
+2.25.1
+

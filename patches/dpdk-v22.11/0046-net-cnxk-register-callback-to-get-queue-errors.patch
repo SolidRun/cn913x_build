@@ -1,0 +1,63 @@
+From 938aeb2fe56b94139c6fe8fe0972842d4d116363 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 28 Nov 2022 15:24:33 +0530
+Subject: [PATCH 046/955] net/cnxk: register callback to get queue errors
+
+Register a callback mechanism to get SQ error interrupts, add
+call ethdev event RTE_ETH_EVENT_INTR_RESET.
+
+ci: skip_checkformat
+
+Change-Id: I79d4f56325c5230f068c9f4a266a31d2a986984c
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c | 13 +++++++++++++
+ drivers/net/cnxk/cnxk_ethdev.h |  1 +
+ 2 files changed, 14 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index bf1585fe670bc..104aad7b51ff4 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1750,6 +1750,16 @@ struct eth_dev_ops cnxk_eth_dev_ops = {
+ 	.cman_config_get = cnxk_nix_cman_config_get,
+ };
+ 
++void
++cnxk_eth_dev_q_err_cb(struct roc_nix *nix, void *data)
++{
++	struct cnxk_eth_dev *dev = (struct cnxk_eth_dev *)nix;
++	struct rte_eth_dev *eth_dev = dev->eth_dev;
++
++	/* Set the flag and execute application callbacks */
++	rte_eth_dev_callback_process(eth_dev, RTE_ETH_EVENT_INTR_RESET, data);
++}
++
+ static int
+ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ {
+@@ -1804,6 +1814,9 @@ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	roc_nix_mac_link_info_get_cb_register(nix,
+ 					      cnxk_eth_dev_link_status_get_cb);
+ 
++	/* Register up msg callbacks */
++	roc_nix_q_err_cb_register(nix, cnxk_eth_dev_q_err_cb);
++
+ 	/* Register callback for inline meta pool create */
+ 	roc_nix_inl_meta_pool_cb_register(cnxk_nix_inl_meta_pool_cb);
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 651ef45ea86d3..a86e9dba8056d 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -599,6 +599,7 @@ void cnxk_eth_dev_link_status_cb(struct roc_nix *nix,
+ 				 struct roc_nix_link_info *link);
+ void cnxk_eth_dev_link_status_get_cb(struct roc_nix *nix,
+ 				     struct roc_nix_link_info *link);
++void cnxk_eth_dev_q_err_cb(struct roc_nix *nix, void *data);
+ int cnxk_nix_link_update(struct rte_eth_dev *eth_dev, int wait_to_complete);
+ int cnxk_nix_queue_stats_mapping(struct rte_eth_dev *dev, uint16_t queue_id,
+ 				 uint8_t stat_idx, uint8_t is_rx);
+-- 
+2.25.1
+

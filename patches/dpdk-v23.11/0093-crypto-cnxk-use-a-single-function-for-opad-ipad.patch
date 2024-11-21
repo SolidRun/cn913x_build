@@ -1,0 +1,294 @@
+From bed4cab472c871c4f1026faa681981a4233703ae Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Thu, 7 Dec 2023 00:24:57 -0800
+Subject: [PATCH 093/513] crypto/cnxk: use a single function for opad ipad
+
+Use a single function for opad and ipad generation for IPsec, TLS and
+flexi crypto.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Ibb424beee761bddcf5c4b9a7b7e23bd2d294f00b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117708
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/cnxk_security.c | 62 +++++------------------------
+ drivers/common/cnxk/cnxk_security.h |  4 --
+ drivers/common/cnxk/roc_se.c        | 48 ++++++++++++++--------
+ drivers/common/cnxk/roc_se.h        |  9 +++++
+ drivers/common/cnxk/version.map     |  2 +-
+ drivers/crypto/cnxk/cn10k_tls.c     |  8 +++-
+ 6 files changed, 59 insertions(+), 74 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index dbc7e83c6a3fe..abf553cbad227 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -8,55 +8,9 @@
+ 
+ #include "roc_api.h"
+ 
+-void
+-cnxk_sec_opad_ipad_gen(struct rte_crypto_sym_xform *auth_xform, uint8_t *hmac_opad_ipad,
+-		       bool is_tls)
+-{
+-	const uint8_t *key = auth_xform->auth.key.data;
+-	uint32_t length = auth_xform->auth.key.length;
+-	uint8_t opad[128] = {[0 ... 127] = 0x5c};
+-	uint8_t ipad[128] = {[0 ... 127] = 0x36};
+-	uint32_t i;
+-
+-	/* HMAC OPAD and IPAD */
+-	for (i = 0; i < 128 && i < length; i++) {
+-		opad[i] = opad[i] ^ key[i];
+-		ipad[i] = ipad[i] ^ key[i];
+-	}
+-
+-	/* Precompute hash of HMAC OPAD and IPAD to avoid
+-	 * per packet computation
+-	 */
+-	switch (auth_xform->auth.algo) {
+-	case RTE_CRYPTO_AUTH_MD5_HMAC:
+-		roc_hash_md5_gen(opad, (uint32_t *)&hmac_opad_ipad[0]);
+-		roc_hash_md5_gen(ipad, (uint32_t *)&hmac_opad_ipad[is_tls ? 64 : 24]);
+-		break;
+-	case RTE_CRYPTO_AUTH_SHA1_HMAC:
+-		roc_hash_sha1_gen(opad, (uint32_t *)&hmac_opad_ipad[0]);
+-		roc_hash_sha1_gen(ipad, (uint32_t *)&hmac_opad_ipad[is_tls ? 64 : 24]);
+-		break;
+-	case RTE_CRYPTO_AUTH_SHA256_HMAC:
+-		roc_hash_sha256_gen(opad, (uint32_t *)&hmac_opad_ipad[0], 256);
+-		roc_hash_sha256_gen(ipad, (uint32_t *)&hmac_opad_ipad[64], 256);
+-		break;
+-	case RTE_CRYPTO_AUTH_SHA384_HMAC:
+-		roc_hash_sha512_gen(opad, (uint64_t *)&hmac_opad_ipad[0], 384);
+-		roc_hash_sha512_gen(ipad, (uint64_t *)&hmac_opad_ipad[64], 384);
+-		break;
+-	case RTE_CRYPTO_AUTH_SHA512_HMAC:
+-		roc_hash_sha512_gen(opad, (uint64_t *)&hmac_opad_ipad[0], 512);
+-		roc_hash_sha512_gen(ipad, (uint64_t *)&hmac_opad_ipad[64], 512);
+-		break;
+-	default:
+-		break;
+-	}
+-}
+-
+ static int
+-ot_ipsec_sa_common_param_fill(union roc_ot_ipsec_sa_word2 *w2,
+-			      uint8_t *cipher_key, uint8_t *salt_key,
+-			      uint8_t *hmac_opad_ipad,
++ot_ipsec_sa_common_param_fill(union roc_ot_ipsec_sa_word2 *w2, uint8_t *cipher_key,
++			      uint8_t *salt_key, uint8_t *hmac_opad_ipad,
+ 			      struct rte_security_ipsec_xform *ipsec_xfrm,
+ 			      struct rte_crypto_sym_xform *crypto_xfrm)
+ {
+@@ -192,7 +146,9 @@ ot_ipsec_sa_common_param_fill(union roc_ot_ipsec_sa_word2 *w2,
+ 			const uint8_t *auth_key = auth_xfrm->auth.key.data;
+ 			roc_aes_xcbc_key_derive(auth_key, hmac_opad_ipad);
+ 		} else {
+-			cnxk_sec_opad_ipad_gen(auth_xfrm, hmac_opad_ipad, false);
++			roc_se_hmac_opad_ipad_gen(w2->s.auth_type, auth_xfrm->auth.key.data,
++						  auth_xfrm->auth.key.length, &hmac_opad_ipad[0],
++						  ROC_SE_IPSEC);
+ 		}
+ 
+ 		tmp_key = (uint64_t *)hmac_opad_ipad;
+@@ -1165,7 +1121,9 @@ cnxk_on_ipsec_outb_sa_create(struct rte_security_ipsec_xform *ipsec,
+ 
+ 			roc_aes_xcbc_key_derive(auth_key, hmac_opad_ipad);
+ 		} else if (auth_xform->auth.algo != RTE_CRYPTO_AUTH_NULL) {
+-			cnxk_sec_opad_ipad_gen(auth_xform, hmac_opad_ipad, false);
++			roc_se_hmac_opad_ipad_gen(
++				out_sa->common_sa.ctl.auth_type, auth_xform->auth.key.data,
++				auth_xform->auth.key.length, &hmac_opad_ipad[0], ROC_SE_IPSEC);
+ 		}
+ 	}
+ 
+@@ -1232,7 +1190,9 @@ cnxk_on_ipsec_inb_sa_create(struct rte_security_ipsec_xform *ipsec,
+ 
+ 			roc_aes_xcbc_key_derive(auth_key, hmac_opad_ipad);
+ 		} else if (auth_xform->auth.algo != RTE_CRYPTO_AUTH_NULL) {
+-			cnxk_sec_opad_ipad_gen(auth_xform, hmac_opad_ipad, false);
++			roc_se_hmac_opad_ipad_gen(
++				in_sa->common_sa.ctl.auth_type, auth_xform->auth.key.data,
++				auth_xform->auth.key.length, &hmac_opad_ipad[0], ROC_SE_IPSEC);
+ 		}
+ 	}
+ 
+diff --git a/drivers/common/cnxk/cnxk_security.h b/drivers/common/cnxk/cnxk_security.h
+index 1993e27dfcb25..19eb9bb03d3ea 100644
+--- a/drivers/common/cnxk/cnxk_security.h
++++ b/drivers/common/cnxk/cnxk_security.h
+@@ -56,8 +56,4 @@ int __roc_api cnxk_on_ipsec_inb_sa_create(struct rte_security_ipsec_xform *ipsec
+ int __roc_api cnxk_on_ipsec_outb_sa_create(struct rte_security_ipsec_xform *ipsec,
+ 					   struct rte_crypto_sym_xform *crypto_xform,
+ 					   struct roc_ie_on_outb_sa *out_sa);
+-
+-__rte_internal
+-void cnxk_sec_opad_ipad_gen(struct rte_crypto_sym_xform *auth_xform, uint8_t *hmac_opad_ipad,
+-			    bool is_tls);
+ #endif /* _CNXK_SECURITY_H__ */
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index 8f9c9cb8c91fc..20e744b41ed86 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -157,14 +157,29 @@ cpt_ciph_aes_key_type_set(struct roc_se_context *fctx, uint16_t key_len)
+ 	fctx->enc.aes_key = aes_key_type;
+ }
+ 
+-static void
+-cpt_hmac_opad_ipad_gen(roc_se_auth_type auth_type, const uint8_t *key, uint16_t length,
+-		       struct roc_se_hmac_context *hmac)
++void
++roc_se_hmac_opad_ipad_gen(roc_se_auth_type auth_type, const uint8_t *key, uint16_t length,
++			  uint8_t *opad_ipad, roc_se_op_type op_type)
+ {
+ 	uint8_t opad[128] = {[0 ... 127] = 0x5c};
+ 	uint8_t ipad[128] = {[0 ... 127] = 0x36};
++	uint8_t ipad_offset, opad_offset;
+ 	uint32_t i;
+ 
++	if (op_type == ROC_SE_IPSEC) {
++		if ((auth_type == ROC_SE_MD5_TYPE) || (auth_type == ROC_SE_SHA1_TYPE))
++			ipad_offset = 24;
++		else
++			ipad_offset = 64;
++		opad_offset = 0;
++	} else if (op_type == ROC_SE_TLS) {
++		ipad_offset = 64;
++		opad_offset = 0;
++	} else {
++		ipad_offset = 0;
++		opad_offset = 64;
++	}
++
+ 	/* HMAC OPAD and IPAD */
+ 	for (i = 0; i < 128 && i < length; i++) {
+ 		opad[i] = opad[i] ^ key[i];
+@@ -176,28 +191,28 @@ cpt_hmac_opad_ipad_gen(roc_se_auth_type auth_type, const uint8_t *key, uint16_t
+ 	 */
+ 	switch (auth_type) {
+ 	case ROC_SE_MD5_TYPE:
+-		roc_hash_md5_gen(opad, (uint32_t *)hmac->opad);
+-		roc_hash_md5_gen(ipad, (uint32_t *)hmac->ipad);
++		roc_hash_md5_gen(opad, (uint32_t *)&opad_ipad[opad_offset]);
++		roc_hash_md5_gen(ipad, (uint32_t *)&opad_ipad[ipad_offset]);
+ 		break;
+ 	case ROC_SE_SHA1_TYPE:
+-		roc_hash_sha1_gen(opad, (uint32_t *)hmac->opad);
+-		roc_hash_sha1_gen(ipad, (uint32_t *)hmac->ipad);
++		roc_hash_sha1_gen(opad, (uint32_t *)&opad_ipad[opad_offset]);
++		roc_hash_sha1_gen(ipad, (uint32_t *)&opad_ipad[ipad_offset]);
+ 		break;
+ 	case ROC_SE_SHA2_SHA224:
+-		roc_hash_sha256_gen(opad, (uint32_t *)hmac->opad, 224);
+-		roc_hash_sha256_gen(ipad, (uint32_t *)hmac->ipad, 224);
++		roc_hash_sha256_gen(opad, (uint32_t *)&opad_ipad[opad_offset], 224);
++		roc_hash_sha256_gen(ipad, (uint32_t *)&opad_ipad[ipad_offset], 224);
+ 		break;
+ 	case ROC_SE_SHA2_SHA256:
+-		roc_hash_sha256_gen(opad, (uint32_t *)hmac->opad, 256);
+-		roc_hash_sha256_gen(ipad, (uint32_t *)hmac->ipad, 256);
++		roc_hash_sha256_gen(opad, (uint32_t *)&opad_ipad[opad_offset], 256);
++		roc_hash_sha256_gen(ipad, (uint32_t *)&opad_ipad[ipad_offset], 256);
+ 		break;
+ 	case ROC_SE_SHA2_SHA384:
+-		roc_hash_sha512_gen(opad, (uint64_t *)hmac->opad, 384);
+-		roc_hash_sha512_gen(ipad, (uint64_t *)hmac->ipad, 384);
++		roc_hash_sha512_gen(opad, (uint64_t *)&opad_ipad[opad_offset], 384);
++		roc_hash_sha512_gen(ipad, (uint64_t *)&opad_ipad[ipad_offset], 384);
+ 		break;
+ 	case ROC_SE_SHA2_SHA512:
+-		roc_hash_sha512_gen(opad, (uint64_t *)hmac->opad, 512);
+-		roc_hash_sha512_gen(ipad, (uint64_t *)hmac->ipad, 512);
++		roc_hash_sha512_gen(opad, (uint64_t *)&opad_ipad[opad_offset], 512);
++		roc_hash_sha512_gen(ipad, (uint64_t *)&opad_ipad[ipad_offset], 512);
+ 		break;
+ 	default:
+ 		break;
+@@ -401,7 +416,8 @@ roc_se_auth_key_set(struct roc_se_ctx *se_ctx, roc_se_auth_type type, const uint
+ 		if (chained_op) {
+ 			memset(fctx->hmac.ipad, 0, sizeof(fctx->hmac.ipad));
+ 			memset(fctx->hmac.opad, 0, sizeof(fctx->hmac.opad));
+-			cpt_hmac_opad_ipad_gen(type, key, key_len, &fctx->hmac);
++			roc_se_hmac_opad_ipad_gen(type, key, key_len, &fctx->hmac.ipad[0],
++						  ROC_SE_FC);
+ 			fctx->enc.auth_input_type = 0;
+ 		} else {
+ 			se_ctx->hmac = 1;
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index d62c40b3104aa..ddcf6bdb44853 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -191,6 +191,12 @@ typedef enum {
+ 	ROC_SE_PDCP_MAC_LEN_128_BIT = 0x3
+ } roc_se_pdcp_mac_len_type;
+ 
++typedef enum {
++	ROC_SE_IPSEC = 0x0,
++	ROC_SE_TLS = 0x1,
++	ROC_SE_FC = 0x2,
++} roc_se_op_type;
++
+ struct roc_se_enc_context {
+ 	uint64_t iv_source : 1;
+ 	uint64_t aes_key : 2;
+@@ -401,4 +407,7 @@ int __roc_api roc_se_ciph_key_set(struct roc_se_ctx *se_ctx, roc_se_cipher_type
+ void __roc_api roc_se_ctx_swap(struct roc_se_ctx *se_ctx);
+ void __roc_api roc_se_ctx_init(struct roc_se_ctx *se_ctx);
+ 
++void __roc_api roc_se_hmac_opad_ipad_gen(roc_se_auth_type auth_type, const uint8_t *key,
++					 uint16_t length, uint8_t *opad_ipad,
++					 roc_se_op_type op_type);
+ #endif /* __ROC_SE_H__ */
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 0c1e753d0bbae..76dbbe4666733 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -1,7 +1,6 @@
+ INTERNAL {
+ 	global:
+ 
+-	cnxk_sec_opad_ipad_gen;
+ 	cnxk_ipsec_icvlen_get;
+ 	cnxk_ipsec_ivlen_get;
+ 	cnxk_ipsec_outb_rlens_get;
+@@ -476,6 +475,7 @@ INTERNAL {
+ 	roc_plt_init;
+ 	roc_plt_init_cb_register;
+ 	roc_plt_lmt_validate;
++	roc_se_hmac_opad_ipad_gen;
+ 	roc_sso_dev_fini;
+ 	roc_sso_dev_init;
+ 	roc_sso_dump;
+diff --git a/drivers/crypto/cnxk/cn10k_tls.c b/drivers/crypto/cnxk/cn10k_tls.c
+index fa3ce3e758abf..5baea181e84cb 100644
+--- a/drivers/crypto/cnxk/cn10k_tls.c
++++ b/drivers/crypto/cnxk/cn10k_tls.c
+@@ -376,7 +376,9 @@ tls_read_sa_fill(struct roc_ie_ot_tls_read_sa *read_sa,
+ 	else
+ 		return -EINVAL;
+ 
+-	cnxk_sec_opad_ipad_gen(auth_xfrm, read_sa->opad_ipad, true);
++	roc_se_hmac_opad_ipad_gen(read_sa->w2.s.mac_select, auth_xfrm->auth.key.data,
++				  auth_xfrm->auth.key.length, read_sa->opad_ipad, ROC_SE_TLS);
++
+ 	tmp = (uint64_t *)read_sa->opad_ipad;
+ 	for (i = 0; i < (int)(ROC_CTX_MAX_OPAD_IPAD_LEN / sizeof(uint64_t)); i++)
+ 		tmp[i] = rte_be_to_cpu_64(tmp[i]);
+@@ -503,7 +505,9 @@ tls_write_sa_fill(struct roc_ie_ot_tls_write_sa *write_sa,
+ 		else
+ 			return -EINVAL;
+ 
+-		cnxk_sec_opad_ipad_gen(auth_xfrm, write_sa->opad_ipad, true);
++		roc_se_hmac_opad_ipad_gen(write_sa->w2.s.mac_select, auth_xfrm->auth.key.data,
++					  auth_xfrm->auth.key.length, write_sa->opad_ipad,
++					  ROC_SE_TLS);
+ 	}
+ 
+ 	tmp_key = (uint64_t *)write_sa->opad_ipad;
+-- 
+2.25.1
+

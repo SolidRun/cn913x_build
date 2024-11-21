@@ -1,0 +1,40 @@
+From e71817e7fd9b7dd7e6fae3039e8c7c1f41bd127b Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 18 Jun 2024 15:56:33 +0000
+Subject: [PATCH 875/955] test/event: increase default queue depth for tests
+
+With crypto adapter, larger queue depths are desirable since same queue
+could be used from multiple cores at the same time. With devices that
+are capable of doing large bursts, larger queues would help in multi
+core management of same queue.
+
+Increase default queue depth in crypto adapter tests to cater to such
+use cases.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I15ed44048bf1a34f5e91c69c576bd4ed1c1d302e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129817
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130015
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_event_crypto_adapter.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/test/test_event_crypto_adapter.c b/app/test/test_event_crypto_adapter.c
+index a38e389abdc17..64fc83ab1e4c5 100644
+--- a/app/test/test_event_crypto_adapter.c
++++ b/app/test/test_event_crypto_adapter.c
+@@ -32,7 +32,7 @@ test_event_crypto_adapter(void)
+ #define NUM_MBUFS                 (8191)
+ #define MBUF_CACHE_SIZE           (256)
+ #define MAXIMUM_IV_LENGTH         (16)
+-#define DEFAULT_NUM_OPS_INFLIGHT  (128)
++#define DEFAULT_NUM_OPS_INFLIGHT   1024
+ #define MAX_NB_SESSIONS            4
+ #define TEST_APP_PORT_ID           0
+ #define TEST_APP_EV_QUEUE_ID       0
+-- 
+2.25.1
+

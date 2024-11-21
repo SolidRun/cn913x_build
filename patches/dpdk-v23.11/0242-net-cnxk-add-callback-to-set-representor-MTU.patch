@@ -1,0 +1,178 @@
+From d942736716c068a90c5d66567546eb014a589df5 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Wed, 21 Feb 2024 09:38:09 +0530
+Subject: [PATCH 242/513] net/cnxk: add callback to set representor MTU
+
+This patch adds a callback to set the representor mtu.
+
+Change-Id: I7ede1d52aaaf0cbc07e56080095fc6624ea1c343
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121432
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_eswitch.h |  3 +-
+ drivers/net/cnxk/cnxk_rep.c     | 81 +++++++++++++++++++++++++++++----
+ drivers/net/cnxk/cnxk_rep.h     |  1 +
+ 3 files changed, 74 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_eswitch.h b/drivers/net/cnxk/cnxk_eswitch.h
+index 1baf198d72941..0275e760fbaf5 100644
+--- a/drivers/net/cnxk/cnxk_eswitch.h
++++ b/drivers/net/cnxk/cnxk_eswitch.h
+@@ -31,8 +31,7 @@ enum cnxk_esw_da_pattern_type {
+ };
+ 
+ struct cnxk_esw_repte_msg {
+-	uint16_t hw_func;
+-	bool enable;
++	struct roc_eswitch_repte_notify_msg *notify_msg;
+ 
+ 	TAILQ_ENTRY(cnxk_esw_repte_msg) next;
+ };
+diff --git a/drivers/net/cnxk/cnxk_rep.c b/drivers/net/cnxk/cnxk_rep.c
+index 27940e7e974a9..ca0637bde5135 100644
+--- a/drivers/net/cnxk/cnxk_rep.c
++++ b/drivers/net/cnxk/cnxk_rep.c
+@@ -197,7 +197,8 @@ cnxk_representee_setup(struct cnxk_eswitch_dev *eswitch_dev, uint16_t hw_func, u
+ }
+ 
+ static int
+-cnxk_representee_msg_process(struct cnxk_eswitch_dev *eswitch_dev, uint16_t hw_func, bool enable)
++cnxk_representee_state_msg_process(struct cnxk_eswitch_dev *eswitch_dev, uint16_t hw_func,
++				   bool enable)
+ {
+ 	struct cnxk_eswitch_devargs *esw_da;
+ 	uint16_t rep_id = UINT16_MAX;
+@@ -250,6 +251,64 @@ cnxk_representee_msg_process(struct cnxk_eswitch_dev *eswitch_dev, uint16_t hw_f
+ 	return rc;
+ }
+ 
++static int
++cnxk_representee_mtu_msg_process(struct cnxk_eswitch_dev *eswitch_dev, uint16_t hw_func,
++				 uint16_t rep_id, uint16_t mtu)
++{
++	struct cnxk_rep_dev *rep_dev = NULL;
++	struct rte_eth_dev *rep_eth_dev;
++	int rc = 0;
++	int i;
++
++	for (i = 0; i < eswitch_dev->repr_cnt.nb_repr_probed; i++) {
++		rep_eth_dev = eswitch_dev->rep_info[i].rep_eth_dev;
++		if (!rep_eth_dev) {
++			plt_err("Failed to get rep ethdev handle");
++			rc = -EINVAL;
++			goto done;
++		}
++
++		rep_dev = cnxk_rep_pmd_priv(rep_eth_dev);
++		if (rep_dev->rep_id == rep_id) {
++			plt_rep_dbg("Setting MTU as %d for hw_func %x rep_id %d\n", mtu, hw_func,
++				    rep_id);
++			rep_dev->repte_mtu = mtu;
++			break;
++		}
++	}
++
++done:
++	return rc;
++}
++
++static int
++cnxk_representee_msg_process(struct cnxk_eswitch_dev *eswitch_dev,
++			     struct roc_eswitch_repte_notify_msg *notify_msg)
++{
++	int rc = 0;
++
++	switch (notify_msg->type) {
++	case ROC_ESWITCH_REPTE_STATE:
++		plt_rep_dbg("	   type %d: hw_func %x action %s", notify_msg->type,
++			    notify_msg->state.hw_func,
++			    notify_msg->state.enable ? "enable" : "disable");
++		rc = cnxk_representee_state_msg_process(eswitch_dev, notify_msg->state.hw_func,
++							notify_msg->state.enable);
++		break;
++	case ROC_ESWITCH_REPTE_MTU:
++		plt_rep_dbg("	   type %d: hw_func %x rep_id %d mtu %d", notify_msg->type,
++			    notify_msg->mtu.hw_func, notify_msg->mtu.rep_id, notify_msg->mtu.mtu);
++		rc = cnxk_representee_mtu_msg_process(eswitch_dev, notify_msg->mtu.hw_func,
++						      notify_msg->mtu.rep_id, notify_msg->mtu.mtu);
++		break;
++	default:
++		plt_err("Invalid notification msg received %d", notify_msg->type);
++		break;
++	};
++
++	return rc;
++}
++
+ static uint32_t
+ cnxk_representee_msg_thread_main(void *arg)
+ {
+@@ -272,19 +331,18 @@ cnxk_representee_msg_thread_main(void *arg)
+ 		while (next_msg) {
+ 			msg = next_msg;
+ 			count++;
+-			plt_rep_dbg("	Processing msg %d: hw_func %x action %s", count,
+-				    msg->hw_func, msg->enable ? "enable" : "disable");
+-
++			plt_rep_dbg("	Processing msg %d: ", count);
+ 			/* Unlocking for interrupt thread to grab lock
+ 			 * while thread process the message.
+ 			 */
+ 			pthread_mutex_unlock(&eswitch_dev->repte_msg_proc.mutex);
+ 			/* Processing the message */
+-			cnxk_representee_msg_process(eswitch_dev, msg->hw_func, msg->enable);
++			cnxk_representee_msg_process(eswitch_dev, msg->notify_msg);
+ 			/* Locking as cond wait will unlock before wait */
+ 			pthread_mutex_lock(&eswitch_dev->repte_msg_proc.mutex);
+ 			next_msg = TAILQ_NEXT(msg, next);
+ 			TAILQ_REMOVE(&repte_msg_proc->msg_list, msg, next);
++			rte_free(msg->notify_msg);
+ 			rte_free(msg);
+ 		}
+ 	}
+@@ -295,7 +353,7 @@ cnxk_representee_msg_thread_main(void *arg)
+ }
+ 
+ static int
+-cnxk_representee_notification(void *roc_nix, uint16_t hw_func, bool enable)
++cnxk_representee_notification(void *roc_nix, struct roc_eswitch_repte_notify_msg *notify_msg)
+ {
+ 	struct cnxk_esw_repte_msg_proc *repte_msg_proc;
+ 	struct cnxk_eswitch_dev *eswitch_dev;
+@@ -318,10 +376,15 @@ cnxk_representee_notification(void *roc_nix, uint16_t hw_func, bool enable)
+ 		goto done;
+ 	}
+ 
+-	msg->hw_func = hw_func;
+-	msg->enable = enable;
++	msg->notify_msg = plt_zmalloc(sizeof(struct roc_eswitch_repte_notify_msg), 0);
++	if (!msg->notify_msg) {
++		plt_err("Failed to allocate memory");
++		rc = -ENOMEM;
++		goto done;
++	}
+ 
+-	plt_rep_dbg("Pushing new notification : hw_func %x enable %d\n", msg->hw_func, enable);
++	rte_memcpy(msg->notify_msg, notify_msg, sizeof(struct roc_eswitch_repte_notify_msg));
++	plt_rep_dbg("Pushing new notification : msg type %d", msg->notify_msg->type);
+ 	pthread_mutex_lock(&eswitch_dev->repte_msg_proc.mutex);
+ 	TAILQ_INSERT_TAIL(&repte_msg_proc->msg_list, msg, next);
+ 	/* Signal vf message handler thread */
+diff --git a/drivers/net/cnxk/cnxk_rep.h b/drivers/net/cnxk/cnxk_rep.h
+index 71019cf30aead..9bdea47bd412e 100644
+--- a/drivers/net/cnxk/cnxk_rep.h
++++ b/drivers/net/cnxk/cnxk_rep.h
+@@ -68,6 +68,7 @@ struct cnxk_rep_dev {
+ 	struct cnxk_rep_rxq *rxq;
+ 	struct cnxk_rep_txq *txq;
+ 	uint8_t mac_addr[RTE_ETHER_ADDR_LEN];
++	uint16_t repte_mtu;
+ };
+ 
+ /* Inline functions */
+-- 
+2.25.1
+

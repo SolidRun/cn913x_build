@@ -1,0 +1,625 @@
+From e474f65d4013a7d30847af1aa42ee066a0474d6a Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Fri, 30 Jun 2023 16:57:34 +0530
+Subject: [PATCH 547/955] common/cnxk: add support to get aged flows
+
+Adds support to get aged flows in CNXK driver.
+The control thread polls the status of flows having age action, every 10
+seconds and updates a bitmap array with the aged flows. The poll frequency
+of control thread can be set by devargs.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Change-Id: I5499191c1f4fbb961335b7aed57808c310297803
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107813
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/meson.build     |   1 +
+ drivers/common/cnxk/roc_mbox.h      |  27 +++
+ drivers/common/cnxk/roc_npc.c       |  22 ++
+ drivers/common/cnxk/roc_npc.h       |  28 +++
+ drivers/common/cnxk/roc_npc_aging.c | 315 ++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_npc_priv.h  |  17 ++
+ drivers/common/cnxk/roc_platform.h  |   8 +
+ drivers/common/cnxk/version.map     |   1 +
+ 8 files changed, 419 insertions(+)
+ create mode 100644 drivers/common/cnxk/roc_npc_aging.c
+
+diff --git a/drivers/common/cnxk/meson.build b/drivers/common/cnxk/meson.build
+index c2604efdeecb1..fd35a8ae353c9 100644
+--- a/drivers/common/cnxk/meson.build
++++ b/drivers/common/cnxk/meson.build
+@@ -56,6 +56,7 @@ sources = files(
+         'roc_npa_irq.c',
+         'roc_npa_type.c',
+         'roc_npc.c',
++        'roc_npc_aging.c',
+         'roc_npc_mcam.c',
+         'roc_npc_mcam_dump.c',
+         'roc_npc_parse.c',
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 2fd01cd710aad..1f267de980aa9 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -227,6 +227,8 @@ struct mbox_msghdr {
+ 	  npc_mcam_get_stats_req, npc_mcam_get_stats_rsp)                      \
+ 	M(NPC_GET_FIELD_HASH_INFO, 0x6013, npc_get_field_hash_info,            \
+ 	  npc_get_field_hash_info_req, npc_get_field_hash_info_rsp)            \
++	M(NPC_MCAM_GET_HIT_STATUS, 0x6015, npc_mcam_get_hit_status,            \
++	  npc_mcam_get_hit_status_req, npc_mcam_get_hit_status_rsp)            \
+ 	/* NIX mbox IDs (range 0x8000 - 0xFFFF) */                             \
+ 	M(NIX_LF_ALLOC, 0x8000, nix_lf_alloc, nix_lf_alloc_req,                \
+ 	  nix_lf_alloc_rsp)                                                    \
+@@ -2485,6 +2487,31 @@ struct npc_mcam_get_stats_rsp {
+ 	uint8_t __io stat_ena; /* enabled */
+ };
+ 
++#define MCAM_ARR_SIZE    256
++#define MCAM_ARR_ELEM_SZ 64
++
++struct npc_mcam_get_hit_status_req {
++	struct mbox_msghdr hdr;
++	/* If clear == true, then if the hit status bit for mcam id is set,
++	 * then needs to cleared by writing 1 back.
++	 * If clear == false, then leave the hit status bit as is.
++	 */
++	bool __io clear;
++	uint8_t __io reserved[3];
++	/* Start range of mcam id */
++	uint32_t __io range_valid_mcam_ids_start;
++	/* End range of mcam id */
++	uint32_t __io range_valid_mcam_ids_end;
++	/* Bitmap of mcam ids for which the hit status needs to checked */
++	uint64_t __io mcam_ids[MCAM_ARR_SIZE];
++};
++
++struct npc_mcam_get_hit_status_rsp {
++	struct mbox_msghdr hdr;
++	/* Bitmap of mcam hit status, prior to clearing */
++	uint64_t __io mcam_hit_status[MCAM_ARR_SIZE];
++};
++
+ /* TIM mailbox error codes
+  * Range 801 - 900.
+  */
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 3908e36065767..d5f61e2bda433 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -302,6 +302,7 @@ roc_npc_init(struct roc_npc *roc_npc)
+ 	npc_mem = mem;
+ 
+ 	TAILQ_INIT(&npc->ipsec_list);
++	TAILQ_INIT(&npc->age_flow_list);
+ 	for (idx = 0; idx < npc->flow_max_priority; idx++) {
+ 		TAILQ_INIT(&npc->flow_list[idx]);
+ 		TAILQ_INIT(&npc->prio_flow_list[idx]);
+@@ -330,6 +331,9 @@ roc_npc_init(struct roc_npc *roc_npc)
+ 	 */
+ 	plt_bitmap_set(npc->rss_grp_entries, 0);
+ 
++	rc = npc_aged_flows_bitmap_alloc(roc_npc);
++	if (rc != 0)
++		goto done;
+ 	return rc;
+ 
+ done:
+@@ -610,6 +614,17 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			flow->mtr_id = act_mtr->mtr_id;
+ 			req_act |= ROC_NPC_ACTION_TYPE_METER;
+ 			break;
++		case ROC_NPC_ACTION_TYPE_AGE:
++			if (flow->is_validate == true)
++				break;
++			plt_seqcount_init(&roc_npc->flow_age.seq_cnt);
++			errcode = npc_aging_ctrl_thread_create(roc_npc,
++							       actions->conf,
++							       flow);
++			if (errcode != 0)
++				goto err_exit;
++			req_act |= ROC_NPC_ACTION_TYPE_AGE;
++			break;
+ 		default:
+ 			errcode = NPC_ERR_ACTION_NOTSUP;
+ 			goto err_exit;
+@@ -1485,6 +1500,9 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		}
+ 	}
+ 	TAILQ_INSERT_TAIL(list, flow, next);
++
++	npc_age_flow_list_entry_add(roc_npc, flow);
++
+ 	return flow;
+ 
+ set_rss_failed:
+@@ -1583,6 +1601,10 @@ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 
+ 	npc_delete_prio_list_entry(npc, flow);
+ 
++	npc_age_flow_list_entry_delete(roc_npc, flow);
++	if (roc_npc->flow_age.age_flow_refcnt == 0 && roc_npc->flow_age.aged_flows_poll_thread)
++		npc_aging_ctrl_thread_destroy(roc_npc);
++
+ done:
+ 	plt_free(flow);
+ 	return 0;
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 07e6634aa733c..8b8a2eb343177 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -180,6 +180,7 @@ enum roc_npc_action_type {
+ 	ROC_NPC_ACTION_TYPE_VLAN_PCP_INSERT = (1 << 15),
+ 	ROC_NPC_ACTION_TYPE_PORT_ID = (1 << 16),
+ 	ROC_NPC_ACTION_TYPE_METER = (1 << 17),
++	ROC_NPC_ACTION_TYPE_AGE = (1 << 18),
+ };
+ 
+ struct roc_npc_action {
+@@ -203,6 +204,13 @@ struct roc_npc_action_port_id {
+ 	uint32_t id;		/**< port ID. */
+ };
+ 
++struct roc_npc_action_age {
++	uint32_t timeout : 24; /**< Time in seconds. */
++	uint32_t reserved : 8; /**< Reserved, must be zero. */
++	/** The user flow context, NULL means the rte_flow pointer. */
++	void *context;
++};
++
+ /**
+  * ESP Header
+  */
+@@ -295,6 +303,9 @@ struct roc_npc_flow {
+ 	uint16_t match_id;
+ 	uint8_t is_inline_dev;
+ 	bool use_pre_alloc;
++	uint64_t timeout_cycles;
++	void *age_context;
++	uint32_t timeout;
+ 
+ 	TAILQ_ENTRY(roc_npc_flow) next;
+ };
+@@ -327,6 +338,19 @@ enum flow_vtag_cfg_dir { VTAG_TX, VTAG_RX };
+ #define ROC_ETHER_TYPE_VLAN 0x8100 /**< IEEE 802.1Q VLAN tagging. */
+ #define ROC_ETHER_TYPE_QINQ 0x88A8 /**< IEEE 802.1ad QinQ tagging. */
+ 
++struct roc_npc_flow_age {
++	plt_seqcount_t seq_cnt;
++	uint32_t aging_poll_freq;
++	uint32_t age_flow_refcnt;
++	uint32_t aged_flows_cnt;
++	uint32_t start_id;
++	uint32_t end_id;
++	pthread_t aged_flows_poll_thread;
++	struct plt_bitmap *aged_flows;
++	void *age_mem;
++	bool aged_flows_get_thread_exit;
++};
++
+ struct roc_npc {
+ 	struct roc_nix *roc_nix;
+ 	uint8_t switch_header_type;
+@@ -349,11 +373,14 @@ struct roc_npc {
+ 	bool is_sdp_mask_set;
+ 	uint16_t sdp_channel;
+ 	uint16_t sdp_channel_mask;
++	struct roc_npc_flow_age flow_age;
+ 
+ #define ROC_NPC_MEM_SZ (6 * 1024)
+ 	uint8_t reserved[ROC_NPC_MEM_SZ];
+ } __plt_cache_aligned;
+ 
++#define ROC_NPC_AGE_POLL_FREQ_MIN 10
++
+ int __roc_api roc_npc_init(struct roc_npc *roc_npc);
+ int __roc_api roc_npc_fini(struct roc_npc *roc_npc);
+ const char *__roc_api roc_npc_profile_name_get(struct roc_npc *roc_npc);
+@@ -397,4 +424,5 @@ int __roc_api roc_npc_validate_portid_action(struct roc_npc *roc_npc_src,
+ 					     struct roc_npc *roc_npc_dst);
+ int __roc_api roc_npc_mcam_init(struct roc_npc *roc_npc, struct roc_npc_flow *flow, int mcam_id);
+ int __roc_api roc_npc_mcam_move(struct roc_npc *roc_npc, uint16_t old_ent, uint16_t new_ent);
++void *__roc_api roc_npc_aged_flow_ctx_get(struct roc_npc *roc_npc, uint32_t mcam_id);
+ #endif /* _ROC_NPC_H_ */
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+new file mode 100644
+index 0000000000000..94126fe9fd638
+--- /dev/null
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -0,0 +1,315 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include "roc_api.h"
++#include "roc_priv.h"
++
++int
++npc_aged_flows_bitmap_alloc(struct roc_npc *roc_npc)
++{
++	struct roc_npc_flow_age *flow_age;
++	uint8_t *age_mem = NULL;
++	uint32_t bmap_sz;
++	int rc = 0;
++
++	bmap_sz = plt_bitmap_get_memory_footprint(MCAM_ARR_ELEM_SZ *
++						  MCAM_ARR_SIZE);
++	age_mem = plt_zmalloc(bmap_sz, 0);
++	if (age_mem == NULL) {
++		plt_err("Bmap alloc failed");
++		rc = NPC_ERR_NO_MEM;
++		goto done;
++	}
++
++	flow_age = &roc_npc->flow_age;
++	flow_age->age_mem = age_mem;
++	flow_age->aged_flows = plt_bitmap_init(MCAM_ARR_ELEM_SZ * MCAM_ARR_SIZE,
++					       age_mem, bmap_sz);
++	if (!flow_age->aged_flows) {
++		plt_err("Bitmap init failed");
++		plt_free(age_mem);
++		rc = NPC_ERR_NO_MEM;
++		goto done;
++	}
++
++	flow_age->age_flow_refcnt = 0;
++done:
++	return rc;
++}
++
++void
++npc_aged_flows_bitmap_free(struct roc_npc *roc_npc)
++{
++	struct roc_npc_flow_age *flow_age;
++
++	flow_age = &roc_npc->flow_age;
++	plt_bitmap_free(flow_age->aged_flows);
++	if (flow_age->age_mem)
++		plt_free(roc_npc->flow_age.age_mem);
++}
++
++static void
++check_timeout_cycles(struct roc_npc *roc_npc, uint32_t mcam_id)
++{
++	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++	struct npc_age_flow_list_head *list;
++	struct npc_age_flow_entry *fl_iter;
++	struct roc_npc_flow_age *flow_age;
++	bool aging_enabled = false;
++
++	flow_age = &roc_npc->flow_age;
++	list = &npc->age_flow_list;
++	TAILQ_FOREACH(fl_iter, list, next) {
++		if (fl_iter->flow->mcam_id == mcam_id &&
++		    fl_iter->flow->timeout_cycles < rte_get_timer_cycles()) {
++			/* update bitmap */
++			plt_bitmap_set(flow_age->aged_flows, mcam_id);
++			if (!aging_enabled) {
++				flow_age->start_id = mcam_id;
++				flow_age->end_id = mcam_id;
++				aging_enabled = true;
++			}
++			if (flow_age->start_id > mcam_id)
++				flow_age->start_id = mcam_id;
++			else if (flow_age->end_id < mcam_id)
++				flow_age->end_id = mcam_id;
++			flow_age->aged_flows_cnt += 1;
++			break;
++		}
++	}
++}
++
++static void
++update_timeout_cycles(struct roc_npc *roc_npc, uint32_t mcam_id)
++{
++	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++	struct npc_age_flow_list_head *list;
++	struct npc_age_flow_entry *fl_iter;
++
++	list = &npc->age_flow_list;
++	TAILQ_FOREACH(fl_iter, list, next) {
++		if (fl_iter->flow->mcam_id == mcam_id) {
++			fl_iter->flow->timeout_cycles = rte_get_timer_cycles() +
++				fl_iter->flow->timeout * rte_get_timer_hz();
++			break;
++		}
++	}
++}
++
++static int
++npc_mcam_get_hit_status(struct npc *npc, uint64_t *mcam_ids, uint16_t start_id,
++			uint16_t end_id, uint64_t *hit_status, bool clear)
++{
++	struct npc_mcam_get_hit_status_req *req;
++	struct npc_mcam_get_hit_status_rsp *rsp;
++	struct mbox *mbox = mbox_get(npc->mbox);
++	uint8_t idx_start;
++	uint8_t idx_end;
++	int rc;
++	int i;
++
++	req = mbox_alloc_msg_npc_mcam_get_hit_status(mbox);
++	if (req == NULL)
++		return -ENOSPC;
++
++	idx_start = start_id / MCAM_ARR_ELEM_SZ;
++	idx_end = end_id / MCAM_ARR_ELEM_SZ;
++
++	for (i = idx_start; i <= idx_end; i++)
++		req->mcam_ids[i] = mcam_ids[i];
++
++	req->range_valid_mcam_ids_start = start_id;
++	req->range_valid_mcam_ids_end = end_id;
++	req->clear = clear;
++
++	rc = mbox_process_msg(mbox, (void *)&rsp);
++	if (rc)
++		goto exit;
++
++	for (i = idx_start; i <= idx_end; i++)
++		hit_status[i] = rsp->mcam_hit_status[i];
++
++	rc = 0;
++exit:
++	mbox_put(mbox);
++	return rc;
++}
++
++void *
++npc_aged_flows_get(void *args)
++{
++	uint64_t hit_status[MCAM_ARR_SIZE] = {0};
++	uint64_t mcam_ids[MCAM_ARR_SIZE] = {0};
++	struct npc_age_flow_list_head *list;
++	struct npc_age_flow_entry *fl_iter;
++	struct roc_npc *roc_npc = args;
++	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++	struct roc_npc_flow_age *flow_age;
++	bool aging_enabled;
++	uint32_t start_id;
++	uint32_t end_id;
++	uint32_t mcam_id;
++	uint32_t idx;
++	uint32_t i;
++	int rc;
++
++	flow_age = &roc_npc->flow_age;
++	list = &npc->age_flow_list;
++	while (!flow_age->aged_flows_get_thread_exit) {
++		start_id = 0;
++		end_id = 0;
++		aging_enabled = false;
++		memset(mcam_ids, 0, sizeof(mcam_ids));
++		TAILQ_FOREACH(fl_iter, list, next) {
++			mcam_id = fl_iter->flow->mcam_id;
++			idx = mcam_id / MCAM_ARR_ELEM_SZ;
++			mcam_ids[idx] |= BIT_ULL(mcam_id % MCAM_ARR_ELEM_SZ);
++
++			if (!aging_enabled) {
++				start_id = mcam_id;
++				end_id = mcam_id;
++				aging_enabled = true;
++			}
++
++			if (mcam_id < start_id)
++				start_id = mcam_id;
++			else if (mcam_id > end_id)
++				end_id = mcam_id;
++		}
++
++		if (!aging_enabled)
++			goto lbl_sleep;
++
++		rc = npc_mcam_get_hit_status(npc, mcam_ids, start_id, end_id,
++					     hit_status, true);
++		if (rc)
++			return NULL;
++
++		plt_seqcount_write_begin(&flow_age->seq_cnt);
++		flow_age->aged_flows_cnt = 0;
++		for (i = start_id; i <= end_id; i++) {
++			idx = i / MCAM_ARR_ELEM_SZ;
++			if (mcam_ids[idx] & BIT_ULL(i % MCAM_ARR_ELEM_SZ)) {
++				if (!(hit_status[idx] & BIT_ULL(i % MCAM_ARR_ELEM_SZ)))
++					check_timeout_cycles(roc_npc, i);
++				else
++					update_timeout_cycles(roc_npc, i);
++			}
++		}
++		plt_seqcount_write_end(&flow_age->seq_cnt);
++
++lbl_sleep:
++		sleep(flow_age->aging_poll_freq);
++	}
++
++	return NULL;
++}
++
++void
++npc_age_flow_list_entry_add(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
++{
++	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++	struct npc_age_flow_entry *age_fl_iter;
++	struct npc_age_flow_entry *new_entry;
++
++	new_entry = plt_zmalloc(sizeof(*new_entry), 0);
++	new_entry->flow = flow;
++	roc_npc->flow_age.age_flow_refcnt++;
++	/* List in ascending order of mcam entries */
++	TAILQ_FOREACH(age_fl_iter, &npc->age_flow_list, next) {
++		if (age_fl_iter->flow->mcam_id > flow->mcam_id) {
++			TAILQ_INSERT_BEFORE(age_fl_iter, new_entry, next);
++			return;
++		}
++	}
++	TAILQ_INSERT_TAIL(&npc->age_flow_list, new_entry, next);
++}
++
++void
++npc_age_flow_list_entry_delete(struct roc_npc *roc_npc,
++			       struct roc_npc_flow *flow)
++{
++	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++	struct npc_age_flow_list_head *list;
++	struct npc_age_flow_entry *curr;
++
++	list = &npc->age_flow_list;
++	curr = TAILQ_FIRST(list);
++
++	if (!curr)
++		return;
++
++	while (curr) {
++		if (flow->mcam_id == curr->flow->mcam_id) {
++			TAILQ_REMOVE(list, curr, next);
++			plt_free(curr);
++			break;
++		}
++		curr = TAILQ_NEXT(curr, next);
++	}
++	roc_npc->flow_age.age_flow_refcnt--;
++}
++
++int
++npc_aging_ctrl_thread_create(struct roc_npc *roc_npc,
++			     const struct roc_npc_action_age *age,
++			     struct roc_npc_flow *flow)
++{
++	struct roc_npc_flow_age *flow_age;
++	int errcode = 0;
++
++	flow_age = &roc_npc->flow_age;
++	if (age->timeout < flow_age->aging_poll_freq) {
++		plt_err("Age timeout should be greater or equal to %u seconds",
++			flow_age->aging_poll_freq);
++		errcode = NPC_ERR_ACTION_NOTSUP;
++		goto done;
++	}
++
++	flow->age_context = age->context == NULL ? flow : age->context;
++	flow->timeout = age->timeout;
++	flow->timeout_cycles = rte_get_timer_cycles() + age->timeout *
++			       rte_get_timer_hz();
++
++	if (flow_age->age_flow_refcnt == 0) {
++		flow_age->aged_flows_get_thread_exit = false;
++		if (plt_ctrl_thread_create(&flow_age->aged_flows_poll_thread,
++					   "Aged Flows Get Ctrl Thread", NULL,
++					   npc_aged_flows_get, roc_npc) != 0) {
++			plt_err("Failed to create thread for age flows");
++			errcode = NPC_ERR_ACTION_NOTSUP;
++			goto done;
++		}
++	}
++done:
++	return errcode;
++}
++
++void
++npc_aging_ctrl_thread_destroy(struct roc_npc *roc_npc)
++{
++	struct roc_npc_flow_age *flow_age;
++
++	flow_age = &roc_npc->flow_age;
++	flow_age->aged_flows_get_thread_exit = true;
++	pthread_join(flow_age->aged_flows_poll_thread, NULL);
++	npc_aged_flows_bitmap_free(roc_npc);
++}
++
++void *
++roc_npc_aged_flow_ctx_get(struct roc_npc *roc_npc, uint32_t mcam_id)
++{
++	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++	struct npc_age_flow_list_head *list;
++	struct npc_age_flow_entry *fl_iter;
++
++	list = &npc->age_flow_list;
++
++	TAILQ_FOREACH(fl_iter, list, next) {
++		if (fl_iter->flow->mcam_id == mcam_id)
++			return fl_iter->flow->age_context;
++	}
++
++	return NULL;
++}
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 593dca353bb86..6d6cb64c65071 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -378,6 +378,13 @@ struct npc_prio_flow_entry {
+ 
+ TAILQ_HEAD(npc_prio_flow_list_head, npc_prio_flow_entry);
+ 
++struct npc_age_flow_entry {
++	struct roc_npc_flow *flow;
++	TAILQ_ENTRY(npc_age_flow_entry) next;
++};
++
++TAILQ_HEAD(npc_age_flow_list_head, npc_age_flow_entry);
++
+ struct npc {
+ 	struct mbox *mbox;			/* Mbox */
+ 	uint32_t keyx_supp_nmask[NPC_MAX_INTF]; /* nibble mask */
+@@ -403,6 +410,7 @@ struct npc {
+ 	npc_ld_flags_t prx_lfcfg;    /* KEX LD_Flags CFG */
+ 	struct npc_flow_list *flow_list;
+ 	struct npc_prio_flow_list_head *prio_flow_list;
++	struct npc_age_flow_list_head age_flow_list;
+ 	struct plt_bitmap *rss_grp_entries;
+ 	struct npc_flow_list ipsec_list;
+ 	uint8_t exact_match_ena;
+@@ -480,4 +488,13 @@ int npc_rss_action_program(struct roc_npc *roc_npc, const struct roc_npc_action
+ int npc_rss_group_free(struct npc *npc, struct roc_npc_flow *flow);
+ int npc_mcam_init(struct npc *npc, struct roc_npc_flow *flow, int mcam_id);
+ int npc_mcam_move(struct mbox *mbox, uint16_t old_ent, uint16_t new_ent);
++void npc_age_flow_list_entry_add(struct roc_npc *npc, struct roc_npc_flow *flow);
++void npc_age_flow_list_entry_delete(struct roc_npc *npc, struct roc_npc_flow *flow);
++void *npc_aged_flows_get(void *args);
++int npc_aged_flows_bitmap_alloc(struct roc_npc *roc_npc);
++void npc_aged_flows_bitmap_free(struct roc_npc *roc_npc);
++int npc_aging_ctrl_thread_create(struct roc_npc *roc_npc,
++				 const struct roc_npc_action_age *age,
++				 struct roc_npc_flow *flow);
++void npc_aging_ctrl_thread_destroy(struct roc_npc *roc_npc);
+ #endif /* _ROC_NPC_PRIV_H_ */
+diff --git a/drivers/common/cnxk/roc_platform.h b/drivers/common/cnxk/roc_platform.h
+index 9c34815b519eb..958c72c121ac6 100644
+--- a/drivers/common/cnxk/roc_platform.h
++++ b/drivers/common/cnxk/roc_platform.h
+@@ -20,6 +20,7 @@
+ #include <rte_malloc.h>
+ #include <rte_memzone.h>
+ #include <rte_pci.h>
++#include <rte_seqcount.h>
+ #include <rte_spinlock.h>
+ #include <rte_string_fns.h>
+ #include <rte_tailq.h>
+@@ -130,6 +131,13 @@
+ #define plt_spinlock_unlock  rte_spinlock_unlock
+ #define plt_spinlock_trylock rte_spinlock_trylock
+ 
++#define plt_seqcount_t			rte_seqcount_t
++#define plt_seqcount_init		rte_seqcount_init
++#define plt_seqcount_read_begin		rte_seqcount_read_begin
++#define plt_seqcount_read_retry		rte_seqcount_read_retry
++#define plt_seqcount_write_begin	rte_seqcount_write_begin
++#define plt_seqcount_write_end		rte_seqcount_write_end
++
+ #define plt_intr_callback_register   rte_intr_callback_register
+ #define plt_intr_callback_unregister rte_intr_callback_unregister
+ #define plt_intr_disable	     rte_intr_disable
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 51f0a0791b896..b719f0bf38f16 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -397,6 +397,7 @@ INTERNAL {
+ 	roc_npa_pool_op_range_set;
+ 	roc_npa_pool_range_update_check;
+ 	roc_npa_zero_aura_handle;
++	roc_npc_aged_flow_ctx_get;
+ 	roc_npc_fini;
+ 	roc_npc_flow_create;
+ 	roc_npc_flow_destroy;
+-- 
+2.25.1
+

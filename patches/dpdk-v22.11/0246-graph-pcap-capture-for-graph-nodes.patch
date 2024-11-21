@@ -1,0 +1,609 @@
+From 62581d02513bb9bd64b9914403db588ab1c10625 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Mon, 9 Jan 2023 16:30:16 +0530
+Subject: [PATCH 246/955] graph: pcap capture for graph nodes
+
+Implementation adds support to capture packets at each node with
+packet metadata and node name.
+
+Change-Id: I3a33b0646af008852f5107829476f8903a95e1d0
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94104
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test/test_graph_perf.c             |   2 +-
+ doc/guides/rel_notes/release_23_03.rst |   9 +-
+ lib/graph/graph.c                      |  17 +-
+ lib/graph/graph_pcap.c                 | 217 +++++++++++++++++++++++++
+ lib/graph/graph_pcap_private.h         | 124 ++++++++++++++
+ lib/graph/graph_populate.c             |  12 +-
+ lib/graph/graph_private.h              |   5 +
+ lib/graph/meson.build                  |   3 +-
+ lib/graph/rte_graph.h                  |   5 +
+ lib/graph/rte_graph_worker.h           |   9 +
+ 10 files changed, 397 insertions(+), 6 deletions(-)
+ create mode 100644 lib/graph/graph_pcap.c
+ create mode 100644 lib/graph/graph_pcap_private.h
+
+diff --git a/app/test/test_graph_perf.c b/app/test/test_graph_perf.c
+index 1d065438a6940..c5b463f700cd5 100644
+--- a/app/test/test_graph_perf.c
++++ b/app/test/test_graph_perf.c
+@@ -324,7 +324,7 @@ graph_init(const char *gname, uint8_t nb_srcs, uint8_t nb_sinks,
+ 	char nname[RTE_NODE_NAMESIZE / 2];
+ 	struct test_node_data *node_data;
+ 	char *ename[nodes_per_stage];
+-	struct rte_graph_param gconf;
++	struct rte_graph_param gconf = {0};
+ 	const struct rte_memzone *mz;
+ 	uint8_t total_percent = 0;
+ 	rte_node_t *src_nodes;
+diff --git a/doc/guides/rel_notes/release_23_03.rst b/doc/guides/rel_notes/release_23_03.rst
+index 9b04339b105b2..c5a7ac1843cd2 100644
+--- a/doc/guides/rel_notes/release_23_03.rst
++++ b/doc/guides/rel_notes/release_23_03.rst
+@@ -55,6 +55,10 @@ New Features
+      Also, make sure to start the actual text at the margin.
+      =======================================================
+ 
++* **Added pcap trace support in graph library.**
++
++  Added support to capture packets at each graph node with packet metadata and
++  node name.
+ 
+ Removed Items
+ -------------
+@@ -84,8 +88,9 @@ API Changes
+    Also, make sure to start the actual text at the margin.
+    =======================================================
+ 
+-* Experimental function ``rte_pcapng_copy`` was updated to support comment
+-  section in enhanced packet block in pcapng library.
++* Experimental structures ``struct rte_graph_param``, ``struct rte_graph`` and
++  ``struct graph`` were updated to support pcap trace in graph library.
++
+ 
+ ABI Changes
+ -----------
+diff --git a/lib/graph/graph.c b/lib/graph/graph.c
+index 3a617cc369399..a839a2803b375 100644
+--- a/lib/graph/graph.c
++++ b/lib/graph/graph.c
+@@ -15,6 +15,7 @@
+ #include <rte_string_fns.h>
+ 
+ #include "graph_private.h"
++#include "graph_pcap_private.h"
+ 
+ static struct graph_head graph_list = STAILQ_HEAD_INITIALIZER(graph_list);
+ static rte_spinlock_t graph_lock = RTE_SPINLOCK_INITIALIZER;
+@@ -228,7 +229,12 @@ graph_mem_fixup_node_ctx(struct rte_graph *graph)
+ 		node_db = node_from_name(name);
+ 		if (node_db == NULL)
+ 			SET_ERR_JMP(ENOLINK, fail, "Node %s not found", name);
+-		node->process = node_db->process;
++
++		if (graph->pcap_enable) {
++			node->process = graph_pcap_dispatch;
++			node->original_process = node_db->process;
++		} else
++			node->process = node_db->process;
+ 	}
+ 
+ 	return graph;
+@@ -242,6 +248,9 @@ graph_mem_fixup_secondary(struct rte_graph *graph)
+ 	if (graph == NULL || rte_eal_process_type() == RTE_PROC_PRIMARY)
+ 		return graph;
+ 
++	if (graph_pcap_file_open(graph->pcap_filename) || graph_pcap_mp_init())
++		graph_pcap_exit(graph);
++
+ 	return graph_mem_fixup_node_ctx(graph);
+ }
+ 
+@@ -323,11 +332,17 @@ rte_graph_create(const char *name, struct rte_graph_param *prm)
+ 	if (graph_has_isolated_node(graph))
+ 		goto graph_cleanup;
+ 
++	/* Initialize pcap config. */
++	graph_pcap_enable(prm->pcap_enable);
++
+ 	/* Initialize graph object */
+ 	graph->socket = prm->socket_id;
+ 	graph->src_node_count = src_node_count;
+ 	graph->node_count = graph_nodes_count(graph);
+ 	graph->id = graph_id;
++	graph->num_pkt_to_capture = prm->num_pkt_to_capture;
++	if (prm->pcap_filename)
++		rte_strscpy(graph->pcap_filename, prm->pcap_filename, RTE_GRAPH_PCAP_FILE_SZ);
+ 
+ 	/* Allocate the Graph fast path memory and populate the data */
+ 	if (graph_fp_mem_create(graph))
+diff --git a/lib/graph/graph_pcap.c b/lib/graph/graph_pcap.c
+new file mode 100644
+index 0000000000000..7bd13ed61e4b6
+--- /dev/null
++++ b/lib/graph/graph_pcap.c
+@@ -0,0 +1,217 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell International Ltd.
++ */
++
++#include <errno.h>
++#include <unistd.h>
++#include <stdlib.h>
++#include <pwd.h>
++
++#include <rte_mbuf.h>
++#include <rte_pcapng.h>
++
++#include "rte_graph_worker.h"
++
++#include "graph_pcap_private.h"
++
++#define GRAPH_PCAP_BUF_SZ	128
++#define GRAPH_PCAP_NUM_PACKETS	1024
++#define GRAPH_PCAP_PKT_POOL	"graph_pcap_pkt_pool"
++#define GRAPH_PCAP_FILE_NAME	"dpdk_graph_pcap_capture_XXXXXX.pcapng"
++
++/* For multi-process, packets are captured in separate files. */
++static rte_pcapng_t *pcapng_fd;
++static bool pcap_enable;
++struct rte_mempool *pkt_mp;
++
++void
++graph_pcap_enable(bool val)
++{
++	pcap_enable = val;
++}
++
++int
++graph_pcap_is_enable(void)
++{
++	return pcap_enable;
++}
++
++void
++graph_pcap_exit(struct rte_graph *graph)
++{
++	if (rte_eal_process_type() == RTE_PROC_PRIMARY)
++		if (pkt_mp)
++			rte_mempool_free(pkt_mp);
++
++	if (pcapng_fd) {
++		rte_pcapng_close(pcapng_fd);
++		pcapng_fd = NULL;
++	}
++
++	/* Disable pcap. */
++	graph->pcap_enable = 0;
++	graph_pcap_enable(0);
++}
++
++static int
++graph_pcap_default_path_get(char **dir_path)
++{
++	struct passwd *pwd;
++	char *home_dir;
++
++	/* First check for shell environment variable */
++	home_dir = getenv("HOME");
++	if (home_dir == NULL) {
++		graph_warn("Home env not preset.");
++		/* Fallback to password file entry */
++		pwd = getpwuid(getuid());
++		if (pwd == NULL)
++			return -EINVAL;
++
++		home_dir = pwd->pw_dir;
++	}
++
++	/* Append default pcap file to directory */
++	if (asprintf(dir_path, "%s/%s", home_dir, GRAPH_PCAP_FILE_NAME) == -1)
++		return -ENOMEM;
++
++	return 0;
++}
++
++int
++graph_pcap_file_open(const char *filename)
++{
++	int fd;
++	char file_name[RTE_GRAPH_PCAP_FILE_SZ];
++	char *pcap_dir;
++
++	if (pcapng_fd)
++		goto done;
++
++	if (!filename || filename[0] == '\0') {
++		if (graph_pcap_default_path_get(&pcap_dir) < 0)
++			return -1;
++		snprintf(file_name, RTE_GRAPH_PCAP_FILE_SZ, "%s", pcap_dir);
++		free(pcap_dir);
++	} else {
++		snprintf(file_name, RTE_GRAPH_PCAP_FILE_SZ, "%s_XXXXXX.pcapng",
++			 filename);
++	}
++
++	fd = mkstemps(file_name, strlen(".pcapng"));
++	if (fd < 0) {
++		graph_err("mkstemps() failure");
++		return -1;
++	}
++
++	graph_info("pcap filename: %s", file_name);
++
++	/* Open a capture file */
++	pcapng_fd = rte_pcapng_fdopen(fd, NULL, NULL, "Graph pcap tracer",
++				      NULL);
++	if (pcapng_fd == NULL) {
++		graph_err("Graph rte_pcapng_fdopen failed.");
++		close(fd);
++		return -1;
++	}
++
++done:
++	return 0;
++}
++
++int
++graph_pcap_mp_init(void)
++{
++	pkt_mp = rte_mempool_lookup(GRAPH_PCAP_PKT_POOL);
++	if (pkt_mp)
++		goto done;
++
++	/* Make a pool for cloned packets */
++	pkt_mp = rte_pktmbuf_pool_create_by_ops(GRAPH_PCAP_PKT_POOL,
++			IOV_MAX + RTE_GRAPH_BURST_SIZE,	0, 0,
++			rte_pcapng_mbuf_size(RTE_MBUF_DEFAULT_BUF_SIZE),
++			SOCKET_ID_ANY, "ring_mp_mc");
++	if (pkt_mp == NULL) {
++		graph_err("Cannot create mempool for graph pcap capture.");
++		return -1;
++	}
++
++done:
++	return 0;
++}
++
++int
++graph_pcap_init(struct graph *graph)
++{
++	struct rte_graph *graph_data = graph->graph;
++
++	if (graph_pcap_file_open(graph->pcap_filename) < 0)
++		goto error;
++
++	if (graph_pcap_mp_init() < 0)
++		goto error;
++
++	/* User configured number of packets to capture. */
++	if (graph->num_pkt_to_capture)
++		graph_data->nb_pkt_to_capture = graph->num_pkt_to_capture;
++	else
++		graph_data->nb_pkt_to_capture = GRAPH_PCAP_NUM_PACKETS;
++
++	/* All good. Now populate data for secondary process. */
++
++	rte_strscpy(graph_data->pcap_filename, graph->pcap_filename, RTE_GRAPH_PCAP_FILE_SZ);
++	graph_data->pcap_enable = 1;
++
++	return 0;
++
++error:
++	graph_pcap_exit(graph_data);
++	graph_pcap_enable(0);
++	graph_err("Graph pcap initialization failed. Disabling pcap trace.");
++	return -1;
++}
++
++uint16_t
++graph_pcap_dispatch(struct rte_graph *graph,
++			      struct rte_node *node, void **objs,
++			      uint16_t nb_objs)
++{
++	struct rte_mbuf *mbuf_clones[RTE_GRAPH_BURST_SIZE];
++	char buffer[GRAPH_PCAP_BUF_SZ];
++	uint64_t i, num_packets;
++	struct rte_mbuf *mbuf;
++	ssize_t len;
++
++	if (!nb_objs || (graph->nb_pkt_captured >= graph->nb_pkt_to_capture))
++		goto done;
++
++	num_packets = graph->nb_pkt_to_capture - graph->nb_pkt_captured;
++	/* nb_objs will never be greater than RTE_GRAPH_BURST_SIZE */
++	if (num_packets > nb_objs)
++		num_packets = nb_objs;
++
++	snprintf(buffer, GRAPH_PCAP_BUF_SZ, "%s: %s", graph->name, node->name);
++
++	for (i = 0; i < num_packets; i++) {
++		struct rte_mbuf *mc;
++		mbuf = (struct rte_mbuf *)objs[i];
++
++		mc = rte_pcapng_copy(mbuf->port, 0, mbuf, pkt_mp, mbuf->pkt_len,
++				     rte_get_tsc_cycles(), 0, buffer);
++		if (mc == NULL)
++			break;
++
++		mbuf_clones[i] = mc;
++	}
++
++	/* write it to capture file */
++	len = rte_pcapng_write_packets(pcapng_fd, mbuf_clones, i);
++	rte_pktmbuf_free_bulk(mbuf_clones, i);
++	if (len <= 0)
++		goto done;
++
++	graph->nb_pkt_captured += i;
++
++done:
++	return node->original_process(graph, node, objs, nb_objs);
++}
+diff --git a/lib/graph/graph_pcap_private.h b/lib/graph/graph_pcap_private.h
+new file mode 100644
+index 0000000000000..198add67e28c2
+--- /dev/null
++++ b/lib/graph/graph_pcap_private.h
+@@ -0,0 +1,124 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell International Ltd.
++ */
++
++#ifndef _RTE_GRAPH_PCAP_PRIVATE_H_
++#define _RTE_GRAPH_PCAP_PRIVATE_H_
++
++#include <stdint.h>
++#include <sys/types.h>
++
++#include "graph_private.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/**
++ * @internal
++ *
++ * Pcap trace enable/disable function.
++ *
++ * The function is called to enable/disable graph pcap trace functionality.
++ *
++ * @param val
++ *   Value to be set to enable/disable graph pcap trace.
++ */
++void graph_pcap_enable(bool val);
++
++/**
++ * @internal
++ *
++ * Check graph pcap trace is enable/disable.
++ *
++ * The function is called to check if the graph pcap trace is enabled/disabled.
++ *
++ * @return
++ *   - 1: Enable
++ *   - 0: Disable
++ */
++int graph_pcap_is_enable(void);
++
++/**
++ * @internal
++ *
++ * Initialise graph pcap trace functionality.
++ *
++ * The function invoked to allocate mempool.
++ *
++ * @return
++ *   0 on success and -1 on failure.
++ */
++int graph_pcap_mp_init(void);
++
++/**
++ * @internal
++ *
++ * Initialise graph pcap trace functionality.
++ *
++ * The function invoked to open pcap file.
++ *
++ * @param filename
++ *   Pcap filename.
++ *
++ * @return
++ *   0 on success and -1 on failure.
++ */
++int graph_pcap_file_open(const char *filename);
++
++/**
++ * @internal
++ *
++ * Initialise graph pcap trace functionality.
++ *
++ * The function invoked when the graph pcap trace is enabled. This function
++ * open's pcap file and allocates mempool. Information needed for secondary
++ * process is populated.
++ *
++ * @param graph
++ *   Pointer to graph structure.
++ *
++ * @return
++ *   0 on success and -1 on failure.
++ */
++int graph_pcap_init(struct graph *graph);
++
++/**
++ * @internal
++ *
++ * Exit graph pcap trace functionality.
++ *
++ * The function is called to exit graph pcap trace and close open fd's and
++ * free up memory. Pcap trace is also disabled.
++ *
++ * @param graph
++ *   Pointer to graph structure.
++ */
++void graph_pcap_exit(struct rte_graph *graph);
++
++/**
++ * @internal
++ *
++ * Capture mbuf metadata and node metadata to a pcap file.
++ *
++ * When graph pcap trace enabled, this function is invoked prior to each node
++ * and mbuf, node metadata is parsed and captured in a pcap file.
++ *
++ * @param graph
++ *   Pointer to the graph object.
++ * @param node
++ *   Pointer to the node object.
++ * @param objs
++ *   Pointer to an array of objects to be processed.
++ * @param nb_objs
++ *   Number of objects in the array.
++ */
++uint16_t graph_pcap_dispatch(struct rte_graph *graph,
++				   struct rte_node *node, void **objs,
++				   uint16_t nb_objs);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* _RTE_GRAPH_PCAP_PRIVATE_H_ */
+diff --git a/lib/graph/graph_populate.c b/lib/graph/graph_populate.c
+index 102fd6c29ba87..2c0844ce925c1 100644
+--- a/lib/graph/graph_populate.c
++++ b/lib/graph/graph_populate.c
+@@ -9,6 +9,7 @@
+ #include <rte_memzone.h>
+ 
+ #include "graph_private.h"
++#include "graph_pcap_private.h"
+ 
+ static size_t
+ graph_fp_mem_calc_size(struct graph *graph)
+@@ -75,7 +76,11 @@ graph_nodes_populate(struct graph *_graph)
+ 		memset(node, 0, sizeof(*node));
+ 		node->fence = RTE_GRAPH_FENCE;
+ 		node->off = off;
+-		node->process = graph_node->node->process;
++		if (graph_pcap_is_enable()) {
++			node->process = graph_pcap_dispatch;
++			node->original_process = graph_node->node->process;
++		} else
++			node->process = graph_node->node->process;
+ 		memcpy(node->name, graph_node->node->name, RTE_GRAPH_NAMESIZE);
+ 		pid = graph_node->node->parent_id;
+ 		if (pid != RTE_NODE_ID_INVALID) { /* Cloned node */
+@@ -183,6 +188,8 @@ graph_fp_mem_populate(struct graph *graph)
+ 	int rc;
+ 
+ 	graph_header_popluate(graph);
++	if (graph_pcap_is_enable())
++		graph_pcap_init(graph);
+ 	graph_nodes_populate(graph);
+ 	rc = graph_node_nexts_populate(graph);
+ 	rc |= graph_src_nodes_populate(graph);
+@@ -227,6 +234,9 @@ graph_nodes_mem_destroy(struct rte_graph *graph)
+ int
+ graph_fp_mem_destroy(struct graph *graph)
+ {
++	if (graph_pcap_is_enable())
++		graph_pcap_exit(graph->graph);
++
+ 	graph_nodes_mem_destroy(graph->graph);
+ 	return rte_memzone_free(graph->mz);
+ }
+diff --git a/lib/graph/graph_private.h b/lib/graph/graph_private.h
+index f9a85c8926ce0..7d1b30b8ac641 100644
+--- a/lib/graph/graph_private.h
++++ b/lib/graph/graph_private.h
+@@ -22,6 +22,7 @@ extern int rte_graph_logtype;
+ 			__func__, __LINE__, RTE_FMT_TAIL(__VA_ARGS__, )))
+ 
+ #define graph_err(...) GRAPH_LOG(ERR, __VA_ARGS__)
++#define graph_warn(...) GRAPH_LOG(WARNING, __VA_ARGS__)
+ #define graph_info(...) GRAPH_LOG(INFO, __VA_ARGS__)
+ #define graph_dbg(...) GRAPH_LOG(DEBUG, __VA_ARGS__)
+ 
+@@ -100,6 +101,10 @@ struct graph {
+ 	/**< Memory size of the graph. */
+ 	int socket;
+ 	/**< Socket identifier where memory is allocated. */
++	uint64_t num_pkt_to_capture;
++	/**< Number of packets to be captured per core. */
++	char pcap_filename[RTE_GRAPH_PCAP_FILE_SZ];
++	/**< pcap file name/path. */
+ 	STAILQ_HEAD(gnode_list, graph_node) node_list;
+ 	/**< Nodes in a graph. */
+ };
+diff --git a/lib/graph/meson.build b/lib/graph/meson.build
+index c7327549e83bc..3526d1b5d416f 100644
+--- a/lib/graph/meson.build
++++ b/lib/graph/meson.build
+@@ -14,7 +14,8 @@ sources = files(
+         'graph_debug.c',
+         'graph_stats.c',
+         'graph_populate.c',
++        'graph_pcap.c',
+ )
+ headers = files('rte_graph.h', 'rte_graph_worker.h')
+ 
+-deps += ['eal']
++deps += ['eal', 'pcapng']
+diff --git a/lib/graph/rte_graph.h b/lib/graph/rte_graph.h
+index b32c4bc217dad..c9a77297fc311 100644
+--- a/lib/graph/rte_graph.h
++++ b/lib/graph/rte_graph.h
+@@ -35,6 +35,7 @@ extern "C" {
+ 
+ #define RTE_GRAPH_NAMESIZE 64 /**< Max length of graph name. */
+ #define RTE_NODE_NAMESIZE 64  /**< Max length of node name. */
++#define RTE_GRAPH_PCAP_FILE_SZ 64 /**< Max length of pcap file name. */
+ #define RTE_GRAPH_OFF_INVALID UINT32_MAX /**< Invalid graph offset. */
+ #define RTE_NODE_ID_INVALID UINT32_MAX   /**< Invalid node id. */
+ #define RTE_EDGE_ID_INVALID UINT16_MAX   /**< Invalid edge id. */
+@@ -164,6 +165,10 @@ struct rte_graph_param {
+ 	uint16_t nb_node_patterns;  /**< Number of node patterns. */
+ 	const char **node_patterns;
+ 	/**< Array of node patterns based on shell pattern. */
++
++	bool pcap_enable; /**< Pcap enable. */
++	uint64_t num_pkt_to_capture; /**< Number of packets to capture. */
++	char *pcap_filename; /**< Filename in which packets to be captured.*/
+ };
+ 
+ /**
+diff --git a/lib/graph/rte_graph_worker.h b/lib/graph/rte_graph_worker.h
+index fc6fee48c8370..438595b15c238 100644
+--- a/lib/graph/rte_graph_worker.h
++++ b/lib/graph/rte_graph_worker.h
+@@ -44,6 +44,12 @@ struct rte_graph {
+ 	rte_graph_t id;	/**< Graph identifier. */
+ 	int socket;	/**< Socket ID where memory is allocated. */
+ 	char name[RTE_GRAPH_NAMESIZE];	/**< Name of the graph. */
++	bool pcap_enable;	        /**< Pcap trace enabled. */
++	/** Number of packets captured per core. */
++	uint64_t nb_pkt_captured;
++	/** Number of packets to capture per core. */
++	uint64_t nb_pkt_to_capture;
++	char pcap_filename[RTE_GRAPH_PCAP_FILE_SZ];  /**< Pcap filename. */
+ 	uint64_t fence;			/**< Fence. */
+ } __rte_cache_aligned;
+ 
+@@ -64,6 +70,9 @@ struct rte_node {
+ 	char parent[RTE_NODE_NAMESIZE];	/**< Parent node name. */
+ 	char name[RTE_NODE_NAMESIZE];	/**< Name of the node. */
+ 
++	/** Original process function when pcap is enabled. */
++	rte_node_process_t original_process;
++
+ 	/* Fast path area  */
+ #define RTE_NODE_CTX_SZ 16
+ 	uint8_t ctx[RTE_NODE_CTX_SZ] __rte_cache_aligned; /**< Node Context. */
+-- 
+2.25.1
+

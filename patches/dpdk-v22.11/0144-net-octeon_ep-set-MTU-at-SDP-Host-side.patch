@@ -1,0 +1,171 @@
+From cc06f2b84738a2161fe840dd218a37df3fbdffb2 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Mon, 2 Jan 2023 06:43:27 -0800
+Subject: [PATCH 144/955] net/octeon_ep: set MTU at SDP Host side
+
+add support to set MTU size based on SoC type.
+It allows MTU size up to 16KB-Eth header size for
+T93 A0-B0, F95N A0 and F95O A0 SOC type. Rest of
+the SoCs it allows MTU size up to 64KB-Eth header
+size.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I5d69fa96535cba4416915c2316746e0d8f3dd8a1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93516
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_common.h | 10 ++++
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 77 ++++++++++++++++++++-------
+ 2 files changed, 68 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 005243aa23f82..529fbc3b4a651 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -437,6 +437,7 @@ typedef enum {
+ 	OTX_VF_MBOX_CMD_GET_LINK,
+ 	OTX_VF_MBOX_CMD_BULK_SEND,
+ 	OTX_VF_MBOX_CMD_BULK_GET,
++	OTX_VF_MBOX_CMD_GET_MTU,
+ 	OTX_VF_MBOX_CMD_LAST,
+ } otx_vf_mbox_opcode_t;
+ 
+@@ -485,6 +486,15 @@ union otx_vf_mbox_word {
+ 		uint64_t type:2;
+ 		uint64_t mtu:48;
+ 	} s_set_mtu;
++	struct {
++		uint64_t version:3;
++		uint64_t rsvd1:2;
++		uint64_t opcode:5;
++		uint64_t rsvd2:3;
++		uint64_t id:1;
++		uint64_t type:2;
++		uint64_t mtu:48;
++	} s_get_mtu;
+ 	struct {
+ 		uint64_t version:3;
+ 		uint64_t rsvd1:2;
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 3a50117a418f7..42e15534d7262 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -30,20 +30,66 @@ static const struct rte_eth_desc_lim otx_ep_tx_desc_lim = {
+ 	.nb_align	= OTX_EP_TXD_ALIGN,
+ };
+ 
++static int
++otx_ep_send_mbox_cmd(struct otx_ep_device *otx_epvf, union otx_vf_mbox_word cmd,
++		     union otx_vf_mbox_word *rsp)
++{
++	return otx_epvf->fn_list.send_mbox_cmd(otx_epvf, cmd, rsp);
++}
++
++static int
++otx_ep_send_mbox_cmd_nolock(struct otx_ep_device *otx_epvf,
++			    union otx_vf_mbox_word cmd,
++			    union otx_vf_mbox_word *rsp)
++{
++	return otx_epvf->fn_list.send_mbox_cmd_nolock(otx_epvf, cmd, rsp);
++}
++
++static int
++otx_ep_dev_get_max_pkt_len(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_epvf =
++		(struct otx_ep_device *)OTX_EP_DEV(eth_dev);
++	union otx_vf_mbox_word cmd;
++	union otx_vf_mbox_word rsp;
++	int ret;
++
++	cmd.u64 = 0;
++	cmd.s_get_mtu.opcode = OTX_VF_MBOX_CMD_GET_MTU;
++
++	ret = otx_ep_send_mbox_cmd(otx_epvf, cmd, &rsp);
++	if (ret)
++		return ret;
++	if (rsp.s_get_mtu.type != OTX_VF_MBOX_TYPE_RSP_ACK)
++		return -EINVAL;
++	return rsp.s_get_mtu.mtu;
++}
++
+ static int
+ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 		    struct rte_eth_dev_info *devinfo)
+ {
+ 	struct otx_ep_device *otx_epvf;
++	int max_rx_pktlen;
+ 
+ 	otx_epvf = OTX_EP_DEV(eth_dev);
+ 
++	max_rx_pktlen = otx_ep_dev_get_max_pkt_len(eth_dev);
++	if (max_rx_pktlen > 0) {
++		max_rx_pktlen = max_rx_pktlen + RTE_ETHER_CRC_LEN;
++	} else {
++		otx_ep_err("Get MTU info failed\n");
++		return -EINVAL;
++	}
++
+ 	devinfo->speed_capa = RTE_ETH_LINK_SPEED_10G;
+ 	devinfo->max_rx_queues = otx_epvf->max_rx_queues;
+ 	devinfo->max_tx_queues = otx_epvf->max_tx_queues;
+ 
+ 	devinfo->min_rx_bufsize = OTX_EP_MIN_RX_BUF_SIZE;
+-	devinfo->max_rx_pktlen = OTX_EP_MAX_PKT_SZ;
++	devinfo->max_rx_pktlen = max_rx_pktlen;
++	devinfo->max_mtu = devinfo->max_rx_pktlen - (RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN);
++	devinfo->min_mtu = RTE_ETHER_MIN_LEN;
+ 	devinfo->rx_offload_capa = DEV_RX_OFFLOAD_JUMBO_FRAME;
+ 	devinfo->rx_offload_capa |= DEV_RX_OFFLOAD_SCATTER;
+ 	devinfo->tx_offload_capa = DEV_TX_OFFLOAD_MULTI_SEGS;
+@@ -59,21 +105,6 @@ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 	return 0;
+ }
+ 
+-static int
+-otx_ep_send_mbox_cmd(struct otx_ep_device *otx_epvf, union otx_vf_mbox_word cmd,
+-		     union otx_vf_mbox_word *rsp)
+-{
+-	return otx_epvf->fn_list.send_mbox_cmd(otx_epvf, cmd, rsp);
+-}
+-
+-static int
+-otx_ep_send_mbox_cmd_nolock(struct otx_ep_device *otx_epvf,
+-			    union otx_vf_mbox_word cmd,
+-			    union otx_vf_mbox_word *rsp)
+-{
+-	return otx_epvf->fn_list.send_mbox_cmd_nolock(otx_epvf, cmd, rsp);
+-}
+-
+ static int
+ otx_ep_dev_link_update(struct rte_eth_dev *eth_dev,
+ 		    int wait_to_complete __rte_unused)
+@@ -156,13 +187,21 @@ otx_ep_dev_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ {
+ 	struct otx_ep_device *otx_epvf =
+ 			(struct otx_ep_device *)OTX_EP_DEV(eth_dev);
+-	uint32_t frame_size = mtu + OTX_EP_ETH_OVERHEAD;
++	int32_t frame_size = mtu + OTX_EP_ETH_OVERHEAD;
+ 	union otx_vf_mbox_word cmd;
+ 	union otx_vf_mbox_word rsp;
+-	int ret = 0;
++	int32_t ret = 0;
++
++	/* Check if MTU is within the allowed range */
++	if (frame_size  < RTE_ETHER_MIN_LEN) {
++		otx_ep_err("MTU is lesser than minimum");
++		return -EINVAL;
++	}
+ 
+-	if (mtu < RTE_ETHER_MIN_MTU || frame_size > OTX_EP_FRAME_SIZE_MAX)
++	if ((frame_size - RTE_ETHER_CRC_LEN) > ((int32_t)otx_ep_dev_get_max_pkt_len(eth_dev))) {
++		otx_ep_err("MTU is greater than maximum");
+ 		return -EINVAL;
++	}
+ 
+ 	cmd.u64 = 0;
+ 	cmd.s_set_mtu.opcode = OTX_VF_MBOX_CMD_SET_MTU;
+-- 
+2.25.1
+

@@ -1,0 +1,142 @@
+From 246ba0a34437b0eba16f2c25950a49523aafb8fc Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Fri, 23 Feb 2024 19:18:24 +0530
+Subject: [PATCH 236/513] common/cnxk: port representor and represented port
+
+Making changes to roc layer to support different combinations of
+port_representor and represented_port as pattern and action
+
+Change-Id: Ibffea332f26ffaa7aa3b527fe71d7504fee7c0da
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122483
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c      | 23 ++++++++++++++++++-----
+ drivers/common/cnxk/roc_npc.h      |  6 ++++++
+ drivers/common/cnxk/roc_npc_mcam.c |  5 +++--
+ 3 files changed, 27 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index f4fb8c7660bb6..d6ad3756bb486 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -790,9 +790,12 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 
+ 		if (req_act & ROC_NPC_ACTION_TYPE_DROP) {
+ 			flow->npc_action = NIX_TX_ACTIONOP_DROP;
+-		} else if ((req_act & ROC_NPC_ACTION_TYPE_COUNT) ||
+-			   vlan_insert_action) {
++		} else if ((req_act & ROC_NPC_ACTION_TYPE_COUNT) || vlan_insert_action) {
+ 			flow->npc_action = NIX_TX_ACTIONOP_UCAST_DEFAULT;
++			if (flow->rep_act_rep) {
++				flow->npc_action = NIX_TX_ACTIONOP_UCAST_CHAN;
++				flow->npc_action |= (uint64_t)0x3f << 12;
++			}
+ 		} else {
+ 			plt_err("Unsupported action for egress");
+ 			errcode = NPC_ERR_ACTION_NOTSUP;
+@@ -804,7 +807,9 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			flow->mcast_channels[1] = npc->channel;
+ 		}
+ 
+-		goto set_pf_func;
++		/* PF func who is sending the packet */
++		flow->tx_pf_func = pf_func;
++		goto done;
+ 	} else {
+ 		if (vlan_insert_action) {
+ 			errcode = NPC_ERR_ACTION_NOTSUP;
+@@ -883,10 +888,10 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	if (mark)
+ 		flow->npc_action |= (uint64_t)mark << 40;
+ 
+-set_pf_func:
+ 	/* Ideally AF must ensure that correct pf_func is set */
+ 	flow->npc_action |= (uint64_t)pf_func << 4;
+ 
++done:
+ 	return 0;
+ 
+ err_exit:
+@@ -1607,13 +1612,21 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 
+ 	flow->port_id = -1;
+ 	if (roc_npc->rep_npc) {
+-		flow->rep_channel = roc_nix_to_nix_priv(roc_npc->rep_npc->roc_nix)->rx_chan_base;
++		flow->rep_channel =
++			(roc_npc->rep_rx_channel == 0) ?
++				roc_nix_to_nix_priv(roc_npc->rep_npc->roc_nix)->rx_chan_base :
++				roc_npc->rep_rx_channel;
+ 		flow->rep_pf_func = roc_npc->rep_pf_func;
++		flow->rep_act_pf_func = roc_npc->rep_act_pf_func;
++		flow->rep_act_rep = roc_npc->rep_act_rep;
+ 		flow->rep_mbox = roc_npc_to_npc_priv(roc_npc->rep_npc)->mbox;
+ 		flow->has_rep = true;
+ 		flow->is_rep_vf = !roc_nix_is_pf(roc_npc->rep_npc->roc_nix);
+ 		flow->port_id = roc_npc->rep_port_id;
+ 		flow->rep_npc = roc_npc_to_npc_priv(roc_npc->rep_npc);
++		roc_npc->rep_act_rep = false;
++		roc_npc->rep_act_pf_func = 0;
++		roc_npc->rep_rx_channel = 0;
+ 	}
+ 
+ 	parse_state.dst_pf_func = dst_pf_func;
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 69fa76833a1fb..462795152edee 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -323,6 +323,7 @@ struct roc_npc_flow {
+ 	struct roc_npc_flow_dump_data dump_data[ROC_NPC_MAX_FLOW_PATTERNS];
+ 	uint16_t num_patterns;
+ 	struct roc_npc_spi_to_sa_action_info spi_to_sa_info;
++	uint16_t tx_pf_func;
+ 	bool is_validate;
+ 	uint16_t match_id;
+ 	uint8_t is_inline_dev;
+@@ -332,6 +333,8 @@ struct roc_npc_flow {
+ 	uint32_t timeout;
+ 	bool has_age_action;
+ 	uint16_t rep_pf_func;
++	uint16_t rep_act_pf_func;
++	bool rep_act_rep;
+ 	uint16_t rep_channel;
+ 	struct mbox *rep_mbox;
+ 	bool has_rep;
+@@ -415,6 +418,9 @@ struct roc_npc {
+ 	struct roc_npc_flow_age flow_age;
+ 	struct roc_npc *rep_npc;
+ 	uint16_t rep_pf_func;
++	uint16_t rep_rx_channel;
++	uint16_t rep_act_pf_func;
++	bool rep_act_rep;
+ 	int rep_port_id;
+ 
+ #define ROC_NPC_MEM_SZ (6 * 1024)
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index 28dac416fd1be..0ff9842c1177a 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -672,7 +672,7 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 	}
+ 
+ 	if (flow->nix_intf == NIX_INTF_TX) {
+-		uint16_t pf_func = (flow->npc_action >> 4) & 0xffff;
++		uint16_t pf_func = flow->tx_pf_func;
+ 
+ 		if (flow->has_rep)
+ 			pf_func = flow->rep_pf_func;
+@@ -754,7 +754,8 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 			npc_mcam_set_channel(flow, req, inl_dev->channel, inl_dev->chan_mask,
+ 					     false);
+ 		} else if (flow->has_rep) {
+-			pf_func = flow->rep_pf_func;
++			pf_func = (flow->rep_act_pf_func == 0) ? flow->rep_pf_func :
++								 flow->rep_act_pf_func;
+ 			req->entry_data.action &= ~(GENMASK(19, 4));
+ 			req->entry_data.action |= (uint64_t)pf_func << 4;
+ 			flow->npc_action &= ~(GENMASK(19, 4));
+-- 
+2.25.1
+

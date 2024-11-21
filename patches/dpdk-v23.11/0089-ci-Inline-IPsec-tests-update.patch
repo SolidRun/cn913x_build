@@ -1,0 +1,95 @@
+From 87de16cfc5980b9565a322da03aaad6f989a0c63 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Fri, 8 Sep 2023 10:44:51 +0530
+Subject: [PATCH 089/513] ci: Inline IPsec tests update
+
+- Enable Rx Inject test
+- Add Multi-seg autotest for 106B0
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I1f132a5322bbcd78499dd0d8571f1f0489646602
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117264
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 6ff8cffbd41bf8f3088ca78c9372ae927dcb89b8)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117276
+---
+ .../inline_ipsec_autotest.sh                  | 37 +++++++++++++++++--
+ 1 file changed, 33 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/inline_ipsec_autotest/inline_ipsec_autotest.sh b/marvell-ci/test/cnxk-tests/inline_ipsec_autotest/inline_ipsec_autotest.sh
+index 60fb51f4ab5f8..5e3427abb4a8a 100755
+--- a/marvell-ci/test/cnxk-tests/inline_ipsec_autotest/inline_ipsec_autotest.sh
++++ b/marvell-ci/test/cnxk-tests/inline_ipsec_autotest/inline_ipsec_autotest.sh
+@@ -2,7 +2,7 @@
+ # SPDX-License-Identifier: BSD-3-Clause
+ # Copyright (C) 2022 Marvell.
+ 
+-set -euo pipefail
++set -uo pipefail
+ 
+ SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+ 
+@@ -34,6 +34,7 @@ else
+ 	fi
+ fi
+ 
++PART_106B0=$(cat /proc/device-tree/soc\@0/chiprevision)
+ declare -A cn10k_inline_ipsec_test_args
+ 
+ register_cn10k_inline_ipsec_test() {
+@@ -41,9 +42,33 @@ register_cn10k_inline_ipsec_test() {
+ }
+ 
+ run_cn10k_inline_ipsec_tests() {
++	unbuffer="$(command -v stdbuf) -o 0" || unbuffer=
++	local out=ipsec_out.txt
++	local parse=log_ipsec_parse_out.txt
++	total_fail_cnt=0
+ 	for test in ${!cn10k_inline_ipsec_test_args[@]}; do
+-		DPDK_TEST=$test $DPDK_TEST_BIN ${cn10k_inline_ipsec_test_args[$test]}
++		DPDK_TEST=$test $unbuffer $DPDK_TEST_BIN ${cn10k_inline_ipsec_test_args[$test]} >$out 2>&1
++		cat $out
++		cat $out | grep "failed" > temp_1.txt
++		awk '!/failed:/' temp_1.txt > temp_2.txt
++		fail_cnt=`cat $out | grep "Tests Failed :" | awk '{print $5}'`
++
++		if [[ $test == "inline_ipsec_sg_autotest" ]]; then
++			awk '!/Inner L4 checksum test failed/' temp_2.txt > temp_1.txt
++			cat temp_1.txt > temp_2.txt
++			# Two failures of L4 checksum are expected
++			fail_cnt=`expr $fail_cnt - 2`
++		fi
++		cat temp_2.txt >> $parse
++		rm -rf temp_1.txt temp_2.txt $out
++		total_fail_cnt=`expr $total_fail_cnt + $fail_cnt`
+ 	done
++	count=`grep -c "failed" $parse`
++	rm $parse
++	if [[ $count -ne 0 && $total_fail_cnt -ne 0 ]]; then
++		echo "FAILURE count $count $total_fail_cnt"
++		exit 1;
++	fi
+ }
+ 
+ run_inline_ipsec_tests() {
+@@ -54,8 +79,12 @@ run_inline_ipsec_tests() {
+ 
+ 
+ #					DPDK TEST NAME		TEST ARGS
+-register_cn10k_inline_ipsec_test	inline_ipsec_autotest	"-a $ETHERNET_DEVICE -a $NIX_INL_DEVICE -a $CRYPTO_DEVICE"
+-register_cn10k_inline_ipsec_test	event_inline_ipsec_autotest	"-a $ETHERNET_DEVICE -a $NIX_INL_DEVICE -a $CRYPTO_DEVICE -a $EVENT_DEVICE"
++register_cn10k_inline_ipsec_test	inline_ipsec_autotest	"-a $ETHERNET_DEVICE,rx_inj_ena=1 -a $NIX_INL_DEVICE,rx_inj_ena=1 -a $CRYPTO_DEVICE"
++register_cn10k_inline_ipsec_test	event_inline_ipsec_autotest	"-a $ETHERNET_DEVICE,rx_inj_ena=1 -a $NIX_INL_DEVICE,rx_inj_ena=1 -a $CRYPTO_DEVICE -a $EVENT_DEVICE"
++
++if [[ $PLAT == "cn10k" && $PART_106B0 == "B0" ]]; then
++register_cn10k_inline_ipsec_test	inline_ipsec_sg_autotest	"-a $ETHERNET_DEVICE,rx_inj_ena=1 -a $NIX_INL_DEVICE,rx_inj_ena=1 -a $CRYPTO_DEVICE"
++fi
+ 
+ case $TEST_TYPE in
+ 	inline_ipsec_tests)
+-- 
+2.25.1
+

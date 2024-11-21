@@ -1,0 +1,41 @@
+From 0528054ee85727ab055a5348a105c1fc6a1638b2 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 23 May 2023 15:04:21 +0530
+Subject: [PATCH 604/955] event/cnxk: fix ns to ticks conversion
+
+The number of timeout ticks is dependent on the global dequeue
+timeout configured.
+
+Fixes: 6223ede20361 ("event/cnxk: add event port link and unlink")
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I64b50ac75f1e469d2ec0a1ebcadf5d111eeab57c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103918
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109997
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cnxk_eventdev.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index 7e23425055091..badff2739bcac 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -323,9 +323,9 @@ int
+ cnxk_sso_timeout_ticks(struct rte_eventdev *event_dev, uint64_t ns,
+ 		       uint64_t *tmo_ticks)
+ {
+-	RTE_SET_USED(event_dev);
+-	*tmo_ticks = NSEC2TICK(ns, rte_get_timer_hz());
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 
++	*tmo_ticks = dev->deq_tmo_ns ? ns / dev->deq_tmo_ns : 0;
+ 	return 0;
+ }
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,35 @@
+From 8ae13bfbc66eac5978ca4a37e7bbe72733a2fabf Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 8 Aug 2023 10:31:37 +0530
+Subject: [PATCH 591/955] ci: reduce modexp crypto numbers
+
+Reduce modexp crypto numbers due to microcode changes.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Idab5397b6e0e4e277eaa44f02160c2074b127b45
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109302
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx   | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+index 5b3538914edae..b0b27214a4c9e 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+@@ -34,8 +34,8 @@ zuc-eea3
+ 1504: 12.041 12.06 12.068
+ <end>
+ modex
+-64: 1.225 1.229 1.229
+-384: 1.225 1.229 1.229
+-1504: 1.225 1.229 1.229
++64: 1.212 1.213 1.213
++384: 1.212 1.213 1.213
++1504: 1.212 1.213 1.213
+ <end>
+ 
+-- 
+2.25.1
+

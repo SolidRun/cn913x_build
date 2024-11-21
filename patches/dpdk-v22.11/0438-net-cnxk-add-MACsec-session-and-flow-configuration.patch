@@ -1,0 +1,503 @@
+From 8f27161fceea23467c077499f716e89e651b8f4a Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 19 May 2023 02:24:01 +0530
+Subject: [PATCH 438/955] net/cnxk: add MACsec session and flow configuration
+
+Added support for MACsec session/flow create/destroy.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I33e3fe13da56daed9cddef7c5eaafea646230a0d
+---
+ drivers/net/cnxk/cn10k_ethdev_sec.c |  11 +-
+ drivers/net/cnxk/cn10k_flow.c       |  22 ++-
+ drivers/net/cnxk/cnxk_ethdev.c      |   2 +
+ drivers/net/cnxk/cnxk_ethdev.h      |  16 ++
+ drivers/net/cnxk/cnxk_ethdev_mcs.c  | 261 ++++++++++++++++++++++++++++
+ drivers/net/cnxk/cnxk_ethdev_mcs.h  |  25 +++
+ drivers/net/cnxk/cnxk_ethdev_sec.c  |   2 +-
+ drivers/net/cnxk/cnxk_flow.c        |   5 +
+ 8 files changed, 340 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index fbe277b4b62d5..14afef70f5f01 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -646,7 +646,9 @@ cn10k_eth_sec_session_create(void *device,
+ 	if (conf->action_type != RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL)
+ 		return -ENOTSUP;
+ 
+-	if (conf->protocol != RTE_SECURITY_PROTOCOL_IPSEC)
++	if (conf->protocol == RTE_SECURITY_PROTOCOL_MACSEC)
++		return cnxk_eth_macsec_session_create(dev, conf, sess);
++	else if (conf->protocol != RTE_SECURITY_PROTOCOL_IPSEC)
+ 		return -ENOTSUP;
+ 
+ 	if (rte_security_dynfield_register() < 0)
+@@ -921,13 +923,18 @@ cn10k_eth_sec_session_destroy(void *device, struct rte_security_session *sess)
+ {
+ 	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct cnxk_macsec_sess *macsec_sess;
+ 	struct cnxk_eth_sec_sess *eth_sec;
+ 	rte_spinlock_t *lock;
+ 	void *sa_dptr;
+ 
+ 	eth_sec = cnxk_eth_sec_sess_get_by_sess(dev, sess);
+-	if (!eth_sec)
++	if (!eth_sec) {
++		macsec_sess = cnxk_eth_macsec_sess_get_by_sess(dev, sess);
++		if (macsec_sess)
++			return cnxk_eth_macsec_session_destroy(dev, sess);
+ 		return -ENOENT;
++	}
+ 
+ 	lock = eth_sec->inb ? &dev->inb.lock : &dev->outb.lock;
+ 	rte_spinlock_lock(lock);
+diff --git a/drivers/net/cnxk/cn10k_flow.c b/drivers/net/cnxk/cn10k_flow.c
+index 3a7b09d794afc..5314054767ed3 100644
+--- a/drivers/net/cnxk/cn10k_flow.c
++++ b/drivers/net/cnxk/cn10k_flow.c
+@@ -1,10 +1,11 @@
+ /* SPDX-License-Identifier: BSD-3-Clause
+  * Copyright(C) 2020 Marvell.
+  */
+-#include <cnxk_flow.h>
+ #include "cn10k_flow.h"
+ #include "cn10k_ethdev.h"
+ #include "cn10k_rx.h"
++#include "cnxk_ethdev_mcs.h"
++#include <cnxk_flow.h>
+ 
+ static int
+ cn10k_mtr_connect(struct rte_eth_dev *eth_dev, uint32_t mtr_id)
+@@ -133,6 +134,7 @@ cn10k_flow_create(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 	const struct rte_flow_action *act_q = NULL;
+ 	struct roc_npc *npc = &dev->npc;
+ 	struct roc_npc_flow *flow;
++	void *mcs_flow = NULL;
+ 	int vtag_actions = 0;
+ 	uint32_t req_act = 0;
+ 	int mark_actions = 0;
+@@ -187,6 +189,17 @@ cn10k_flow_create(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 		}
+ 	}
+ 
++	if (actions[0].type == RTE_FLOW_ACTION_TYPE_SECURITY &&
++	    cnxk_eth_macsec_sess_get_by_sess(dev, actions[0].conf) != NULL) {
++		rc = cnxk_mcs_flow_configure(eth_dev, attr, pattern, actions, error, &mcs_flow);
++		if (rc) {
++			rte_flow_error_set(error, rc, RTE_FLOW_ERROR_TYPE_ACTION, NULL,
++					   "Failed to configure mcs flow");
++			return NULL;
++		}
++		return (struct rte_flow *)mcs_flow;
++	}
++
+ 	flow = cnxk_flow_create(eth_dev, attr, pattern, actions, error);
+ 	if (!flow) {
+ 		if (mtr)
+@@ -253,6 +266,13 @@ cn10k_flow_destroy(struct rte_eth_dev *eth_dev, struct rte_flow *rte_flow,
+ 		}
+ 	}
+ 
++	rc = cnxk_mcs_flow_destroy(dev, (void *)flow);
++	if (rc < 0) {
++		rte_flow_error_set(error, rc, RTE_FLOW_ERROR_TYPE_UNSPECIFIED, NULL,
++					   "Failed to free mcs flow");
++		return rc;
++	}
++
+ 	vtag_actions = roc_npc_vtag_actions_get(npc);
+ 	if (vtag_actions) {
+ 		if (flow->nix_intf == ROC_NPC_INTF_RX) {
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 5368f0777ddbe..4b98faa729809 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1969,6 +1969,8 @@ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		}
+ 		dev->rx_offload_capa |= RTE_ETH_RX_OFFLOAD_MACSEC_STRIP;
+ 		dev->tx_offload_capa |= RTE_ETH_TX_OFFLOAD_MACSEC_INSERT;
++
++		TAILQ_INIT(&dev->mcs_list);
+ 	}
+ 
+ 	plt_nix_dbg("Port=%d pf=%d vf=%d ver=%s hwcap=0x%" PRIx64
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index ce6a365634b0c..d8b4dccd06db0 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -301,6 +301,21 @@ struct cnxk_eth_dev_sec_outb {
+ 	uint64_t cpt_eng_caps;
+ };
+ 
++/* MACsec session private data */
++struct cnxk_macsec_sess {
++	/* List entry */
++	TAILQ_ENTRY(cnxk_macsec_sess) entry;
++
++	/* Back pointer to session */
++	struct rte_security_session *sess;
++	enum mcs_direction dir;
++	uint64_t sci;
++	uint8_t secy_id;
++	uint8_t sc_id;
++	uint8_t flow_id;
++};
++TAILQ_HEAD(cnxk_macsec_sess_list, cnxk_macsec_sess);
++
+ struct cnxk_eth_dev {
+ 	/* ROC NIX */
+ 	struct roc_nix nix;
+@@ -407,6 +422,7 @@ struct cnxk_eth_dev {
+ 
+ 	/* MCS device */
+ 	struct cnxk_mcs_dev *mcs_dev;
++	struct cnxk_macsec_sess_list mcs_list;
+ };
+ 
+ struct cnxk_eth_rxq_sp {
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mcs.c b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+index 73c5cd486fd1f..c5ac5bafbb200 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_mcs.c
++++ b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+@@ -256,6 +256,267 @@ cnxk_eth_macsec_sc_destroy(void *device, uint16_t sc_id, enum rte_security_macse
+ 	return ret;
+ }
+ 
++struct cnxk_macsec_sess *
++cnxk_eth_macsec_sess_get_by_sess(struct cnxk_eth_dev *dev, const struct rte_security_session *sess)
++{
++	struct cnxk_macsec_sess *macsec_sess = NULL;
++
++	TAILQ_FOREACH(macsec_sess, &dev->mcs_list, entry) {
++		if (macsec_sess->sess == sess)
++			return macsec_sess;
++	}
++
++	return NULL;
++}
++
++int
++cnxk_eth_macsec_session_create(struct cnxk_eth_dev *dev, struct rte_security_session_conf *conf,
++			       struct rte_security_session *sess)
++{
++	struct cnxk_macsec_sess *macsec_sess_priv = SECURITY_GET_SESS_PRIV(sess);
++	struct rte_security_macsec_xform *xform = &conf->macsec;
++	struct cnxk_mcs_dev *mcs_dev = dev->mcs_dev;
++	struct roc_mcs_secy_plcy_write_req req;
++	enum mcs_direction dir;
++	uint8_t secy_id = 0;
++	uint8_t sectag_tci = 0;
++	int ret = 0;
++
++	if (!roc_feature_nix_has_macsec())
++		return -ENOTSUP;
++
++	dir = (xform->dir == RTE_SECURITY_MACSEC_DIR_TX) ? MCS_TX : MCS_RX;
++	ret = mcs_resource_alloc(mcs_dev, dir, &secy_id, 1, CNXK_MCS_RSRC_TYPE_SECY);
++	if (ret) {
++		plt_err("Failed to allocate SECY id.");
++		return -ENOMEM;
++	}
++
++	req.secy_id = secy_id;
++	req.dir = dir;
++	req.plcy = 0L;
++
++	if (xform->dir == RTE_SECURITY_MACSEC_DIR_TX) {
++		sectag_tci = ((uint8_t)xform->tx_secy.sectag_version << 5) |
++			     ((uint8_t)xform->tx_secy.end_station << 4) |
++			     ((uint8_t)xform->tx_secy.send_sci << 3) |
++			     ((uint8_t)xform->tx_secy.scb << 2) |
++			     ((uint8_t)xform->tx_secy.encrypt << 1) |
++			     (uint8_t)xform->tx_secy.encrypt;
++		req.plcy = (((uint64_t)xform->tx_secy.mtu & 0xFFFF) << 28) |
++			   (((uint64_t)sectag_tci & 0x3F) << 22) |
++			   (((uint64_t)xform->tx_secy.sectag_off & 0x7F) << 15) |
++			   ((uint64_t)xform->tx_secy.sectag_insert_mode << 14) |
++			   ((uint64_t)xform->tx_secy.icv_include_da_sa << 13) |
++			   (((uint64_t)xform->cipher_off & 0x7F) << 6) |
++			   ((uint64_t)xform->alg << 2) |
++			   ((uint64_t)xform->tx_secy.protect_frames << 1) |
++			   (uint64_t)xform->tx_secy.ctrl_port_enable;
++	} else {
++		req.plcy = ((uint64_t)xform->rx_secy.replay_win_sz << 18) |
++			   ((uint64_t)xform->rx_secy.replay_protect << 17) |
++			   ((uint64_t)xform->rx_secy.icv_include_da_sa << 16) |
++			   (((uint64_t)xform->cipher_off & 0x7F) << 9) |
++			   ((uint64_t)xform->alg << 5) |
++			   ((uint64_t)xform->rx_secy.preserve_sectag << 4) |
++			   ((uint64_t)xform->rx_secy.preserve_icv << 3) |
++			   ((uint64_t)xform->rx_secy.validate_frames << 1) |
++			   (uint64_t)xform->rx_secy.ctrl_port_enable;
++	}
++
++	ret = roc_mcs_secy_policy_write(mcs_dev->mdev, &req);
++	if (ret) {
++		plt_err(" Failed to configure Tx SECY");
++		return -EINVAL;
++	}
++
++	if (xform->dir == RTE_SECURITY_MACSEC_DIR_RX) {
++		struct roc_mcs_rx_sc_cam_write_req rx_sc_cam = {0};
++
++		rx_sc_cam.sci = xform->sci;
++		rx_sc_cam.secy_id = secy_id & 0x3F;
++		rx_sc_cam.sc_id = xform->sc_id;
++		ret = roc_mcs_rx_sc_cam_write(mcs_dev->mdev, &rx_sc_cam);
++		if (ret) {
++			plt_err(" Failed to write rx_sc_cam");
++			return -EINVAL;
++		}
++	}
++	macsec_sess_priv->sci = xform->sci;
++	macsec_sess_priv->sc_id = xform->sc_id;
++	macsec_sess_priv->secy_id = secy_id;
++	macsec_sess_priv->dir = dir;
++	macsec_sess_priv->sess = sess;
++
++	TAILQ_INSERT_TAIL(&dev->mcs_list, macsec_sess_priv, entry);
++
++	return 0;
++}
++
++int
++cnxk_eth_macsec_session_destroy(struct cnxk_eth_dev *dev, struct rte_security_session *sess)
++{
++	struct cnxk_mcs_dev *mcs_dev = dev->mcs_dev;
++	struct roc_mcs_clear_stats stats_req = {0};
++	struct roc_mcs_free_rsrc_req req = {0};
++	struct cnxk_macsec_sess *s;
++	int ret = 0;
++
++	if (!roc_feature_nix_has_macsec())
++		return -ENOTSUP;
++
++	s = SECURITY_GET_SESS_PRIV(sess);
++
++	stats_req.type = CNXK_MCS_RSRC_TYPE_SECY;
++	stats_req.id = s->secy_id;
++	stats_req.dir = s->dir;
++	stats_req.all = 0;
++
++	ret = roc_mcs_stats_clear(mcs_dev->mdev, &stats_req);
++	if (ret)
++		plt_err("Failed to clear stats for SECY id %u, dir %u.", s->secy_id, s->dir);
++
++	req.rsrc_id = s->secy_id;
++	req.dir = s->dir;
++	req.rsrc_type = CNXK_MCS_RSRC_TYPE_SECY;
++
++	ret = roc_mcs_free_rsrc(mcs_dev->mdev, &req);
++	if (ret)
++		plt_err("Failed to free SC id.");
++
++	TAILQ_REMOVE(&dev->mcs_list, s, entry);
++
++	return ret;
++}
++
++int
++cnxk_mcs_flow_configure(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr __rte_unused,
++			 const struct rte_flow_item pattern[],
++			 const struct rte_flow_action actions[],
++			 struct rte_flow_error *error __rte_unused, void **mcs_flow)
++{
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct roc_mcs_flowid_entry_write_req req = {0};
++	const struct rte_flow_item_eth *eth_item = NULL;
++	struct cnxk_mcs_dev *mcs_dev = dev->mcs_dev;
++	struct cnxk_mcs_flow_opts opts = {0};
++	struct cnxk_macsec_sess *sess;
++	struct rte_ether_addr src;
++	struct rte_ether_addr dst;
++	int ret;
++	int i = 0;
++
++	if (!roc_feature_nix_has_macsec())
++		return -ENOTSUP;
++
++	sess = cnxk_eth_macsec_sess_get_by_sess(dev,
++			(const struct rte_security_session *)actions->conf);
++	if (sess == NULL)
++		return -EINVAL;
++
++	ret = mcs_resource_alloc(mcs_dev, sess->dir, &sess->flow_id, 1,
++				 CNXK_MCS_RSRC_TYPE_FLOWID);
++	if (ret) {
++		plt_err("Failed to allocate FLow id.");
++		return -ENOMEM;
++	}
++	req.sci = sess->sci;
++	req.flow_id = sess->flow_id;
++	req.secy_id = sess->secy_id;
++	req.sc_id = sess->sc_id;
++	req.ena = 1;
++	req.ctr_pkt = 0;
++	req.dir = sess->dir;
++
++	while (pattern[i].type != RTE_FLOW_ITEM_TYPE_END) {
++		if (pattern[i].type == RTE_FLOW_ITEM_TYPE_ETH)
++			eth_item = pattern[i].spec;
++		else
++			plt_err("Unhandled flow item : %d", pattern[i].type);
++		i++;
++	}
++	if (eth_item) {
++		dst = eth_item->hdr.dst_addr;
++		src = eth_item->hdr.src_addr;
++
++		/* Find ways to fill opts */
++
++		req.data[0] =
++			(uint64_t)dst.addr_bytes[0] << 40 | (uint64_t)dst.addr_bytes[1] << 32 |
++			(uint64_t)dst.addr_bytes[2] << 24 | (uint64_t)dst.addr_bytes[3] << 16 |
++			(uint64_t)dst.addr_bytes[4] << 8 | (uint64_t)dst.addr_bytes[5] |
++			(uint64_t)src.addr_bytes[5] << 48 | (uint64_t)src.addr_bytes[4] << 56;
++		req.data[1] = (uint64_t)src.addr_bytes[3] | (uint64_t)src.addr_bytes[2] << 8 |
++			      (uint64_t)src.addr_bytes[1] << 16 |
++			      (uint64_t)src.addr_bytes[0] << 24 |
++			      (uint64_t)eth_item->hdr.ether_type << 32 |
++			      ((uint64_t)opts.outer_tag_id & 0xFFFF) << 48;
++		req.data[2] = ((uint64_t)opts.outer_tag_id & 0xF0000) |
++			      ((uint64_t)opts.outer_priority & 0xF) << 4 |
++			      ((uint64_t)opts.second_outer_tag_id & 0xFFFFF) << 8 |
++			      ((uint64_t)opts.second_outer_priority & 0xF) << 28 |
++			      ((uint64_t)opts.bonus_data << 32) |
++			      ((uint64_t)opts.tag_match_bitmap << 48) |
++			      ((uint64_t)opts.packet_type & 0xF) << 56 |
++			      ((uint64_t)opts.outer_vlan_type & 0x7) << 60 |
++			      ((uint64_t)opts.inner_vlan_type & 0x1) << 63;
++		req.data[3] = ((uint64_t)opts.inner_vlan_type & 0x6) >> 1 |
++			      ((uint64_t)opts.num_tags & 0x7F) << 2 |
++			      ((uint64_t)opts.flowid_user & 0x1F) << 9 |
++			      ((uint64_t)opts.express & 1) << 14 |
++			      ((uint64_t)opts.lmac_id & 0x1F) << 15;
++
++		req.mask[0] = 0x0;
++		req.mask[1] = 0xFFFFFFFF00000000;
++		req.mask[2] = 0xFFFFFFFFFFFFFFFF;
++		req.mask[3] = 0xFFFFFFFFFFFFFFFF;
++
++		ret = roc_mcs_flowid_entry_write(mcs_dev->mdev, &req);
++		if (ret)
++			return ret;
++		*mcs_flow = (void *)(uintptr_t)actions->conf;
++	} else {
++		plt_err("Flow not confirured");
++		return -EINVAL;
++	}
++	return 0;
++}
++
++int
++cnxk_mcs_flow_destroy(struct cnxk_eth_dev *dev, void *flow)
++{
++	const struct cnxk_macsec_sess *s = cnxk_eth_macsec_sess_get_by_sess(dev, flow);
++	struct cnxk_mcs_dev *mcs_dev = dev->mcs_dev;
++	struct roc_mcs_clear_stats stats_req = {0};
++	struct roc_mcs_free_rsrc_req req = {0};
++	int ret = 0;
++
++	if (!roc_feature_nix_has_macsec())
++		return -ENOTSUP;
++
++	if (s == NULL)
++		return 0;
++
++	stats_req.type = CNXK_MCS_RSRC_TYPE_FLOWID;
++	stats_req.id = s->flow_id;
++	stats_req.dir = s->dir;
++	stats_req.all = 0;
++
++	ret = roc_mcs_stats_clear(mcs_dev->mdev, &stats_req);
++	if (ret)
++		plt_err("Failed to clear stats for Flow id %u, dir %u.", s->flow_id, s->dir);
++
++	req.rsrc_id = s->flow_id;
++	req.dir = s->dir;
++	req.rsrc_type = CNXK_MCS_RSRC_TYPE_FLOWID;
++
++	ret = roc_mcs_free_rsrc(mcs_dev->mdev, &req);
++	if (ret)
++		plt_err("Failed to free SC id.");
++
++	return (ret == 0) ? 1 : ret;
++}
++
+ static int
+ cnxk_mcs_event_cb(void *userdata, struct roc_mcs_event_desc *desc, void *cb_arg)
+ {
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mcs.h b/drivers/net/cnxk/cnxk_ethdev_mcs.h
+index 68c64931695f5..2b1a6f2c90ec0 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_mcs.h
++++ b/drivers/net/cnxk/cnxk_ethdev_mcs.h
+@@ -21,6 +21,27 @@ enum cnxk_mcs_rsrc_type {
+ 	CNXK_MCS_RSRC_TYPE_PORT,
+ };
+ 
++struct cnxk_mcs_flow_opts {
++	uint32_t outer_tag_id;
++	/**< {VLAN_ID[11:0]}, or 20-bit MPLS label*/
++	uint8_t outer_priority;
++	/**< {PCP/Pbits, DE/CFI} or {1'b0, EXP} for MPLS.*/
++	uint32_t second_outer_tag_id;
++	/**< {VLAN_ID[11:0]}, or 20-bit MPLS label*/
++	uint8_t second_outer_priority;
++	/**< {PCP/Pbits, DE/CFI} or {1'b0, EXP} for MPLS. */
++	uint16_t bonus_data;
++	/**< 2 bytes of additional bonus data extracted from one of the custom tags*/
++	uint8_t tag_match_bitmap;
++	uint8_t packet_type;
++	uint8_t outer_vlan_type;
++	uint8_t inner_vlan_type;
++	uint8_t num_tags;
++	bool express;
++	uint8_t lmac_id;
++	uint8_t flowid_user;
++};
++
+ struct cnxk_mcs_event_data {
+ 	/* Valid for below events
+ 	 * - ROC_MCS_EVENT_RX_SA_PN_SOFT_EXP
+@@ -75,3 +96,7 @@ int cnxk_eth_macsec_sa_destroy(void *device, uint16_t sa_id,
+ 			       enum rte_security_macsec_direction dir);
+ int cnxk_eth_macsec_sc_destroy(void *device, uint16_t sc_id,
+ 			       enum rte_security_macsec_direction dir);
++
++int cnxk_eth_macsec_session_create(struct cnxk_eth_dev *dev, struct rte_security_session_conf *conf,
++				   struct rte_security_session *sess);
++int cnxk_eth_macsec_session_destroy(struct cnxk_eth_dev *dev, struct rte_security_session *sess);
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index a66d58ca61398..dc17c128def86 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -284,7 +284,7 @@ cnxk_eth_sec_sess_get_by_sess(struct cnxk_eth_dev *dev,
+ static unsigned int
+ cnxk_eth_sec_session_get_size(void *device __rte_unused)
+ {
+-	return sizeof(struct cnxk_eth_sec_sess);
++	return RTE_MAX(sizeof(struct cnxk_macsec_sess), sizeof(struct cnxk_eth_sec_sess));
+ }
+ 
+ struct rte_security_ops cnxk_eth_sec_ops = {
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index 9595fe9386c5a..1bacb20784e90 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -300,6 +300,11 @@ cnxk_flow_validate(struct rte_eth_dev *eth_dev,
+ 	uint32_t flowkey_cfg = 0;
+ 	int rc;
+ 
++	/* Skip flow validation for MACsec. */
++	if (actions[0].type == RTE_FLOW_ACTION_TYPE_SECURITY &&
++	    cnxk_eth_macsec_sess_get_by_sess(dev, actions[0].conf) != NULL)
++		return 0;
++
+ 	memset(&flow, 0, sizeof(flow));
+ 	flow.is_validate = true;
+ 
+-- 
+2.25.1
+

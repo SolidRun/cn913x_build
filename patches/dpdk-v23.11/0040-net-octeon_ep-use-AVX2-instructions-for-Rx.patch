@@ -1,0 +1,226 @@
+From bd715e70d8adfdd0ad88cefcc1909ec014e5e54c Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Sat, 25 Nov 2023 21:33:49 +0530
+Subject: [PATCH 040/513] net/octeon_ep: use AVX2 instructions for Rx
+
+Optimize Rx routine to use AVX2 instructions when underlying
+architecture supports it.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I9a10d436fc58bfb2294c187cc61134fa53c65cde
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117622
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_rx_avx.c | 117 +++++++++++++++++++++++++
+ drivers/net/octeon_ep/meson.build      |  12 +++
+ drivers/net/octeon_ep/otx_ep_ethdev.c  |  10 +++
+ drivers/net/octeon_ep/otx_ep_rxtx.h    |  10 +++
+ 4 files changed, 149 insertions(+)
+ create mode 100644 drivers/net/octeon_ep/cnxk_ep_rx_avx.c
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx_avx.c b/drivers/net/octeon_ep/cnxk_ep_rx_avx.c
+new file mode 100644
+index 0000000000000..cbd797f98b86c
+--- /dev/null
++++ b/drivers/net/octeon_ep/cnxk_ep_rx_avx.c
+@@ -0,0 +1,117 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include "cnxk_ep_rx.h"
++
++static __rte_always_inline void
++cnxk_ep_process_pkts_vec_avx(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq, uint16_t new_pkts)
++{
++	struct rte_mbuf **recv_buf_list = droq->recv_buf_list;
++	uint32_t bytes_rsvd = 0, read_idx = droq->read_idx;
++	const uint64_t rearm_data = droq->rearm_data;
++	struct rte_mbuf *m[CNXK_EP_OQ_DESC_PER_LOOP_AVX];
++	uint32_t pidx[CNXK_EP_OQ_DESC_PER_LOOP_AVX];
++	uint32_t idx[CNXK_EP_OQ_DESC_PER_LOOP_AVX];
++	uint16_t nb_desc = droq->nb_desc;
++	uint16_t pkts = 0;
++	uint8_t i;
++
++	idx[0] = read_idx;
++	while (pkts < new_pkts) {
++		__m256i data[CNXK_EP_OQ_DESC_PER_LOOP_AVX];
++		/* mask to shuffle from desc. to mbuf (2 descriptors)*/
++		const __m256i mask =
++			_mm256_set_epi8(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 20, 21, 0xFF, 0xFF, 20,
++					21, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
++					0xFF, 0xFF, 0xFF, 7, 6, 5, 4, 3, 2, 1, 0);
++
++		for (i = 1; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
++			idx[i] = otx_ep_incr_index(idx[i - 1], 1, nb_desc);
++
++		if (new_pkts - pkts > 8) {
++			pidx[0] = otx_ep_incr_index(idx[i - 1], 1, nb_desc);
++			for (i = 1; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
++				pidx[i] = otx_ep_incr_index(pidx[i - 1], 1, nb_desc);
++
++			for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++) {
++				rte_prefetch0(recv_buf_list[pidx[i]]);
++				rte_prefetch0(rte_pktmbuf_mtod(recv_buf_list[pidx[i]], void *));
++			}
++		}
++
++		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
++			m[i] = recv_buf_list[idx[i]];
++
++		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
++			data[i] = _mm256_set_epi64x(0,
++				rte_pktmbuf_mtod(m[i], struct otx_ep_droq_info *)->length >> 16,
++				0, rearm_data);
++
++		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++) {
++			data[i] = _mm256_shuffle_epi8(data[i], mask);
++			bytes_rsvd += _mm256_extract_epi16(data[i], 10);
++		}
++
++		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
++			_mm256_storeu_si256((__m256i *)&m[i]->rearm_data, data[i]);
++
++		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
++			rx_pkts[pkts++] = m[i];
++		idx[0] = otx_ep_incr_index(idx[i - 1], 1, nb_desc);
++	}
++	droq->read_idx = idx[0];
++
++	droq->refill_count += new_pkts;
++	droq->pkts_pending -= new_pkts;
++	/* Stats */
++	droq->stats.pkts_received += new_pkts;
++	droq->stats.bytes_received += bytes_rsvd;
++}
++
++uint16_t __rte_noinline __rte_hot
++cnxk_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
++	uint16_t new_pkts, vpkts;
++
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_AVX);
++	cnxk_ep_process_pkts_vec_avx(rx_pkts, droq, vpkts);
++	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
++
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD)
++		cnxk_ep_rx_refill(droq);
++
++	return new_pkts;
++}
++
++uint16_t __rte_noinline __rte_hot
++cn9k_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
++	uint16_t new_pkts, vpkts;
++
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_AVX);
++	cnxk_ep_process_pkts_vec_avx(rx_pkts, droq, vpkts);
++	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
++
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD) {
++		cnxk_ep_rx_refill(droq);
++	} else {
++		/* SDP output goes into DROP state when output doorbell count
++		 * goes below drop count. When door bell count is written with
++		 * a value greater than drop count SDP output should come out
++		 * of DROP state. Due to a race condition this is not happening.
++		 * Writing doorbell register with 0 again may make SDP output
++		 * come out of this state.
++		 */
++
++		rte_write32(0, droq->pkts_credit_reg);
++	}
++
++	return new_pkts;
++}
+diff --git a/drivers/net/octeon_ep/meson.build b/drivers/net/octeon_ep/meson.build
+index 784befc34b747..23c66e890248d 100644
+--- a/drivers/net/octeon_ep/meson.build
++++ b/drivers/net/octeon_ep/meson.build
+@@ -21,6 +21,18 @@ sources = files(
+ 
+ if arch_subdir == 'x86'
+     sources += files('cnxk_ep_rx_sse.c')
++    if cc.get_define('__AVX2__', args: machine_args) != ''
++        cflags += ['-DCC_AVX2_SUPPORT']
++        sources += files('cnxk_ep_rx_avx.c')
++    elif cc.has_argument('-mavx2')
++        cflags += ['-DCC_AVX2_SUPPORT']
++        otx_ep_avx2_lib = static_library('otx_ep_avx2_lib',
++                        'cnxk_ep_rx_avx.c',
++                        dependencies: [static_rte_ethdev, static_rte_pci, static_rte_bus_pci],
++                        include_directories: includes,
++                        c_args: [cflags, '-mavx2'])
++        objs += otx_ep_avx2_lib.extract_objects('cnxk_ep_rx_avx.c')
++    endif
+ endif
+ 
+ extra_flags = ['-Wno-strict-aliasing']
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 51b34cdaa0d20..42a97ea110c21 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -54,6 +54,11 @@ otx_ep_set_rx_func(struct rte_eth_dev *eth_dev)
+ 		eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts;
+ #ifdef RTE_ARCH_X86
+ 		eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts_sse;
++#ifdef CC_AVX2_SUPPORT
++		if (rte_vect_get_max_simd_bitwidth() >= RTE_VECT_SIMD_256 &&
++		    rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2) == 1)
++			eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts_avx;
++#endif
+ #endif
+ 		if (otx_epvf->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)
+ 			eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts_mseg;
+@@ -61,6 +66,11 @@ otx_ep_set_rx_func(struct rte_eth_dev *eth_dev)
+ 		eth_dev->rx_pkt_burst = &cn9k_ep_recv_pkts;
+ #ifdef RTE_ARCH_X86
+ 		eth_dev->rx_pkt_burst = &cn9k_ep_recv_pkts_sse;
++#ifdef CC_AVX2_SUPPORT
++		if (rte_vect_get_max_simd_bitwidth() >= RTE_VECT_SIMD_256 &&
++		    rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2) == 1)
++			eth_dev->rx_pkt_burst = &cn9k_ep_recv_pkts_avx;
++#endif
+ #endif
+ 
+ 		if (otx_epvf->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.h b/drivers/net/octeon_ep/otx_ep_rxtx.h
+index af657dba50038..4d243857c31ef 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.h
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.h
+@@ -51,6 +51,11 @@ cnxk_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ #ifdef RTE_ARCH_X86
+ uint16_t
+ cnxk_ep_recv_pkts_sse(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
++
++#ifdef CC_AVX2_SUPPORT
++uint16_t
++cnxk_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
++#endif
+ #endif
+ 
+ uint16_t
+@@ -62,6 +67,11 @@ cn9k_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ #ifdef RTE_ARCH_X86
+ uint16_t
+ cn9k_ep_recv_pkts_sse(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
++
++#ifdef CC_AVX2_SUPPORT
++uint16_t
++cn9k_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
++#endif
+ #endif
+ 
+ uint16_t
+-- 
+2.25.1
+

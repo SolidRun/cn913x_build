@@ -1,0 +1,228 @@
+From b931f510fb997bf99d2d6fbc2127f4047390b9d4 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 14 Feb 2024 04:55:07 -0800
+Subject: [PATCH 243/513] test/crypto: unit tests to verify padding in TLS
+
+Add unit tests to verify the padding for TLS-1.2.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Ic26edb4e9c8595ef29c50da88305590b7a3c3708
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121909
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c                     | 85 ++++++++++++++++++-
+ app/test/test_cryptodev_security_tls_record.c | 28 ++++--
+ app/test/test_cryptodev_security_tls_record.h |  5 +-
+ 3 files changed, 109 insertions(+), 9 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 587b83eb1d23f..e7bc5328b42cb 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -11882,6 +11882,9 @@ test_tls_record_proto_process(const struct tls_record_test_data td[],
+ 	if (td[0].aead)
+ 		test_tls_record_imp_nonce_update(&td[0], &tls_record_xform);
+ 
++	if (flags->opt_padding)
++		tls_record_xform.options.extra_padding_enable = 1;
++
+ 	sess_conf.tls_record = tls_record_xform;
+ 
+ 	if (td[0].aead) {
+@@ -11936,6 +11939,9 @@ test_tls_record_proto_process(const struct tls_record_test_data td[],
+ 		ut_params->op->sym->m_dst = NULL;
+ 		ut_params->op->param1.tls_record.content_type = td[i].app_type;
+ 
++		if (flags->opt_padding)
++			ut_params->op->aux_flags = flags->opt_padding;
++
+ 		/* Copy IV in crypto operation when IV generation is disabled */
+ 		if ((sess_type == RTE_SECURITY_TLS_SESS_TYPE_WRITE) &&
+ 		    (tls_record_xform.ver != RTE_SECURITY_VERSION_TLS_1_3) &&
+@@ -11963,7 +11969,7 @@ test_tls_record_proto_process(const struct tls_record_test_data td[],
+ 
+ 		if (ut_params->op->status == RTE_CRYPTO_OP_STATUS_SUCCESS) {
+ 			ret = test_tls_record_post_process(ut_params->ibuf, &td[i], res_d_tmp,
+-							   silent);
++							   silent, flags);
+ 			if (ret != TEST_SUCCESS)
+ 				goto crypto_op_free;
+ 		}
+@@ -12232,6 +12238,59 @@ test_tls_record_proto_zero_len_non_app(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_tls_record_proto_opt_padding(uint8_t padding, uint8_t num_segs,
++				  enum rte_security_tls_version tls_version)
++{
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++	struct tls_record_test_flags flags = {
++		.nb_segs_in_mbuf = num_segs,
++		.tls_version = tls_version,
++		.opt_padding = padding
++	};
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_tls_record_proto_dm_opt_padding(void)
++{
++	return test_tls_record_proto_opt_padding(1, 0, RTE_SECURITY_VERSION_TLS_1_2);
++}
++
++static int
++test_tls_record_proto_dm_opt_padding_1(void)
++{
++	return test_tls_record_proto_opt_padding(25, 0, RTE_SECURITY_VERSION_TLS_1_2);
++}
++
++static int
++test_tls_record_proto_sg_opt_padding(void)
++{
++	return test_tls_record_proto_opt_padding(1, 2, RTE_SECURITY_VERSION_TLS_1_2);
++}
++
++static int
++test_tls_record_proto_sg_opt_padding_1(void)
++{
++	return test_tls_record_proto_opt_padding(8, 4, RTE_SECURITY_VERSION_TLS_1_2);
++}
++
++static int
++test_tls_record_proto_sg_opt_padding_2(void)
++{
++	return test_tls_record_proto_opt_padding(8, 5, RTE_SECURITY_VERSION_TLS_1_2);
++}
++
++static int
++test_tls_record_proto_sg_opt_padding_max(void)
++{
++	return test_tls_record_proto_opt_padding(33, 4, RTE_SECURITY_VERSION_TLS_1_2);
++}
++
+ static int
+ test_dtls_1_2_record_proto_data_walkthrough(void)
+ {
+@@ -17606,6 +17665,30 @@ static struct unit_test_suite tls12_record_proto_testsuite  = {
+ 			"Zero len TLS record with content type as ctrl",
+ 			ut_setup_security, ut_teardown,
+ 			test_tls_record_proto_zero_len_non_app),
++		TEST_CASE_NAMED_ST(
++			"TLS record DM mode with optional padding < 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_dm_opt_padding),
++		TEST_CASE_NAMED_ST(
++			"TLS record DM mode with optional padding > 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_dm_opt_padding_1),
++		TEST_CASE_NAMED_ST(
++			"TLS record SG mode with optional padding < 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_sg_opt_padding),
++		TEST_CASE_NAMED_ST(
++			"TLS record SG mode with optional padding > 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_sg_opt_padding_1),
++		TEST_CASE_NAMED_ST(
++			"TLS record SG mode with optional padding > 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_sg_opt_padding_2),
++		TEST_CASE_NAMED_ST(
++			"TLS record SG mode with optional padding > max range",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_sg_opt_padding_max),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev_security_tls_record.c b/app/test/test_cryptodev_security_tls_record.c
+index 96d0a94731f9f..03d9efefc3fa4 100644
+--- a/app/test/test_cryptodev_security_tls_record.c
++++ b/app/test/test_cryptodev_security_tls_record.c
+@@ -269,7 +269,8 @@ test_tls_record_res_d_prepare(const uint8_t *output_text, uint32_t len,
+ }
+ 
+ static int
+-tls_record_hdr_verify(const struct tls_record_test_data *td, const uint8_t *output_text)
++tls_record_hdr_verify(const struct tls_record_test_data *td, const uint8_t *output_text,
++		      const struct tls_record_test_flags *flags)
+ {
+ 	uint16_t length, hdr_len;
+ 	uint8_t content_type;
+@@ -322,10 +323,22 @@ tls_record_hdr_verify(const struct tls_record_test_data *td, const uint8_t *outp
+ 		}
+ 	}
+ 
+-	if (length != td->output_text.len - hdr_len) {
+-		printf("Incorrect packet length [expected - %d, received - %d]\n",
+-		       td->output_text.len - hdr_len, length);
+-		return TEST_FAILED;
++	if (!flags->opt_padding) {
++		if (length != td->output_text.len - hdr_len) {
++			printf("Incorrect packet length [expected - %d, received - %d]\n",
++			       td->output_text.len - hdr_len, length);
++			return TEST_FAILED;
++		}
++	} else {
++		int pad_len = (flags->opt_padding * 8) > 256 ? 256 : (flags->opt_padding * 8);
++		int expect_len = td->output_text.len - hdr_len + pad_len;
++
++		if (length - expect_len > 32) {
++			printf("Incorrect packet length [expected - %d, received - %d]\n",
++			       expect_len, length);
++			return TEST_FAILED;
++		}
++
+ 	}
+ 
+ 	return TEST_SUCCESS;
+@@ -333,7 +346,8 @@ tls_record_hdr_verify(const struct tls_record_test_data *td, const uint8_t *outp
+ 
+ int
+ test_tls_record_post_process(const struct rte_mbuf *m, const struct tls_record_test_data *td,
+-			     struct tls_record_test_data *res_d, bool silent)
++			     struct tls_record_test_data *res_d, bool silent,
++			     const struct tls_record_test_flags *flags)
+ {
+ 	uint8_t output_text[TEST_SEC_CIPHERTEXT_MAX_LEN];
+ 	uint32_t len = rte_pktmbuf_pkt_len(m), data_len;
+@@ -365,7 +379,7 @@ test_tls_record_post_process(const struct rte_mbuf *m, const struct tls_record_t
+ 	}
+ 
+ 	if (td->tls_record_xform.type == RTE_SECURITY_TLS_SESS_TYPE_WRITE) {
+-		ret = tls_record_hdr_verify(td, output_text);
++		ret = tls_record_hdr_verify(td, output_text, flags);
+ 		if (ret != TEST_SUCCESS)
+ 			return ret;
+ 	}
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+index 21d25c02bff39..385064157af4f 100644
+--- a/app/test/test_cryptodev_security_tls_record.h
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -97,7 +97,9 @@ struct tls_record_test_flags {
+ 	bool data_walkthrough;
+ 	bool pkt_corruption;
+ 	bool zero_len;
++	bool padding_corruption;
+ 	uint8_t nb_segs_in_mbuf;
++	uint8_t opt_padding;
+ 	enum rte_security_tls_version tls_version;
+ 	enum tls_record_test_content_type content_type;
+ 	int ar_win_size;
+@@ -148,5 +150,6 @@ void test_tls_record_td_update(struct tls_record_test_data td_inb[],
+ 			       const struct tls_record_test_flags *flags);
+ 
+ int test_tls_record_post_process(const struct rte_mbuf *m, const struct tls_record_test_data *td,
+-				 struct tls_record_test_data *res_d, bool silent);
++				 struct tls_record_test_data *res_d, bool silent,
++				 const struct tls_record_test_flags *flags);
+ #endif
+-- 
+2.25.1
+

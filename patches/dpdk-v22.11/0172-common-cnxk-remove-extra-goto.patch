@@ -1,0 +1,32 @@
+From 4496ee4c009bb353c81345258b604d439d43751e Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Wed, 21 Dec 2022 12:02:33 +0530
+Subject: [PATCH 172/955] common/cnxk: remove extra goto
+
+With extra goto flow will never reach nix_lso_tun_tcp()
+
+Change-Id: I12da59f656b9aee91609f375d700c053e99f8232
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94004
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Sunil Kumar Kori <skori@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_ops.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_ops.c b/drivers/common/cnxk/roc_nix_ops.c
+index fc7a955fc114a..9e66ad1a498d3 100644
+--- a/drivers/common/cnxk/roc_nix_ops.c
++++ b/drivers/common/cnxk/roc_nix_ops.c
+@@ -362,7 +362,7 @@ roc_nix_lso_fmt_setup(struct roc_nix *roc_nix)
+ 		rc =  -ENOSPC;
+ 		goto exit;
+ 	}
+-		goto exit;
++
+ 	nix_lso_tun_tcp(req, false, false);
+ 	rc = mbox_process_msg(mbox, (void *)&rsp);
+ 	if (rc)
+-- 
+2.25.1
+

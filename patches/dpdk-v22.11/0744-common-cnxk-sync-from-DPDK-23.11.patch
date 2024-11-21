@@ -1,0 +1,224 @@
+From 50f5edc0f6a020c03ee8e6659b1e45b0beb24229 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 4 Dec 2023 16:40:22 +0530
+Subject: [PATCH 744/955] common/cnxk: sync from DPDK 23.11
+
+Change-Id: If5993808d72791c8f4115ebb97333a00334a5971
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118074
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/hw/nix.h          | 7 -------
+ drivers/common/cnxk/roc_dev.c         | 8 ++++----
+ drivers/common/cnxk/roc_nix.h         | 1 -
+ drivers/common/cnxk/roc_nix_inl_dev.c | 7 +++----
+ drivers/common/cnxk/roc_npc_aging.c   | 6 +++---
+ drivers/common/cnxk/roc_platform.h    | 5 ++++-
+ drivers/common/cnxk/version.map       | 2 +-
+ drivers/net/cnxk/cn10k_rx.h           | 3 +--
+ 8 files changed, 16 insertions(+), 23 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/nix.h b/drivers/common/cnxk/hw/nix.h
+index d2c80f3c74786..1720eb381577a 100644
+--- a/drivers/common/cnxk/hw/nix.h
++++ b/drivers/common/cnxk/hw/nix.h
+@@ -1623,7 +1623,6 @@ struct nix_send_crc_s {
+ };
+ 
+ /* NIX send extended header sub descriptor structure */
+-PLT_STD_C11
+ union nix_send_ext_w0_u {
+ 	uint64_t u;
+ 	struct {
+@@ -1643,7 +1642,6 @@ union nix_send_ext_w0_u {
+ 	};
+ };
+ 
+-PLT_STD_C11
+ union nix_send_ext_w1_u {
+ 	uint64_t u;
+ 	struct {
+@@ -1673,7 +1671,6 @@ struct nix_send_ext_s {
+ };
+ 
+ /* NIX send header sub descriptor structure */
+-PLT_STD_C11
+ union nix_send_hdr_w0_u {
+ 	uint64_t u;
+ 	struct {
+@@ -1687,7 +1684,6 @@ union nix_send_hdr_w0_u {
+ 	};
+ };
+ 
+-PLT_STD_C11
+ union nix_send_hdr_w1_u {
+ 	uint64_t u;
+ 	struct {
+@@ -1729,7 +1725,6 @@ struct nix_send_jump_s {
+ };
+ 
+ /* NIX send memory sub descriptor structure */
+-PLT_STD_C11
+ union nix_send_mem_w0_u {
+ 	uint64_t u;
+ 	struct {
+@@ -1757,7 +1752,6 @@ struct nix_send_mem_s {
+ };
+ 
+ /* NIX send scatter/gather sub descriptor structure */
+-PLT_STD_C11
+ union nix_send_sg2_s {
+ 	uint64_t u;
+ 	struct {
+@@ -1772,7 +1766,6 @@ union nix_send_sg2_s {
+ 	};
+ };
+ 
+-PLT_STD_C11
+ union nix_send_sg_s {
+ 	uint64_t u;
+ 	struct {
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 8bce4071d739b..7a28a646729a9 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -1489,8 +1489,8 @@ dev_init(struct dev *dev, struct plt_pci_device *pci_dev)
+ 
+ 		snprintf(name, MBOX_HANDLER_NAME_MAX_LEN, "pf%d_vf_msg_hndlr", dev->pf);
+ 		dev->sync.start_thread = true;
+-		rc = plt_ctrl_thread_create(&dev->sync.pfvf_msg_thread, name, NULL,
+-					    pf_vf_mbox_thread_main, dev);
++		rc = plt_thread_create_control(&dev->sync.pfvf_msg_thread, name,
++				pf_vf_mbox_thread_main, dev);
+ 		if (rc != 0) {
+ 			plt_err("Failed to create thread for VF mbox handling\n");
+ 			goto thread_fail;
+@@ -1520,7 +1520,7 @@ dev_init(struct dev *dev, struct plt_pci_device *pci_dev)
+ 	if (dev->sync.start_thread) {
+ 		dev->sync.start_thread = false;
+ 		pthread_cond_signal(&dev->sync.pfvf_msg_cond);
+-		pthread_join(dev->sync.pfvf_msg_thread, NULL);
++		plt_thread_join(dev->sync.pfvf_msg_thread, NULL);
+ 	}
+ thread_fail:
+ 	pthread_mutex_destroy(&dev->sync.mutex);
+@@ -1552,7 +1552,7 @@ dev_fini(struct dev *dev, struct plt_pci_device *pci_dev)
+ 	if (dev->sync.start_thread) {
+ 		dev->sync.start_thread = false;
+ 		pthread_cond_signal(&dev->sync.pfvf_msg_cond);
+-		pthread_join(dev->sync.pfvf_msg_thread, NULL);
++		plt_thread_join(dev->sync.pfvf_msg_thread, NULL);
+ 		pthread_mutex_destroy(&dev->sync.mutex);
+ 		pthread_cond_destroy(&dev->sync.pfvf_msg_cond);
+ 	}
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 0f0c974be57c1..4db71544f0499 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -293,7 +293,6 @@ struct roc_nix_stats {
+ };
+ 
+ struct roc_nix_stats_queue {
+-	PLT_STD_C11
+ 	union {
+ 		struct {
+ 			/* Rx */
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index 7f6ca1232a3d7..607348de466d4 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -830,9 +830,8 @@ nix_inl_outb_poll_thread_setup(struct nix_inl_dev *inl_dev)
+ 
+ 	soft_exp_consumer_cnt = 0;
+ 	soft_exp_poll_thread_exit = false;
+-	rc = plt_ctrl_thread_create(&inl_dev->soft_exp_poll_thread,
+-				    "OUTB_SOFT_EXP_POLL_THREAD", NULL,
+-				    nix_inl_outb_poll_thread, inl_dev);
++	rc = plt_thread_create_control(&inl_dev->soft_exp_poll_thread,
++			"outb-poll", nix_inl_outb_poll_thread, inl_dev);
+ 	if (rc) {
+ 		plt_bitmap_free(inl_dev->soft_exp_ring_bmap);
+ 		plt_free(inl_dev->soft_exp_ring_bmap_mem);
+@@ -1040,7 +1039,7 @@ roc_nix_inl_dev_fini(struct roc_nix_inl_dev *roc_inl_dev)
+ 
+ 	if (inl_dev->set_soft_exp_poll) {
+ 		soft_exp_poll_thread_exit = true;
+-		pthread_join(inl_dev->soft_exp_poll_thread, NULL);
++		plt_thread_join(inl_dev->soft_exp_poll_thread, NULL);
+ 		plt_bitmap_free(inl_dev->soft_exp_ring_bmap);
+ 		plt_free(inl_dev->soft_exp_ring_bmap_mem);
+ 		plt_free(inl_dev->sa_soft_exp_ring);
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+index 7ca04b06730d2..4914b44fb50b9 100644
+--- a/drivers/common/cnxk/roc_npc_aging.c
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -280,9 +280,9 @@ npc_aging_ctrl_thread_create(struct roc_npc *roc_npc,
+ 			goto done;
+ 
+ 		flow_age->aged_flows_get_thread_exit = false;
+-		if (plt_ctrl_thread_create(&flow_age->aged_flows_poll_thread,
+-					   "Aged Flows Get Ctrl Thread", NULL,
+-					   npc_aged_flows_get, roc_npc) != 0) {
++		if (plt_thread_create_control(&flow_age->aged_flows_poll_thread,
++					      "Aged Flows Get Ctrl Thread",
++					      npc_aged_flows_get, roc_npc) != 0) {
+ 			plt_err("Failed to create thread for age flows");
+ 			npc_aged_flows_bitmap_free(roc_npc);
+ 			errcode = NPC_ERR_ACTION_NOTSUP;
+diff --git a/drivers/common/cnxk/roc_platform.h b/drivers/common/cnxk/roc_platform.h
+index e86795aeee4f7..f56302af802c2 100644
+--- a/drivers/common/cnxk/roc_platform.h
++++ b/drivers/common/cnxk/roc_platform.h
+@@ -143,7 +143,10 @@
+ #define plt_intr_disable	     rte_intr_disable
+ #define plt_thread_is_intr	     rte_thread_is_intr
+ #define plt_intr_callback_fn	     rte_intr_callback_fn
+-#define plt_ctrl_thread_create	     rte_ctrl_thread_create
++
++#define plt_thread_create_control(__thread, __name, __start_routine, __arg) \
++	rte_ctrl_thread_create(__thread, __name, NULL, __start_routine, __arg)
++#define plt_thread_join pthread_join
+ 
+ #define plt_intr_efd_counter_size_get	rte_intr_efd_counter_size_get
+ #define plt_intr_efd_counter_size_set	rte_intr_efd_counter_size_set
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index dd0cfb998d4f8..1ed4a2a0f6aa7 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -313,8 +313,8 @@ INTERNAL {
+ 	roc_nix_rx_drop_re_set;
+ 	roc_nix_rx_queue_intr_disable;
+ 	roc_nix_rx_queue_intr_enable;
+-	roc_nix_sq_dump;
+ 	roc_nix_sq_desc_dump;
++	roc_nix_sq_dump;
+ 	roc_nix_sq_ena_dis;
+ 	roc_nix_sq_fini;
+ 	roc_nix_sq_head_tail_get;
+diff --git a/drivers/net/cnxk/cn10k_rx.h b/drivers/net/cnxk/cn10k_rx.h
+index f88c13aa76772..89621af3fb524 100644
+--- a/drivers/net/cnxk/cn10k_rx.h
++++ b/drivers/net/cnxk/cn10k_rx.h
+@@ -579,7 +579,7 @@ nix_sec_meta_to_mbuf(uint64_t cq_w1, uint64_t cq_w5, uintptr_t inb_sa,
+ 		       RTE_MBUF_F_RX_IP_CKSUM_MASK);
+ 
+ 
+-	if (flags & NIX_RX_REAS_F && !inb_sa ) {
++	if (flags & NIX_RX_REAS_F && !inb_sa) {
+ 		/* Clear and update original lower 16 bit of data offset */
+ 		*rearm = (*rearm & ~(BIT_ULL(16) - 1)) | inner->data_off;
+ 	} else {
+@@ -587,7 +587,6 @@ nix_sec_meta_to_mbuf(uint64_t cq_w1, uint64_t cq_w5, uintptr_t inb_sa,
+ 		inb_priv = roc_nix_inl_ot_ipsec_inb_sa_sw_rsvd((void *)inb_sa);
+ 		/* Update dynamic field with userdata */
+ 		*rte_security_dynfield(inner) = (uint64_t)inb_priv->userdata;
+-
+ 	}
+ 
+ 	/* Clear and update original lower 16 bit of data offset */
+-- 
+2.25.1
+

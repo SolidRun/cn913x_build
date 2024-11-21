@@ -1,0 +1,330 @@
+From 303152fdf67217265dba617d8e4acb882d4d07bd Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Fri, 2 Jun 2023 10:18:10 +0530
+Subject: [PATCH 487/955] net/cnxk: support port ID flow action item
+
+Currently PORT_ID action can redirect traffic only between
+VFs of a PF. This patch extends PORT_ID action to redirect
+traffic from one PF port to another PF port also.
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I15e71f08634a0d0da8c5849b8f69d7153f13dfd1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104656
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105363
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c      | 29 ++++++--------
+ drivers/common/cnxk/roc_npc.h      | 62 +++++++++++-------------------
+ drivers/common/cnxk/roc_npc_priv.h |  1 +
+ drivers/net/cnxk/cnxk_flow.c       | 51 +++++++++---------------
+ 4 files changed, 55 insertions(+), 88 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index aa312230122a4..3908e36065767 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -472,10 +472,9 @@ npc_parse_spi_to_sa_action(struct roc_npc *roc_npc, const struct roc_npc_action
+ 
+ static int
+ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+-		  const struct roc_npc_action actions[],
+-		  struct roc_npc_flow *flow)
++		  const struct roc_npc_action actions[], struct roc_npc_flow *flow,
++		  uint16_t dst_pf_func)
+ {
+-	const struct roc_npc_action_port_id *act_portid;
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	const struct roc_npc_action *sec_action = NULL;
+ 	const struct roc_npc_action_mark *act_mark;
+@@ -545,10 +544,7 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			break;
+ 
+ 		case ROC_NPC_ACTION_TYPE_PORT_ID:
+-			act_portid = (const struct roc_npc_action_port_id *)
+-					     actions->conf;
+-			pf_func &= (0xfc00);
+-			pf_func = (pf_func | (act_portid->id + 1));
++			pf_func = dst_pf_func;
+ 			req_act |= ROC_NPC_ACTION_TYPE_VF;
+ 			break;
+ 
+@@ -859,9 +855,8 @@ npc_parse_attr(struct npc *npc, const struct roc_npc_attr *attr,
+ 
+ static int
+ npc_parse_rule(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+-	       const struct roc_npc_item_info pattern[],
+-	       const struct roc_npc_action actions[], struct roc_npc_flow *flow,
+-	       struct npc_parse_state *pst)
++	       const struct roc_npc_item_info pattern[], const struct roc_npc_action actions[],
++	       struct roc_npc_flow *flow, struct npc_parse_state *pst)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	struct roc_nix *roc_nix = roc_npc->roc_nix;
+@@ -881,7 +876,7 @@ npc_parse_rule(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		return err;
+ 
+ 	/* Check action */
+-	err = npc_parse_actions(roc_npc, attr, actions, flow);
++	err = npc_parse_actions(roc_npc, attr, actions, flow, pst->dst_pf_func);
+ 	if (err)
+ 		return err;
+ 	return 0;
+@@ -897,8 +892,7 @@ roc_npc_flow_parse(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	struct npc_parse_state parse_state = {0};
+ 	int rc;
+ 
+-	rc = npc_parse_rule(roc_npc, attr, pattern, actions, flow,
+-			    &parse_state);
++	rc = npc_parse_rule(roc_npc, attr, pattern, actions, flow, &parse_state);
+ 	if (rc)
+ 		return rc;
+ 
+@@ -1420,8 +1414,8 @@ roc_npc_sdp_channel_get(struct roc_npc *roc_npc, uint16_t *chan_base, uint16_t *
+ 
+ struct roc_npc_flow *
+ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+-		    const struct roc_npc_item_info pattern[],
+-		    const struct roc_npc_action actions[], int *errcode)
++		    const struct roc_npc_item_info pattern[], const struct roc_npc_action actions[],
++		    uint16_t dst_pf_func, int *errcode)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	uint16_t sdp_chan_base = 0, sdp_chan_mask = 0;
+@@ -1451,8 +1445,9 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	memset(flow, 0, sizeof(*flow));
+ 	memset(&parse_state, 0, sizeof(parse_state));
+ 
+-	rc = npc_parse_rule(roc_npc, attr, pattern, actions, flow,
+-			    &parse_state);
++	parse_state.dst_pf_func = dst_pf_func;
++
++	rc = npc_parse_rule(roc_npc, attr, pattern, actions, flow, &parse_state);
+ 	if (rc != 0) {
+ 		*errcode = rc;
+ 		goto err_exit;
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 5984da1c1a352..07e6634aa733c 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -358,41 +358,29 @@ int __roc_api roc_npc_init(struct roc_npc *roc_npc);
+ int __roc_api roc_npc_fini(struct roc_npc *roc_npc);
+ const char *__roc_api roc_npc_profile_name_get(struct roc_npc *roc_npc);
+ 
+-struct roc_npc_flow *__roc_api
+-roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+-		    const struct roc_npc_item_info pattern[],
+-		    const struct roc_npc_action actions[], int *errcode);
+-int __roc_api roc_npc_flow_destroy(struct roc_npc *roc_npc,
+-				   struct roc_npc_flow *flow);
+-int __roc_api roc_npc_mcam_free(struct roc_npc *roc_npc,
+-				struct roc_npc_flow *mcam);
++struct roc_npc_flow *__roc_api roc_npc_flow_create(struct roc_npc *roc_npc,
++						   const struct roc_npc_attr *attr,
++						   const struct roc_npc_item_info pattern[],
++						   const struct roc_npc_action actions[],
++						   uint16_t dst_pf_func, int *errcode);
++int __roc_api roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow);
++int __roc_api roc_npc_mcam_free(struct roc_npc *roc_npc, struct roc_npc_flow *mcam);
+ int __roc_api roc_npc_mcam_free_entry(struct roc_npc *roc_npc, uint32_t entry);
+-int __roc_api roc_npc_mcam_enable_all_entries(struct roc_npc *roc_npc,
+-					      bool enable);
+-int __roc_api roc_npc_mcam_alloc_entry(struct roc_npc *roc_npc,
+-				       struct roc_npc_flow *mcam,
+-				       struct roc_npc_flow *ref_mcam, int prio,
+-				       int *resp_count);
+-int __roc_api roc_npc_mcam_alloc_entries(struct roc_npc *roc_npc, int ref_entry,
+-					 int *alloc_entry, int req_count,
+-					 int priority, int *resp_count);
+-int __roc_api roc_npc_mcam_ena_dis_entry(struct roc_npc *roc_npc,
+-					 struct roc_npc_flow *mcam,
++int __roc_api roc_npc_mcam_enable_all_entries(struct roc_npc *roc_npc, bool enable);
++int __roc_api roc_npc_mcam_alloc_entry(struct roc_npc *roc_npc, struct roc_npc_flow *mcam,
++				       struct roc_npc_flow *ref_mcam, int prio, int *resp_count);
++int __roc_api roc_npc_mcam_alloc_entries(struct roc_npc *roc_npc, int ref_entry, int *alloc_entry,
++					 int req_count, int priority, int *resp_count);
++int __roc_api roc_npc_mcam_ena_dis_entry(struct roc_npc *roc_npc, struct roc_npc_flow *mcam,
+ 					 bool enable);
+-int __roc_api roc_npc_mcam_write_entry(struct roc_npc *roc_npc,
+-				       struct roc_npc_flow *mcam);
+-int __roc_api roc_npc_flow_parse(struct roc_npc *roc_npc,
+-				 const struct roc_npc_attr *attr,
++int __roc_api roc_npc_mcam_write_entry(struct roc_npc *roc_npc, struct roc_npc_flow *mcam);
++int __roc_api roc_npc_flow_parse(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 				 const struct roc_npc_item_info pattern[],
+-				 const struct roc_npc_action actions[],
+-				 struct roc_npc_flow *flow);
++				 const struct roc_npc_action actions[], struct roc_npc_flow *flow);
+ int __roc_api roc_npc_get_low_priority_mcam(struct roc_npc *roc_npc);
+-int __roc_api roc_npc_mcam_free_counter(struct roc_npc *roc_npc,
+-					uint16_t ctr_id);
+-int __roc_api roc_npc_mcam_read_counter(struct roc_npc *roc_npc,
+-					uint32_t ctr_id, uint64_t *count);
+-int __roc_api roc_npc_mcam_clear_counter(struct roc_npc *roc_npc,
+-					 uint32_t ctr_id);
++int __roc_api roc_npc_mcam_free_counter(struct roc_npc *roc_npc, uint16_t ctr_id);
++int __roc_api roc_npc_mcam_read_counter(struct roc_npc *roc_npc, uint32_t ctr_id, uint64_t *count);
++int __roc_api roc_npc_mcam_clear_counter(struct roc_npc *roc_npc, uint32_t ctr_id);
+ int __roc_api roc_npc_inl_mcam_read_counter(uint32_t ctr_id, uint64_t *count);
+ int __roc_api roc_npc_inl_mcam_clear_counter(uint32_t ctr_id);
+ int __roc_api roc_npc_mcam_free_all_resources(struct roc_npc *roc_npc);
+@@ -400,17 +388,13 @@ void __roc_api roc_npc_flow_dump(FILE *file, struct roc_npc *roc_npc);
+ void __roc_api roc_npc_flow_mcam_dump(FILE *file, struct roc_npc *roc_npc,
+ 				      struct roc_npc_flow *mcam);
+ int __roc_api roc_npc_mark_actions_get(struct roc_npc *roc_npc);
+-int __roc_api roc_npc_mark_actions_sub_return(struct roc_npc *roc_npc,
+-					      uint32_t count);
++int __roc_api roc_npc_mark_actions_sub_return(struct roc_npc *roc_npc, uint32_t count);
+ int __roc_api roc_npc_vtag_actions_get(struct roc_npc *roc_npc);
+-int __roc_api roc_npc_vtag_actions_sub_return(struct roc_npc *roc_npc,
+-					      uint32_t count);
++int __roc_api roc_npc_vtag_actions_sub_return(struct roc_npc *roc_npc, uint32_t count);
+ int __roc_api roc_npc_mcam_merge_base_steering_rule(struct roc_npc *roc_npc,
+ 						    struct roc_npc_flow *flow);
+ int __roc_api roc_npc_validate_portid_action(struct roc_npc *roc_npc_src,
+ 					     struct roc_npc *roc_npc_dst);
+-int __roc_api roc_npc_mcam_init(struct roc_npc *roc_npc,
+-				struct roc_npc_flow *flow, int mcam_id);
+-int __roc_api roc_npc_mcam_move(struct roc_npc *roc_npc, uint16_t old_ent,
+-				uint16_t new_ent);
++int __roc_api roc_npc_mcam_init(struct roc_npc *roc_npc, struct roc_npc_flow *flow, int mcam_id);
++int __roc_api roc_npc_mcam_move(struct roc_npc *roc_npc, uint16_t old_ent, uint16_t new_ent);
+ #endif /* _ROC_NPC_H_ */
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 30274e837bc09..593dca353bb86 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -201,6 +201,7 @@ struct npc_parse_state {
+ 	bool is_second_pass_rule;
+ 	bool has_eth_type;
+ 	uint16_t nb_tx_queues;
++	uint16_t dst_pf_func;
+ };
+ 
+ enum npc_kpu_parser_flag {
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index 1bacb20784e90..1b88542dcbd35 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -113,14 +113,13 @@ npc_rss_flowkey_get(struct cnxk_eth_dev *eth_dev,
+ 
+ static int
+ cnxk_map_actions(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+-		 const struct rte_flow_action actions[],
+-		 struct roc_npc_action in_actions[], uint32_t *flowkey_cfg)
++		 const struct rte_flow_action actions[], struct roc_npc_action in_actions[],
++		 uint32_t *flowkey_cfg, uint16_t *dst_pf_func)
+ {
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	const struct rte_flow_action_ethdev *act_ethdev;
+ 	const struct rte_flow_action_port_id *port_act;
+ 	const struct rte_flow_action_queue *act_q;
+-	struct roc_npc *roc_npc_src = &dev->npc;
+ 	struct rte_eth_dev *portid_eth_dev;
+ 	char if_name[RTE_ETH_NAME_MAX_LEN];
+ 	struct cnxk_eth_dev *hw_dst;
+@@ -186,12 +185,7 @@ cnxk_map_actions(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 			}
+ 			hw_dst = portid_eth_dev->data->dev_private;
+ 			roc_npc_dst = &hw_dst->npc;
+-
+-			rc = roc_npc_validate_portid_action(roc_npc_src,
+-							    roc_npc_dst);
+-
+-			if (rc)
+-				goto err_exit;
++			*dst_pf_func = roc_npc_dst->pf_func;
+ 			break;
+ 
+ 		case RTE_FLOW_ACTION_TYPE_QUEUE:
+@@ -255,13 +249,10 @@ cnxk_map_actions(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ }
+ 
+ static int
+-cnxk_map_flow_data(struct rte_eth_dev *eth_dev,
+-		   const struct rte_flow_attr *attr,
+-		   const struct rte_flow_item pattern[],
+-		   const struct rte_flow_action actions[],
+-		   struct roc_npc_attr *in_attr,
+-		   struct roc_npc_item_info in_pattern[],
+-		   struct roc_npc_action in_actions[], uint32_t *flowkey_cfg)
++cnxk_map_flow_data(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
++		   const struct rte_flow_item pattern[], const struct rte_flow_action actions[],
++		   struct roc_npc_attr *in_attr, struct roc_npc_item_info in_pattern[],
++		   struct roc_npc_action in_actions[], uint32_t *flowkey_cfg, uint16_t *dst_pf_func)
+ {
+ 	int i = 0;
+ 
+@@ -280,15 +271,12 @@ cnxk_map_flow_data(struct rte_eth_dev *eth_dev,
+ 	}
+ 	in_pattern[i].type = ROC_NPC_ITEM_TYPE_END;
+ 
+-	return cnxk_map_actions(eth_dev, attr, actions, in_actions,
+-				flowkey_cfg);
++	return cnxk_map_actions(eth_dev, attr, actions, in_actions, flowkey_cfg, dst_pf_func);
+ }
+ 
+ static int
+-cnxk_flow_validate(struct rte_eth_dev *eth_dev,
+-		   const struct rte_flow_attr *attr,
+-		   const struct rte_flow_item pattern[],
+-		   const struct rte_flow_action actions[],
++cnxk_flow_validate(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
++		   const struct rte_flow_item pattern[], const struct rte_flow_action actions[],
+ 		   struct rte_flow_error *error)
+ {
+ 	struct roc_npc_item_info in_pattern[ROC_NPC_ITEM_TYPE_END + 1];
+@@ -298,6 +286,7 @@ cnxk_flow_validate(struct rte_eth_dev *eth_dev,
+ 	struct roc_npc_attr in_attr;
+ 	struct roc_npc_flow flow;
+ 	uint32_t flowkey_cfg = 0;
++	uint16_t dst_pf_func = 0;
+ 	int rc;
+ 
+ 	/* Skip flow validation for MACsec. */
+@@ -309,7 +298,7 @@ cnxk_flow_validate(struct rte_eth_dev *eth_dev,
+ 	flow.is_validate = true;
+ 
+ 	rc = cnxk_map_flow_data(eth_dev, attr, pattern, actions, &in_attr, in_pattern, in_actions,
+-				&flowkey_cfg);
++				&flowkey_cfg, &dst_pf_func);
+ 	if (rc) {
+ 		rte_flow_error_set(error, 0, RTE_FLOW_ERROR_TYPE_ACTION_NUM, NULL,
+ 				   "Failed to map flow data");
+@@ -338,23 +327,21 @@ cnxk_flow_create(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 	struct roc_npc *npc = &dev->npc;
+ 	struct roc_npc_attr in_attr;
+ 	struct roc_npc_flow *flow;
++	uint16_t dst_pf_func = 0;
+ 	int errcode = 0;
+ 	int rc;
+ 
+-	rc = cnxk_map_flow_data(eth_dev, attr, pattern, actions, &in_attr,
+-				in_pattern, in_actions,
+-				&npc->flowkey_cfg_state);
++	rc = cnxk_map_flow_data(eth_dev, attr, pattern, actions, &in_attr, in_pattern, in_actions,
++				&npc->flowkey_cfg_state, &dst_pf_func);
+ 	if (rc) {
+-		rte_flow_error_set(error, 0, RTE_FLOW_ERROR_TYPE_ACTION_NUM,
+-				   NULL, "Failed to map flow data");
++		rte_flow_error_set(error, 0, RTE_FLOW_ERROR_TYPE_ACTION_NUM, NULL,
++				   "Failed to map flow data");
+ 		return NULL;
+ 	}
+ 
+-	flow = roc_npc_flow_create(npc, &in_attr, in_pattern, in_actions,
+-				   &errcode);
++	flow = roc_npc_flow_create(npc, &in_attr, in_pattern, in_actions, dst_pf_func, &errcode);
+ 	if (errcode != 0) {
+-		rte_flow_error_set(error, errcode, errcode, NULL,
+-				   roc_error_msg_get(errcode));
++		rte_flow_error_set(error, errcode, errcode, NULL, roc_error_msg_get(errcode));
+ 		return NULL;
+ 	}
+ 
+-- 
+2.25.1
+

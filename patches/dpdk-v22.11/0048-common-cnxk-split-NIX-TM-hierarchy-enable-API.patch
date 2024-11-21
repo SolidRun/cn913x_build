@@ -1,0 +1,194 @@
+From 77ef95acd0229cde336f395d0050e32d1fdbcc82 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 28 Nov 2022 15:24:35 +0530
+Subject: [PATCH 048/955] common/cnxk: split NIX TM hierarchy enable API
+
+roc_nix_tm_hierarchy_enable() API will do two things internally,
+1) Creation of all TM nodes, allocate HW resources and connect
+   them as requested.
+2) Enable transmit by XON SMQ and start SQs
+
+In test cases where both steps called independently. In order
+to support this, patch split the functionality into two APIs.
+
+ci: skip_checkformat
+
+Change-Id: I523bb80674c5a16ee463aebd2c7c03a5998c1676
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h        |   2 +
+ drivers/common/cnxk/roc_nix_tm_ops.c | 116 +++++++++++++++------------
+ drivers/common/cnxk/version.map      |   1 +
+ 3 files changed, 69 insertions(+), 50 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index dfc87e87582aa..47ee078c2e492 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -672,6 +672,8 @@ int __roc_api roc_nix_tm_hierarchy_disable(struct roc_nix *roc_nix);
+ int __roc_api roc_nix_tm_hierarchy_enable(struct roc_nix *roc_nix,
+ 					  enum roc_nix_tm_tree tree,
+ 					  bool xmit_enable);
++int __roc_api roc_nix_tm_hierarchy_xmit_enable(struct roc_nix *roc_nix, enum roc_nix_tm_tree tree);
++
+ 
+ /*
+  * TM utilities API.
+diff --git a/drivers/common/cnxk/roc_nix_tm_ops.c b/drivers/common/cnxk/roc_nix_tm_ops.c
+index 4bf7b1e104d98..5e8637ebdd1f5 100644
+--- a/drivers/common/cnxk/roc_nix_tm_ops.c
++++ b/drivers/common/cnxk/roc_nix_tm_ops.c
+@@ -549,6 +549,67 @@ roc_nix_tm_hierarchy_disable(struct roc_nix *roc_nix)
+ 	return rc;
+ }
+ 
++int
++roc_nix_tm_hierarchy_xmit_enable(struct roc_nix *roc_nix, enum roc_nix_tm_tree tree)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct nix_tm_node_list *list;
++	struct nix_tm_node *node;
++	struct roc_nix_sq *sq;
++	uint16_t sq_id;
++	int rc;
++
++	if (tree >= ROC_NIX_TM_TREE_MAX)
++		return NIX_ERR_PARAM;
++
++	list = nix_tm_node_list(nix, tree);
++
++	/* Update SQ Sched Data while SQ is idle */
++	TAILQ_FOREACH(node, list, node) {
++		if (!nix_tm_is_leaf(nix, node->lvl))
++			continue;
++
++		rc = nix_tm_sq_sched_conf(nix, node, false);
++		if (rc) {
++			plt_err("SQ %u sched update failed, rc=%d", node->id,
++				rc);
++			return rc;
++		}
++	}
++
++	/* Finally XON all SMQ's */
++	TAILQ_FOREACH(node, list, node) {
++		if (node->hw_lvl != NIX_TXSCH_LVL_SMQ)
++			continue;
++
++		rc = nix_tm_smq_xoff(nix, node, false);
++		if (rc) {
++			plt_err("Failed to enable smq %u, rc=%d", node->hw_id,
++				rc);
++			return rc;
++		}
++	}
++
++	/* Enable xmit as all the topology is ready */
++	TAILQ_FOREACH(node, list, node) {
++		if (!nix_tm_is_leaf(nix, node->lvl))
++			continue;
++
++		sq_id = node->id;
++		sq = nix->sqs[sq_id];
++
++		rc = roc_nix_tm_sq_aura_fc(sq, true);
++		if (rc) {
++			plt_err("TM sw xon failed on SQ %u, rc=%d", node->id,
++				rc);
++			return rc;
++		}
++		node->flags |= NIX_TM_NODE_ENABLED;
++	}
++
++	return 0;
++}
++
+ int
+ roc_nix_tm_hierarchy_enable(struct roc_nix *roc_nix, enum roc_nix_tm_tree tree,
+ 			    bool xmit_enable)
+@@ -556,9 +617,7 @@ roc_nix_tm_hierarchy_enable(struct roc_nix *roc_nix, enum roc_nix_tm_tree tree,
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	struct nix_tm_node_list *list;
+ 	struct nix_tm_node *node;
+-	struct roc_nix_sq *sq;
+ 	uint32_t tree_mask;
+-	uint16_t sq_id;
+ 	int rc;
+ 
+ 	if (tree >= ROC_NIX_TM_TREE_MAX)
+@@ -613,55 +672,12 @@ roc_nix_tm_hierarchy_enable(struct roc_nix *roc_nix, enum roc_nix_tm_tree tree,
+ 			node->flags |= NIX_TM_NODE_ENABLED;
+ 	}
+ 
+-	if (!xmit_enable)
+-		goto skip_sq_update;
+-
+-	/* Update SQ Sched Data while SQ is idle */
+-	TAILQ_FOREACH(node, list, node) {
+-		if (!nix_tm_is_leaf(nix, node->lvl))
+-			continue;
+-
+-		rc = nix_tm_sq_sched_conf(nix, node, false);
+-		if (rc) {
+-			plt_err("SQ %u sched update failed, rc=%d", node->id,
+-				rc);
+-			return rc;
+-		}
+-	}
+-
+-	/* Finally XON all SMQ's */
+-	TAILQ_FOREACH(node, list, node) {
+-		if (node->hw_lvl != NIX_TXSCH_LVL_SMQ)
+-			continue;
+-
+-		rc = nix_tm_smq_xoff(nix, node, false);
+-		if (rc) {
+-			plt_err("Failed to enable smq %u, rc=%d", node->hw_id,
+-				rc);
+-			return rc;
+-		}
+-	}
+-
+-	/* Enable xmit as all the topology is ready */
+-	TAILQ_FOREACH(node, list, node) {
+-		if (!nix_tm_is_leaf(nix, node->lvl))
+-			continue;
++	if (xmit_enable)
++		rc = roc_nix_tm_hierarchy_xmit_enable(roc_nix, tree);
+ 
+-		sq_id = node->id;
+-		sq = nix->sqs[sq_id];
+-
+-		rc = roc_nix_tm_sq_aura_fc(sq, true);
+-		if (rc) {
+-			plt_err("TM sw xon failed on SQ %u, rc=%d", node->id,
+-				rc);
+-			return rc;
+-		}
+-		node->flags |= NIX_TM_NODE_ENABLED;
+-	}
+-
+-skip_sq_update:
+-	nix->tm_flags |= NIX_TM_HIERARCHY_ENA;
+-	return 0;
++	if (!rc)
++		nix->tm_flags |= NIX_TM_HIERARCHY_ENA;
++	return rc;
+ }
+ 
+ int
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 762048e9bea25..cfeef3b89694d 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -270,6 +270,7 @@ INTERNAL {
+ 	roc_nix_tm_tree_type_get;
+ 	roc_nix_tm_hierarchy_disable;
+ 	roc_nix_tm_hierarchy_enable;
++	roc_nix_tm_hierarchy_xmit_enable;
+ 	roc_nix_tm_init;
+ 	roc_nix_tm_is_user_hierarchy_enabled;
+ 	roc_nix_tm_leaf_cnt;
+-- 
+2.25.1
+

@@ -1,0 +1,100 @@
+From c7a92f47054576b01ee3095a257b29a464acfea3 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Thu, 15 Feb 2024 01:59:54 -0800
+Subject: [PATCH 299/513] test/crypto: verify padding corruption in TLS-1.2
+
+Add unit test to verify corrupted padding bytes in TLS-1.2 record
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I9cf1d55e074fd16da50f677c6aa0ccbeafadef3d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121992
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c                     | 22 ++++++++++++++++++-
+ app/test/test_cryptodev_security_tls_record.c |  7 ++++++
+ app/test/test_cryptodev_security_tls_record.h |  1 +
+ 3 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index c2487510a0980..e21b412518881 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12219,7 +12219,7 @@ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ 		if (ret == TEST_SKIPPED)
+ 			continue;
+ 
+-		if (flags->pkt_corruption) {
++		if (flags->pkt_corruption || flags->padding_corruption) {
+ 			if (ret == TEST_SUCCESS)
+ 				return TEST_FAILED;
+ 		} else {
+@@ -12450,6 +12450,22 @@ test_tls_record_proto_sg_opt_padding_max(void)
+ 	return test_tls_record_proto_opt_padding(33, 4, RTE_SECURITY_VERSION_TLS_1_2);
+ }
+ 
++static int
++test_tls_record_proto_sg_opt_padding_corrupt(void)
++{
++	struct tls_record_test_flags flags = {
++		.opt_padding = 8,
++		.padding_corruption = true,
++		.nb_segs_in_mbuf = 4,
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
+ static int
+ test_dtls_1_2_record_proto_data_walkthrough(void)
+ {
+@@ -17953,6 +17969,10 @@ static struct unit_test_suite tls12_record_proto_testsuite  = {
+ 			"TLS record SG mode with optional padding > max range",
+ 			ut_setup_security, ut_teardown,
+ 			test_tls_record_proto_sg_opt_padding_max),
++		TEST_CASE_NAMED_ST(
++			"TLS record SG mode with padding corruption",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_sg_opt_padding_corrupt),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev_security_tls_record.c b/app/test/test_cryptodev_security_tls_record.c
+index 03d9efefc3fa4..1ba9609e1b64d 100644
+--- a/app/test/test_cryptodev_security_tls_record.c
++++ b/app/test/test_cryptodev_security_tls_record.c
+@@ -215,6 +215,13 @@ test_tls_record_td_update(struct tls_record_test_data td_inb[],
+ 		if (flags->pkt_corruption)
+ 			td_inb[i].input_text.data[0] = ~td_inb[i].input_text.data[0];
+ 
++		/* Corrupt a byte in the last but one block */
++		if (flags->padding_corruption) {
++			int offset = td_inb[i].input_text.len - TLS_RECORD_PAD_CORRUPT_OFFSET;
++
++			td_inb[i].input_text.data[offset] = ~td_inb[i].input_text.data[offset];
++		}
++
+ 		/* Clear outbound specific flags */
+ 		td_inb[i].tls_record_xform.options.iv_gen_disable = 0;
+ 	}
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+index 076568dbf284a..3bf1fbbdf9322 100644
+--- a/app/test/test_cryptodev_security_tls_record.h
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -41,6 +41,7 @@ static_assert(TLS_1_3_RECORD_PLAINTEXT_MAX_LEN <= TEST_SEC_CLEARTEXT_MAX_LEN,
+ 	      "TEST_SEC_CLEARTEXT_MAX_LEN should be at least RECORD MAX LEN!");
+ 
+ #define TLS_RECORD_PLAINTEXT_MIN_LEN       (1u)
++#define TLS_RECORD_PAD_CORRUPT_OFFSET      20
+ 
+ enum tls_record_test_content_type {
+ 	TLS_RECORD_TEST_CONTENT_TYPE_APP,
+-- 
+2.25.1
+

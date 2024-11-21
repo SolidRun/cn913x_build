@@ -1,0 +1,94 @@
+From 5c3ba191fc1b693a4dec2737c1beb8448c52d3d8 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Wed, 15 Feb 2023 15:12:28 +0530
+Subject: [PATCH 297/955] eventdev: drop export of internal tracepoints
+
+The internal tracepoints are removed from the version.map file.
+Also, removed eventdev_trace.h from meson.build.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Acked-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: I134b342d13f93e9426df3ec2d6c0cb3b838c252e
+---
+ lib/eventdev/eventdev_trace.h |  6 +++---
+ lib/eventdev/meson.build      |  1 -
+ lib/eventdev/version.map      | 30 ------------------------------
+ 3 files changed, 3 insertions(+), 34 deletions(-)
+
+diff --git a/lib/eventdev/eventdev_trace.h b/lib/eventdev/eventdev_trace.h
+index d48cd58850112..cf3b2b0cd8845 100644
+--- a/lib/eventdev/eventdev_trace.h
++++ b/lib/eventdev/eventdev_trace.h
+@@ -2,8 +2,8 @@
+  * Copyright(C) 2020 Marvell International Ltd.
+  */
+ 
+-#ifndef _RTE_EVENTDEV_TRACE_H_
+-#define _RTE_EVENTDEV_TRACE_H_
++#ifndef EVENTDEV_TRACE_H
++#define EVENTDEV_TRACE_H
+ 
+ /**
+  * @file
+@@ -307,4 +307,4 @@ RTE_TRACE_POINT(
+ }
+ #endif
+ 
+-#endif /* _RTE_EVENTDEV_TRACE_H_ */
++#endif /* EVENTDEV_TRACE_H */
+diff --git a/lib/eventdev/meson.build b/lib/eventdev/meson.build
+index 6b2c381811792..6edf98dfa5f15 100644
+--- a/lib/eventdev/meson.build
++++ b/lib/eventdev/meson.build
+@@ -39,7 +39,6 @@ driver_sdk_headers += files(
+         'eventdev_pmd.h',
+         'eventdev_pmd_pci.h',
+         'eventdev_pmd_vdev.h',
+-        'eventdev_trace.h',
+         'event_timer_adapter_pmd.h',
+ )
+ 
+diff --git a/lib/eventdev/version.map b/lib/eventdev/version.map
+index 9abe377bcad89..7e1cfc773b539 100644
+--- a/lib/eventdev/version.map
++++ b/lib/eventdev/version.map
+@@ -127,36 +127,6 @@ EXPERIMENTAL {
+ INTERNAL {
+ 	global:
+ 
+-	__rte_eventdev_trace_close;
+-	__rte_eventdev_trace_configure;
+-	__rte_eventdev_trace_crypto_adapter_create;
+-	__rte_eventdev_trace_crypto_adapter_free;
+-	__rte_eventdev_trace_crypto_adapter_queue_pair_add;
+-	__rte_eventdev_trace_crypto_adapter_queue_pair_del;
+-	__rte_eventdev_trace_crypto_adapter_start;
+-	__rte_eventdev_trace_crypto_adapter_stop;
+-	__rte_eventdev_trace_eth_rx_adapter_create;
+-	__rte_eventdev_trace_eth_rx_adapter_free;
+-	__rte_eventdev_trace_eth_rx_adapter_queue_add;
+-	__rte_eventdev_trace_eth_rx_adapter_queue_del;
+-	__rte_eventdev_trace_eth_rx_adapter_start;
+-	__rte_eventdev_trace_eth_rx_adapter_stop;
+-	__rte_eventdev_trace_eth_tx_adapter_create;
+-	__rte_eventdev_trace_eth_tx_adapter_free;
+-	__rte_eventdev_trace_eth_tx_adapter_queue_add;
+-	__rte_eventdev_trace_eth_tx_adapter_queue_del;
+-	__rte_eventdev_trace_eth_tx_adapter_start;
+-	__rte_eventdev_trace_eth_tx_adapter_stop;
+-	__rte_eventdev_trace_port_link;
+-	__rte_eventdev_trace_port_setup;
+-	__rte_eventdev_trace_port_unlink;
+-	__rte_eventdev_trace_queue_setup;
+-	__rte_eventdev_trace_start;
+-	__rte_eventdev_trace_stop;
+-	__rte_eventdev_trace_timer_adapter_create;
+-	__rte_eventdev_trace_timer_adapter_free;
+-	__rte_eventdev_trace_timer_adapter_start;
+-	__rte_eventdev_trace_timer_adapter_stop;
+ 	event_dev_fp_ops_reset;
+ 	event_dev_fp_ops_set;
+ 	event_dev_probing_finish;
+-- 
+2.25.1
+

@@ -1,0 +1,102 @@
+From e7f989241638a4cee904260849ef42c7ef270b91 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 1 Aug 2024 23:04:58 +0530
+Subject: [PATCH 932/955] common/cnxk: accommodate change in aura field width
+
+Aura field width has changed from 20 bits to 17 bits in
+cn20k. Adjust the bit fields accordingly for register
+reads/writes.
+
+Change-Id: Iffa3c728c24f494728a7f1472f0c41b1b39c3666
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ drivers/common/cnxk/roc_npa.h | 24 ++++++++++++++++--------
+ 1 file changed, 16 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npa.h b/drivers/common/cnxk/roc_npa.h
+index 435d7e9c8a081..ca88ff2dc22a8 100644
+--- a/drivers/common/cnxk/roc_npa.h
++++ b/drivers/common/cnxk/roc_npa.h
+@@ -16,6 +16,7 @@
+ #else
+ #include "roc_io_generic.h"
+ #endif
++#include "roc_model.h"
+ #include "roc_npa_dp.h"
+ 
+ #define ROC_AURA_OP_LIMIT_MASK (BIT_ULL(36) - 1)
+@@ -68,11 +69,12 @@ roc_npa_aura_op_alloc(uint64_t aura_handle, const int drop)
+ static inline uint64_t
+ roc_npa_aura_op_cnt_get(uint64_t aura_handle)
+ {
+-	uint64_t wdata;
++	uint64_t wdata, shift;
+ 	int64_t *addr;
+ 	uint64_t reg;
+ 
+-	wdata = roc_npa_aura_handle_to_aura(aura_handle) << 44;
++	shift = roc_model_is_cn20k() ? 47 : 44;
++	wdata = roc_npa_aura_handle_to_aura(aura_handle) << shift;
+ 	addr = (int64_t *)(roc_npa_aura_handle_to_base(aura_handle) +
+ 			   NPA_LF_AURA_OP_CNT);
+ 	reg = roc_atomic64_add_nosync(wdata, addr);
+@@ -87,11 +89,13 @@ static inline void
+ roc_npa_aura_op_cnt_set(uint64_t aura_handle, const int sign, uint64_t count)
+ {
+ 	uint64_t reg = count & (BIT_ULL(36) - 1);
++	uint64_t shift;
+ 
+ 	if (sign)
+ 		reg |= BIT_ULL(43); /* CNT_ADD */
+ 
+-	reg |= (roc_npa_aura_handle_to_aura(aura_handle) << 44);
++	shift = roc_model_is_cn20k() ? 47 : 44;
++	reg |= (roc_npa_aura_handle_to_aura(aura_handle) << shift);
+ 
+ 	plt_write64(reg, roc_npa_aura_handle_to_base(aura_handle) +
+ 				 NPA_LF_AURA_OP_CNT);
+@@ -100,11 +104,12 @@ roc_npa_aura_op_cnt_set(uint64_t aura_handle, const int sign, uint64_t count)
+ static inline uint64_t
+ roc_npa_aura_op_limit_get(uint64_t aura_handle)
+ {
+-	uint64_t wdata;
++	uint64_t wdata, shift;
+ 	int64_t *addr;
+ 	uint64_t reg;
+ 
+-	wdata = roc_npa_aura_handle_to_aura(aura_handle) << 44;
++	shift = roc_model_is_cn20k() ? 47 : 44;
++	wdata = roc_npa_aura_handle_to_aura(aura_handle) << shift;
+ 	addr = (int64_t *)(roc_npa_aura_handle_to_base(aura_handle) +
+ 			   NPA_LF_AURA_OP_LIMIT);
+ 	reg = roc_atomic64_add_nosync(wdata, addr);
+@@ -119,8 +124,10 @@ static inline void
+ roc_npa_aura_op_limit_set(uint64_t aura_handle, uint64_t limit)
+ {
+ 	uint64_t reg = limit & ROC_AURA_OP_LIMIT_MASK;
++	uint64_t shift;
+ 
+-	reg |= (roc_npa_aura_handle_to_aura(aura_handle) << 44);
++	shift = roc_model_is_cn20k() ? 47 : 44;
++	reg |= (roc_npa_aura_handle_to_aura(aura_handle) << shift);
+ 
+ 	plt_write64(reg, roc_npa_aura_handle_to_base(aura_handle) +
+ 				 NPA_LF_AURA_OP_LIMIT);
+@@ -129,11 +136,12 @@ roc_npa_aura_op_limit_set(uint64_t aura_handle, uint64_t limit)
+ static inline uint64_t
+ roc_npa_aura_op_available(uint64_t aura_handle)
+ {
+-	uint64_t wdata;
++	uint64_t wdata, shift;
+ 	uint64_t reg;
+ 	int64_t *addr;
+ 
+-	wdata = roc_npa_aura_handle_to_aura(aura_handle) << 44;
++	shift = roc_model_is_cn20k() ? 47 : 44;
++	wdata = roc_npa_aura_handle_to_aura(aura_handle) << shift;
+ 	addr = (int64_t *)(roc_npa_aura_handle_to_base(aura_handle) +
+ 			   NPA_LF_POOL_OP_AVAILABLE);
+ 	reg = roc_atomic64_add_nosync(wdata, addr);
+-- 
+2.25.1
+

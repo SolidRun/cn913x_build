@@ -1,0 +1,44 @@
+From 969cc63b80740895e3a1e37f1d191769d8746de8 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Mon, 30 Oct 2023 18:23:27 +0530
+Subject: [PATCH 659/955] ci: fix duplicate cnxk_ipsec_la_perf run
+
+Remove unused meson test add to avoid duplication
+of test cnxk_ipsec_la_perf because of same test_name
+parameter.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Id50853eeb654d7a427fff48951c6df0f21a95ed7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114888
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 0beb6e8670f586744d4749c5403326d7e54f130e)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115013
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/macsec_perf/meson.build | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/meson.build b/marvell-ci/test/cnxk-tests/macsec_perf/meson.build
+index 54bcb6ee6ab6e..201121fcd378b 100644
+--- a/marvell-ci/test/cnxk-tests/macsec_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/macsec_perf/meson.build
+@@ -27,13 +27,6 @@ run_command(copy_data, 'pcap/port_1_plain_pkt_64B.pcap')
+ run_command(copy_data, 'pcap/port_1_plain_pkt_380B.pcap')
+ run_command(copy_data, 'pcap/port_1_plain_pkt_1410B.pcap')
+ # Add the meson test
+-test(test_name,
+-    cnxk_test_script_wrapper,
+-    env : [['DPDK_TEST=' + test_name],
+-    ['TEST_DIR=' + test_dir]],
+-    args : [[test_script], [test_args]],
+-    is_parallel : false, suite : 'cnxk-tests')
+-
+ test_args+= ' inline'
+ test(test_inline_name,
+     cnxk_test_script_wrapper,
+-- 
+2.25.1
+

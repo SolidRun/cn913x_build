@@ -1,0 +1,511 @@
+From 21ce9b020c1a9f1dbd3032a8deeabec577da5cc4 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Wed, 3 Jan 2024 14:22:26 +0530
+Subject: [PATCH 124/513] marvell-ci: sync 23.11 with 22.11
+
+All functional and perf tests must be aligned between 22.11 and 23.11.
+Patch syncs 23.11 with 22.11 tests.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: Ie20c266e38e8e017186bba1fb60adf623f493e9d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119092
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/common/meson.build |   3 +-
+ .../test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh | 230 +++++++++++++-----
+ marvell-ci/test/cnxk-tests/meson.build        |   1 +
+ .../cnxk-tests/meter_test/cnxk_mtr_test.sh    |   3 +
+ .../policer_test/cnxk_ingress_policer.sh      |  22 +-
+ .../test/cnxk-tests/policer_test/meson.build  |   3 +
+ marvell-ci/test/env/cn10k.env                 |   2 +
+ marvell-ci/test/env/cn9k-nightly.env          |   1 +
+ marvell-ci/test/env/cn9k.env                  |   2 +
+ 9 files changed, 197 insertions(+), 70 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/common/meson.build b/marvell-ci/test/cnxk-tests/common/meson.build
+index cd910216914a6..ee213bcd1e498 100644
+--- a/marvell-ci/test/cnxk-tests/common/meson.build
++++ b/marvell-ci/test/cnxk-tests/common/meson.build
+@@ -6,7 +6,8 @@ if not get_option('tests')
+ endif
+ 
+ # This executable is used as a workaround to make sure that the exe_wrapper gets
+-# called for scripts also. In the exe_wrapper, this executable is ignored.
++# called for scripts also. In the exe_wrapper, this executable is ignored. Note
++# that the cnxk_test_dep_objs is inherited from app/test/meson.build.
+ cnxk_test_script_wrapper = executable(
+     'cnxk-test-script-wrapper',
+     files('cnxk_test_script_wrapper.c'),
+diff --git a/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh b/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
+index 124056fac89ec..de3977d4ce532 100755
+--- a/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
++++ b/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
+@@ -9,8 +9,10 @@ CNXKTESTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )/.."
+ source $CNXKTESTPATH/common/testpmd/common.env
+ 
+ PRFX="fc-config"
++PRFX_VF="vf_fc-config"
+ 
+ TESTPMD_PORT="0002:02:00.0"
++TESTPMD_VF_PORT="0002:02:00.1"
+ TESTPMD_COREMASK="0xfff"
+ 
+ if [ -f $CNXKTESTPATH/../board/oxk-devbind-basic.sh ]
+@@ -24,13 +26,41 @@ else
+ 	fi
+ fi
+ 
+-function bind_interface()
++function bind_pf_interface()
+ {
+ 	echo "port $TESTPMD_PORT is bound to VFIO"
+ 	$VFIO_DEVBIND -b vfio-pci $TESTPMD_PORT
+ }
+ 
+-function check_fc_state()
++function bind_vf_interface()
++{
++	echo "port $TESTPMD_VF_PORT is bound to VFIO"
++	$VFIO_DEVBIND -b vfio-pci $TESTPMD_VF_PORT
++}
++
++function release_pf_interface()
++{
++	if [[ -d /sys/bus/pci/drivers/octeontx2-nicvf ]]; then
++		NICPF="octeontx2-nicpf"
++	else
++		NICPF="rvu_nicpf"
++	fi
++
++	$VFIO_DEVBIND -b $NICPF $TESTPMD_PORT
++}
++
++function release_vf_interface()
++{
++	if [[ -d /sys/bus/pci/drivers/octeontx2-nicvf ]]; then
++		NICVF="octeontx2-nicvf"
++	else
++		NICVF="rvu_nicvf"
++	fi
++
++	$VFIO_DEVBIND -b $NICVF $TESTPMD_VF_PORT
++}
++
++function verify_fc_state()
+ {
+ 	local debug_dir
+ 
+@@ -43,7 +73,12 @@ function check_fc_state()
+ 	rsrc_alloc="$debug_dir/rsrc_alloc"
+ 
+ 	if $SUDO test -f "$rsrc_alloc"; then
+-		nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1" | awk '{print $3}' | head -1)
++		if [ $1 == "pf" ] ;then
++			nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1" | awk '{print $3}' | head -1)
++		fi
++		if [ $1 == "vf" ] ;then
++			nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1:VF0" | awk '{print $3}' | head -1)
++		fi
+ 	else
+ 		echo "$rsrc_alloc is not available"
+ 		exit 1
+@@ -51,19 +86,19 @@ function check_fc_state()
+ 
+ 	if $SUDO test -f "$cq_ctx"; then
+ 		$SUDO echo "$nix_lf 0" > $cq_ctx
+-		bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "bp_ena" | awk '{print $3}')
++		bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "W1: bp_ena" | awk '{print $3}')
+ 	else
+ 		echo "$cq_ctx is not available"
+ 		exit 1
+ 	fi
+ 
+-	if [[ $bp_ena -ne $1 ]]; then
++	if [[ $bp_ena -ne $2 ]]; then
+ 		echo "flow control validation failed."
+ 		exit 1
+ 	fi
+ }
+ 
+-function check_pfc_state()
++function verify_pfc_state()
+ {
+ 	local debug_dir
+ 
+@@ -72,33 +107,94 @@ function check_pfc_state()
+ 		debug_dir="/sys/kernel/debug/cn10k"
+ 	fi
+ 
+-	cq_id=0
+ 	cq_ctx="$debug_dir/nix/cq_ctx"
+ 	rsrc_alloc="$debug_dir/rsrc_alloc"
+ 
+ 	if $SUDO test -f "$rsrc_alloc"; then
+-		nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1" | awk '{print $3}' | head -1)
++		if [ $1 == "pf" ] ;then
++			nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1" | awk '{print $3}' | head -1)
++		fi
++		if [ $1 == "vf" ] ;then
++			nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1:VF0" | awk '{print $3}' | head -1)
++		fi
+ 	else
+ 		echo "$rsrc_alloc is not available"
+ 		exit 1
+ 	fi
+ 
+-	while [[ $cq_id -ne 8 ]]; do
+-		if $SUDO test -f "$cq_ctx"; then
+-			$SUDO echo "$nix_lf $cq_id" > $cq_ctx
+-			bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "bp_ena" | awk '{print $3}')
+-		else
+-			echo "$cq_ctx is not available"
+-			exit 1
+-		fi
++	if $SUDO test -f "$cq_ctx"; then
++		$SUDO echo "$nix_lf $3" > $cq_ctx
++		bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "W1: bp_ena" | awk '{print $3}')
++	else
++		echo "$cq_ctx is not available"
++		exit 1
++	fi
+ 
+-		if [[ $bp_ena -ne $1 ]]; then
+-			echo "priority flow control validation failed."
+-			exit 1
+-		fi
++	if [[ $bp_ena -ne $2 ]]; then
++		echo "priority flow control validation failed."
++		exit 1
++	fi
++}
++
++function stop_testpmd()
++{
++	testpmd_quit $PRFX_VF
++	sleep 1
++	testpmd_cleanup $PRFX_VF
++	sleep 3
++	testpmd_quit $PRFX
++	sleep 1
++	testpmd_cleanup $PRFX
++	sleep 1
++}
++
++function configure_fc()
++{
++	testpmd_cmd $PRFX "set flow_ctrl rx on tx on 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
++	sleep 1
++	testpmd_cmd $PRFX_VF "set flow_ctrl rx on tx on 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
++	sleep 1
++	verify_fc_state pf 1
++	sleep 1
++	verify_fc_state vf 1
++	sleep 1
++	echo "PF and VF flow control configuration Success"
++}
+ 
+-		cq_id=`expr $cq_id + 1`
+-	done
++function configure_pfc()
++{
++	testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 0 0 tx on 0 0 2047"
++	sleep 1
++	testpmd_cmd $PRFX_VF "set pfc_queue_ctrl 0 rx on 0 0 tx on 0 0 2047"
++	sleep 1
++	verify_pfc_state pf 1 0
++	sleep 1
++	verify_pfc_state vf 1 0
++	sleep 1
++	echo "PF and VF Priority flow control configuration Success"
++}
++
++function configure_pf_vf()
++{
++	echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
++	testpmd_launch $PRFX \
++		"-c $TESTPMD_COREMASK -a $TESTPMD_PORT,flow_max_priority=8 \
++		--vfio-vf-token=$TOKEN --file-prefix=pf" \
++		"--no-flush-rx --rxq=1 --txq=1 --nb-cores=1"
++	sleep 1
++	testpmd_cmd $PRFX "port stop all"
++	sleep 1
++	testpmd_cmd $PRFX "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
++	sleep 1
++	echo "Testpmd running with $TESTPMD_VF_PORT, Coremask=$TESTPMD_COREMASK"
++	testpmd_launch $PRFX_VF \
++		"-c $TESTPMD_COREMASK -a $TESTPMD_VF_PORT,flow_max_priority=8 \
++		--vfio-vf-token=$TOKEN --file-prefix=vf" \
++		"--no-flush-rx --rxq=1 --txq=1 --nb-cores=1"
++	testpmd_cmd $PRFX_VF "port stop all"
++	sleep 1
++	testpmd_cmd $PRFX_VF "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
++	sleep 1
+ }
+ 
+ function sig_handler()
+@@ -122,7 +218,31 @@ trap "sig_handler INT" INT
+ trap "sig_handler QUIT" QUIT
+ trap "sig_handler EXIT" EXIT
+ 
+-bind_interface
++# Enable SRIOV
++echo 1 > /sys/module/vfio_pci/parameters/enable_sriov
++TOKEN=$(uuidgen)
++echo $TOKEN
++bind_pf_interface
++echo 1 > /sys/bus/pci/devices/$TESTPMD_PORT/sriov_numvfs
++bind_vf_interface
++
++echo "Starting PFC & FC Test for PF and VF with DPDK"
++
++configure_pf_vf
++
++configure_fc
++
++stop_testpmd
++
++configure_pf_vf
++
++configure_pfc
++
++stop_testpmd
++
++release_vf_interface
++
++echo "Starting FC and PFC Test for PF DPDK and VF with kernel"
+ 
+ echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
+ testpmd_launch $PRFX \
+@@ -131,64 +251,52 @@ testpmd_launch $PRFX \
+ 
+ # Part - 1: Validate priority flow control (802.3x)
+ # Test case - 1: Validate flow control default configuration. Must be enable
+-check_fc_state 1
++verify_fc_state pf 1
+ 
+ testpmd_cmd $PRFX "port stop all"
+ # Test case - 2: Validate flow control configuration after disabling
+ testpmd_cmd $PRFX "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
+ sleep 3
+-check_fc_state 0
++verify_fc_state pf 0
+ 
+ # Test case - 3: Validate flow control configuration after re-enable
+ testpmd_cmd $PRFX "set flow_ctrl rx on tx on 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
+ sleep 3
+-check_fc_state 1
++verify_fc_state pf 1
+ 
+ # Part - 2: Validate priority flow control (802.1Qbb)
+ # Test case - 4: Validate priority flow control
+ testpmd_cmd $PRFX "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
+ sleep 1
+ 
+-testpmd_cmd $PRFX "flow create 0 priority 7 ingress pattern vlan pcp is 0 / end actions queue index 0 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 6 ingress pattern vlan pcp is 1 / end actions queue index 1 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 5 ingress pattern vlan pcp is 2 / end actions queue index 2 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 4 ingress pattern vlan pcp is 3 / end actions queue index 3 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 3 ingress pattern vlan pcp is 4 / end actions queue index 4 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 2 ingress pattern vlan pcp is 5 / end actions queue index 5 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 1 ingress pattern vlan pcp is 6 / end actions queue index 6 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 0 ingress pattern vlan pcp is 7 / end actions queue index 7 / end"
+-sleep 1
+-
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 0 0 tx on 0 0 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 1 1 tx on 1 1 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 2 2 tx on 2 2 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 3 3 tx on 3 3 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 4 4 tx on 4 4 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 5 5 tx on 5 5 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 6 6 tx on 6 6 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 7 7 tx on 7 7 2047"
+-sleep 1
++txq=0
++prio=7
++while [[ $txq -ne 8 ]]; do
++	testpmd_cmd $PRFX "flow create 0 priority $prio ingress pattern vlan pcp is $txq / end actions queue index $txq / end"
++	sleep 1
++	testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on $txq $txq tx on $txq $txq 2047"
++	sleep 1
++	txq=`expr $txq + 1`
++	prio=$((prio-1))
++done
+ 
+ testpmd_cmd $PRFX "port start all"
+ testpmd_cmd $PRFX "start"
+ sleep 1
+ 
+-check_pfc_state 1
++cq=0
++while [[ $cq -ne 8 ]]; do
++	verify_pfc_state pf 1 $cq
++	cq=`expr $cq + 1`
++done
+ 
+-testpmd_log $PRFX
++testpmd_quit $PRFX
++sleep 1
++testpmd_cleanup $PRFX
++sleep 1
++
++#testpmd_log $PRFX
+ 
+ echo "SUCCESS: testpmd flow control configuration test suit completed"
++
++release_pf_interface
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index 536204a8a5837..e5c1a3642cd50 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -98,6 +98,7 @@ test_subdirs_arm = [
+         'multi_mempool',
+         'ipsec_msns',
+         'hwpool',
++        'policer_test',
+         'flow_aging',
+ ]
+ 
+diff --git a/marvell-ci/test/cnxk-tests/meter_test/cnxk_mtr_test.sh b/marvell-ci/test/cnxk-tests/meter_test/cnxk_mtr_test.sh
+index 43411123726b6..daa3e6c8e72d7 100755
+--- a/marvell-ci/test/cnxk-tests/meter_test/cnxk_mtr_test.sh
++++ b/marvell-ci/test/cnxk-tests/meter_test/cnxk_mtr_test.sh
+@@ -130,6 +130,9 @@ function check_meter_rq_config()
+ 
+ 	debug_dir="/sys/kernel/debug/cn10k"
+ 	rq_ctx="$debug_dir/nix/rq_ctx"
++	rsrc_alloc="$debug_dir/rsrc_alloc"
++	nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1" | awk '{print $3}' | head -1)
++	$SUDO echo "$nix_lf 0" > $rq_ctx
+ 
+ 	if $SUDO test -f "$rq_ctx"; then
+ 		is_policer_ena=$(echo "`$SUDO cat $rq_ctx`" | grep policer_ena | awk '{print $3}')
+diff --git a/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh b/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh
+index 7bb2a98a725cc..e16918ee1a93a 100755
+--- a/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh
++++ b/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh
+@@ -171,25 +171,31 @@ function run_testpmd()
+         	"--no-flush-rx --nb-cores=4 --forward-mode=rxonly --txq=4 --rxq=4"
+ }
+ 
++function stop_testpmd()
++{
++        testpmd_quit $PRFX
++        sleep 1
++        testpmd_cleanup $PRFX
++        sleep 3
++        testpmd_quit $CAP_PRFX
++        sleep 1
++        testpmd_cleanup $CAP_PRFX
++        sleep 1
++}
++
+ echo "Ingress policer with 4 leaf nodes 2 mid nodes 1 root node"
+ run_testpmd
+ sleep 1
+ ingress_policer_test level_3
+ 
+-testpmd_cmd $PRFX "quit"
+-sleep 1
+-testpmd_cmd $CAP_PRFX "quit"
+-sleep 1
++stop_testpmd
+ 
+ echo "Ingress policer with single node"
+ run_testpmd
+ sleep 1
+ ingress_policer_test level_1
+ 
+-testpmd_cmd $PRFX "quit"
+-sleep 1
+-testpmd_cmd $CAP_PRFX "quit"
+-sleep 2
++stop_testpmd
+ 
+ echo "Configure RED to meter"
+ run_testpmd
+diff --git a/marvell-ci/test/cnxk-tests/policer_test/meson.build b/marvell-ci/test/cnxk-tests/policer_test/meson.build
+index b972afc0b0e91..6ebd964a94021 100644
+--- a/marvell-ci/test/cnxk-tests/policer_test/meson.build
++++ b/marvell-ci/test/cnxk-tests/policer_test/meson.build
+@@ -13,6 +13,9 @@ test_args = ''
+ # Test directory name relative to build directory.
+ test_dir = meson.current_build_dir()
+ 
++# Copy the required scripts to build directory.
++run_command(copy_data, test_script)
++
+ # Add the meson test
+ test(
+     test_name,
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 4e2250e0dc2e2..d01cc8d9373ef 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -75,6 +75,7 @@ STATUS_OUTFILE=${STATUS_OUTFILE:-}
+ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
++	cnxk_tm_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+@@ -216,6 +217,7 @@ DEFAULT_SKIP_TESTS="
+ 	rawdev_autotest
+ 	telemetry_all
+ 	cnxk_mac_test
++	cnxk_ingress_policer
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+diff --git a/marvell-ci/test/env/cn9k-nightly.env b/marvell-ci/test/env/cn9k-nightly.env
+index f12ed4b1311a9..d539105ef06f2 100644
+--- a/marvell-ci/test/env/cn9k-nightly.env
++++ b/marvell-ci/test/env/cn9k-nightly.env
+@@ -49,6 +49,7 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_multi_pool_pkt_tx_scalar
+ 	cnxk_multi_mempool
+ 	cnxk_hwpool_tests
++	cnxk_ingress_policer
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index 7b7f41b532f3c..caa2607e65191 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -74,6 +74,7 @@ STATUS_OUTFILE=${STATUS_OUTFILE:-}
+ TM_SETUP=${TM_SETUP:-1}
+ 
+ FIXME_SKIP_TESTS="
++	cnxk_tm_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+@@ -222,6 +223,7 @@ DEFAULT_SKIP_TESTS="
+ 	rawdev_autotest
+ 	telemetry_all
+ 	cnxk_mac_test
++	cnxk_ingress_policer
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+-- 
+2.25.1
+

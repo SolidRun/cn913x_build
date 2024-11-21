@@ -1,0 +1,58 @@
+From 7baaf44b658c8c761c0be83461950774d867208a Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 26 Aug 2024 13:33:22 +0530
+Subject: [PATCH 481/513] event/cnxk: add CN20K device stop and close
+
+Add event device stop and close callback functions.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ic93c61c61723c4d34ab6460adc1ba89176a1a870
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134418
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn20k_eventdev.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/drivers/event/cnxk/cn20k_eventdev.c b/drivers/event/cnxk/cn20k_eventdev.c
+index 01be56469f411..1bfad3c29369e 100644
+--- a/drivers/event/cnxk/cn20k_eventdev.c
++++ b/drivers/event/cnxk/cn20k_eventdev.c
+@@ -387,6 +387,25 @@ cn20k_sso_start(struct rte_eventdev *event_dev)
+ 	return rc;
+ }
+ 
++static void
++cn20k_sso_stop(struct rte_eventdev *event_dev)
++{
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	uint8_t hws[RTE_EVENT_MAX_PORTS_PER_DEV];
++	int i;
++
++	for (i = 0; i < event_dev->data->nb_ports; i++)
++		hws[i] = i;
++	roc_sso_hws_gwc_invalidate(&dev->sso, hws, event_dev->data->nb_ports);
++	cnxk_sso_stop(event_dev, cnxk_sso_hws_reset, cn20k_sso_hws_flush_events);
++}
++
++static int
++cn20k_sso_close(struct rte_eventdev *event_dev)
++{
++	return cnxk_sso_close(event_dev, cn20k_sso_hws_unlink);
++}
++
+ static struct eventdev_ops cn20k_sso_dev_ops = {
+ 	.dev_infos_get = cn20k_sso_info_get,
+ 	.dev_configure = cn20k_sso_dev_configure,
+@@ -407,6 +426,8 @@ static struct eventdev_ops cn20k_sso_dev_ops = {
+ 	.timeout_ticks = cnxk_sso_timeout_ticks,
+ 
+ 	.dev_start = cn20k_sso_start,
++	.dev_stop = cn20k_sso_stop,
++	.dev_close = cn20k_sso_close,
+ };
+ 
+ static int
+-- 
+2.25.1
+

@@ -1,0 +1,2558 @@
+From 24641a681f78fe545d3d396f0ece401ed4b980d4 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 28 Aug 2024 02:03:41 +0530
+Subject: [PATCH 484/513] event/cnxk: support CN20K Rx adapter fast path
+
+Add support for event eth Rx adapter fastpath operations.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I5b00e150f6dae124b50e23fdd90662c957424a6b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134421
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn20k_eventdev.c           | 192 +++++++++++++++++-
+ drivers/event/cnxk/cn20k_worker.c             |  54 -----
+ drivers/event/cnxk/cn20k_worker.h             | 186 ++++++++++++++++-
+ drivers/event/cnxk/deq/cn20k/deq_0_15.c       |  20 ++
+ drivers/event/cnxk/deq/cn20k/deq_0_15_burst.c |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_0_15_seg.c   |  20 ++
+ .../event/cnxk/deq/cn20k/deq_0_15_seg_burst.c |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_0_15_tmo.c   |  20 ++
+ .../event/cnxk/deq/cn20k/deq_0_15_tmo_burst.c |  22 ++
+ .../event/cnxk/deq/cn20k/deq_0_15_tmo_seg.c   |  20 ++
+ .../cnxk/deq/cn20k/deq_0_15_tmo_seg_burst.c   |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_112_127.c    |  20 ++
+ .../event/cnxk/deq/cn20k/deq_112_127_burst.c  |  22 ++
+ .../event/cnxk/deq/cn20k/deq_112_127_seg.c    |  20 ++
+ .../cnxk/deq/cn20k/deq_112_127_seg_burst.c    |  22 ++
+ .../event/cnxk/deq/cn20k/deq_112_127_tmo.c    |  20 ++
+ .../cnxk/deq/cn20k/deq_112_127_tmo_burst.c    |  22 ++
+ .../cnxk/deq/cn20k/deq_112_127_tmo_seg.c      |  17 ++
+ .../deq/cn20k/deq_112_127_tmo_seg_burst.c     |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_16_31.c      |  20 ++
+ .../event/cnxk/deq/cn20k/deq_16_31_burst.c    |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_16_31_seg.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_16_31_seg_burst.c      |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_16_31_tmo.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_16_31_tmo_burst.c      |  22 ++
+ .../event/cnxk/deq/cn20k/deq_16_31_tmo_seg.c  |  21 ++
+ .../cnxk/deq/cn20k/deq_16_31_tmo_seg_burst.c  |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_32_47.c      |  20 ++
+ .../event/cnxk/deq/cn20k/deq_32_47_burst.c    |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_32_47_seg.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_32_47_seg_burst.c      |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_32_47_tmo.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_32_47_tmo_burst.c      |  23 +++
+ .../event/cnxk/deq/cn20k/deq_32_47_tmo_seg.c  |  21 ++
+ .../cnxk/deq/cn20k/deq_32_47_tmo_seg_burst.c  |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_48_63.c      |  20 ++
+ .../event/cnxk/deq/cn20k/deq_48_63_burst.c    |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_48_63_seg.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_48_63_seg_burst.c      |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_48_63_tmo.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_48_63_tmo_burst.c      |  22 ++
+ .../event/cnxk/deq/cn20k/deq_48_63_tmo_seg.c  |  21 ++
+ .../cnxk/deq/cn20k/deq_48_63_tmo_seg_burst.c  |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_64_79.c      |  20 ++
+ .../event/cnxk/deq/cn20k/deq_64_79_burst.c    |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_64_79_seg.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_64_79_seg_burst.c      |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_64_79_tmo.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_64_79_tmo_burst.c      |  22 ++
+ .../event/cnxk/deq/cn20k/deq_64_79_tmo_seg.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_64_79_tmo_seg_burst.c  |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_80_95.c      |  20 ++
+ .../event/cnxk/deq/cn20k/deq_80_95_burst.c    |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_80_95_seg.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_80_95_seg_burst.c      |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_80_95_tmo.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_80_95_tmo_burst.c      |  22 ++
+ .../event/cnxk/deq/cn20k/deq_80_95_tmo_seg.c  |  20 ++
+ .../cnxk/deq/cn20k/deq_80_95_tmo_seg_burst.c  |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_96_111.c     |  20 ++
+ .../event/cnxk/deq/cn20k/deq_96_111_burst.c   |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_96_111_seg.c |  20 ++
+ .../cnxk/deq/cn20k/deq_96_111_seg_burst.c     |  22 ++
+ drivers/event/cnxk/deq/cn20k/deq_96_111_tmo.c |  20 ++
+ .../cnxk/deq/cn20k/deq_96_111_tmo_burst.c     |  22 ++
+ .../event/cnxk/deq/cn20k/deq_96_111_tmo_seg.c |  20 ++
+ .../cnxk/deq/cn20k/deq_96_111_tmo_seg_burst.c |  22 ++
+ .../event/cnxk/deq/cn20k/deq_all_offload.c    |  77 +++++++
+ drivers/event/cnxk/meson.build                |  75 +++++++
+ 69 files changed, 1857 insertions(+), 72 deletions(-)
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_0_15.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_0_15_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_0_15_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_0_15_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_0_15_tmo.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_112_127.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_112_127_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_112_127_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_112_127_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_112_127_tmo.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_16_31.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_16_31_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_16_31_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_16_31_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_16_31_tmo.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_32_47.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_32_47_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_32_47_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_32_47_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_32_47_tmo.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_48_63.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_48_63_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_48_63_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_48_63_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_48_63_tmo.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_64_79.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_64_79_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_64_79_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_64_79_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_64_79_tmo.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_80_95.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_80_95_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_80_95_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_80_95_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_80_95_tmo.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_96_111.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_96_111_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_96_111_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_96_111_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_96_111_tmo.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_seg.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_seg_burst.c
+ create mode 100644 drivers/event/cnxk/deq/cn20k/deq_all_offload.c
+
+diff --git a/drivers/event/cnxk/cn20k_eventdev.c b/drivers/event/cnxk/cn20k_eventdev.c
+index a3ef7f8747834..f5be3f3e89a5e 100644
+--- a/drivers/event/cnxk/cn20k_eventdev.c
++++ b/drivers/event/cnxk/cn20k_eventdev.c
+@@ -11,6 +11,9 @@
+ #include "cnxk_eventdev.h"
+ #include "cnxk_worker.h"
+ 
++#define CN20K_SET_EVDEV_DEQ_OP(dev, deq_op, deq_ops)                                               \
++	deq_op = deq_ops[dev->rx_offloads & (NIX_RX_OFFLOAD_MAX - 1)]
++
+ static void *
+ cn20k_sso_init_hws_mem(void *arg, uint8_t port_id)
+ {
+@@ -163,25 +166,192 @@ cn20k_sso_rsrc_init(void *arg, uint8_t hws, uint8_t hwgrp)
+ 	return roc_sso_rsrc_init(&dev->sso, hws, hwgrp, nb_tim_lfs);
+ }
+ 
++#if defined(RTE_ARCH_ARM64)
++static inline void
++cn20k_sso_fp_tmplt_fns_set(struct rte_eventdev *event_dev)
++{
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	const event_dequeue_t sso_hws_deq[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_deq_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_burst_t sso_hws_deq_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_deq_burst_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_t sso_hws_deq_tmo[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_deq_tmo_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_burst_t sso_hws_deq_tmo_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_deq_tmo_burst_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_t sso_hws_deq_seg[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_deq_seg_##name,
++
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_burst_t sso_hws_deq_seg_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_deq_seg_burst_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_t sso_hws_deq_tmo_seg[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_deq_tmo_seg_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_burst_t sso_hws_deq_tmo_seg_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_deq_tmo_seg_burst_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_t sso_hws_reas_deq[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_reas_deq_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_burst_t sso_hws_reas_deq_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_reas_deq_burst_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_t sso_hws_reas_deq_tmo[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_reas_deq_tmo_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_burst_t sso_hws_reas_deq_tmo_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_reas_deq_tmo_burst_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_t sso_hws_reas_deq_seg[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_reas_deq_seg_##name,
++
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_burst_t sso_hws_reas_deq_seg_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_reas_deq_seg_burst_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_t sso_hws_reas_deq_tmo_seg[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_reas_deq_tmo_seg_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const event_dequeue_burst_t sso_hws_reas_deq_tmo_seg_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_sso_hws_reas_deq_tmo_seg_burst_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	if (dev->rx_offloads & NIX_RX_MULTI_SEG_F) {
++		if (dev->rx_offloads & NIX_RX_REAS_F) {
++			CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_reas_deq_seg);
++			CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
++					       sso_hws_reas_deq_seg_burst);
++			if (dev->is_timeout_deq) {
++				CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
++						       sso_hws_reas_deq_tmo_seg);
++				CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
++						       sso_hws_reas_deq_tmo_seg_burst);
++			}
++		} else {
++			CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq_seg);
++			CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
++					       sso_hws_deq_seg_burst);
++
++			if (dev->is_timeout_deq) {
++				CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
++						       sso_hws_deq_tmo_seg);
++				CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
++						       sso_hws_deq_tmo_seg_burst);
++			}
++		}
++	} else {
++		if (dev->rx_offloads & NIX_RX_REAS_F) {
++			CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_reas_deq);
++			CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
++					       sso_hws_reas_deq_burst);
++
++			if (dev->is_timeout_deq) {
++				CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
++						       sso_hws_reas_deq_tmo);
++				CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
++						       sso_hws_reas_deq_tmo_burst);
++			}
++		} else {
++			CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq);
++			CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst, sso_hws_deq_burst);
++
++			if (dev->is_timeout_deq) {
++				CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq_tmo);
++				CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
++						       sso_hws_deq_tmo_burst);
++			}
++		}
++	}
++
++#else
++	RTE_SET_USED(event_dev);
++#endif
++}
++
++static inline void
++cn20k_sso_fp_blk_fns_set(struct rte_eventdev *event_dev)
++{
++#if defined(CNXK_DIS_TMPLT_FUNC)
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++
++	event_dev->dequeue = cn20k_sso_hws_deq_all_offload;
++	event_dev->dequeue_burst = cn20k_sso_hws_deq_burst_all_offload;
++	if (dev->rx_offloads & NIX_RX_OFFLOAD_TSTAMP_F) {
++		event_dev->dequeue = cn20k_sso_hws_deq_all_offload_tst;
++		event_dev->dequeue_burst = cn20k_sso_hws_deq_burst_all_offload_tst;
++	}
++#else
++	RTE_SET_USED(event_dev);
++#endif
++}
++#endif
+ 
+ static void
+ cn20k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ {
+ #if defined(RTE_ARCH_ARM64)
+-	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	cn20k_sso_fp_blk_fns_set(event_dev);
++	cn20k_sso_fp_tmplt_fns_set(event_dev);
+ 
+ 	event_dev->enqueue = cn20k_sso_hws_enq;
+ 	event_dev->enqueue_burst = cn20k_sso_hws_enq_burst;
+ 	event_dev->enqueue_new_burst = cn20k_sso_hws_enq_new_burst;
+ 	event_dev->enqueue_forward_burst = cn20k_sso_hws_enq_fwd_burst;
+ 
+-	event_dev->dequeue = cn20k_sso_hws_deq;
+-	event_dev->dequeue_burst = cn20k_sso_hws_deq_burst;
+-	if (dev->deq_tmo_ns) {
+-		event_dev->dequeue = cn20k_sso_hws_tmo_deq;
+-		event_dev->dequeue_burst = cn20k_sso_hws_tmo_deq_burst;
+-	}
+-
+ 	event_dev->profile_switch = cn20k_sso_hws_profile_switch;
+ #else
+ 	RTE_SET_USED(event_dev);
+@@ -284,7 +454,8 @@ cn20k_sso_port_quiesce(struct rte_eventdev *event_dev, void *port,
+ 		ptag = plt_read64(ws->base + SSOW_LF_GWS_PENDSTATE);
+ 	} while (ptag & (BIT_ULL(62) | BIT_ULL(58) | BIT_ULL(56) | BIT_ULL(54)));
+ 
+-	cn20k_sso_hws_get_work_empty(ws, &ev, 0);
++	cn20k_sso_hws_get_work_empty(ws, &ev,
++				     (NIX_RX_OFFLOAD_MAX - 1) | NIX_RX_REAS_F | NIX_RX_MULTI_SEG_F);
+ 	if (is_pend && ev.u64)
+ 		if (flush_cb)
+ 			flush_cb(event_dev->data->dev_id, ev, args);
+@@ -310,7 +481,8 @@ cn20k_sso_port_quiesce(struct rte_eventdev *event_dev, void *port,
+ 
+ 	if (CNXK_TT_FROM_TAG(plt_read64(ws->base + SSOW_LF_GWS_PRF_WQE0)) != SSO_TT_EMPTY) {
+ 		plt_write64(BIT_ULL(16) | 1, ws->base + SSOW_LF_GWS_OP_GET_WORK0);
+-		cn20k_sso_hws_get_work_empty(ws, &ev, 0);
++		cn20k_sso_hws_get_work_empty(
++			ws, &ev, (NIX_RX_OFFLOAD_MAX - 1) | NIX_RX_REAS_F | NIX_RX_MULTI_SEG_F);
+ 		if (ev.u64) {
+ 			if (flush_cb)
+ 				flush_cb(event_dev->data->dev_id, ev, args);
+diff --git a/drivers/event/cnxk/cn20k_worker.c b/drivers/event/cnxk/cn20k_worker.c
+index e53a72aa69076..732fff5a029cb 100644
+--- a/drivers/event/cnxk/cn20k_worker.c
++++ b/drivers/event/cnxk/cn20k_worker.c
+@@ -397,57 +397,3 @@ cn20k_sso_hws_profile_switch(void *port, uint8_t profile)
+ 
+ 	return 0;
+ }
+-
+-uint16_t __rte_hot
+-cn20k_sso_hws_deq(void *port, struct rte_event *ev, uint64_t timeout_ticks)
+-{
+-	struct cn20k_sso_hws *ws = port;
+-
+-	RTE_SET_USED(timeout_ticks);
+-
+-	if (ws->swtag_req) {
+-		ws->swtag_req = 0;
+-		cnxk_sso_hws_swtag_wait(ws->base + SSOW_LF_GWS_WQE0);
+-		return 1;
+-	}
+-
+-	return cn20k_sso_hws_get_work(ws, ev, 0);
+-}
+-
+-uint16_t __rte_hot
+-cn20k_sso_hws_deq_burst(void *port, struct rte_event ev[], uint16_t nb_events,
+-			uint64_t timeout_ticks)
+-{
+-	RTE_SET_USED(nb_events);
+-
+-	return cn20k_sso_hws_deq(port, ev, timeout_ticks);
+-}
+-
+-uint16_t __rte_hot
+-cn20k_sso_hws_tmo_deq(void *port, struct rte_event *ev, uint64_t timeout_ticks)
+-{
+-	struct cn20k_sso_hws *ws = port;
+-	uint16_t ret = 1;
+-	uint64_t iter;
+-
+-	if (ws->swtag_req) {
+-		ws->swtag_req = 0;
+-		cnxk_sso_hws_swtag_wait(ws->base + SSOW_LF_GWS_WQE0);
+-		return ret;
+-	}
+-
+-	ret = cn20k_sso_hws_get_work(ws, ev, 0);
+-	for (iter = 1; iter < timeout_ticks && (ret == 0); iter++)
+-		ret = cn20k_sso_hws_get_work(ws, ev, 0);
+-
+-	return ret;
+-}
+-
+-uint16_t __rte_hot
+-cn20k_sso_hws_tmo_deq_burst(void *port, struct rte_event ev[], uint16_t nb_events,
+-			    uint64_t timeout_ticks)
+-{
+-	RTE_SET_USED(nb_events);
+-
+-	return cn20k_sso_hws_tmo_deq(port, ev, timeout_ticks);
+-}
+diff --git a/drivers/event/cnxk/cn20k_worker.h b/drivers/event/cnxk/cn20k_worker.h
+index f9e6a394f2eb4..5b33dcd97d61d 100644
+--- a/drivers/event/cnxk/cn20k_worker.h
++++ b/drivers/event/cnxk/cn20k_worker.h
+@@ -8,16 +8,64 @@
+ #include <rte_eventdev.h>
+ 
+ #include "cn20k_eventdev.h"
++#include "cn20k_rx.h"
+ #include "cnxk_worker.h"
+ 
++/* CN20K Rx event fastpath */
++
++static __rte_always_inline void
++cn20k_wqe_to_mbuf(uint64_t wqe, const uint64_t __mbuf, uint8_t port_id, const uint32_t tag,
++		  const uint32_t flags, const void *const lookup_mem, uintptr_t cpth,
++		  uintptr_t sa_base)
++{
++	const uint64_t mbuf_init =
++		0x100010000ULL | RTE_PKTMBUF_HEADROOM | (flags & NIX_RX_OFFLOAD_TSTAMP_F ? 8 : 0);
++	struct rte_mbuf *mbuf = (struct rte_mbuf *)__mbuf;
++
++	cn20k_nix_cqe_to_mbuf((struct nix_cqe_hdr_s *)wqe, tag, (struct rte_mbuf *)mbuf, lookup_mem,
++			      mbuf_init | ((uint64_t)port_id) << 48, cpth, sa_base, flags);
++}
++
++static void
++cn20k_sso_process_tstamp(uint64_t u64, uint64_t mbuf, struct cnxk_timesync_info *tstamp)
++{
++	uint64_t tstamp_ptr;
++	uint8_t laptr;
++
++	laptr = (uint8_t)*(uint64_t *)(u64 + (CNXK_SSO_WQE_LAYR_PTR * sizeof(uint64_t)));
++	if (laptr == sizeof(uint64_t)) {
++		/* Extracting tstamp, if PTP enabled*/
++		tstamp_ptr = *(uint64_t *)(((struct nix_wqe_hdr_s *)u64) + CNXK_SSO_WQE_SG_PTR);
++		cn20k_nix_mbuf_to_tstamp((struct rte_mbuf *)mbuf, tstamp, true,
++					 (uint64_t *)tstamp_ptr);
++	}
++}
++
+ static __rte_always_inline void
+ cn20k_sso_hws_post_process(struct cn20k_sso_hws *ws, uint64_t *u64, const uint32_t flags)
+ {
+-	RTE_SET_USED(ws);
+-	RTE_SET_USED(flags);
++	uintptr_t sa_base = 0;
+ 
+ 	u64[0] = (u64[0] & (0x3ull << 32)) << 6 | (u64[0] & (0x3FFull << 36)) << 4 |
+ 		 (u64[0] & 0xffffffff);
++	if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_ETHDEV) {
++		uint8_t port = CNXK_SUB_EVENT_FROM_TAG(u64[0]);
++		uintptr_t cpth = 0;
++		uint64_t mbuf;
++
++		mbuf = u64[1] - sizeof(struct rte_mbuf);
++		rte_prefetch0((void *)mbuf);
++
++		/* Mark mempool obj as "get" as it is alloc'ed by NIX */
++		RTE_MEMPOOL_CHECK_COOKIES(((struct rte_mbuf *)mbuf)->pool, (void **)&mbuf, 1, 1);
++
++		u64[0] = CNXK_CLR_SUB_EVENT(u64[0]);
++		cn20k_wqe_to_mbuf(u64[1], mbuf, port, u64[0] & 0xFFFFF, flags, ws->lookup_mem, cpth,
++				  sa_base);
++		if (flags & NIX_RX_OFFLOAD_TSTAMP_F)
++			cn20k_sso_process_tstamp(u64[1], mbuf, ws->tstamp[port]);
++		u64[1] = mbuf;
++	}
+ }
+ 
+ static __rte_always_inline uint16_t
+@@ -148,11 +196,133 @@ uint16_t __rte_hot cn20k_sso_hws_enq_fwd_burst(void *port, const struct rte_even
+ 					       uint16_t nb_events);
+ int __rte_hot cn20k_sso_hws_profile_switch(void *port, uint8_t profile);
+ 
+-uint16_t __rte_hot cn20k_sso_hws_deq(void *port, struct rte_event *ev, uint64_t timeout_ticks);
+-uint16_t __rte_hot cn20k_sso_hws_deq_burst(void *port, struct rte_event ev[], uint16_t nb_events,
+-					   uint64_t timeout_ticks);
+-uint16_t __rte_hot cn20k_sso_hws_tmo_deq(void *port, struct rte_event *ev, uint64_t timeout_ticks);
+-uint16_t __rte_hot cn20k_sso_hws_tmo_deq_burst(void *port, struct rte_event ev[],
+-					       uint16_t nb_events, uint64_t timeout_ticks);
++#define R(name, flags)                                                                             \
++	uint16_t __rte_hot cn20k_sso_hws_deq_##name(void *port, struct rte_event *ev,              \
++						    uint64_t timeout_ticks);                       \
++	uint16_t __rte_hot cn20k_sso_hws_deq_burst_##name(                                         \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_deq_tmo_##name(void *port, struct rte_event *ev,          \
++							uint64_t timeout_ticks);                   \
++	uint16_t __rte_hot cn20k_sso_hws_deq_tmo_burst_##name(                                     \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_deq_ca_##name(void *port, struct rte_event *ev,           \
++						       uint64_t timeout_ticks);                    \
++	uint16_t __rte_hot cn20k_sso_hws_deq_ca_burst_##name(                                      \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_deq_tmo_ca_##name(void *port, struct rte_event *ev,       \
++							   uint64_t timeout_ticks);                \
++	uint16_t __rte_hot cn20k_sso_hws_deq_tmo_ca_burst_##name(                                  \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_deq_seg_##name(void *port, struct rte_event *ev,          \
++							uint64_t timeout_ticks);                   \
++	uint16_t __rte_hot cn20k_sso_hws_deq_seg_burst_##name(                                     \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_deq_tmo_seg_##name(void *port, struct rte_event *ev,      \
++							    uint64_t timeout_ticks);               \
++	uint16_t __rte_hot cn20k_sso_hws_deq_tmo_seg_burst_##name(                                 \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_deq_ca_seg_##name(void *port, struct rte_event *ev,       \
++							   uint64_t timeout_ticks);                \
++	uint16_t __rte_hot cn20k_sso_hws_deq_ca_seg_burst_##name(                                  \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_deq_tmo_ca_seg_##name(void *port, struct rte_event *ev,   \
++							       uint64_t timeout_ticks);            \
++	uint16_t __rte_hot cn20k_sso_hws_deq_tmo_ca_seg_burst_##name(                              \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_##name(void *port, struct rte_event *ev,         \
++							 uint64_t timeout_ticks);                  \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_burst_##name(                                    \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_tmo_##name(void *port, struct rte_event *ev,     \
++							     uint64_t timeout_ticks);              \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_tmo_burst_##name(                                \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_ca_##name(void *port, struct rte_event *ev,      \
++							    uint64_t timeout_ticks);               \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_ca_burst_##name(                                 \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_tmo_ca_##name(void *port, struct rte_event *ev,  \
++								uint64_t timeout_ticks);           \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_tmo_ca_burst_##name(                             \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_seg_##name(void *port, struct rte_event *ev,     \
++							     uint64_t timeout_ticks);              \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_seg_burst_##name(                                \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_tmo_seg_##name(void *port, struct rte_event *ev, \
++								 uint64_t timeout_ticks);          \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_tmo_seg_burst_##name(                            \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_ca_seg_##name(void *port, struct rte_event *ev,  \
++								uint64_t timeout_ticks);           \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_ca_seg_burst_##name(                             \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);    \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_tmo_ca_seg_##name(                               \
++		void *port, struct rte_event *ev, uint64_t timeout_ticks);                         \
++	uint16_t __rte_hot cn20k_sso_hws_reas_deq_tmo_ca_seg_burst_##name(                         \
++		void *port, struct rte_event ev[], uint16_t nb_events, uint64_t timeout_ticks);
++
++NIX_RX_FASTPATH_MODES
++#undef R
++
++#define SSO_DEQ(fn, flags)                                                                         \
++	uint16_t __rte_hot fn(void *port, struct rte_event *ev, uint64_t timeout_ticks)            \
++	{                                                                                          \
++		struct cn20k_sso_hws *ws = port;                                                   \
++		RTE_SET_USED(timeout_ticks);                                                       \
++		if (ws->swtag_req) {                                                               \
++			ws->swtag_req = 0;                                                         \
++			ws->gw_rdata = cnxk_sso_hws_swtag_wait(ws->base + SSOW_LF_GWS_WQE0);       \
++			return 1;                                                                  \
++		}                                                                                  \
++		return cn20k_sso_hws_get_work(ws, ev, flags);                                      \
++	}
++
++#define SSO_DEQ_SEG(fn, flags) SSO_DEQ(fn, flags | NIX_RX_MULTI_SEG_F)
++
++#define SSO_DEQ_TMO(fn, flags)                                                                     \
++	uint16_t __rte_hot fn(void *port, struct rte_event *ev, uint64_t timeout_ticks)            \
++	{                                                                                          \
++		struct cn20k_sso_hws *ws = port;                                                   \
++		uint16_t ret = 1;                                                                  \
++		uint64_t iter;                                                                     \
++		if (ws->swtag_req) {                                                               \
++			ws->swtag_req = 0;                                                         \
++			ws->gw_rdata = cnxk_sso_hws_swtag_wait(ws->base + SSOW_LF_GWS_WQE0);       \
++			return ret;                                                                \
++		}                                                                                  \
++		ret = cn20k_sso_hws_get_work(ws, ev, flags);                                       \
++		for (iter = 1; iter < timeout_ticks && (ret == 0); iter++)                         \
++			ret = cn20k_sso_hws_get_work(ws, ev, flags);                               \
++		return ret;                                                                        \
++	}
++
++#define SSO_DEQ_TMO_SEG(fn, flags) SSO_DEQ_TMO(fn, flags | NIX_RX_MULTI_SEG_F)
++
++#define SSO_CMN_DEQ_BURST(fnb, fn, flags)                                                          \
++	uint16_t __rte_hot fnb(void *port, struct rte_event ev[], uint16_t nb_events,              \
++			       uint64_t timeout_ticks)                                             \
++	{                                                                                          \
++		RTE_SET_USED(nb_events);                                                           \
++		return fn(port, ev, timeout_ticks);                                                \
++	}
++
++#define SSO_CMN_DEQ_SEG_BURST(fnb, fn, flags)                                                      \
++	uint16_t __rte_hot fnb(void *port, struct rte_event ev[], uint16_t nb_events,              \
++			       uint64_t timeout_ticks)                                             \
++	{                                                                                          \
++		RTE_SET_USED(nb_events);                                                           \
++		return fn(port, ev, timeout_ticks);                                                \
++	}
++
++uint16_t __rte_hot cn20k_sso_hws_deq_all_offload(void *port, struct rte_event *ev,
++						 uint64_t timeout_ticks);
++uint16_t __rte_hot cn20k_sso_hws_deq_burst_all_offload(void *port, struct rte_event ev[],
++						       uint16_t nb_events, uint64_t timeout_ticks);
++uint16_t __rte_hot cn20k_sso_hws_deq_all_offload_tst(void *port, struct rte_event *ev,
++						     uint64_t timeout_ticks);
++uint16_t __rte_hot cn20k_sso_hws_deq_burst_all_offload_tst(void *port, struct rte_event ev[],
++							   uint16_t nb_events,
++							   uint64_t timeout_ticks);
+ 
+ #endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_0_15.c b/drivers/event/cnxk/deq/cn20k/deq_0_15.c
+new file mode 100644
+index 0000000000000..3da59d7956cdb
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_0_15.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	SSO_DEQ(cn20k_sso_hws_deq_##name, flags)                                                   \
++	SSO_DEQ(cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_0_15_burst.c b/drivers/event/cnxk/deq/cn20k/deq_0_15_burst.c
+new file mode 100644
+index 0000000000000..f7e0e8fe710bc
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_0_15_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_burst_##name,                      \
++			  cn20k_sso_hws_deq_##name, flags)                     \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_burst_##name,                 \
++			  cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_0_15_seg.c b/drivers/event/cnxk/deq/cn20k/deq_0_15_seg.c
+new file mode 100644
+index 0000000000000..7eada0004c201
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_0_15_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_SEG(cn20k_sso_hws_deq_seg_##name, flags)                       \
++	SSO_DEQ_SEG(cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_0_15_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_0_15_seg_burst.c
+new file mode 100644
+index 0000000000000..7d5d4823c3064
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_0_15_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_deq_seg_burst_##name,              \
++			      cn20k_sso_hws_deq_seg_##name, flags)             \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_reas_deq_seg_burst_##name,         \
++		      cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo.c b/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo.c
+new file mode 100644
+index 0000000000000..a3fc8ab7cc180
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO(cn20k_sso_hws_deq_tmo_##name, flags)                       \
++	SSO_DEQ_TMO(cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_burst.c b/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_burst.c
+new file mode 100644
+index 0000000000000..1bdc4bc82dc87
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_burst_##name,                  \
++			  cn20k_sso_hws_deq_tmo_##name, flags)                 \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_burst_##name,             \
++			  cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_seg.c b/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_seg.c
+new file mode 100644
+index 0000000000000..2cb27b2adf098
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_deq_tmo_seg_##name, flags)               \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_seg_burst.c
+new file mode 100644
+index 0000000000000..d3ed5fcac053d
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_0_15_tmo_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_seg_burst_##name,                                  \
++			  cn20k_sso_hws_deq_tmo_seg_##name, flags)                                 \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_seg_burst_##name,                             \
++			  cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_112_127.c b/drivers/event/cnxk/deq/cn20k/deq_112_127.c
+new file mode 100644
+index 0000000000000..8729b68ce1f92
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_112_127.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ(cn20k_sso_hws_deq_##name, flags)                               \
++	SSO_DEQ(cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_112_127_burst.c b/drivers/event/cnxk/deq/cn20k/deq_112_127_burst.c
+new file mode 100644
+index 0000000000000..29c21441cfb1b
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_112_127_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_burst_##name,                      \
++			  cn20k_sso_hws_deq_##name, flags)                     \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_burst_##name,                 \
++			  cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_112_127_seg.c b/drivers/event/cnxk/deq/cn20k/deq_112_127_seg.c
+new file mode 100644
+index 0000000000000..cd93bb0347b53
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_112_127_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_SEG(cn20k_sso_hws_deq_seg_##name, flags)                       \
++	SSO_DEQ_SEG(cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_112_127_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_112_127_seg_burst.c
+new file mode 100644
+index 0000000000000..004b5ecb95b7f
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_112_127_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_deq_seg_burst_##name,              \
++			      cn20k_sso_hws_deq_seg_##name, flags)             \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_reas_deq_seg_burst_##name,         \
++			    cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo.c b/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo.c
+new file mode 100644
+index 0000000000000..e5b86bec9bc31
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO(cn20k_sso_hws_deq_tmo_##name, flags)                       \
++	SSO_DEQ_TMO(cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_burst.c b/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_burst.c
+new file mode 100644
+index 0000000000000..d544b39e9e810
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_burst_##name,                  \
++			  cn20k_sso_hws_deq_tmo_##name, flags)                 \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_burst_##name,             \
++			  cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_seg.c b/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_seg.c
+new file mode 100644
+index 0000000000000..9b3e581a1a555
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_seg.c
+@@ -0,0 +1,17 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_deq_tmo_seg_##name, flags)               \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_seg_burst.c
+new file mode 100644
+index 0000000000000..ba7a1207ad8ff
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_112_127_tmo_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_seg_burst_##name,              \
++			  cn20k_sso_hws_deq_tmo_seg_##name, flags)             \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_seg_burst_##name,         \
++			cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_16_31.c b/drivers/event/cnxk/deq/cn20k/deq_16_31.c
+new file mode 100644
+index 0000000000000..e5cee1e782dfa
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_16_31.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ(cn20k_sso_hws_deq_##name, flags)                               \
++	SSO_DEQ(cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_16_31_burst.c b/drivers/event/cnxk/deq/cn20k/deq_16_31_burst.c
+new file mode 100644
+index 0000000000000..eb7382e9d912a
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_16_31_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_burst_##name,                      \
++			  cn20k_sso_hws_deq_##name, flags)                     \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_burst_##name,                 \
++			  cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F_)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_16_31_seg.c b/drivers/event/cnxk/deq/cn20k/deq_16_31_seg.c
+new file mode 100644
+index 0000000000000..9dcf21f9b5507
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_16_31_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_SEG(cn20k_sso_hws_deq_seg_##name, flags)                       \
++	SSO_DEQ_SEG(cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_16_31_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_16_31_seg_burst.c
+new file mode 100644
+index 0000000000000..770b7221e6ea3
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_16_31_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_deq_seg_burst_##name,              \
++			      cn20k_sso_hws_deq_seg_##name, flags)             \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_reas_deq_seg_burst_##name,         \
++		cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo.c b/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo.c
+new file mode 100644
+index 0000000000000..5fdda01ff1c1a
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO(cn20k_sso_hws_deq_tmo_##name, flags)                       \
++	SSO_DEQ_TMO(cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_burst.c b/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_burst.c
+new file mode 100644
+index 0000000000000..1e71d22fc3379
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_burst_##name,                  \
++			  cn20k_sso_hws_deq_tmo_##name, flags)                 \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_burst_##name,             \
++		cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_seg.c b/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_seg.c
+new file mode 100644
+index 0000000000000..3c43b23e6f5da
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_seg.c
+@@ -0,0 +1,21 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_deq_tmo_seg_##name, flags)               \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_reas_deq_tmo_seg_##name,                 \
++			flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_seg_burst.c
+new file mode 100644
+index 0000000000000..1a9e7efa0aa48
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_16_31_tmo_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_seg_burst_##name,              \
++			  cn20k_sso_hws_deq_tmo_seg_##name, flags)             \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_seg_burst_##name,         \
++		cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_32_47.c b/drivers/event/cnxk/deq/cn20k/deq_32_47.c
+new file mode 100644
+index 0000000000000..0fa7812fa2d01
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_32_47.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ(cn20k_sso_hws_deq_##name, flags)                               \
++	SSO_DEQ(cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_32_47_burst.c b/drivers/event/cnxk/deq/cn20k/deq_32_47_burst.c
+new file mode 100644
+index 0000000000000..3d51bd66592fa
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_32_47_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_burst_##name,                      \
++			  cn20k_sso_hws_deq_##name, flags)                     \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_burst_##name,                 \
++			  cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F_)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_32_47_seg.c b/drivers/event/cnxk/deq/cn20k/deq_32_47_seg.c
+new file mode 100644
+index 0000000000000..23a8808dd78ba
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_32_47_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_SEG(cn20k_sso_hws_deq_seg_##name, flags)                       \
++	SSO_DEQ_SEG(cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_32_47_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_32_47_seg_burst.c
+new file mode 100644
+index 0000000000000..851b5b7d31402
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_32_47_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_deq_seg_burst_##name,              \
++			      cn20k_sso_hws_deq_seg_##name, flags)             \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_reas_deq_seg_burst_##name,         \
++		cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo.c b/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo.c
+new file mode 100644
+index 0000000000000..9f7dec9252b2a
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO(cn20k_sso_hws_deq_tmo_##name, flags)                       \
++	SSO_DEQ_TMO(cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_burst.c b/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_burst.c
+new file mode 100644
+index 0000000000000..038ba726a0813
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_burst.c
+@@ -0,0 +1,23 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_burst_##name,                  \
++			  cn20k_sso_hws_deq_tmo_##name, flags)                 \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_burst_##name,             \
++			  cn20k_sso_hws_reas_deq_tmo_##name,                   \
++			  flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_seg.c b/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_seg.c
+new file mode 100644
+index 0000000000000..4457e6e408908
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_seg.c
+@@ -0,0 +1,21 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_deq_tmo_seg_##name, flags)               \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_reas_deq_tmo_seg_##name,                 \
++			flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_seg_burst.c
+new file mode 100644
+index 0000000000000..68fb3ff53d566
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_32_47_tmo_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_seg_burst_##name,              \
++			  cn20k_sso_hws_deq_tmo_seg_##name, flags)             \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_seg_burst_##name,         \
++		cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_48_63.c b/drivers/event/cnxk/deq/cn20k/deq_48_63.c
+new file mode 100644
+index 0000000000000..d4eae4cdd0079
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_48_63.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ(cn20k_sso_hws_deq_##name, flags)                               \
++	SSO_DEQ(cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_48_63_burst.c b/drivers/event/cnxk/deq/cn20k/deq_48_63_burst.c
+new file mode 100644
+index 0000000000000..84f3ccd39c395
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_48_63_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_burst_##name,                      \
++			  cn20k_sso_hws_deq_##name, flags)                     \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_burst_##name,                 \
++			  cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_48_63_seg.c b/drivers/event/cnxk/deq/cn20k/deq_48_63_seg.c
+new file mode 100644
+index 0000000000000..744848b27a9e1
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_48_63_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_SEG(cn20k_sso_hws_deq_seg_##name, flags)                       \
++	SSO_DEQ_SEG(cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_48_63_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_48_63_seg_burst.c
+new file mode 100644
+index 0000000000000..417f622412499
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_48_63_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_deq_seg_burst_##name,              \
++			      cn20k_sso_hws_deq_seg_##name, flags)             \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_reas_deq_seg_burst_##name,         \
++		cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo.c b/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo.c
+new file mode 100644
+index 0000000000000..04efb325a17fe
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO(cn20k_sso_hws_deq_tmo_##name, flags)                       \
++	SSO_DEQ_TMO(cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_burst.c b/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_burst.c
+new file mode 100644
+index 0000000000000..7fbea69134c13
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_burst_##name,                  \
++			  cn20k_sso_hws_deq_tmo_##name, flags)                 \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_burst_##name,             \
++		  cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_seg.c b/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_seg.c
+new file mode 100644
+index 0000000000000..1039ebcd6b68d
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_seg.c
+@@ -0,0 +1,21 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_deq_tmo_seg_##name, flags)               \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_reas_deq_tmo_seg_##name,                 \
++			flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_seg_burst.c
+new file mode 100644
+index 0000000000000..3bee2167681d4
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_48_63_tmo_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_seg_burst_##name,              \
++			  cn20k_sso_hws_deq_tmo_seg_##name, flags)             \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_seg_burst_##name,         \
++		cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_64_79.c b/drivers/event/cnxk/deq/cn20k/deq_64_79.c
+new file mode 100644
+index 0000000000000..f8a76e0ab7a2d
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_64_79.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ(cn20k_sso_hws_deq_##name, flags)                               \
++	SSO_DEQ(cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_64_79_burst.c b/drivers/event/cnxk/deq/cn20k/deq_64_79_burst.c
+new file mode 100644
+index 0000000000000..9b341a0df5002
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_64_79_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_burst_##name,                      \
++			  cn20k_sso_hws_deq_##name, flags)                     \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_burst_##name,                 \
++			  cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_64_79_seg.c b/drivers/event/cnxk/deq/cn20k/deq_64_79_seg.c
+new file mode 100644
+index 0000000000000..ad37823c73679
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_64_79_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_SEG(cn20k_sso_hws_deq_seg_##name, flags)                       \
++	SSO_DEQ_SEG(cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_64_79_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_64_79_seg_burst.c
+new file mode 100644
+index 0000000000000..1f051f74a9de7
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_64_79_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_deq_seg_burst_##name,              \
++			      cn20k_sso_hws_deq_seg_##name, flags)             \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_reas_deq_seg_burst_##name,         \
++			   cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo.c b/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo.c
+new file mode 100644
+index 0000000000000..f8f9235af8c15
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO(cn20k_sso_hws_deq_tmo_##name, flags)                       \
++	SSO_DEQ_TMO(cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_burst.c b/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_burst.c
+new file mode 100644
+index 0000000000000..c134e27f25b8e
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_burst_##name,                  \
++			  cn20k_sso_hws_deq_tmo_##name, flags)                 \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_burst_##name,             \
++			  cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_seg.c b/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_seg.c
+new file mode 100644
+index 0000000000000..054bbc4343457
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_deq_tmo_seg_##name, flags)               \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_seg_burst.c
+new file mode 100644
+index 0000000000000..849e8e12fc898
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_64_79_tmo_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_seg_burst_##name,              \
++			  cn20k_sso_hws_deq_tmo_seg_##name, flags)             \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_seg_burst_##name,         \
++		 cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_80_95.c b/drivers/event/cnxk/deq/cn20k/deq_80_95.c
+new file mode 100644
+index 0000000000000..26ae2d9c743bf
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_80_95.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ(cn20k_sso_hws_deq_##name, flags)                               \
++	SSO_DEQ(cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_80_95_burst.c b/drivers/event/cnxk/deq/cn20k/deq_80_95_burst.c
+new file mode 100644
+index 0000000000000..9724caf5d6af1
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_80_95_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_burst_##name,                      \
++			  cn20k_sso_hws_deq_##name, flags)                     \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_burst_##name,                 \
++			  cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_80_95_seg.c b/drivers/event/cnxk/deq/cn20k/deq_80_95_seg.c
+new file mode 100644
+index 0000000000000..ce163d4a6b4dc
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_80_95_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_SEG(cn20k_sso_hws_deq_seg_##name, flags)                       \
++	SSO_DEQ_SEG(cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_80_95_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_80_95_seg_burst.c
+new file mode 100644
+index 0000000000000..997c208511e83
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_80_95_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_deq_seg_burst_##name,              \
++			      cn20k_sso_hws_deq_seg_##name, flags)             \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_reas_deq_seg_burst_##name,         \
++			    cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo.c b/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo.c
+new file mode 100644
+index 0000000000000..cdfe50730398a
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO(cn20k_sso_hws_deq_tmo_##name, flags)                       \
++	SSO_DEQ_TMO(cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_burst.c b/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_burst.c
+new file mode 100644
+index 0000000000000..bcf32e646b3a8
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_burst_##name,                  \
++			  cn20k_sso_hws_deq_tmo_##name, flags)                 \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_burst_##name,             \
++			  cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_seg.c b/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_seg.c
+new file mode 100644
+index 0000000000000..d3746232f8813
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_deq_tmo_seg_##name, flags)               \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_seg_burst.c
+new file mode 100644
+index 0000000000000..b24e73439a48c
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_80_95_tmo_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_seg_burst_##name,              \
++			  cn20k_sso_hws_deq_tmo_seg_##name, flags)             \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_seg_burst_##name,         \
++			cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_96_111.c b/drivers/event/cnxk/deq/cn20k/deq_96_111.c
+new file mode 100644
+index 0000000000000..f6950a2564a6e
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_96_111.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ(cn20k_sso_hws_deq_##name, flags)                               \
++	SSO_DEQ(cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_96_111_burst.c b/drivers/event/cnxk/deq/cn20k/deq_96_111_burst.c
+new file mode 100644
+index 0000000000000..c03d034b66453
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_96_111_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_burst_##name,                      \
++			  cn20k_sso_hws_deq_##name, flags)                     \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_burst_##name,                 \
++			  cn20k_sso_hws_reas_deq_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_96_111_seg.c b/drivers/event/cnxk/deq/cn20k/deq_96_111_seg.c
+new file mode 100644
+index 0000000000000..67407bb892155
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_96_111_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_SEG(cn20k_sso_hws_deq_seg_##name, flags)                       \
++	SSO_DEQ_SEG(cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_96_111_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_96_111_seg_burst.c
+new file mode 100644
+index 0000000000000..b37ef7a998b1b
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_96_111_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_deq_seg_burst_##name,              \
++			      cn20k_sso_hws_deq_seg_##name, flags)             \
++	SSO_CMN_DEQ_SEG_BURST(cn20k_sso_hws_reas_deq_seg_burst_##name,         \
++			    cn20k_sso_hws_reas_deq_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo.c b/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo.c
+new file mode 100644
+index 0000000000000..436ad7f5be5ae
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO(cn20k_sso_hws_deq_tmo_##name, flags)                       \
++	SSO_DEQ_TMO(cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_burst.c b/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_burst.c
+new file mode 100644
+index 0000000000000..da76b589a0165
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_burst_##name,                  \
++			  cn20k_sso_hws_deq_tmo_##name, flags)                 \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_burst_##name,             \
++			  cn20k_sso_hws_reas_deq_tmo_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_seg.c b/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_seg.c
+new file mode 100644
+index 0000000000000..0b5c11d5faf31
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_seg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_deq_tmo_seg_##name, flags)               \
++	SSO_DEQ_TMO_SEG(cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_seg_burst.c
+new file mode 100644
+index 0000000000000..3a8c02e4d2a18
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_96_111_tmo_seg_burst.c
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                         \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_deq_tmo_seg_burst_##name,              \
++			  cn20k_sso_hws_deq_tmo_seg_##name, flags)             \
++	SSO_CMN_DEQ_BURST(cn20k_sso_hws_reas_deq_tmo_seg_burst_##name,         \
++			cn20k_sso_hws_reas_deq_tmo_seg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/event/cnxk/deq/cn20k/deq_all_offload.c b/drivers/event/cnxk/deq/cn20k/deq_all_offload.c
+new file mode 100644
+index 0000000000000..99470d00c2a74
+--- /dev/null
++++ b/drivers/event/cnxk/deq/cn20k/deq_all_offload.c
+@@ -0,0 +1,77 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if defined(CNXK_DIS_TMPLT_FUNC)
++
++uint16_t __rte_hot
++cn20k_sso_hws_deq_all_offload(void *port, struct rte_event *ev, uint64_t timeout_ticks)
++{
++	const uint32_t flags = (NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F |
++				NIX_RX_OFFLOAD_CHECKSUM_F | NIX_RX_OFFLOAD_MARK_UPDATE_F |
++				NIX_RX_OFFLOAD_VLAN_STRIP_F |
++				NIX_RX_OFFLOAD_SECURITY_F | NIX_RX_MULTI_SEG_F | NIX_RX_REAS_F);
++	struct cn20k_sso_hws *ws = port;
++	uint16_t ret = 1;
++	uint64_t iter;
++
++	if (ws->swtag_req) {
++		ws->swtag_req = 0;
++		ws->gw_rdata = cnxk_sso_hws_swtag_wait(ws->base + SSOW_LF_GWS_WQE0);
++		return ret;
++	}
++
++	ret = cn20k_sso_hws_get_work(ws, ev, flags);
++	for (iter = 1; iter < timeout_ticks && (ret == 0); iter++)
++		ret = cn20k_sso_hws_get_work(ws, ev, flags);
++
++	return ret;
++}
++
++uint16_t __rte_hot
++cn20k_sso_hws_deq_all_offload_tst(void *port, struct rte_event *ev, uint64_t timeout_ticks)
++{
++	const uint32_t flags = (NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F |
++				NIX_RX_OFFLOAD_CHECKSUM_F | NIX_RX_OFFLOAD_MARK_UPDATE_F |
++				NIX_RX_OFFLOAD_TSTAMP_F | NIX_RX_OFFLOAD_VLAN_STRIP_F |
++				NIX_RX_OFFLOAD_SECURITY_F | NIX_RX_MULTI_SEG_F | NIX_RX_REAS_F);
++	struct cn20k_sso_hws *ws = port;
++	uint16_t ret = 1;
++	uint64_t iter;
++
++	if (ws->swtag_req) {
++		ws->swtag_req = 0;
++		ws->gw_rdata = cnxk_sso_hws_swtag_wait(ws->base + SSOW_LF_GWS_WQE0);
++		return ret;
++	}
++
++	ret = cn20k_sso_hws_get_work(ws, ev, flags);
++	for (iter = 1; iter < timeout_ticks && (ret == 0); iter++)
++		ret = cn20k_sso_hws_get_work(ws, ev, flags);
++
++	return ret;
++}
++
++uint16_t __rte_hot
++cn20k_sso_hws_deq_burst_all_offload(void *port, struct rte_event ev[], uint16_t nb_events,
++				    uint64_t timeout_ticks)
++{
++	RTE_SET_USED(nb_events);
++	return cn20k_sso_hws_deq_all_offload(port, ev, timeout_ticks);
++}
++
++uint16_t __rte_hot
++cn20k_sso_hws_deq_burst_all_offload_tst(void *port, struct rte_event ev[], uint16_t nb_events,
++				    uint64_t timeout_ticks)
++{
++	RTE_SET_USED(nb_events);
++	return cn20k_sso_hws_deq_all_offload_tst(port, ev, timeout_ticks);
++}
++
++#endif
+diff --git a/drivers/event/cnxk/meson.build b/drivers/event/cnxk/meson.build
+index 50f301504961b..044c700505baf 100644
+--- a/drivers/event/cnxk/meson.build
++++ b/drivers/event/cnxk/meson.build
+@@ -330,6 +330,81 @@ sources += files(
+         'cn20k_eventdev.c',
+         'cn20k_worker.c',
+ )
++
++if host_machine.cpu_family().startswith('aarch') and not disable_template
++sources += files(
++        'deq/cn20k/deq_0_15_burst.c',
++        'deq/cn20k/deq_16_31_burst.c',
++        'deq/cn20k/deq_32_47_burst.c',
++        'deq/cn20k/deq_48_63_burst.c',
++        'deq/cn20k/deq_64_79_burst.c',
++        'deq/cn20k/deq_80_95_burst.c',
++        'deq/cn20k/deq_96_111_burst.c',
++        'deq/cn20k/deq_112_127_burst.c',
++        'deq/cn20k/deq_0_15_seg_burst.c',
++        'deq/cn20k/deq_16_31_seg_burst.c',
++        'deq/cn20k/deq_32_47_seg_burst.c',
++        'deq/cn20k/deq_48_63_seg_burst.c',
++        'deq/cn20k/deq_64_79_seg_burst.c',
++        'deq/cn20k/deq_80_95_seg_burst.c',
++        'deq/cn20k/deq_96_111_seg_burst.c',
++        'deq/cn20k/deq_112_127_seg_burst.c',
++        'deq/cn20k/deq_0_15.c',
++        'deq/cn20k/deq_16_31.c',
++        'deq/cn20k/deq_32_47.c',
++        'deq/cn20k/deq_48_63.c',
++        'deq/cn20k/deq_64_79.c',
++        'deq/cn20k/deq_80_95.c',
++        'deq/cn20k/deq_96_111.c',
++        'deq/cn20k/deq_112_127.c',
++        'deq/cn20k/deq_0_15_seg.c',
++        'deq/cn20k/deq_16_31_seg.c',
++        'deq/cn20k/deq_32_47_seg.c',
++        'deq/cn20k/deq_48_63_seg.c',
++        'deq/cn20k/deq_64_79_seg.c',
++        'deq/cn20k/deq_80_95_seg.c',
++        'deq/cn20k/deq_96_111_seg.c',
++        'deq/cn20k/deq_112_127_seg.c',
++        'deq/cn20k/deq_0_15_tmo.c',
++        'deq/cn20k/deq_16_31_tmo.c',
++        'deq/cn20k/deq_32_47_tmo.c',
++        'deq/cn20k/deq_48_63_tmo.c',
++        'deq/cn20k/deq_64_79_tmo.c',
++        'deq/cn20k/deq_80_95_tmo.c',
++        'deq/cn20k/deq_96_111_tmo.c',
++        'deq/cn20k/deq_112_127_tmo.c',
++        'deq/cn20k/deq_0_15_tmo_burst.c',
++        'deq/cn20k/deq_16_31_tmo_burst.c',
++        'deq/cn20k/deq_32_47_tmo_burst.c',
++        'deq/cn20k/deq_48_63_tmo_burst.c',
++        'deq/cn20k/deq_64_79_tmo_burst.c',
++        'deq/cn20k/deq_80_95_tmo_burst.c',
++        'deq/cn20k/deq_96_111_tmo_burst.c',
++        'deq/cn20k/deq_112_127_tmo_burst.c',
++        'deq/cn20k/deq_0_15_tmo_seg.c',
++        'deq/cn20k/deq_16_31_tmo_seg.c',
++        'deq/cn20k/deq_32_47_tmo_seg.c',
++        'deq/cn20k/deq_48_63_tmo_seg.c',
++        'deq/cn20k/deq_64_79_tmo_seg.c',
++        'deq/cn20k/deq_80_95_tmo_seg.c',
++        'deq/cn20k/deq_96_111_tmo_seg.c',
++        'deq/cn20k/deq_112_127_tmo_seg.c',
++        'deq/cn20k/deq_0_15_tmo_seg_burst.c',
++        'deq/cn20k/deq_16_31_tmo_seg_burst.c',
++        'deq/cn20k/deq_32_47_tmo_seg_burst.c',
++        'deq/cn20k/deq_48_63_tmo_seg_burst.c',
++        'deq/cn20k/deq_64_79_tmo_seg_burst.c',
++        'deq/cn20k/deq_80_95_tmo_seg_burst.c',
++        'deq/cn20k/deq_96_111_tmo_seg_burst.c',
++        'deq/cn20k/deq_112_127_tmo_seg_burst.c',
++        'deq/cn20k/deq_all_offload.c',
++)
++
++else
++sources += files(
++        'deq/cn20k/deq_all_offload.c',
++)
++endif
+ endif
+ 
+ extra_flags = ['-flax-vector-conversions', '-Wno-strict-aliasing']
+-- 
+2.25.1
+

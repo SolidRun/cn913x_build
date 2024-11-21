@@ -1,0 +1,31 @@
+From 2b8843c71381cd095e349c9479ccf9d06292502c Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Fri, 14 Oct 2022 16:46:09 +0200
+Subject: [PATCH 019/955] crypto/cnxk: add queue pair check to meta set
+
+Check that queue pair provided by metadata information is enabled (added
+to crypto adapter).
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: I374236e2659a69ac2e9a5414089eb103de4d8254
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 2c750d19bfed4..1caa321112f8e 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -296,6 +296,9 @@ cn10k_cpt_crypto_adapter_ev_mdata_set(struct rte_cryptodev *dev __rte_unused, vo
+ 	qp_id = ec_mdata->request_info.queue_pair_id;
+ 	qp = rte_cryptodevs[cdev_id].data->queue_pairs[qp_id];
+ 
++	if (!qp->ca.enabled)
++		return -EINVAL;
++
+ 	/* Prepare w2 */
+ 	tag_type = qp->ca.vector_sz ? RTE_EVENT_TYPE_CRYPTODEV_VECTOR : RTE_EVENT_TYPE_CRYPTODEV;
+ 	rsp_info = &ec_mdata->response_info;
+-- 
+2.25.1
+

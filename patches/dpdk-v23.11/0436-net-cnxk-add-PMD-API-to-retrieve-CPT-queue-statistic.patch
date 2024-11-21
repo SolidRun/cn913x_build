@@ -1,0 +1,246 @@
+From 8fc332c901b00b17936512ee8b05c00c37b0aecb Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Fri, 2 Aug 2024 16:45:26 +0530
+Subject: [PATCH 436/513] net/cnxk: add PMD API to retrieve CPT queue
+ statistics
+
+Introduces a new PMD API to obtain CPT queue statistics, including:
+- CPT_LF_CTX_ENC_BYTE_CNT - Encrypted byte count on the given queue
+- CPT_LF_CTX_ENC_PKT_CNT - Encrypted packet count on the given queue
+- CPT_LF_CTX_DEC_BYTE_CNT - Decrypted byte count on the given queue
+- CPT_LF_CTX_DEC_PKT_CNT - Decrypted packet count on the given queue
+
+This API enables applications to access CPT queue statistics directly.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I85ddc9b4cfd5a2c5d3cbdf88bbe139e3cb6eecd8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132699
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.c  | 67 ++++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_nix_inl.h  | 15 +++++++
+ drivers/common/cnxk/version.map    |  1 +
+ drivers/net/cnxk/cnxk_ethdev_sec.c | 11 +++++
+ drivers/net/cnxk/rte_pmd_cnxk.h    | 43 +++++++++++++++++++
+ drivers/net/cnxk/version.map       |  1 +
+ 6 files changed, 138 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 23ffd4391a027..dd3a8f6ec0e6c 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -1812,6 +1812,73 @@ roc_nix_inl_ctx_write(struct roc_nix *roc_nix, void *sa_dptr, void *sa_cptr,
+ 	return -ENOTSUP;
+ }
+ 
++static inline int
++nix_inl_dev_cpt_lf_stats_get(struct roc_nix *roc_nix, struct roc_nix_cpt_lf_stats *stats,
++			     uint16_t idx)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++	struct nix_inl_dev *inl_dev = NULL;
++	struct roc_cpt_lf *lf = NULL;
++
++	PLT_SET_USED(roc_nix);
++	if (idev)
++		inl_dev = idev->nix_inl_dev;
++
++	if (inl_dev && inl_dev->attach_cptlf) {
++		if (idx >= inl_dev->nb_cptlf) {
++			plt_err("Invalid idx: %u total lfs: %d\n", idx, inl_dev->nb_cptlf);
++			return -EINVAL;
++		}
++		lf = &inl_dev->cpt_lf[idx];
++	} else {
++		plt_err("No CPT LF(s) are found for Inline Device\n");
++		return -EINVAL;
++	}
++	stats->enc_pkts = plt_read64(lf->rbase + CPT_LF_CTX_ENC_PKT_CNT);
++	stats->enc_bytes = plt_read64(lf->rbase + CPT_LF_CTX_ENC_BYTE_CNT);
++	stats->dec_pkts = plt_read64(lf->rbase + CPT_LF_CTX_DEC_PKT_CNT);
++	stats->dec_bytes = plt_read64(lf->rbase + CPT_LF_CTX_DEC_BYTE_CNT);
++
++	return 0;
++}
++
++static inline int
++nix_eth_dev_cpt_lf_stats_get(struct roc_nix *roc_nix, struct roc_nix_cpt_lf_stats *stats,
++			     uint16_t idx)
++{
++	struct roc_cpt_lf *lf;
++	struct nix *nix;
++
++	if (!roc_nix)
++		return -EINVAL;
++	nix = roc_nix_to_nix_priv(roc_nix);
++	if (idx >= nix->nb_cpt_lf) {
++		plt_err("Invalid idx: %u total lfs: %d\n", idx, nix->nb_cpt_lf);
++		return -EINVAL;
++	}
++	lf = &nix->cpt_lf_base[idx];
++	stats->enc_pkts = plt_read64(lf->rbase + CPT_LF_CTX_ENC_PKT_CNT);
++	stats->enc_bytes = plt_read64(lf->rbase + CPT_LF_CTX_ENC_BYTE_CNT);
++	stats->dec_pkts = plt_read64(lf->rbase + CPT_LF_CTX_DEC_PKT_CNT);
++	stats->dec_bytes = plt_read64(lf->rbase + CPT_LF_CTX_DEC_BYTE_CNT);
++
++	return 0;
++}
++
++int
++roc_nix_inl_cpt_lf_stats_get(struct roc_nix *roc_nix, enum roc_nix_cpt_lf_stats_type type,
++			     struct roc_nix_cpt_lf_stats *stats, uint16_t idx)
++{
++	switch (type) {
++	case ROC_NIX_CPT_LF_STATS_INL_DEV:
++		return nix_inl_dev_cpt_lf_stats_get(roc_nix, stats, idx);
++	case ROC_NIX_CPT_LF_STATS_ETHDEV:
++		return nix_eth_dev_cpt_lf_stats_get(roc_nix, stats, idx);
++	default:
++		return -EINVAL;
++	}
++}
++
+ int
+ roc_nix_inl_ts_pkind_set(struct roc_nix *roc_nix, bool ts_ena, bool inb_inl_dev)
+ {
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index 974834a0f33e1..16cead7fa42a2 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -112,6 +112,13 @@ struct roc_nix_inl_dev_q {
+ 	int32_t fc_addr_sw;
+ } __plt_cache_aligned;
+ 
++struct roc_nix_cpt_lf_stats {
++	uint64_t enc_pkts;
++	uint64_t enc_bytes;
++	uint64_t dec_pkts;
++	uint64_t dec_bytes;
++};
++
+ /* NIX Inline Device API */
+ int __roc_api roc_nix_inl_dev_init(struct roc_nix_inl_dev *roc_inl_dev);
+ int __roc_api roc_nix_inl_dev_fini(struct roc_nix_inl_dev *roc_inl_dev);
+@@ -187,4 +194,12 @@ void __roc_api roc_nix_inl_outb_cpt_lfs_dump(struct roc_nix *roc_nix, FILE *file
+ uint64_t __roc_api roc_nix_inl_eng_caps_get(struct roc_nix *roc_nix);
+ void *__roc_api roc_nix_inl_dev_qptr_get(uint8_t qid);
+ 
++enum roc_nix_cpt_lf_stats_type {
++	ROC_NIX_CPT_LF_STATS_INL_DEV,
++	ROC_NIX_CPT_LF_STATS_KERNEL,
++	ROC_NIX_CPT_LF_STATS_ETHDEV = 2,
++};
++int __roc_api roc_nix_inl_cpt_lf_stats_get(struct roc_nix *roc_nix,
++					   enum roc_nix_cpt_lf_stats_type type,
++					   struct roc_nix_cpt_lf_stats *stats, uint16_t idx);
+ #endif /* _ROC_NIX_INL_H_ */
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index da03c590ce72b..2b2051c74df44 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -268,6 +268,7 @@ INTERNAL {
+ 	roc_nix_inl_meta_pool_cb_register;
+ 	roc_nix_inl_custom_meta_pool_cb_register;
+ 	roc_nix_inb_mode_set;
++	roc_nix_inl_cpt_lf_stats_get;
+ 	roc_nix_inl_dev_qptr_get;
+ 	roc_nix_inl_outb_fini;
+ 	roc_nix_inl_outb_init;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index 7e5103bf5416d..32b6946ac15a9 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -311,6 +311,17 @@ rte_pmd_cnxk_inl_dev_qptr_get(void)
+ 	return roc_nix_inl_dev_qptr_get(0);
+ }
+ 
++int
++rte_pmd_cnxk_cpt_q_stats_get(uint16_t portid, enum rte_pmd_cnxk_cpt_q_stats_type type,
++			     struct rte_pmd_cnxk_cpt_q_stats *stats, uint16_t idx)
++{
++	struct rte_eth_dev *eth_dev = &rte_eth_devices[portid];
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	return roc_nix_inl_cpt_lf_stats_get(&dev->nix, (enum roc_nix_cpt_lf_stats_type)type,
++					    (struct roc_nix_cpt_lf_stats *)stats, idx);
++}
++
+ union rte_pmd_cnxk_ipsec_hw_sa *
+ rte_pmd_cnxk_hw_session_base_get(uint16_t portid, bool inb)
+ {
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index d06c0acfd23a2..8c57977e4342b 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -47,6 +47,30 @@ enum rte_pmd_cnxk_sec_action_alg {
+ 	RTE_PMD_CNXK_SEC_ACTION_ALG4,
+ };
+ 
++/** CPT queue type for obtaining queue hardware statistics. */
++enum rte_pmd_cnxk_cpt_q_stats_type {
++	/** Type to get Inline Device LF(s) statistics */
++	RTE_PMD_CNXK_CPT_Q_STATS_INL_DEV,
++	/** Type to get Inline Inbound LF which is attached to kernel device
++	 * statistics.
++	 */
++	RTE_PMD_CNXK_CPT_Q_STATS_KERNEL,
++	/** Type to get CPT LF which is attached to ethdev statistics */
++	RTE_PMD_CNXK_CPT_Q_STATS_ETHDEV = 2,
++};
++
++/** CPT queue hardware statistics */
++struct rte_pmd_cnxk_cpt_q_stats {
++	/** Encrypted packet count */
++	uint64_t enc_pkts;
++	/** Encrypted byte count */
++	uint64_t enc_bytes;
++	/** Decrypted packet count */
++	uint64_t dec_pkts;
++	/** Decrypted byte count */
++	uint64_t dec_bytes;
++};
++
+ struct rte_pmd_cnxk_sec_action {
+ 	/** Used as lookup result for ALG3 */
+ 	uint32_t sa_index;
+@@ -601,4 +625,23 @@ __rte_experimental
+ uint16_t rte_pmd_cnxk_inl_dev_submit(struct rte_pmd_cnxk_inl_dev_q *qptr, void *inst,
+ 				     uint16_t nb_inst);
+ 
++/**
++ * Retrieves the hardware statistics of a given port and stats type.
++ *
++ * @param portid
++ *   Port identifier of Ethernet device.
++ * @param type
++ *   The type of hardware statistics to retrieve, as defined in the
++ *   ``enum rte_pmd_cnxk_cpt_q_stats_type``.
++ * @param stats
++ *   Pointer where the retrieved statistics will be stored.
++ * @param idx
++ *   The index of the queue of a given type.
++ *
++ * @return
++ *   0 upon success, a negative errno value otherwise.
++ */
++__rte_experimental
++int rte_pmd_cnxk_cpt_q_stats_get(uint16_t portid, enum rte_pmd_cnxk_cpt_q_stats_type type,
++				 struct rte_pmd_cnxk_cpt_q_stats *stats, uint16_t idx);
+ #endif /* _PMD_CNXK_H_ */
+diff --git a/drivers/net/cnxk/version.map b/drivers/net/cnxk/version.map
+index fe90d346dc0e5..aafae549bc624 100644
+--- a/drivers/net/cnxk/version.map
++++ b/drivers/net/cnxk/version.map
+@@ -10,6 +10,7 @@ EXPERIMENTAL {
+ 	rte_pmd_cnxk_hw_sa_write;
+ 
+ 	# added in 23.11
++	rte_pmd_cnxk_cpt_q_stats_get;
+ 	rte_pmd_cnxk_hw_session_base_get;
+ 	rte_pmd_cnxk_inl_dev_qptr_get;
+ 	rte_pmd_cnxk_inl_dev_submit;
+-- 
+2.25.1
+

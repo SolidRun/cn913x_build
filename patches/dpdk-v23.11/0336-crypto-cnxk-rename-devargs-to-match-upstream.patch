@@ -1,0 +1,66 @@
+From c80440e5ad45915647246dacb63199bb97d86ca7 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 23 May 2024 10:06:14 +0000
+Subject: [PATCH 336/513] crypto/cnxk: rename devargs to match upstream
+
+Rename devargs to match upstream.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I664ba80a4da7e20c88bb8377b1f231f5e978dece
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128313
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ doc/guides/cryptodevs/cnxk.rst                                | 4 ++--
+ drivers/crypto/cnxk/cnxk_cryptodev_devargs.c                  | 2 +-
+ marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh | 2 +-
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/doc/guides/cryptodevs/cnxk.rst b/doc/guides/cryptodevs/cnxk.rst
+index 1a3cf80c31ac6..7092559ee4a5e 100644
+--- a/doc/guides/cryptodevs/cnxk.rst
++++ b/doc/guides/cryptodevs/cnxk.rst
+@@ -190,11 +190,11 @@ Runtime Config Options
+ - ``LF ID for RX injection in case of fallback mechanism`` (default ``60``)
+ 
+    LF ID for RX Injection in fallback mechanism of security.
+-   Can be configured during runtime by using ``rx_inj_lf`` ``devargs`` parameter.
++   Can be configured during runtime by using ``rx_inject_qp`` ``devargs`` parameter.
+ 
+    For example::
+ 
+-      -a 0002:20:00.1,rx_inj_lf=20
++      -a 0002:20:00.1,rx_inject_qp=20
+ 
+    With the above configuration, LF 20 will be used by the device for RX Injection
+    in security in fallback mechanism secnario.
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c b/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c
+index f5a76d83edfc7..0c898b30fc032 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c
+@@ -9,7 +9,7 @@
+ #define CNXK_MAX_QPS_LIMIT     "max_qps_limit"
+ #define CNXK_MAX_QPS_LIMIT_MIN 1
+ #define CNXK_MAX_QPS_LIMIT_MAX (ROC_CPT_MAX_LFS - 1)
+-#define CNXK_RX_INJ_LF	       "rx_inj_lf"
++#define CNXK_RX_INJ_LF	       "rx_inject_qp"
+ 
+ static int
+ parse_rx_inj_lf(const char *key, const char *value, void *extra_args)
+diff --git a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+index 0c2303b711ab4..203f31e1f312c 100755
+--- a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
++++ b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+@@ -10,7 +10,7 @@ CNXK_MEMPOOL_DEVICE=$(lspci -d :a0fb | tail -1 | awk -e '{ print $1 }')
+ CNXK_EAL_VDEV_OPENSSL="--vdev crypto_openssl"
+ 
+ CN10K_CRYPTO_DEVICE="0002:20:00.1"
+-CN10K_EAL_ARGS="-a $CN10K_CRYPTO_DEVICE,max_qps_limit=4,rx_inj_lf=1 -a $CNXK_MEMPOOL_DEVICE"
++CN10K_EAL_ARGS="-a $CN10K_CRYPTO_DEVICE,max_qps_limit=4,rx_inject_qp=1 -a $CNXK_MEMPOOL_DEVICE"
+ CN10K_EAL_ARGS+=" --log-level=7"
+ 
+ CN9K_CRYPTO_DEVICE="0002:10:00.1"
+-- 
+2.25.1
+

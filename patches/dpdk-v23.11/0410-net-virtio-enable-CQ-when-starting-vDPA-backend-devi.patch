@@ -1,0 +1,61 @@
+From 1e6297db689de0c2677436dd6a8a936f28b08a46 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 7 Jun 2024 10:09:31 +0530
+Subject: [PATCH 410/513] net/virtio: enable CQ when starting vDPA backend
+ device
+
+When using VHOST-VDPA as the backend, enabling the Control Queue (CQ)
+is necessary along with the Queue Pair (QP) to handle control commands.
+
+According to the specification, even with VIRTIO_NET_F_MQ, only one RXQ,
+TXQ, and CQ are utilized by default. This patch ensures that the CQ is
+enabled alongside the default QP to manage control operations after
+setting the driver status to OK.
+
+Change-Id: I64fc630a2abd347e1eeb79c4325fc9be0e87a7b6
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129229
+Reviewed-by: Srujana Challa <schalla@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/virtio/virtio_user/virtio_user_dev.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.c b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+index d5f6c389013be..3cfea4e6aea76 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.c
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+@@ -224,6 +224,14 @@ virtio_user_start_device(struct virtio_user_dev *dev)
+ 	if (ret < 0)
+ 		goto error;
+ 
++	/* Step 5: Enable CQ
++	 * If backend was VHOST-VDPA, then enable CQ to handle control plane
++	 */
++	if (dev->backend_type == VIRTIO_USER_BACKEND_VHOST_VDPA && dev->scvq) {
++		ret = dev->ops->cvq_enable(dev, 1);
++		if (ret < 0)
++			goto error;
++	}
+ 	dev->started = true;
+ 
+ 	pthread_mutex_unlock(&dev->mutex);
+@@ -266,6 +274,12 @@ int virtio_user_stop_device(struct virtio_user_dev *dev)
+ 		}
+ 	}
+ 
++	/* Stop CQ */
++	if (dev->scvq) {
++		ret = dev->ops->cvq_enable(dev, 0);
++		if (ret < 0)
++			goto err;
++	}
+ 	dev->started = false;
+ 
+ out:
+-- 
+2.25.1
+

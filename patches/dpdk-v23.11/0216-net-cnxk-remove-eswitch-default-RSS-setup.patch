@@ -1,0 +1,40 @@
+From 80a1d2381be9250b37535a94db9c1cced1f58d0e Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 13 Feb 2024 23:43:15 +0530
+Subject: [PATCH 216/513] net/cnxk: remove eswitch default RSS setup
+
+Removing the unnecessary setting up of rss table which gets
+overwritten later with VLAN based RSS
+
+Change-Id: Ie521a28f1d26baa5592254e661d25f4e60d8fbc0
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121860
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_eswitch.c | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_eswitch.c b/drivers/net/cnxk/cnxk_eswitch.c
+index 79f44de06e941..f420d01ef8d56 100644
+--- a/drivers/net/cnxk/cnxk_eswitch.c
++++ b/drivers/net/cnxk/cnxk_eswitch.c
+@@ -557,13 +557,6 @@ nix_lf_setup(struct cnxk_eswitch_dev *eswitch_dev)
+ 		goto free_cqs;
+ 	}
+ 
+-	rc = roc_nix_rss_default_setup(nix,
+-				       FLOW_KEY_TYPE_IPV4 | FLOW_KEY_TYPE_TCP | FLOW_KEY_TYPE_UDP);
+-	if (rc) {
+-		plt_err("rss default setup failed = %s(%d)", roc_error_msg_get(rc), rc);
+-		goto free_cqs;
+-	}
+-
+ 	rc = roc_nix_tm_init(nix);
+ 	if (rc) {
+ 		plt_err("tm failed = %s(%d)", roc_error_msg_get(rc), rc);
+-- 
+2.25.1
+

@@ -1,0 +1,425 @@
+From b88ee1dfb1e6028eeb74de2ba08ccf8e4301282f Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Tue, 11 Jun 2024 17:13:43 +0530
+Subject: [PATCH 891/955] cnxk-tests/ipsec_msns: support poll mode inb and outb
+ perf test
+
+Adds support for poll mode IPsec inbound + outbound performance
+test case.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I64a4d04e48176ee8a9a25276e3dc5b0615903475
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129406
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ .../test/cnxk-tests/ipsec_msns/ipsec_msns.c   | 269 ++++++++++++++----
+ 1 file changed, 206 insertions(+), 63 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+index 3ebc1e9061285..5fd3dd72fb283 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+@@ -42,6 +42,7 @@
+ #define TX_WTHRESH 0  /**< Default values of TX write-back threshold reg. */
+ 
+ #define NB_MBUF 10240U
++#define MAX_PKT_BURST 32
+ 
+ enum test_mode {
+ 	IPSEC_MSNS,
+@@ -49,6 +50,7 @@ enum test_mode {
+ 	EVENT_IPSEC_INBOUND_PERF,
+ 	EVENT_IPSEC_INB_OUTB_PERF,
+ 	EVENT_IPSEC_INB_LAOUTB_PERF,
++	POLL_IPSEC_INB_OUTB_PERF
+ };
+ 
+ static struct rte_mempool *mbufpool[RTE_MAX_ETHPORTS];
+@@ -95,6 +97,7 @@ struct lcore_cfg {
+ 	int eventdev_id;
+ 	int event_port_id;
+ 	int eventq_id;
++	uint16_t queueid;
+ 
+ 	/* Stats */
+ 	uint64_t rx_pkts;
+@@ -156,6 +159,7 @@ static volatile bool force_quit;
+ static uint32_t nb_bufs = 0;
+ static enum test_mode testmode;
+ static bool event_en;
++static bool poll_mode;
+ static bool pfc;
+ static int eventdev_id;
+ static int rx_adapter_id;
+@@ -198,6 +202,8 @@ ipsec_test_mode_to_string(enum test_mode testmode)
+ 		return "EVENT_IPSEC_INB_OUTB_PERF";
+ 	case EVENT_IPSEC_INB_LAOUTB_PERF:
+ 		return "EVENT_IPSEC_INB_LAOUTB_PERF";
++	case POLL_IPSEC_INB_OUTB_PERF:
++		return "POLL_IPSEC_INB_OUTB_PERF";
+ 	}
+ 	return NULL;
+ }
+@@ -989,8 +995,10 @@ init_pktmbuf_pool(uint32_t portid, unsigned int nb_mbuf)
+ 		snprintf(s, sizeof(s), "mbuf_pool_%d", portid);
+ 		mbufpool[portid] = rte_pktmbuf_pool_create(s, nb_mbuf, MEMPOOL_CACHE_SIZE, 128,
+ 							   RTE_MBUF_DEFAULT_BUF_SIZE, socketid);
+-		if (mbufpool[portid] == NULL)
++		if (mbufpool[portid] == NULL) {
+ 			printf("Cannot init mbuf pool on socket %d\n", socketid);
++			return -1;
++		}
+ 		printf("Allocated mbuf pool for port %d\n", portid);
+ 	}
+ 	return 0;
+@@ -1334,8 +1342,7 @@ ut_eventdev_setup(void)
+ 	}
+ 
+ 	/* Stop event dev before traffic */
+-	if (event_en)
+-		ut_eventdev_stop();
++	ut_eventdev_stop();
+ 
+ 	return 0;
+ }
+@@ -1414,6 +1421,8 @@ parse_args(int argc, char **argv)
+ 			    testmode == EVENT_IPSEC_INB_LAOUTB_PERF ||
+ 			    testmode == EVENT_IPSEC_INBOUND_PERF)
+ 				event_en = true;
++			else if (testmode == POLL_IPSEC_INB_OUTB_PERF)
++				poll_mode = true;
+ 
+ 			argc -= 2;
+ 			argv += 2;
+@@ -1505,16 +1514,97 @@ parse_args(int argc, char **argv)
+ }
+ 
+ static int
+-ut_setup(int argc, char **argv)
++port_init(uint16_t portid, uint32_t nb_mbufs, uint16_t nb_rx_queue, uint16_t nb_tx_queue,
++	  uint16_t nb_rxd, uint16_t nb_txd)
+ {
+-	uint16_t nb_rx_queue = 1, nb_tx_queue = 1;
++	uint16_t queueid, lcore_id;
++	struct lcore_cfg *lconf;
+ 	int socketid = 0, ret;
++
++	ret = init_pktmbuf_pool(portid, nb_mbufs);
++	if (ret) {
++		printf("Failed to setup pktmbuf pool for port=%d, ret=%d", portid, ret);
++		return ret;
++	}
++
++	/* Enable loopback mode for non perf test */
++	port_conf.lpbk_mode = (testmode == IPSEC_MSNS) ? 1 : 0;
++
++	/* port configure */
++	ret = rte_eth_dev_configure(portid, nb_rx_queue, nb_tx_queue, &port_conf);
++	if (ret < 0) {
++		printf("Cannot configure device: err=%d, port=%d\n", ret, portid);
++		return ret;
++	}
++	ret = rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
++	if (ret < 0) {
++		printf("Cannot get mac address: err=%d, port=%d\n", ret, portid);
++		return ret;
++	}
++	printf("Port %u ", portid);
++	print_ethaddr("Address:", &ports_eth_addr[portid]);
++	printf("\n");
++
++	queueid = 0;
++	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
++
++		if (rte_lcore_is_enabled(lcore_id) == 0)
++			continue;
++
++		if (lcore_id == rte_get_main_lcore())
++			continue;
++
++		if (queueid == nb_tx_queue)
++			break;
++
++		/* init TX queue */
++		printf("Setup txq=%u,%d,%d\n", lcore_id, queueid, socketid);
++
++		ret = rte_eth_tx_queue_setup(portid, queueid, nb_txd, socketid, &tx_conf);
++		if (ret < 0) {
++			printf("rte_eth_tx_queue_setup: err=%d, port=%d\n", ret, portid);
++			return ret;
++		}
++
++		ret = rte_eth_rx_queue_setup(portid, queueid, nb_rxd, socketid, &rx_conf,
++					     mbufpool[portid]);
++		if (ret < 0) {
++			printf("rte_eth_rx_queue_setup: err=%d, port=%d\n", ret, portid);
++			return ret;
++		}
++
++		lconf = &lcore_cfg[lcore_id];
++		lconf->queueid = queueid;
++
++		queueid++;
++	}
++
++	/* Init sa_index map with 4K size*/
++	ret = cnxk_sa_index_init(portid, RTE_SECURITY_IPSEC_SA_DIR_EGRESS, MAX_SA_SIZE);
++	if (ret) {
++		printf("egress sa index init failed: err=%d, port=%d\n", ret, portid);
++		return ret;
++	}
++
++	ret = cnxk_sa_index_init(portid, RTE_SECURITY_IPSEC_SA_DIR_INGRESS, MAX_SA_SIZE);
++	if (ret) {
++		printf("egress sa index init failed: err=%d, port=%d\n", ret, portid);
++		return ret;
++	}
++
++	return 0;
++}
++
++static int
++ut_setup(int argc, char **argv)
++{
+ 	uint32_t nb_lcores;
+ 	uint32_t nb_mbufs;
+ 	uint16_t nb_ports;
+ 	uint16_t nb_rxd;
+ 	uint16_t nb_txd;
+ 	uint16_t portid;
++	int ret;
+ 
+ 	ret = rte_eal_init(argc, argv);
+ 	if (ret < 0) {
+@@ -1554,57 +1644,15 @@ ut_setup(int argc, char **argv)
+ 		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
+ 			continue;
+ 
+-		ret = init_pktmbuf_pool(portid, nb_mbufs);
+-		if (ret) {
+-			printf("Failed to setup pktmbuf pool for port=%d, ret=%d", portid, ret);
+-			return ret;
+-		}
+-
+-		/* Enable loopback mode for non perf test */
+-		port_conf.lpbk_mode = (testmode == IPSEC_MSNS) ? 1 : 0;
+-
+-		/* port configure */
+-		ret = rte_eth_dev_configure(portid, nb_rx_queue, nb_tx_queue, &port_conf);
+-		if (ret < 0) {
+-			printf("Cannot configure device: err=%d, port=%d\n", ret, portid);
+-			return ret;
+-		}
+-		ret = rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
+-		if (ret < 0) {
+-			printf("Cannot get mac address: err=%d, port=%d\n", ret, portid);
+-			return ret;
+-		}
+-		printf("Port %u ", portid);
+-		print_ethaddr("Address:", &ports_eth_addr[portid]);
+-		printf("\n");
+-
+-		/* tx queue setup */
+-		ret = rte_eth_tx_queue_setup(portid, 0, nb_txd, socketid, &tx_conf);
+-		if (ret < 0) {
+-			printf("rte_eth_tx_queue_setup: err=%d, port=%d\n", ret, portid);
+-			return ret;
+-		}
+-		/* rx queue steup */
+-		ret = rte_eth_rx_queue_setup(portid, 0, nb_rxd, socketid, &rx_conf,
+-					     mbufpool[portid]);
+-		if (ret < 0) {
+-			printf("rte_eth_rx_queue_setup: err=%d, port=%d\n", ret, portid);
+-			return ret;
+-		}
+-
+-		/* Init sa_index map with 4K size*/
+-		ret = cnxk_sa_index_init(portid, RTE_SECURITY_IPSEC_SA_DIR_EGRESS, MAX_SA_SIZE);
+-		if (ret) {
+-			printf("egress sa index init failed: err=%d, port=%d\n", ret, portid);
+-			return ret;
+-		}
+-
+-		ret = cnxk_sa_index_init(portid, RTE_SECURITY_IPSEC_SA_DIR_INGRESS, MAX_SA_SIZE);
+-		if (ret) {
+-			printf("egress sa index init failed: err=%d, port=%d\n", ret, portid);
+-			return ret;
+-		}
++		if (testmode == POLL_IPSEC_INB_OUTB_PERF)
++			ret = port_init(portid, nb_mbufs, nb_lcores - 1, nb_lcores - 1,
++					nb_rxd, nb_txd);
++		else
++			ret = port_init(portid, nb_mbufs, 1, 1, nb_rxd, nb_txd);
+ 	}
++	if (ret)
++		return -1;
++
+ 	if (testmode == EVENT_IPSEC_INB_LAOUTB_PERF)
+ 		cryptodevs_init();
+ 
+@@ -2147,6 +2195,89 @@ pkt_type_valid(struct rte_mbuf *pkt)
+ 	return false;
+ }
+ 
++static int
++poll_mode_inb_outb_worker(void *args)
++{
++	struct rte_mbuf *pkts[MAX_PKT_BURST], *pkt;
++	struct rte_mbuf *tx_pkts[MAX_PKT_BURST];
++	struct rte_security_ctx *sec_ctx;
++	struct rte_security_session *sa;
++	uint32_t nb_rx, nb_tx, j, k;
++	struct lcore_cfg *lconf;
++	uint16_t sa_index = 0;
++	uint32_t lcore_id;
++	uint16_t portid;
++	uint16_t queueid;
++
++	(void)args;
++	lcore_id = rte_lcore_id();
++	lconf = &lcore_cfg[lcore_id];
++	queueid = lconf->queueid;
++
++	printf("IPSEC: entering main loop on lcore %u\n", lcore_id);
++
++	portid = lconf->portid;
++
++	while (!force_quit) {
++
++		/* Read packets from RX queues */
++		nb_rx = rte_eth_rx_burst(portid, queueid,
++					 pkts, MAX_PKT_BURST);
++
++		if (nb_rx <= 0)
++			continue;
++
++		lconf->rx_pkts += nb_rx;
++
++		sec_ctx = rte_eth_dev_get_sec_ctx(portid);
++		/* Send pkts out */
++		for (j = 0, k = 0; j < nb_rx; j++) {
++			pkt = pkts[j];
++			/* Drop packets received with offload failure */
++			if (unlikely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED)) {
++				lconf->ipsec_failed += 1;
++#if !defined(MSNS_CN9K)
++				union rte_pmd_cnxk_cpt_res_s *res;
++
++				res = rte_pmd_cnxk_inl_ipsec_res(pkt);
++				if (res)
++					printf("uc_compcode = %x compcode = %x\n",
++					       res->cn10k.uc_compcode, res->cn10k.compcode);
++#endif
++				rte_pktmbuf_free(pkt);
++				continue;
++			}
++
++			if (likely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD)) {
++				struct ipsec_session_data *sa_data;
++
++				lconf->rx_ipsec_pkts += 1;
++				sa_data = (struct ipsec_session_data *) *rte_security_dynfield(pkt);
++				sa_index = sa_data->spi;
++			} else {
++				sa_index = rte_rand_max(num_sas - 1) + 1;
++			}
++			sa = outb_sas[sa_index].sa;
++			rte_security_set_pkt_metadata(sec_ctx, sa, pkt, NULL);
++			pkt->ol_flags |= RTE_MBUF_F_TX_SEC_OFFLOAD;
++			pkt->l2_len = RTE_ETHER_HDR_LEN;
++
++			tx_pkts[k++] = pkt;
++		}
++		nb_tx = rte_eth_tx_burst(portid, queueid, tx_pkts, k);
++
++		lconf->tx_pkts += nb_tx;
++
++		if (unlikely(nb_tx < k)) {
++			do {
++				rte_pktmbuf_free(tx_pkts[nb_tx]);
++			} while (++nb_tx < k);
++		}
++	}
++
++	return 0;
++}
++
+ static int
+ event_inb_laoutb_worker(void *args)
+ {
+@@ -2215,7 +2346,7 @@ event_inb_laoutb_worker(void *args)
+ 			union rte_pmd_cnxk_cpt_res_s *res;
+ 
+ 			res = rte_pmd_cnxk_inl_ipsec_res(pkt);
+-			//if (res)
++			if (res)
+ 				printf("compcode = %x\n", res->cn10k.uc_compcode);
+ #endif
+ 			continue;
+@@ -2302,7 +2433,7 @@ event_inb_outb_worker(void *args)
+ 			union rte_pmd_cnxk_cpt_res_s *res;
+ 
+ 			res = rte_pmd_cnxk_inl_ipsec_res(pkt);
+-			//if (res)
++			if (res)
+ 				printf("compcode = %x\n", res->cn10k.uc_compcode);
+ #endif
+ 			continue;
+@@ -2755,7 +2886,7 @@ event_ipsec_inb_laoutb_perf(void)
+ }
+ 
+ static int
+-event_ipsec_inb_outb_perf(void)
++ipsec_inb_outb_perf(void)
+ {
+ 	enum rte_security_ipsec_tunnel_type tun_type = RTE_SECURITY_IPSEC_TUNNEL_IPV4;
+ 	struct rte_security_ctx *sec_ctx;
+@@ -2789,11 +2920,15 @@ event_ipsec_inb_outb_perf(void)
+ 
+ 	printf("\n");
+ 
+-	/* Start event dev */
+-	ut_eventdev_start();
+-
+ 	/* launch per-lcore init on every lcore */
+-	rte_eal_mp_remote_launch(event_inb_outb_worker, NULL, SKIP_MAIN);
++	if (event_en) {
++		/* Start event dev */
++		ut_eventdev_start();
++
++		rte_eal_mp_remote_launch(event_inb_outb_worker, NULL, SKIP_MAIN);
++	} else if (poll_mode)
++		rte_eal_mp_remote_launch(poll_mode_inb_outb_worker, NULL, SKIP_MAIN);
++
+ 	/* Print stats */
+ 	print_inb_outb_stats();
+ 
+@@ -3043,7 +3178,7 @@ main(int argc, char **argv)
+ 		break;
+ 	case EVENT_IPSEC_INB_OUTB_PERF:
+ 		printf("Test Mode: %s\n", ipsec_test_mode_to_string(testmode));
+-		rc = event_ipsec_inb_outb_perf();
++		rc = ipsec_inb_outb_perf();
+ 		if (rc) {
+ 			printf("Failed to run mode: %s\n", ipsec_test_mode_to_string(testmode));
+ 			return rc;
+@@ -3061,6 +3196,14 @@ main(int argc, char **argv)
+ 			return rc;
+ 		}
+ 		break;
++	case POLL_IPSEC_INB_OUTB_PERF:
++		printf("Test Mode: %s\n", ipsec_test_mode_to_string(testmode));
++		rc = ipsec_inb_outb_perf();
++		if (rc) {
++			printf("Failed to run mode: %s\n", ipsec_test_mode_to_string(testmode));
++			return rc;
++		}
++		break;
+ 	case IPSEC_MSNS:
+ 		rc = ut_ipsec_ipv4_burst_encap_decap();
+ 		if (rc) {
+-- 
+2.25.1
+

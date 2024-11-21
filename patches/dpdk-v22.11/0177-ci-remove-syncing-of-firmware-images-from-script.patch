@@ -1,0 +1,73 @@
+From 290b5716fab8a59a6c9da634180477d1eebfca90 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Mon, 16 Jan 2023 21:31:49 +0530
+Subject: [PATCH 177/955] ci: remove syncing of firmware images from script
+
+Firmware images are now setup from the board setup
+script. Avoid doing this again from the test scripts.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I73d63064cd361187cad6bc747bfd939ecf6d596f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94600
+Reviewed-by: Shijith Thotton <sthotton@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 983c125e338a5b63f33f7ae059ccca807d7cc7de)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94914
+---
+ marvell-ci/test/board/board_test_run.sh | 3 ---
+ marvell-ci/test/env/cn10k.env           | 3 ---
+ marvell-ci/test/env/cn9k.env            | 3 ---
+ 3 files changed, 9 deletions(-)
+
+diff --git a/marvell-ci/test/board/board_test_run.sh b/marvell-ci/test/board/board_test_run.sh
+index 0c6b98b3364f2..4881cc8ecf724 100755
+--- a/marvell-ci/test/board/board_test_run.sh
++++ b/marvell-ci/test/board/board_test_run.sh
+@@ -54,7 +54,6 @@ function target_sync()
+ 	$sync -e "$TARGET_SSH_CMD" -r $BUILD_DIR/* $TARGET_BOARD:$REMOTE_DIR
+ 	$sync -e "$TARGET_SSH_CMD" -r --exclude "marvell-ci/test/cnxk-tests/*" \
+ 		$PROJECT_ROOT/marvell-ci $TARGET_BOARD:$REMOTE_DIR
+-	$REMOTE "sudo $TARGET_SCP_CMD -pr $FW_LOCATION/* /lib/firmware"
+ 
+ 	if [[ -n $GENERATOR_BOARD ]]; then
+ 		$TARGET_SSH_CMD $GENERATOR_BOARD mkdir -p $REMOTE_DIR
+@@ -62,8 +61,6 @@ function target_sync()
+ 		$sync -e "$TARGET_SSH_CMD" \
+ 			$PROJECT_ROOT/marvell-ci/test/board/oxk-devbind-basic.sh \
+ 			$GENERATOR_BOARD:$REMOTE_DIR
+-		$TARGET_SSH_CMD $GENERATOR_BOARD \
+-			"sudo $TARGET_SCP_CMD -pr $FW_LOCATION/* /lib/firmware"
+ 	fi
+ }
+ 
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 0f08d3aefcdda..443b08d0e4763 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -116,9 +116,6 @@ SKIP_TESTS=${SKIP_TESTS:-$DEFAULT_SKIP_TESTS}
+ START_TEST_NUM=${START_TEST_NUM:-1}
+ END_TEST_NUM=${END_TEST_NUM:-999}
+ 
+-# Remote location to copy CPT and ML firmware files in target board
+-FW_LOCATION=${FW_LOCATION:-ci@10.28.34.13:/home/ci/board/firmware}
+-
+ # Functions required to work with test list file.
+ source $PROJECT_ROOT/marvell-ci/test/common/test_list_helper_funcs.sh
+ 
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index b7ef62d414fc0..df78c15abce3e 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -120,9 +120,6 @@ SKIP_TESTS=${SKIP_TESTS:-$DEFAULT_SKIP_TESTS}
+ START_TEST_NUM=${START_TEST_NUM:-1}
+ END_TEST_NUM=${END_TEST_NUM:-999}
+ 
+-# Remote location to copy CPT and ML firmware files in target board
+-FW_LOCATION=${FW_LOCATION:-ci@10.28.34.13:/home/ci/board/firmware}
+-
+ # Functions required to work with test list file.
+ source $PROJECT_ROOT/marvell-ci/test/common/test_list_helper_funcs.sh
+ 
+-- 
+2.25.1
+

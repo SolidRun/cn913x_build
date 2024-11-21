@@ -1,0 +1,49 @@
+From 447c928a89a65ce73c9e34329959d4b6d55f203a Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Thu, 1 Feb 2024 17:34:25 +0530
+Subject: [PATCH 209/513] marvell-ci: add TLS perf numbers for rclk 2500
+
+Added performance numbers for TLS and DTLS cases
+for rclk 2500 cases as well.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ifc6d731c4040e1d941892d6e286b0232d620e485
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120929
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx | 20 +++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+index 43022806d5673..ccdc2397a2e77 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+@@ -38,4 +38,24 @@ modex
+ 384: 1.241 1.243 1.243
+ 1504: 1.241 1.243 1.243
+ <end>
++aes-cbc_sha1-hmac-tls1.2
++64: 34.451 44.329 44.853
++384: 24.268 25.325 26.35
++1504: 8.61 8.80 8.91
++<end>
++aes-gcm-tls1.2
++64: 34.679 54.894 57.529
++384: 29.83 31.26 32.18
++1504: 9.28 9.469 9.58
++<end>
++aes-cbc_sha1-hmac-dtls1.2
++64: 34.851 44.329 44.553
++384: 24.268 25.425 26.25
++1504: 8.701 8.802 8.90
++<end>
++aes-gcm-dtls1.2
++64: 34.78 54.894 57.929
++384: 29.12 30.26 31.41
++1504: 9.28 9.369 9.61
++<end>
+ 
+-- 
+2.25.1
+

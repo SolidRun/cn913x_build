@@ -1,0 +1,773 @@
+From 568b86dfdd9c1a6ee866ff2d6a34e5014af3c4e4 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 28 Aug 2024 18:05:13 +0530
+Subject: [PATCH 486/513] event/cnxk: support CN20K Tx adapter fast path
+
+Add support for event eth Tx adapter fastpath operations.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I8d3e310944a7f1a4e90cd3f2443fe262825d0f59
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134423
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn20k_eventdev.c          |  29 ++++
+ drivers/event/cnxk/cn20k_tx_worker.h         | 174 +++++++++++++++++++
+ drivers/event/cnxk/meson.build               |  20 +++
+ drivers/event/cnxk/tx/cn20k/tx_0_15.c        |  18 ++
+ drivers/event/cnxk/tx/cn20k/tx_0_15_seg.c    |  19 ++
+ drivers/event/cnxk/tx/cn20k/tx_112_127.c     |  18 ++
+ drivers/event/cnxk/tx/cn20k/tx_112_127_seg.c |  19 ++
+ drivers/event/cnxk/tx/cn20k/tx_16_31.c       |  18 ++
+ drivers/event/cnxk/tx/cn20k/tx_16_31_seg.c   |  19 ++
+ drivers/event/cnxk/tx/cn20k/tx_32_47.c       |  18 ++
+ drivers/event/cnxk/tx/cn20k/tx_32_47_seg.c   |  19 ++
+ drivers/event/cnxk/tx/cn20k/tx_48_63.c       |  18 ++
+ drivers/event/cnxk/tx/cn20k/tx_48_63_seg.c   |  19 ++
+ drivers/event/cnxk/tx/cn20k/tx_64_79.c       |  18 ++
+ drivers/event/cnxk/tx/cn20k/tx_64_79_seg.c   |  19 ++
+ drivers/event/cnxk/tx/cn20k/tx_80_95.c       |  18 ++
+ drivers/event/cnxk/tx/cn20k/tx_80_95_seg.c   |  19 ++
+ drivers/event/cnxk/tx/cn20k/tx_96_111.c      |  18 ++
+ drivers/event/cnxk/tx/cn20k/tx_96_111_seg.c  |  19 ++
+ drivers/event/cnxk/tx/cn20k/tx_all_offload.c |  40 +++++
+ 20 files changed, 559 insertions(+)
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_0_15.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_0_15_seg.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_112_127.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_112_127_seg.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_16_31.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_16_31_seg.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_32_47.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_32_47_seg.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_48_63.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_48_63_seg.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_64_79.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_64_79_seg.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_80_95.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_80_95_seg.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_96_111.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_96_111_seg.c
+ create mode 100644 drivers/event/cnxk/tx/cn20k/tx_all_offload.c
+
+diff --git a/drivers/event/cnxk/cn20k_eventdev.c b/drivers/event/cnxk/cn20k_eventdev.c
+index 06cf201146c58..e9c2d3786f27a 100644
+--- a/drivers/event/cnxk/cn20k_eventdev.c
++++ b/drivers/event/cnxk/cn20k_eventdev.c
+@@ -15,6 +15,9 @@
+ #define CN20K_SET_EVDEV_DEQ_OP(dev, deq_op, deq_ops)                                               \
+ 	deq_op = deq_ops[dev->rx_offloads & (NIX_RX_OFFLOAD_MAX - 1)]
+ 
++#define CN20K_SET_EVDEV_ENQ_OP(dev, enq_op, enq_ops)                                               \
++	enq_op = enq_ops[dev->tx_offloads & (NIX_TX_OFFLOAD_MAX - 1)]
++
+ static void *
+ cn20k_sso_init_hws_mem(void *arg, uint8_t port_id)
+ {
+@@ -300,6 +303,19 @@ cn20k_sso_fp_tmplt_fns_set(struct rte_eventdev *event_dev)
+ #undef R
+ 	};
+ 
++	/* Tx modes */
++	const event_tx_adapter_enqueue_t sso_hws_tx_adptr_enq[NIX_TX_OFFLOAD_MAX] = {
++#define T(name, sz, flags) [flags] = cn20k_sso_hws_tx_adptr_enq_##name,
++		NIX_TX_FASTPATH_MODES
++#undef T
++	};
++
++	const event_tx_adapter_enqueue_t sso_hws_tx_adptr_enq_seg[NIX_TX_OFFLOAD_MAX] = {
++#define T(name, sz, flags) [flags] = cn20k_sso_hws_tx_adptr_enq_seg_##name,
++		NIX_TX_FASTPATH_MODES
++#undef T
++	};
++
+ 	if (dev->rx_offloads & NIX_RX_MULTI_SEG_F) {
+ 		if (dev->rx_offloads & NIX_RX_REAS_F) {
+ 			CN20K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_reas_deq_seg);
+@@ -347,6 +363,12 @@ cn20k_sso_fp_tmplt_fns_set(struct rte_eventdev *event_dev)
+ 		}
+ 	}
+ 
++	if (dev->tx_offloads & NIX_TX_MULTI_SEG_F)
++		CN20K_SET_EVDEV_ENQ_OP(dev, event_dev->txa_enqueue, sso_hws_tx_adptr_enq_seg);
++	else
++		CN20K_SET_EVDEV_ENQ_OP(dev, event_dev->txa_enqueue, sso_hws_tx_adptr_enq);
++
++	event_dev->txa_enqueue_same_dest = event_dev->txa_enqueue;
+ #else
+ 	RTE_SET_USED(event_dev);
+ #endif
+@@ -364,6 +386,13 @@ cn20k_sso_fp_blk_fns_set(struct rte_eventdev *event_dev)
+ 		event_dev->dequeue = cn20k_sso_hws_deq_all_offload_tst;
+ 		event_dev->dequeue_burst = cn20k_sso_hws_deq_burst_all_offload_tst;
+ 	}
++	event_dev->txa_enqueue = cn20k_sso_hws_tx_adptr_enq_seg_all_offload;
++	event_dev->txa_enqueue_same_dest = cn20k_sso_hws_tx_adptr_enq_seg_all_offload;
++	if (dev->tx_offloads & (NIX_TX_OFFLOAD_OL3_OL4_CSUM_F | NIX_TX_OFFLOAD_VLAN_QINQ_F |
++				NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F)) {
++		event_dev->txa_enqueue = cn20k_sso_hws_tx_adptr_enq_seg_all_offload_tst;
++		event_dev->txa_enqueue_same_dest = cn20k_sso_hws_tx_adptr_enq_seg_all_offload_tst;
++	}
+ #else
+ 	RTE_SET_USED(event_dev);
+ #endif
+diff --git a/drivers/event/cnxk/cn20k_tx_worker.h b/drivers/event/cnxk/cn20k_tx_worker.h
+index 63fbdf532880f..d8d93ab6dbde2 100644
+--- a/drivers/event/cnxk/cn20k_tx_worker.h
++++ b/drivers/event/cnxk/cn20k_tx_worker.h
+@@ -13,4 +13,178 @@
+ #include "cnxk_eventdev_dp.h"
+ #include <rte_event_eth_tx_adapter.h>
+ 
++/* CN20K Tx event fastpath */
++
++static __rte_always_inline struct cn20k_eth_txq *
++cn20k_sso_hws_xtract_meta(struct rte_mbuf *m, const uint64_t *txq_data)
++{
++	return (struct cn20k_eth_txq *)(txq_data[(txq_data[m->port] >> 48) +
++						 rte_event_eth_tx_adapter_txq_get(m)] &
++					(BIT_ULL(48) - 1));
++}
++
++static __rte_always_inline void
++cn20k_sso_txq_fc_wait(const struct cn20k_eth_txq *txq)
++{
++	int64_t avail;
++
++#ifdef RTE_ARCH_ARM64
++	int64_t val;
++
++	asm volatile(PLT_CPU_FEATURE_PREAMBLE
++		     "		ldxr %[val], [%[addr]]			\n"
++		     "		sub %[val], %[adj], %[val]		\n"
++		     "		lsl %[refill], %[val], %[shft]		\n"
++		     "		sub %[refill], %[refill], %[val]	\n"
++		     "		cmp %[refill], #0x0			\n"
++		     "		b.gt .Ldne%=				\n"
++		     "		sevl					\n"
++		     ".Lrty%=:	wfe					\n"
++		     "		ldxr %[val], [%[addr]]			\n"
++		     "		sub %[val], %[adj], %[val]		\n"
++		     "		lsl %[refill], %[val], %[shft]		\n"
++		     "		sub %[refill], %[refill], %[val]	\n"
++		     "		cmp %[refill], #0x0			\n"
++		     "		b.le .Lrty%=				\n"
++		     ".Ldne%=:						\n"
++		     : [refill] "=&r"(avail), [val] "=&r" (val)
++		     : [addr] "r" (txq->fc_mem), [adj] "r" (txq->nb_sqb_bufs_adj),
++		       [shft] "r" (txq->sqes_per_sqb_log2)
++		     : "memory");
++#else
++	do {
++		avail = txq->nb_sqb_bufs_adj -
++			rte_atomic_load_explicit(txq->fc_mem, rte_memory_order_relaxed);
++	} while (((avail << txq->sqes_per_sqb_log2) - avail) <= 0);
++#endif
++}
++
++static __rte_always_inline int32_t
++cn20k_sso_sq_depth(const struct cn20k_eth_txq *txq)
++{
++	int32_t avail = (int32_t)txq->nb_sqb_bufs_adj -
++			(int32_t)rte_atomic_load_explicit(txq->fc_mem, rte_memory_order_relaxed);
++	return (avail << txq->sqes_per_sqb_log2) - avail;
++}
++
++static __rte_always_inline uint16_t
++cn20k_sso_tx_one(struct cn20k_sso_hws *ws, struct rte_mbuf *m, uint64_t *cmd, uint16_t lmt_id,
++		 uintptr_t lmt_addr, uint8_t sched_type, const uint64_t *txq_data,
++		 const uint32_t flags)
++{
++	uint8_t lnum = 0, loff = 0, shft = 0;
++	struct rte_mbuf *extm = NULL;
++	struct cn20k_eth_txq *txq;
++	uintptr_t laddr;
++	uint16_t segdw;
++	uintptr_t pa;
++	bool sec;
++
++	txq = cn20k_sso_hws_xtract_meta(m, txq_data);
++	if (cn20k_sso_sq_depth(txq) <= 0)
++		return 0;
++
++	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
++		handle_tx_completion_pkts(txq, 1);
++
++	cn20k_nix_tx_skeleton(txq, cmd, flags, 0);
++	/* Perform header writes before barrier
++	 * for TSO
++	 */
++	if (flags & NIX_TX_OFFLOAD_TSO_F)
++		cn20k_nix_xmit_prepare_tso(m, flags);
++
++	cn20k_nix_xmit_prepare(txq, m, &extm, cmd, flags, txq->lso_tun_fmt, &sec, txq->mark_flag,
++			       txq->mark_fmt);
++
++	laddr = lmt_addr;
++	/* Prepare CPT instruction and get nixtx addr if
++	 * it is for CPT on same lmtline.
++	 */
++	if (flags & NIX_TX_OFFLOAD_SECURITY_F && sec)
++		cn20k_nix_prep_sec(m, cmd, &laddr, lmt_addr, &lnum, &loff, &shft, txq->sa_base,
++				   flags);
++
++	/* Move NIX desc to LMT/NIXTX area */
++	cn20k_nix_xmit_mv_lmt_base(laddr, cmd, flags);
++
++	if (flags & NIX_TX_MULTI_SEG_F)
++		segdw = cn20k_nix_prepare_mseg(txq, m, &extm, (uint64_t *)laddr, flags);
++	else
++		segdw = cn20k_nix_tx_ext_subs(flags) + 2;
++
++	cn20k_nix_xmit_prepare_tstamp(txq, laddr, m->ol_flags, segdw, flags);
++	if (flags & NIX_TX_OFFLOAD_SECURITY_F && sec)
++		pa = txq->cpt_io_addr | 3 << 4;
++	else
++		pa = txq->io_addr | ((segdw - 1) << 4);
++
++	if (!CNXK_TAG_IS_HEAD(ws->gw_rdata) && !sched_type)
++		ws->gw_rdata = roc_sso_hws_head_wait(ws->base);
++
++	cn20k_sso_txq_fc_wait(txq);
++	if (flags & NIX_TX_OFFLOAD_SECURITY_F && sec)
++		cn20k_nix_sec_fc_wait_one(txq);
++
++	roc_lmt_submit_steorl(lmt_id, pa);
++
++	/* Memory barrier to make sure lmtst store completes */
++	rte_io_wmb();
++
++	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && !txq->tx_compl.ena)
++		cn20k_nix_free_extmbuf(extm);
++
++	return 1;
++}
++
++static __rte_always_inline uint16_t
++cn20k_sso_hws_event_tx(struct cn20k_sso_hws *ws, struct rte_event *ev, uint64_t *cmd,
++		       const uint64_t *txq_data, const uint32_t flags)
++{
++	struct rte_mbuf *m;
++	uintptr_t lmt_addr;
++	uint16_t lmt_id;
++
++	lmt_addr = ws->lmt_base;
++	ROC_LMT_BASE_ID_GET(lmt_addr, lmt_id);
++
++	m = ev->mbuf;
++	return cn20k_sso_tx_one(ws, m, cmd, lmt_id, lmt_addr, ev->sched_type, txq_data, flags);
++}
++
++#define T(name, sz, flags)                                                                         \
++	uint16_t __rte_hot cn20k_sso_hws_tx_adptr_enq_##name(void *port, struct rte_event ev[],    \
++							     uint16_t nb_events);                  \
++	uint16_t __rte_hot cn20k_sso_hws_tx_adptr_enq_seg_##name(                                  \
++		void *port, struct rte_event ev[], uint16_t nb_events);
++
++NIX_TX_FASTPATH_MODES
++#undef T
++
++#define SSO_TX(fn, sz, flags)                                                                      \
++	uint16_t __rte_hot fn(void *port, struct rte_event ev[], uint16_t nb_events)               \
++	{                                                                                          \
++		struct cn20k_sso_hws *ws = port;                                                   \
++		uint64_t cmd[sz];                                                                  \
++		RTE_SET_USED(nb_events);                                                           \
++		return cn20k_sso_hws_event_tx(ws, &ev[0], cmd,                                     \
++					      (const uint64_t *)ws->tx_adptr_data, flags);         \
++	}
++
++#define SSO_TX_SEG(fn, sz, flags)                                                                  \
++	uint16_t __rte_hot fn(void *port, struct rte_event ev[], uint16_t nb_events)               \
++	{                                                                                          \
++		uint64_t cmd[(sz) + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];                               \
++		struct cn20k_sso_hws *ws = port;                                                   \
++		RTE_SET_USED(nb_events);                                                           \
++		return cn20k_sso_hws_event_tx(ws, &ev[0], cmd,                                     \
++					      (const uint64_t *)ws->tx_adptr_data,                 \
++					      (flags) | NIX_TX_MULTI_SEG_F);                       \
++	}
++
++uint16_t __rte_hot cn20k_sso_hws_tx_adptr_enq_seg_all_offload(void *port, struct rte_event ev[],
++							      uint16_t nb_events);
++uint16_t __rte_hot cn20k_sso_hws_tx_adptr_enq_seg_all_offload_tst(void *port, struct rte_event ev[],
++								  uint16_t nb_events);
++
+ #endif
+diff --git a/drivers/event/cnxk/meson.build b/drivers/event/cnxk/meson.build
+index 044c700505baf..a5027fe9c93b3 100644
+--- a/drivers/event/cnxk/meson.build
++++ b/drivers/event/cnxk/meson.build
+@@ -400,9 +400,29 @@ sources += files(
+         'deq/cn20k/deq_all_offload.c',
+ )
+ 
++sources += files(
++        'tx/cn20k/tx_0_15.c',
++        'tx/cn20k/tx_16_31.c',
++        'tx/cn20k/tx_32_47.c',
++        'tx/cn20k/tx_48_63.c',
++        'tx/cn20k/tx_64_79.c',
++        'tx/cn20k/tx_80_95.c',
++        'tx/cn20k/tx_96_111.c',
++        'tx/cn20k/tx_112_127.c',
++        'tx/cn20k/tx_0_15_seg.c',
++        'tx/cn20k/tx_16_31_seg.c',
++        'tx/cn20k/tx_32_47_seg.c',
++        'tx/cn20k/tx_48_63_seg.c',
++        'tx/cn20k/tx_64_79_seg.c',
++        'tx/cn20k/tx_80_95_seg.c',
++        'tx/cn20k/tx_96_111_seg.c',
++        'tx/cn20k/tx_112_127_seg.c',
++        'tx/cn20k/tx_all_offload.c',
++)
+ else
+ sources += files(
+         'deq/cn20k/deq_all_offload.c',
++        'tx/cn20k/tx_all_offload.c',
+ )
+ endif
+ endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_0_15.c b/drivers/event/cnxk/tx/cn20k/tx_0_15.c
+new file mode 100644
+index 0000000000000..b681bc8ab01be
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_0_15.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) SSO_TX(cn20k_sso_hws_tx_adptr_enq_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_0_15
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_0_15_seg.c b/drivers/event/cnxk/tx/cn20k/tx_0_15_seg.c
+new file mode 100644
+index 0000000000000..1dacb63d4b40a
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_0_15_seg.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags)                                                     \
++	SSO_TX_SEG(cn20k_sso_hws_tx_adptr_enq_seg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_0_15
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_112_127.c b/drivers/event/cnxk/tx/cn20k/tx_112_127.c
+new file mode 100644
+index 0000000000000..abdb8b76a1a93
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_112_127.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) SSO_TX(cn20k_sso_hws_tx_adptr_enq_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_112_127
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_112_127_seg.c b/drivers/event/cnxk/tx/cn20k/tx_112_127_seg.c
+new file mode 100644
+index 0000000000000..c39d331b25f16
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_112_127_seg.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags)                                                     \
++	SSO_TX_SEG(cn20k_sso_hws_tx_adptr_enq_seg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_112_127
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_16_31.c b/drivers/event/cnxk/tx/cn20k/tx_16_31.c
+new file mode 100644
+index 0000000000000..5b88c47914574
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_16_31.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) SSO_TX(cn20k_sso_hws_tx_adptr_enq_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_16_31
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_16_31_seg.c b/drivers/event/cnxk/tx/cn20k/tx_16_31_seg.c
+new file mode 100644
+index 0000000000000..13f00ac4789b1
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_16_31_seg.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags)                                                     \
++	SSO_TX_SEG(cn20k_sso_hws_tx_adptr_enq_seg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_16_31
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_32_47.c b/drivers/event/cnxk/tx/cn20k/tx_32_47.c
+new file mode 100644
+index 0000000000000..1f6008c425235
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_32_47.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) SSO_TX(cn20k_sso_hws_tx_adptr_enq_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_32_47
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_32_47_seg.c b/drivers/event/cnxk/tx/cn20k/tx_32_47_seg.c
+new file mode 100644
+index 0000000000000..587f22df3aa97
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_32_47_seg.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags)                                                     \
++	SSO_TX_SEG(cn20k_sso_hws_tx_adptr_enq_seg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_32_47
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_48_63.c b/drivers/event/cnxk/tx/cn20k/tx_48_63.c
+new file mode 100644
+index 0000000000000..c7128254172a8
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_48_63.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) SSO_TX(cn20k_sso_hws_tx_adptr_enq_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_48_63
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_48_63_seg.c b/drivers/event/cnxk/tx/cn20k/tx_48_63_seg.c
+new file mode 100644
+index 0000000000000..1fc11ec904ff6
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_48_63_seg.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags)                                                     \
++	SSO_TX_SEG(cn20k_sso_hws_tx_adptr_enq_seg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_48_63
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_64_79.c b/drivers/event/cnxk/tx/cn20k/tx_64_79.c
+new file mode 100644
+index 0000000000000..0e427f79d8e0f
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_64_79.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) SSO_TX(cn20k_sso_hws_tx_adptr_enq_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_64_79
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_64_79_seg.c b/drivers/event/cnxk/tx/cn20k/tx_64_79_seg.c
+new file mode 100644
+index 0000000000000..6e1ae41b26740
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_64_79_seg.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags)                                                     \
++	SSO_TX_SEG(cn20k_sso_hws_tx_adptr_enq_seg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_64_79
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_80_95.c b/drivers/event/cnxk/tx/cn20k/tx_80_95.c
+new file mode 100644
+index 0000000000000..8c87d2341d4b3
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_80_95.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) SSO_TX(cn20k_sso_hws_tx_adptr_enq_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_80_95
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_80_95_seg.c b/drivers/event/cnxk/tx/cn20k/tx_80_95_seg.c
+new file mode 100644
+index 0000000000000..43a143f4bd8ae
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_80_95_seg.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags)                                                     \
++	SSO_TX_SEG(cn20k_sso_hws_tx_adptr_enq_seg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_80_95
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_96_111.c b/drivers/event/cnxk/tx/cn20k/tx_96_111.c
+new file mode 100644
+index 0000000000000..1a43af8b022a5
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_96_111.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) SSO_TX(cn20k_sso_hws_tx_adptr_enq_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_96_111
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_96_111_seg.c b/drivers/event/cnxk/tx/cn20k/tx_96_111_seg.c
+new file mode 100644
+index 0000000000000..e0e1d8a4ef92e
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_96_111_seg.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags)                                                     \
++	SSO_TX_SEG(cn20k_sso_hws_tx_adptr_enq_seg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_96_111
++#undef T
++
++#endif
+diff --git a/drivers/event/cnxk/tx/cn20k/tx_all_offload.c b/drivers/event/cnxk/tx/cn20k/tx_all_offload.c
+new file mode 100644
+index 0000000000000..d2158a4256163
+--- /dev/null
++++ b/drivers/event/cnxk/tx/cn20k/tx_all_offload.c
+@@ -0,0 +1,40 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cn20k_tx_worker.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if defined(CNXK_DIS_TMPLT_FUNC)
++
++uint16_t __rte_hot
++cn20k_sso_hws_tx_adptr_enq_seg_all_offload(void *port, struct rte_event ev[], uint16_t nb_events)
++{
++	const uint32_t flags = (NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
++				NIX_TX_MULTI_SEG_F | NIX_TX_OFFLOAD_SECURITY_F);
++	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
++
++	struct cn20k_sso_hws *ws = port;
++	RTE_SET_USED(nb_events);
++	return cn20k_sso_hws_event_tx(ws, &ev[0], cmd, (const uint64_t *)ws->tx_adptr_data, flags);
++}
++
++uint16_t __rte_hot
++cn20k_sso_hws_tx_adptr_enq_seg_all_offload_tst(void *port, struct rte_event ev[],
++					       uint16_t nb_events)
++{
++	const uint32_t flags =
++		(NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
++		 NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F | NIX_TX_OFFLOAD_TSO_F |
++		 NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F | NIX_TX_MULTI_SEG_F);
++	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
++
++	struct cn20k_sso_hws *ws = port;
++	RTE_SET_USED(nb_events);
++	return cn20k_sso_hws_event_tx(ws, &ev[0], cmd, (const uint64_t *)ws->tx_adptr_data, flags);
++}
++
++#endif
+-- 
+2.25.1
+

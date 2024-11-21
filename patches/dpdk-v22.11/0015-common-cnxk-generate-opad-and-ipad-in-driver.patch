@@ -1,0 +1,154 @@
+From ec904bc96753f5275da6358ec0c2a01b4b01a5b8 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Wed, 12 Oct 2022 10:47:03 +0530
+Subject: [PATCH 015/955] common/cnxk: generate opad and ipad in driver
+
+Generate opad and ipad in driver for SHA based crypto algos
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I86ecaed002aedba9b1fa2e100e0fb8501b8b1ae7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91628
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/cnxk_security.c |  4 +--
+ drivers/common/cnxk/roc_hash.c      | 12 ++++---
+ drivers/common/cnxk/roc_hash.h      |  2 +-
+ drivers/common/cnxk/roc_se.c        | 52 +++++++++++++++++++++++++++--
+ 4 files changed, 60 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index 85105472a1289..5034c769382ed 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -37,8 +37,8 @@ ipsec_hmac_opad_ipad_gen(struct rte_crypto_sym_xform *auth_xform,
+ 		roc_hash_sha1_gen(ipad, (uint32_t *)&hmac_opad_ipad[24]);
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA256_HMAC:
+-		roc_hash_sha256_gen(opad, (uint32_t *)&hmac_opad_ipad[0]);
+-		roc_hash_sha256_gen(ipad, (uint32_t *)&hmac_opad_ipad[64]);
++		roc_hash_sha256_gen(opad, (uint32_t *)&hmac_opad_ipad[0], 256);
++		roc_hash_sha256_gen(ipad, (uint32_t *)&hmac_opad_ipad[64], 256);
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA384_HMAC:
+ 		roc_hash_sha512_gen(opad, (uint64_t *)&hmac_opad_ipad[0], 384);
+diff --git a/drivers/common/cnxk/roc_hash.c b/drivers/common/cnxk/roc_hash.c
+index 1b9030e693e6a..8c451440b1734 100644
+--- a/drivers/common/cnxk/roc_hash.c
++++ b/drivers/common/cnxk/roc_hash.c
+@@ -232,7 +232,7 @@ roc_hash_sha1_gen(uint8_t *msg, uint32_t *hash)
+  * Based on implementation from RFC 3174
+  */
+ void
+-roc_hash_sha256_gen(uint8_t *msg, uint32_t *hash)
++roc_hash_sha256_gen(uint8_t *msg, uint32_t *hash, int hash_size)
+ {
+ 	const uint32_t _K[] = {
+ 		/* Round Constants defined in SHA-256   */
+@@ -250,13 +250,17 @@ roc_hash_sha256_gen(uint8_t *msg, uint32_t *hash)
+ 		0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+ 		0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+ 
+-	const uint32_t _H[] = {/* Initial Hash constants defined in SHA-256 */
+-			       0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+-			       0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
++	const uint32_t _H224[] = {/* Initial Hash constants defined in SHA-224 */
++				  0xc1059ed8, 0x367cd507, 0x3070dd17, 0xf70e5939,
++				  0xffc00b31, 0x68581511, 0x64f98fa7, 0xbefa4fa4};
++	const uint32_t _H256[] = {/* Initial Hash constants defined in SHA-256 */
++				  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
++				  0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+ 	int i;
+ 	uint32_t temp[4], S0, S1;	 /* Temporary word value */
+ 	uint32_t W[64];			 /* Word sequence */
+ 	uint32_t A, B, C, D, E, F, G, H; /* Word buffers */
++	const uint32_t *_H = (hash_size == 224) ? _H224 : _H256;
+ 
+ 	/* Initialize the first 16 words in the array W */
+ 	memcpy(&W[0], msg, 16 * sizeof(W[0]));
+diff --git a/drivers/common/cnxk/roc_hash.h b/drivers/common/cnxk/roc_hash.h
+index 8940faa6eb710..c3ddb9407bbf1 100644
+--- a/drivers/common/cnxk/roc_hash.h
++++ b/drivers/common/cnxk/roc_hash.h
+@@ -11,7 +11,7 @@
+  */
+ void __roc_api roc_hash_md5_gen(uint8_t *msg, uint32_t *hash);
+ void __roc_api roc_hash_sha1_gen(uint8_t *msg, uint32_t *hash);
+-void __roc_api roc_hash_sha256_gen(uint8_t *msg, uint32_t *hash);
++void __roc_api roc_hash_sha256_gen(uint8_t *msg, uint32_t *hash, int hash_size);
+ void __roc_api roc_hash_sha512_gen(uint8_t *msg, uint64_t *hash, int hash_size);
+ 
+ #endif /* _ROC_HASH_H_ */
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index 2663480099274..22df61f5f0894 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -149,6 +149,53 @@ cpt_ciph_aes_key_type_set(struct roc_se_context *fctx, uint16_t key_len)
+ 	fctx->enc.aes_key = aes_key_type;
+ }
+ 
++static void
++cpt_hmac_opad_ipad_gen(roc_se_auth_type auth_type, const uint8_t *key, uint16_t length,
++		       struct roc_se_hmac_context *hmac)
++{
++	uint8_t opad[128] = {[0 ... 127] = 0x5c};
++	uint8_t ipad[128] = {[0 ... 127] = 0x36};
++	uint32_t i;
++
++	/* HMAC OPAD and IPAD */
++	for (i = 0; i < 128 && i < length; i++) {
++		opad[i] = opad[i] ^ key[i];
++		ipad[i] = ipad[i] ^ key[i];
++	}
++
++	/* Precompute hash of HMAC OPAD and IPAD to avoid
++	 * per packet computation
++	 */
++	switch (auth_type) {
++	case ROC_SE_MD5_TYPE:
++		roc_hash_md5_gen(opad, (uint32_t *)hmac->opad);
++		roc_hash_md5_gen(ipad, (uint32_t *)hmac->ipad);
++		break;
++	case ROC_SE_SHA1_TYPE:
++		roc_hash_sha1_gen(opad, (uint32_t *)hmac->opad);
++		roc_hash_sha1_gen(ipad, (uint32_t *)hmac->ipad);
++		break;
++	case ROC_SE_SHA2_SHA224:
++		roc_hash_sha256_gen(opad, (uint32_t *)hmac->opad, 224);
++		roc_hash_sha256_gen(ipad, (uint32_t *)hmac->ipad, 224);
++		break;
++	case ROC_SE_SHA2_SHA256:
++		roc_hash_sha256_gen(opad, (uint32_t *)hmac->opad, 256);
++		roc_hash_sha256_gen(ipad, (uint32_t *)hmac->ipad, 256);
++		break;
++	case ROC_SE_SHA2_SHA384:
++		roc_hash_sha512_gen(opad, (uint64_t *)hmac->opad, 384);
++		roc_hash_sha512_gen(ipad, (uint64_t *)hmac->ipad, 384);
++		break;
++	case ROC_SE_SHA2_SHA512:
++		roc_hash_sha512_gen(opad, (uint64_t *)hmac->opad, 512);
++		roc_hash_sha512_gen(ipad, (uint64_t *)hmac->ipad, 512);
++		break;
++	default:
++		break;
++	}
++}
++
+ static int
+ cpt_pdcp_key_type_set(struct roc_se_zuc_snow3g_ctx *zs_ctx, uint16_t key_len)
+ {
+@@ -434,9 +481,8 @@ roc_se_auth_key_set(struct roc_se_ctx *se_ctx, roc_se_auth_type type,
+ 		memset(fctx->hmac.ipad, 0, sizeof(fctx->hmac.ipad));
+ 		memset(fctx->hmac.opad, 0, sizeof(fctx->hmac.opad));
+ 
+-		if (key_len <= 64)
+-			memcpy(fctx->hmac.opad, key, key_len);
+-		fctx->enc.auth_input_type = 1;
++		cpt_hmac_opad_ipad_gen(type, key, key_len, &fctx->hmac);
++		fctx->enc.auth_input_type = 0;
+ 	}
+ 	return 0;
+ }
+-- 
+2.25.1
+

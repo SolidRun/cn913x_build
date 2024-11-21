@@ -1,0 +1,47 @@
+From 1a0692983314919cc8f2155229a26199887007dc Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 24 Jan 2023 00:59:48 +0530
+Subject: [PATCH 187/955] event/cnxk: fix timer ops init in secondary
+
+Fix event timer fast-path ops not being initialized in secondary
+process.
+
+Fixes: dd519f83dd96 ("event/cnxk: add timer adapter capabilities")
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ibf4c3a74215edff0b137b3199adc657b84b4df04
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95064
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cnxk_tim_evdev.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/event/cnxk/cnxk_tim_evdev.c b/drivers/event/cnxk/cnxk_tim_evdev.c
+index 2a2ca30eaee21..fac3806e142b9 100644
+--- a/drivers/event/cnxk/cnxk_tim_evdev.c
++++ b/drivers/event/cnxk/cnxk_tim_evdev.c
+@@ -380,6 +380,7 @@ cnxk_tim_caps_get(const struct rte_eventdev *evdev, uint64_t flags,
+ 		  cnxk_sso_set_priv_mem_t priv_mem_fn)
+ {
+ 	struct cnxk_tim_evdev *dev = cnxk_tim_priv_get();
++	struct cnxk_tim_ring *tim_ring;
+ 
+ 	RTE_SET_USED(flags);
+ 
+@@ -402,6 +403,12 @@ cnxk_tim_caps_get(const struct rte_eventdev *evdev, uint64_t flags,
+ 	dev->event_dev = (struct rte_eventdev *)(uintptr_t)evdev;
+ 	*caps = RTE_EVENT_TIMER_ADAPTER_CAP_INTERNAL_PORT |
+ 		RTE_EVENT_TIMER_ADAPTER_CAP_PERIODIC;
++
++	tim_ring = ((struct rte_event_timer_adapter_data
++			     *)((char *)caps - offsetof(struct rte_event_timer_adapter_data, caps)))
++			   ->adapter_priv;
++	if (tim_ring != NULL && rte_eal_process_type() == RTE_PROC_SECONDARY)
++		cnxk_tim_set_fp_ops(tim_ring);
+ 	*ops = &cnxk_tim_ops;
+ 
+ 	return 0;
+-- 
+2.25.1
+

@@ -1,0 +1,538 @@
+From 9679b96ed9e965d3167c1bb029ce81f04ed5efd9 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Mon, 5 Aug 2024 02:57:16 -0700
+Subject: [PATCH 907/955] crypto/cnxk: enable Rx inject in security lookaside
+
+Add Rx inject fastpath API.
+Add devargs to specify a queue pair to be used for Rx inject.
+When the RX inject feature flag is enabled:
+- Reserve a CPT LF to use for RX Inject mode.
+- Enable RXC and disable full packet mode for that LF.
+- Update chan in CPT inst from port's Rx chan
+- Set Rx inject config in Idev struct
+- Add flow control in Rx inject path to avoid over submission to CPT.
+- Add support for multi segmented packet in Rx inject.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I20ba82650f187bfeeffebeda6a9fab6fd897ee8d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132802
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ doc/guides/cryptodevs/cnxk.rst               |  12 ++
+ doc/guides/cryptodevs/features/cn10k.ini     |   1 +
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c    | 181 +++++++++++++++++++
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.h    |   8 +
+ drivers/crypto/cnxk/cn10k_cryptodev_sec.c    |   3 +
+ drivers/crypto/cnxk/cnxk_cryptodev.c         |   3 +
+ drivers/crypto/cnxk/cnxk_cryptodev.h         |   4 +
+ drivers/crypto/cnxk/cnxk_cryptodev_devargs.c |  31 ++++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c     |  39 +++-
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.h     |  10 +-
+ drivers/crypto/cnxk/version.map              |   3 +
+ 11 files changed, 293 insertions(+), 2 deletions(-)
+
+diff --git a/doc/guides/cryptodevs/cnxk.rst b/doc/guides/cryptodevs/cnxk.rst
+index ebd3b5d6f43e8..ef80c5b58e459 100644
+--- a/doc/guides/cryptodevs/cnxk.rst
++++ b/doc/guides/cryptodevs/cnxk.rst
+@@ -186,6 +186,18 @@ Runtime Config Options
+    With the above configuration, the number of maximum queue pairs supported
+    by the device is limited to 4.
+ 
++- ``QP ID for Rx injection in case of fallback mechanism`` (default ``60``)
++
++   QP ID for Rx injection in fallback mechanism of security.
++   Can be configured during runtime by using ``rx_inject_qp`` devargs parameter.
++
++   For example::
++
++      -a 0002:20:00.1,rx_inject_qp=20
++
++   With the above configuration, QP 20 will be used by the device for Rx injection
++   in security in fallback mechanism scenario.
++
+ Debugging Options
+ -----------------
+ 
+diff --git a/doc/guides/cryptodevs/features/cn10k.ini b/doc/guides/cryptodevs/features/cn10k.ini
+index 052ff6c0c59c6..d81d44a957af1 100644
+--- a/doc/guides/cryptodevs/features/cn10k.ini
++++ b/doc/guides/cryptodevs/features/cn10k.ini
+@@ -18,6 +18,7 @@ RSA PRIV OP KEY EXP    = Y
+ RSA PRIV OP KEY QT     = Y
+ Digest encrypted       = Y
+ Inner checksum         = Y
++Rx inject              = Y
+ 
+ ;
+ ; Supported crypto algorithms of 'cn10k' crypto driver.
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 89aa0322f22d6..a2a0ed2fd0574 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -7,6 +7,9 @@
+ #include <rte_event_crypto_adapter.h>
+ #include <rte_hexdump.h>
+ #include <rte_ip.h>
++#include <rte_vect.h>
++
++#include <ethdev_driver.h>
+ 
+ #include "roc_cpt.h"
+ #include "roc_idev.h"
+@@ -1147,6 +1150,160 @@ cn10k_cpt_dequeue_burst(void *qptr, struct rte_crypto_op **ops, uint16_t nb_ops)
+ 	return i;
+ }
+ 
++#if defined(RTE_ARCH_ARM64)
++uint16_t __rte_hot
++cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
++				  struct rte_security_session **sess, uint16_t nb_pkts)
++{
++	uint64_t lmt_base, io_addr, u64_0, u64_1, l2_len, pf_func;
++	uint64x2_t inst_01, inst_23, inst_45, inst_67;
++	struct cn10k_sec_session *sec_sess;
++	struct rte_cryptodev *cdev = dev;
++	union cpt_res_s *hw_res = NULL;
++	uint16_t lmt_id, count = 0;
++	struct cpt_inst_s *inst;
++	union cpt_fc_write_s fc;
++	struct cnxk_cpt_vf *vf;
++	struct rte_mbuf *m;
++	uint64_t u64_dptr;
++	uint64_t *fc_addr;
++	int i;
++
++	vf = cdev->data->dev_private;
++
++	lmt_base = vf->rx_inj_lmtline.lmt_base;
++	io_addr = vf->rx_inj_lmtline.io_addr;
++	fc_addr = vf->rx_inj_lmtline.fc_addr;
++
++	ROC_LMT_BASE_ID_GET(lmt_base, lmt_id);
++	pf_func = vf->rx_inj_pf_func;
++
++	const uint32_t fc_thresh = vf->rx_inj_lmtline.fc_thresh;
++
++again:
++	fc.u64[0] =
++		 __atomic_load_n((uint64_t *)fc_addr, __ATOMIC_RELAXED);
++	inst = (struct cpt_inst_s *)lmt_base;
++	i = 0;
++
++	if (unlikely(fc.s.qsize > fc_thresh))
++		goto exit;
++
++	for (; i < RTE_MIN(CN10K_CPT_PKTS_PER_LOOP, nb_pkts); i++) {
++		m = pkts[i];
++		sec_sess = (struct cn10k_sec_session *)sess[i];
++
++		if (unlikely(rte_pktmbuf_headroom(m) < 32)) {
++			plt_dp_err("No space for CPT res_s");
++			break;
++		}
++
++		l2_len = m->l2_len;
++
++		*rte_security_dynfield(m) = (uint64_t)sec_sess->userdata;
++
++		hw_res = rte_pktmbuf_mtod(m, void *);
++		hw_res = RTE_PTR_SUB(hw_res, 32);
++		hw_res = RTE_PTR_ALIGN_CEIL(hw_res, 16);
++
++		/* Prepare CPT instruction */
++		if (m->nb_segs > 1) {
++			struct rte_mbuf *last = rte_pktmbuf_lastseg(m);
++			uintptr_t dptr, rxphdr, wqe_hdr;
++			uint16_t i;
++
++			if ((m->nb_segs > CNXK_CPT_MAX_SG_SEGS) ||
++			    (rte_pktmbuf_tailroom(m) < CNXK_CPT_MIN_TAILROOM_REQ))
++				goto exit;
++
++			wqe_hdr = rte_pktmbuf_mtod_offset(last, uintptr_t, last->data_len);
++			wqe_hdr += BIT_ULL(7);
++			wqe_hdr = (wqe_hdr - 1) & ~(BIT_ULL(7) - 1);
++
++			/* Pointer to WQE header */
++			*(uint64_t *)(m + 1) = wqe_hdr;
++
++			/* Reserve SG list after end of last mbuf data location. */
++			rxphdr = wqe_hdr + 8;
++			dptr = rxphdr + 7 * 8;
++
++			/* Prepare Multiseg SG list */
++			i = fill_sg2_comp_from_pkt((struct roc_sg2list_comp *)dptr, 0, m);
++			u64_dptr = dptr | ((uint64_t)(i) << 60);
++		} else {
++			struct roc_sg2list_comp *sg2;
++			uintptr_t dptr, wqe_hdr;
++
++			/* Reserve space for WQE, NIX_RX_PARSE_S and SG_S.
++			 * Populate SG_S with num segs and seg length
++			 */
++			wqe_hdr = (uintptr_t)(m + 1);
++			*(uint64_t *)(m + 1) = wqe_hdr;
++
++			sg2 = (struct roc_sg2list_comp *)(wqe_hdr + 8 * 8);
++			sg2->u.s.len[0] = rte_pktmbuf_pkt_len(m);
++			sg2->u.s.valid_segs = 1;
++
++			dptr = (uint64_t)rte_pktmbuf_iova(m);
++			u64_dptr = dptr;
++		}
++
++		/* Word 0 and 1 */
++		inst_01 = vdupq_n_u64(0);
++		u64_0 = pf_func << 48 | *(vf->rx_chan_base + m->port) << 4 | (l2_len - 2) << 24 |
++			l2_len << 16;
++		inst_01 = vsetq_lane_u64(u64_0, inst_01, 0);
++		inst_01 = vsetq_lane_u64((uint64_t)hw_res, inst_01, 1);
++		vst1q_u64(&inst->w0.u64, inst_01);
++
++		/* Word 2 and 3 */
++		inst_23 = vdupq_n_u64(0);
++		u64_1 = (((uint64_t)m + sizeof(struct rte_mbuf)) >> 3) << 3 | 1;
++		inst_23 = vsetq_lane_u64(u64_1, inst_23, 1);
++		vst1q_u64(&inst->w2.u64, inst_23);
++
++		/* Word 4 and 5 */
++		inst_45 = vdupq_n_u64(0);
++		u64_0 = sec_sess->inst.w4 | (rte_pktmbuf_pkt_len(m));
++		inst_45 = vsetq_lane_u64(u64_0, inst_45, 0);
++		inst_45 = vsetq_lane_u64(u64_dptr, inst_45, 1);
++		vst1q_u64(&inst->w4.u64, inst_45);
++
++		/* Word 6 and 7 */
++		inst_67 = vdupq_n_u64(0);
++		u64_1 = sec_sess->inst.w7;
++		inst_67 = vsetq_lane_u64(u64_1, inst_67, 1);
++		vst1q_u64(&inst->w6.u64, inst_67);
++
++		inst++;
++	}
++
++	cn10k_cpt_lmtst_dual_submit(&io_addr, lmt_id, &i);
++
++	if (nb_pkts - i > 0 && i == CN10K_CPT_PKTS_PER_LOOP) {
++		nb_pkts -= CN10K_CPT_PKTS_PER_LOOP;
++		pkts += CN10K_CPT_PKTS_PER_LOOP;
++		count += CN10K_CPT_PKTS_PER_LOOP;
++		sess += CN10K_CPT_PKTS_PER_LOOP;
++		goto again;
++	}
++
++exit:
++	return count + i;
++}
++#else
++uint16_t __rte_hot
++cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
++				  struct rte_security_session **sess, uint16_t nb_pkts)
++{
++	RTE_SET_USED(dev);
++	RTE_SET_USED(pkts);
++	RTE_SET_USED(sess);
++	RTE_SET_USED(nb_pkts);
++	return 0;
++}
++#endif
++
+ void
+ cn10k_cpt_set_enqdeq_fns(struct rte_cryptodev *dev, struct cnxk_cpt_vf *vf)
+ {
+@@ -1611,6 +1768,30 @@ cn10k_sym_configure_raw_dp_ctx(struct rte_cryptodev *dev, uint16_t qp_id,
+ 	return 0;
+ }
+ 
++int
++cn10k_cryptodev_sec_rx_inject_configure(void *device, uint16_t port_id, bool enable)
++{
++	struct rte_cryptodev *crypto_dev = device;
++	struct rte_eth_dev *eth_dev;
++	int ret;
++
++	if (!rte_eth_dev_is_valid_port(port_id))
++		return -EINVAL;
++
++	if (!(crypto_dev->feature_flags & RTE_CRYPTODEV_FF_SECURITY_RX_INJECT))
++		return -ENOTSUP;
++
++	eth_dev = &rte_eth_devices[port_id];
++
++	ret = strncmp(eth_dev->device->driver->name, "net_cn10k", 8);
++	if (ret)
++		return -ENOTSUP;
++
++	roc_idev_nix_rx_inject_set(port_id, enable);
++
++	return 0;
++}
++
+ struct rte_cryptodev_ops cn10k_cpt_ops = {
+ 	/* Device control ops */
+ 	.dev_configure = cnxk_cpt_dev_config,
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.h b/drivers/crypto/cnxk/cn10k_cryptodev_ops.h
+index 55b0a86b13bd9..be76c49a658bc 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.h
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.h
+@@ -25,6 +25,14 @@ extern struct rte_cryptodev_ops cn10k_cpt_ops;
+ 
+ void cn10k_cpt_set_enqdeq_fns(struct rte_cryptodev *dev, struct cnxk_cpt_vf *vf);
+ 
++__rte_internal
++uint16_t __rte_hot cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
++						     struct rte_security_session **sess,
++						     uint16_t nb_pkts);
++
++__rte_internal
++int cn10k_cryptodev_sec_rx_inject_configure(void *device, uint16_t port_id, bool enable);
++
+ __rte_internal
+ uint16_t __rte_hot cn10k_cpt_sg_ver1_crypto_adapter_enqueue(void *ws, struct rte_event ev[],
+ 		uint16_t nb_events);
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_sec.c b/drivers/crypto/cnxk/cn10k_cryptodev_sec.c
+index a4c5790bac98e..f24872290e2de 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_sec.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_sec.c
+@@ -27,6 +27,7 @@ cn10k_sec_session_create(void *dev, struct rte_security_session_conf *conf,
+ 
+ 	vf = crypto_dev->data->dev_private;
+ 
++	((struct cn10k_sec_session *)sess)->userdata = conf->userdata;
+ 	if (conf->protocol == RTE_SECURITY_PROTOCOL_IPSEC) {
+ 		((struct cn10k_sec_session *)sess)->userdata = conf->userdata;
+ 		return cn10k_ipsec_session_create(vf, qp, &conf->ipsec, conf->crypto_xform, sess);
+@@ -122,4 +123,6 @@ cn10k_sec_ops_override(void)
+ 	cnxk_sec_ops.session_get_size = cn10k_sec_session_get_size;
+ 	cnxk_sec_ops.session_stats_get = cn10k_sec_session_stats_get;
+ 	cnxk_sec_ops.session_update = cn10k_sec_session_update;
++	cnxk_sec_ops.inb_pkt_rx_inject = cn10k_cryptodev_sec_inb_rx_inject;
++	cnxk_sec_ops.rx_inject_configure = cn10k_cryptodev_sec_rx_inject_configure;
+ }
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.c b/drivers/crypto/cnxk/cnxk_cryptodev.c
+index 4819a141842c7..b1684e56a7f27 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.c
+@@ -24,6 +24,9 @@ cnxk_cpt_default_ff_get(void)
+ 	if (roc_model_is_cn10k())
+ 		ff |= RTE_CRYPTODEV_FF_SECURITY_INNER_CSUM | RTE_CRYPTODEV_FF_SYM_RAW_DP;
+ 
++	if (roc_model_is_cn10ka_b0())
++		ff |= RTE_CRYPTODEV_FF_SECURITY_RX_INJECT;
++
+ 	return ff;
+ }
+ 
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.h b/drivers/crypto/cnxk/cnxk_cryptodev.h
+index e04626a451ec4..da0d7a71e9b97 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.h
+@@ -19,6 +19,9 @@
+  * Device private data
+  */
+ struct cnxk_cpt_vf {
++	struct roc_cpt_lmtline rx_inj_lmtline;
++	uint16_t rx_inj_pf_func;
++	uint16_t *rx_chan_base;
+ 	struct roc_cpt cpt;
+ 	struct rte_cryptodev_capabilities crypto_caps[CNXK_CPT_MAX_CAPS];
+ 	struct rte_cryptodev_capabilities sec_ipsec_crypto_caps[CNXK_SEC_IPSEC_CRYPTO_MAX_CAPS];
+@@ -26,6 +29,7 @@ struct cnxk_cpt_vf {
+ 	uint64_t cnxk_fpm_iova[ROC_AE_EC_ID_PMAX];
+ 	struct roc_ae_ec_group *ec_grp[ROC_AE_EC_ID_PMAX];
+ 	uint16_t max_qps_limit;
++	uint16_t rx_inject_qp;
+ };
+ 
+ uint64_t cnxk_cpt_default_ff_get(void);
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c b/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c
+index c3e9bdb2d15b4..adf1ba0543119 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c
+@@ -9,6 +9,23 @@
+ #define CNXK_MAX_QPS_LIMIT     "max_qps_limit"
+ #define CNXK_MAX_QPS_LIMIT_MIN 1
+ #define CNXK_MAX_QPS_LIMIT_MAX (ROC_CPT_MAX_LFS - 1)
++#define CNXK_RX_INJECT_QP      "rx_inject_qp"
++
++static int
++parse_rx_inject_qp(const char *key, const char *value, void *extra_args)
++{
++	RTE_SET_USED(key);
++	uint32_t val;
++
++	val = atoi(value);
++
++	if (val < CNXK_MAX_QPS_LIMIT_MIN || val > CNXK_MAX_QPS_LIMIT_MAX)
++		return -EINVAL;
++
++	*(uint16_t *)extra_args = val;
++
++	return 0;
++}
+ 
+ static int
+ parse_max_qps_limit(const char *key, const char *value, void *extra_args)
+@@ -31,8 +48,12 @@ cnxk_cpt_parse_devargs(struct rte_devargs *devargs, struct cnxk_cpt_vf *vf)
+ {
+ 	uint16_t max_qps_limit = CNXK_MAX_QPS_LIMIT_MAX;
+ 	struct rte_kvargs *kvlist;
++	uint16_t rx_inject_qp;
+ 	int rc;
+ 
++	/* Set to max value as default so that the feature is disabled by default. */
++	rx_inject_qp = CNXK_MAX_QPS_LIMIT_MAX;
++
+ 	if (devargs == NULL)
+ 		goto null_devargs;
+ 
+@@ -48,10 +69,20 @@ cnxk_cpt_parse_devargs(struct rte_devargs *devargs, struct cnxk_cpt_vf *vf)
+ 		rte_kvargs_free(kvlist);
+ 		goto exit;
+ 	}
++
++	rc = rte_kvargs_process(kvlist, CNXK_RX_INJECT_QP, parse_rx_inject_qp, &rx_inject_qp);
++	if (rc < 0) {
++		plt_err("rx_inject_qp should in the range <%d-%d>", CNXK_MAX_QPS_LIMIT_MIN,
++			max_qps_limit - 1);
++		rte_kvargs_free(kvlist);
++		goto exit;
++	}
++
+ 	rte_kvargs_free(kvlist);
+ 
+ null_devargs:
+ 	vf->max_qps_limit = max_qps_limit;
++	vf->rx_inject_qp = rx_inject_qp;
+ 	return 0;
+ 
+ exit:
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 18ff05893e06d..47f5750cb4321 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -5,10 +5,12 @@
+ #include <rte_cryptodev.h>
+ #include <cryptodev_pmd.h>
+ #include <rte_errno.h>
++#include <rte_security_driver.h>
+ 
+ #include "roc_ae_fpm_tables.h"
+ #include "roc_cpt.h"
+ #include "roc_errata.h"
++#include "roc_idev.h"
+ #include "roc_ie_on.h"
+ #if defined(__aarch64__)
+ #include "roc_io.h"
+@@ -105,6 +107,7 @@ cnxk_cpt_dev_config(struct rte_cryptodev *dev, struct rte_cryptodev_config *conf
+ 	struct cnxk_cpt_vf *vf = dev->data->dev_private;
+ 	struct roc_cpt *roc_cpt = &vf->cpt;
+ 	uint16_t nb_lf_avail, nb_lf;
++	bool rxc_ena = false;
+ 	int ret;
+ 
+ 	/* If this is a reconfigure attempt, clear the device and configure again */
+@@ -121,7 +124,14 @@ cnxk_cpt_dev_config(struct rte_cryptodev *dev, struct rte_cryptodev_config *conf
+ 	if (nb_lf > nb_lf_avail)
+ 		return -ENOTSUP;
+ 
+-	ret = roc_cpt_dev_configure(roc_cpt, nb_lf, false, 0);
++	if (dev->feature_flags & RTE_CRYPTODEV_FF_SECURITY_RX_INJECT) {
++		if (rte_security_dynfield_register() < 0)
++			return -ENOTSUP;
++		rxc_ena = true;
++		vf->rx_chan_base = roc_idev_nix_rx_chan_base_get();
++	}
++
++	ret = roc_cpt_dev_configure(roc_cpt, nb_lf, rxc_ena, vf->rx_inject_qp);
+ 	if (ret) {
+ 		plt_err("Could not configure device");
+ 		return ret;
+@@ -218,6 +228,10 @@ cnxk_cpt_dev_info_get(struct rte_cryptodev *dev,
+ 	info->sym.max_nb_sessions = 0;
+ 	info->min_mbuf_headroom_req = CNXK_CPT_MIN_HEADROOM_REQ;
+ 	info->min_mbuf_tailroom_req = CNXK_CPT_MIN_TAILROOM_REQ;
++
++	/* If the LF ID for RX Inject is less than the available lfs. */
++	if (vf->rx_inject_qp > info->max_nb_queue_pairs)
++		info->feature_flags &= ~RTE_CRYPTODEV_FF_SECURITY_RX_INJECT;
+ }
+ 
+ static void
+@@ -417,6 +431,7 @@ cnxk_cpt_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
+ 	struct rte_pci_device *pci_dev;
+ 	struct cnxk_cpt_qp *qp;
+ 	uint32_t nb_desc;
++	uint64_t io_addr;
+ 	int ret;
+ 
+ 	if (dev->data->queue_pairs[qp_id] != NULL)
+@@ -462,6 +477,28 @@ cnxk_cpt_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
+ 	qp->sess_mp = conf->mp_session;
+ 	dev->data->queue_pairs[qp_id] = qp;
+ 
++	if (qp_id == vf->rx_inject_qp) {
++		ret = roc_cpt_lmtline_init(roc_cpt, &vf->rx_inj_lmtline, vf->rx_inject_qp, false);
++		if (ret) {
++			plt_err("Could not init lmtline Rx inject");
++			goto exit;
++		}
++
++		vf->rx_inj_pf_func = qp->lf.pf_func;
++
++		/* Update IO addr to enable dual submission */
++		io_addr = vf->rx_inj_lmtline.io_addr;
++		io_addr = (io_addr & ~(uint64_t)(0x7 << 4)) | ROC_CN10K_TWO_CPT_INST_DW_M1 << 4;
++		vf->rx_inj_lmtline.io_addr = io_addr;
++
++		/* Update FC threshold to reflect dual submission */
++		vf->rx_inj_lmtline.fc_thresh -= 32;
++
++
++		/* Block the queue for other submissions */
++		qp->pend_q.pq_mask = 0;
++	}
++
+ 	return 0;
+ 
+ exit:
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+index d96cd29c51e03..398ecdd54a464 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+@@ -18,7 +18,15 @@
+ 
+ /* Space for ctrl_word(8B), IV(48B), passthrough alignment(8B) */
+ #define CNXK_CPT_MIN_HEADROOM_REQ 64
+-#define CNXK_CPT_MIN_TAILROOM_REQ 102
++/* Tailroom required for RX-inject path.
++ * In RX-inject path, space is required for below entities:
++ * WQE header and NIX_RX_PARSE_S
++ * SG list format for 6 IOVA pointers
++ * Space for 128 byte alignment.
++ */
++#define CNXK_CPT_MIN_TAILROOM_REQ 256
++#define CNXK_CPT_MAX_SG_SEGS	  6
++
+ 
+ /* Default command timeout in seconds */
+ #define DEFAULT_COMMAND_TIMEOUT 4
+diff --git a/drivers/crypto/cnxk/version.map b/drivers/crypto/cnxk/version.map
+index d13209feec86e..5789a6bfc9862 100644
+--- a/drivers/crypto/cnxk/version.map
++++ b/drivers/crypto/cnxk/version.map
+@@ -8,5 +8,8 @@ INTERNAL {
+ 	cn10k_cpt_crypto_adapter_dequeue;
+ 	cn10k_cpt_crypto_adapter_vector_dequeue;
+ 
++	cn10k_cryptodev_sec_inb_rx_inject;
++	cn10k_cryptodev_sec_rx_inject_configure;
++
+ 	local: *;
+ };
+-- 
+2.25.1
+

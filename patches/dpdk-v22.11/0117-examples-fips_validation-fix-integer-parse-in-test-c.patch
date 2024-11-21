@@ -1,0 +1,63 @@
+From 0efc974c3e4559451507da8a286c4963956b7e4c Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Thu, 15 Dec 2022 12:38:10 +0530
+Subject: [PATCH 117/955] examples/fips_validation: fix integer parse in test
+ case
+
+Parsing integer value in test case vector does not store
+it because only string was expected. This patch adds handling
+for integer value as well.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I52c25e94ffc226880d1095a0dc247515364210f2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92857
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ examples/fips_validation/fips_validation.c | 29 ++++++++++++++++------
+ 1 file changed, 21 insertions(+), 8 deletions(-)
+
+diff --git a/examples/fips_validation/fips_validation.c b/examples/fips_validation/fips_validation.c
+index f7a6d821ea3e5..d3b6099d73267 100644
+--- a/examples/fips_validation/fips_validation.c
++++ b/examples/fips_validation/fips_validation.c
+@@ -543,15 +543,28 @@ fips_test_parse_one_json_case(void)
+ 
+ 	for (i = 0; info.callbacks[i].key != NULL; i++) {
+ 		param = json_object_get(json_info.json_test_case, info.callbacks[i].key);
+-		if (param) {
+-			strcpy(info.one_line_text, json_string_value(param));
+-			ret = info.callbacks[i].cb(
+-				info.callbacks[i].key, info.one_line_text,
+-				info.callbacks[i].val
+-			);
+-			if (ret < 0)
+-				return ret;
++		if (!param)
++			continue;
++
++		switch (json_typeof(param)) {
++		case JSON_STRING:
++			snprintf(info.one_line_text, MAX_LINE_CHAR, "%s",
++					 json_string_value(param));
++			break;
++
++		case JSON_INTEGER:
++			snprintf(info.one_line_text, MAX_LINE_CHAR, "%"JSON_INTEGER_FORMAT,
++					 json_integer_value(param));
++			break;
++
++		default:
++			return -EINVAL;
+ 		}
++
++		ret = info.callbacks[i].cb(info.callbacks[i].key, info.one_line_text,
++				info.callbacks[i].val);
++		if (ret < 0)
++			return ret;
+ 	}
+ 
+ 	return 0;
+-- 
+2.25.1
+

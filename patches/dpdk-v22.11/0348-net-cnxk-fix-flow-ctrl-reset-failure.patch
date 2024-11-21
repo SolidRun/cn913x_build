@@ -1,0 +1,54 @@
+From 912f92b0098f8104587c4830f532227499075ba0 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Wed, 29 Mar 2023 13:04:32 +0530
+Subject: [PATCH 348/955] net/cnxk: fix flow ctrl reset failure
+
+Rx and Tx pause flags don't get updated after writing flow control
+configuration, Only mode is updated.
+
+It leads further failure when configuring PFC. Also patch fixes a typo.
+
+Fixes: 1d6c90f25a84 ("common/cnxk: ignore error on mode set similar to PFC")
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: Ifef5dac9079f4f9f45b3a9b04699c393efedd57a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100568
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c     | 5 +++--
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 2 +-
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 01e4a057d5434..677539c35ab33 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -380,8 +380,9 @@ nix_init_flow_ctrl_config(struct rte_eth_dev *eth_dev)
+ 	if (rc)
+ 		return rc;
+ 
+-	fc->mode = (fc_mode == ROC_NIX_FC_FULL) ? RTE_ETH_FC_FULL :
+-						  RTE_ETH_FC_TX_PAUSE;
++	fc->mode = (fc_mode == ROC_NIX_FC_FULL) ? RTE_ETH_FC_FULL : RTE_ETH_FC_TX_PAUSE;
++	fc->rx_pause = (fc->mode == RTE_ETH_FC_FULL) || (fc->mode == RTE_ETH_FC_RX_PAUSE);
++	fc->tx_pause = (fc->mode == RTE_ETH_FC_FULL) || (fc->mode == RTE_ETH_FC_TX_PAUSE);
+ 	return rc;
+ }
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index b7f12210a45d4..7a28cbdfe29f3 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -343,7 +343,7 @@ cnxk_nix_flow_ctrl_set(struct rte_eth_dev *eth_dev,
+ 	}
+ 
+ 	/* Skip mode set if it is we are in same state */
+-	if (fc->rx_pause == tx_pause && fc->tx_pause == tx_pause)
++	if (fc->rx_pause == rx_pause && fc->tx_pause == tx_pause)
+ 		return 0;
+ 
+ 	rc = roc_nix_fc_mode_set(nix, mode_map[fc_conf->mode]);
+-- 
+2.25.1
+

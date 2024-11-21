@@ -1,0 +1,196 @@
+From 4ef1d5d1d476d756942a7581d462184f95402711 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 23 Apr 2024 04:44:08 +0000
+Subject: [PATCH 314/513] common/cnxk: restore segregation of logs based on
+ module
+
+Originally the logs were segregated under various labels which could be
+selectively enabled. It was changed to use 'pmd.common.cnxk' while
+changing the macro used for registering logging. Address the same by
+restoring the segregation.
+
+Current logs:
+        ...
+        logtype3
+        pmd.common.cnxk
+        pmd.common.iavf
+        ...
+
+Changed to:
+        ...
+        logtype3
+        pmd.common.cnxk.base
+        pmd.common.cnxk.crypto
+        pmd.common.cnxk.dpi
+        pmd.common.cnxk.esw
+        pmd.common.cnxk.event
+        pmd.common.cnxk.flow
+        pmd.common.cnxk.mbox
+        pmd.common.cnxk.mempool
+        pmd.common.cnxk.ml
+        pmd.common.cnxk.nix
+        pmd.common.cnxk.ree
+        pmd.common.cnxk.rep
+        pmd.common.cnxk.timer
+        pmd.common.cnxk.tm
+        pmd.common.iavf
+        ...
+
+Updated documentation also to reflect the same.
+
+Fixes: 233692f550a1 ("dma/cnxk: rework DMA driver")
+Cc: pbhagavatula@marvell.com
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Iec5d83c1b579cd1bc1d8518dce05283c1797c7fd
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125885
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit d49aea7db25d0ef46322f8afae1e3905e9fd2bb2)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125912
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ doc/guides/cryptodevs/cnxk.rst     |  2 +-
+ doc/guides/eventdevs/cnxk.rst      |  4 ++--
+ doc/guides/mempool/cnxk.rst        |  2 +-
+ doc/guides/mldevs/cnxk.rst         |  2 +-
+ doc/guides/nics/cnxk.rst           |  8 ++++----
+ doc/guides/platform/cnxk.rst       |  4 ++--
+ drivers/common/cnxk/roc_platform.c | 28 ++++++++++++++--------------
+ 7 files changed, 25 insertions(+), 25 deletions(-)
+
+diff --git a/doc/guides/cryptodevs/cnxk.rst b/doc/guides/cryptodevs/cnxk.rst
+index 8dc745dccda34..1a3cf80c31ac6 100644
+--- a/doc/guides/cryptodevs/cnxk.rst
++++ b/doc/guides/cryptodevs/cnxk.rst
+@@ -209,7 +209,7 @@ Debugging Options
+     +---+------------+-------------------------------------------------------+
+     | # | Component  | EAL log command                                       |
+     +===+============+=======================================================+
+-    | 1 | CPT        | --log-level='pmd\.crypto\.cnxk,8'                     |
++    | 1 | CPT        | --log-level='pmd\.common\.cnxk\.crypto,8'             |
+     +---+------------+-------------------------------------------------------+
+ 
+ Testing
+diff --git a/doc/guides/eventdevs/cnxk.rst b/doc/guides/eventdevs/cnxk.rst
+index 9ff1052c53b14..af925533a3451 100644
+--- a/doc/guides/eventdevs/cnxk.rst
++++ b/doc/guides/eventdevs/cnxk.rst
+@@ -208,9 +208,9 @@ Debugging Options
+    +---+------------+-------------------------------------------------------+
+    | # | Component  | EAL log command                                       |
+    +===+============+=======================================================+
+-   | 1 | SSO        | --log-level='pmd\.event\.cnxk,8'                      |
++   | 1 | SSO        | --log-level='pmd\.common\.cnxk\.event,8'              |
+    +---+------------+-------------------------------------------------------+
+-   | 2 | TIM        | --log-level='pmd\.event\.cnxk\.timer,8'               |
++   | 2 | TIM        | --log-level='pmd\.common\.cnxk\.timer,8'              |
+    +---+------------+-------------------------------------------------------+
+ 
+ Limitations
+diff --git a/doc/guides/mempool/cnxk.rst b/doc/guides/mempool/cnxk.rst
+index d883b83f7ba87..ffd9a6de8655e 100644
+--- a/doc/guides/mempool/cnxk.rst
++++ b/doc/guides/mempool/cnxk.rst
+@@ -72,7 +72,7 @@ Debugging Options
+    +---+------------+-------------------------------------------------------+
+    | # | Component  | EAL log command                                       |
+    +===+============+=======================================================+
+-   | 1 | NPA        | --log-level='pmd\.mempool.cnxk,8'                     |
++   | 1 | NPA        | --log-level='pmd\.common\.cnxk\.mempool,8'            |
+    +---+------------+-------------------------------------------------------+
+ 
+ Standalone mempool device
+diff --git a/doc/guides/mldevs/cnxk.rst b/doc/guides/mldevs/cnxk.rst
+index ae9e1fae5f715..fc1bcd9cdb45b 100644
+--- a/doc/guides/mldevs/cnxk.rst
++++ b/doc/guides/mldevs/cnxk.rst
+@@ -383,7 +383,7 @@ Debugging Options
+    +---+------------+-------------------------------------------------------+
+    | # | Component  | EAL log command                                       |
+    +===+============+=======================================================+
+-   | 1 | ML         | --log-level='pmd\.ml\.cnxk,8'                         |
++   | 1 | ML         | --log-level='pmd\.common\.cnxk\.ml,8'                 |
+    +---+------------+-------------------------------------------------------+
+ 
+ 
+diff --git a/doc/guides/nics/cnxk.rst b/doc/guides/nics/cnxk.rst
+index f2d726047e21d..227270353fd72 100644
+--- a/doc/guides/nics/cnxk.rst
++++ b/doc/guides/nics/cnxk.rst
+@@ -701,11 +701,11 @@ Debugging Options
+    +---+------------+-------------------------------------------------------+
+    | # | Component  | EAL log command                                       |
+    +===+============+=======================================================+
+-   | 1 | NIX        | --log-level='pmd\.net.cnxk,8'                         |
++   | 1 | NIX        | --log-level='pmd\.common.cnxk\.nix,8'                 |
+    +---+------------+-------------------------------------------------------+
+-   | 2 | NPC        | --log-level='pmd\.net.cnxk\.flow,8'                   |
++   | 2 | NPC        | --log-level='pmd\.common.cnxk\.flow,8'                |
+    +---+------------+-------------------------------------------------------+
+-   | 3 | REP        | --log-level='pmd\.net.cnxk\.rep,8'                    |
++   | 3 | REP        | --log-level='pmd\.common.cnxk\.rep,8'                 |
+    +---+------------+-------------------------------------------------------+
+-   | 4 | ESW        | --log-level='pmd\.net.cnxk\.esw,8'                    |
++   | 4 | ESW        | --log-level='pmd\.common.cnxk\.esw,8'                 |
+    +---+------------+-------------------------------------------------------+
+diff --git a/doc/guides/platform/cnxk.rst b/doc/guides/platform/cnxk.rst
+index 70065e3d9628b..0e61bc91d95c2 100644
+--- a/doc/guides/platform/cnxk.rst
++++ b/doc/guides/platform/cnxk.rst
+@@ -250,9 +250,9 @@ Debugging Options
+    +---+------------+-------------------------------------------------------+
+    | # | Component  | EAL log command                                       |
+    +===+============+=======================================================+
+-   | 1 | Common     | --log-level='pmd\.cnxk\.base,8'                       |
++   | 1 | Common     | --log-level='pmd\.common\.cnxk\.base,8'               |
+    +---+------------+-------------------------------------------------------+
+-   | 2 | Mailbox    | --log-level='pmd\.cnxk\.mbox,8'                       |
++   | 2 | Mailbox    | --log-level='pmd\.common\.cnxk\.mbox,8'               |
+    +---+------------+-------------------------------------------------------+
+ 
+ Debugfs support
+diff --git a/drivers/common/cnxk/roc_platform.c b/drivers/common/cnxk/roc_platform.c
+index 181902a58523d..30379c7e5eb1e 100644
+--- a/drivers/common/cnxk/roc_platform.c
++++ b/drivers/common/cnxk/roc_platform.c
+@@ -85,17 +85,17 @@ roc_plt_init(void)
+ 	return 0;
+ }
+ 
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_base, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_mbox, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_cpt, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_ml, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_npa, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_nix, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_npc, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_sso, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_tim, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_tm, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_dpi, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_rep, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_esw, NOTICE);
+-RTE_LOG_REGISTER_DEFAULT(cnxk_logtype_ree, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_base, base, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_mbox, mbox, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_cpt, crypto, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_ml, ml, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_npa, mempool, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_nix, nix, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_npc, flow, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_sso, event, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_tim, timer, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_tm, tm, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_dpi, dpi, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_rep, rep, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_esw, esw, NOTICE);
++RTE_LOG_REGISTER_SUFFIX(cnxk_logtype_ree, ree, NOTICE);
+-- 
+2.25.1
+

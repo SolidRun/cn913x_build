@@ -1,0 +1,37 @@
+From d9513820bb4359861db45c168464dcc9750059cf Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Mon, 2 Jan 2023 03:47:57 -0800
+Subject: [PATCH 135/955] net/octeon_ep: replace jumbo frame check
+
+This commit removes jumbo frame flag check and
+validates receive frame length against
+dev_info.max_mtu.Since this
+DEV_RX_OFFLOAD_JUMBO_FRAME flag has been removed
+from dpdk 21.11 version onwards.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I7c112795295c4755c5adcf45f637fa10cd50002c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93502
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_rxtx.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 8370ad8b92cd4..6017b6c51b1ba 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -993,8 +993,7 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 		goto oq_read_fail;
+ 	}
+ 
+-	if ((droq_pkt->pkt_len > (RTE_ETHER_MAX_LEN + OTX_CUST_DATA_LEN)) &&
+-	    !(otx_ep->rx_offloads & DEV_RX_OFFLOAD_JUMBO_FRAME)) {
++	if (droq_pkt->pkt_len > otx_ep->eth_dev->data->mtu) {
+ 		rte_pktmbuf_free(droq_pkt);
+ 		goto oq_read_fail;
+ 	}
+-- 
+2.25.1
+

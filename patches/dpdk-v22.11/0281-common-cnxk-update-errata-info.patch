@@ -1,0 +1,114 @@
+From c5f1983d30d09a9e7c38fdff107b87349dda4ffe Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 6 Mar 2023 10:46:39 +0530
+Subject: [PATCH 281/955] common/cnxk: update errata info
+
+Update errata info based on CN10KA B0 and CN10KB A0.
+Also remove duplicate model check roc_model_is_cn103xx()
+
+Change-Id: I60f25d09456c3cf463cb9447dfb38d648183be66
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98533
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_errata.h   | 20 ++++++++------------
+ drivers/common/cnxk/roc_features.h |  2 +-
+ drivers/common/cnxk/roc_model.h    |  6 ------
+ 3 files changed, 9 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_errata.h b/drivers/common/cnxk/roc_errata.h
+index 1333bde62934c..22d2406e94933 100644
+--- a/drivers/common/cnxk/roc_errata.h
++++ b/drivers/common/cnxk/roc_errata.h
+@@ -6,7 +6,7 @@
+ 
+ #include "roc_model.h"
+ 
+-/* Errata IPBUNIXRX-40129 */
++/* Errata IPBUNIXRX-40129, IPBUNIXRX-40179 */
+ static inline bool
+ roc_errata_nix_has_no_drop_re(void)
+ {
+@@ -41,7 +41,8 @@ static inline bool
+ roc_errata_nix_has_no_vwqe_flush_op(void)
+ {
+ 	return (roc_model_is_cn10ka_a0() || roc_model_is_cnf10ka_a0() ||
+-		roc_model_is_cnf10kb_a0());
++		roc_model_is_cnf10kb_a0() || roc_model_is_cn10ka_a1() || roc_model_is_cn10ka_b0() ||
++		roc_model_is_cn10kb_a0());
+ }
+ 
+ /* Errata IPBURVUM-38481 */
+@@ -51,13 +52,6 @@ roc_errata_ruvm_has_no_interrupt_with_msixen(void)
+ 	return true;
+ }
+ 
+-/* Errata IPBUNIXTX-39300 */
+-static inline bool
+-roc_errata_nix_has_assign_incorrect_qintidx(void)
+-{
+-	return true;
+-}
+-
+ /* Errata IPBUCPT-38551 */
+ static inline bool
+ roc_errata_cpt_has_use_incorrect_ldwb(void)
+@@ -69,17 +63,19 @@ roc_errata_cpt_has_use_incorrect_ldwb(void)
+ static inline bool
+ roc_errata_nix_has_overwrite_incorrect_sq_intr(void)
+ {
+-	return true;
++	return (roc_model_is_cn10ka_a0() || roc_model_is_cnf10ka_a0() ||
++		roc_model_is_cnf10kb_a0() || roc_model_is_cn10ka_a1());
+ }
+ 
+ /* Errata IPBUNIXTX-39248 */
+ static inline bool
+ roc_errata_nix_has_perf_issue_on_stats_update(void)
+ {
+-	return true;
++	return (roc_model_is_cn10ka_a0() || roc_model_is_cnf10ka_a0() ||
++		roc_model_is_cnf10kb_a0() || roc_model_is_cn10ka_a1());
+ }
+ 
+-/* Errata IPBUCPT-38726, IPBUCPT-38727 */
++/* Errata IPBUCPT-38736, IPBUCPT-38737 */
+ static inline bool
+ roc_errata_cpt_hang_on_x2p_bp(void)
+ {
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index c2893faa65be6..742b8997bc5c6 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -7,7 +7,7 @@
+ static inline bool
+ roc_feature_sso_has_stash(void)
+ {
+-	return (roc_model_is_cn103xx() | roc_model_is_cn10ka_b0()) ? true : false;
++	return (roc_model_is_cn10kb() | roc_model_is_cn10ka_b0()) ? true : false;
+ }
+ 
+ static inline bool
+diff --git a/drivers/common/cnxk/roc_model.h b/drivers/common/cnxk/roc_model.h
+index f010cc4a44115..58046af193fd3 100644
+--- a/drivers/common/cnxk/roc_model.h
++++ b/drivers/common/cnxk/roc_model.h
+@@ -258,12 +258,6 @@ roc_model_is_cn10kb(void)
+ 	return roc_model->flag & ROC_MODEL_CN103xx;
+ }
+ 
+-static inline uint64_t
+-roc_model_is_cn103xx(void)
+-{
+-	return roc_model->flag & ROC_MODEL_CN103xx;
+-}
+-
+ static inline bool
+ roc_env_is_hw(void)
+ {
+-- 
+2.25.1
+

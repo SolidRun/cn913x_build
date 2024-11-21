@@ -1,0 +1,60 @@
+From f03447b5f92417486e80b1b1626b2633f1dce074 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 20 May 2024 07:21:23 +0000
+Subject: [PATCH 340/513] crypto/cnxk: update sess pointer for next iteration
+
+Update sess pointer while working on next set of packets.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I04f1b43474d23d65ba2bcc08acecf17d43a76405
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128091
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128317
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 3fd002d549bef..0afd623990e35 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -1460,6 +1460,8 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 
+ 	vf = cdev->data->dev_private;
+ 
++	const int nb_pkts_per_loop = 2 * CN10K_PKTS_PER_LOOP;
++
+ 	lmt_base = vf->rx_inj_lmtline.lmt_base;
+ 	io_addr = vf->rx_inj_lmtline.io_addr;
+ 	fc_addr = vf->rx_inj_lmtline.fc_addr;
+@@ -1479,7 +1481,7 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 	if (unlikely(fc.s.qsize > fc_thresh))
+ 		goto exit;
+ 
+-	for (; i < RTE_MIN(2 * CN10K_PKTS_PER_LOOP, nb_pkts); i++) {
++	for (; i < RTE_MIN(nb_pkts_per_loop, nb_pkts); i++) {
+ 
+ 		m = pkts[i];
+ 		sec_sess = (struct cn10k_sec_session *)sess[i];
+@@ -1537,10 +1539,11 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 
+ 	cn10k_cpt_lmtst_dual_submit(&io_addr, lmt_id, &i);
+ 
+-	if (nb_pkts - i > 0 && i == 2 * CN10K_PKTS_PER_LOOP) {
+-		nb_pkts -= i;
+-		pkts += i;
+-		count += i;
++	if (nb_pkts - i > 0 && i == nb_pkts_per_loop) {
++		nb_pkts -= nb_pkts_per_loop;
++		pkts += nb_pkts_per_loop;
++		count += nb_pkts_per_loop;
++		sess += nb_pkts_per_loop;
+ 		goto again;
+ 	}
+ 
+-- 
+2.25.1
+

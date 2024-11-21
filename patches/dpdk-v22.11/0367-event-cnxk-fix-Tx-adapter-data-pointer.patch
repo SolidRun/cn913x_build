@@ -1,0 +1,38 @@
+From aafa24b41e904f4e1222d3b61cb3e57ad4cd4e93 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Mon, 10 Apr 2023 14:16:25 +0530
+Subject: [PATCH 367/955] event/cnxk: fix Tx adapter data pointer
+
+Dpdk test application crashes when event inline IPsec test ran for
+second time onwards.
+In case of event device cleanup, Tx adapter data pointer is free
+but not set back to NULL, which causes incomplete
+initialization on next run.
+
+Fixes: 6a24c7c4bcd ("event/cnxk: add Tx adapter freeing")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I641b627550a10f805c16863b3657f9f83768e16e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100996
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cnxk_eventdev_adptr.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/event/cnxk/cnxk_eventdev_adptr.c b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+index 1616cfa895ed5..92aea92389ae7 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_adptr.c
++++ b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+@@ -611,6 +611,7 @@ cnxk_sso_tx_adapter_free(uint8_t id __rte_unused,
+ 	if (dev->tx_adptr_data_sz && dev->tx_adptr_active_mask == 0) {
+ 		dev->tx_adptr_data_sz = 0;
+ 		free(dev->tx_adptr_data);
++		dev->tx_adptr_data = NULL;
+ 	}
+ 
+ 	return 0;
+-- 
+2.25.1
+

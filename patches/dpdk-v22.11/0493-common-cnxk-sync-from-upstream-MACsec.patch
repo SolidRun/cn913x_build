@@ -1,0 +1,510 @@
+From 107c9e976714d94036a6bf490ce7f6b73a4e0410 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 9 Jun 2023 15:03:27 +0530
+Subject: [PATCH 493/955] common/cnxk: sync from upstream MACsec
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ic405c14b0c7ff832cbda1df68630480e069f959f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105217
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit d73fbd400759b16edec432e10b92b79fe4cfea40)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105664
+---
+ app/test/test_security_inline_macsec.c | 10 ++++-----
+ drivers/common/cnxk/roc_mbox.h         |  2 +-
+ drivers/common/cnxk/roc_mcs.c          | 10 ++++-----
+ drivers/common/cnxk/roc_mcs.h          | 19 +++++++++-------
+ drivers/common/cnxk/roc_mcs_priv.h     |  4 ++--
+ drivers/common/cnxk/roc_mcs_sec_cfg.c  | 26 +++++++++++-----------
+ drivers/common/cnxk/roc_mcs_stats.c    |  2 +-
+ drivers/common/cnxk/version.map        |  8 +++----
+ drivers/net/cnxk/cnxk_ethdev_mcs.c     | 30 +++++++++++++++-----------
+ drivers/net/cnxk/cnxk_ethdev_mcs.h     |  5 +++++
+ 10 files changed, 64 insertions(+), 52 deletions(-)
+
+diff --git a/app/test/test_security_inline_macsec.c b/app/test/test_security_inline_macsec.c
+index 8a6e4ad5566da..017566299c7c2 100644
+--- a/app/test/test_security_inline_macsec.c
++++ b/app/test/test_security_inline_macsec.c
+@@ -317,7 +317,7 @@ create_default_flow(const struct mcs_test_vector *td, uint16_t portid,
+ 	struct rte_flow_attr attr = {0};
+ 	struct rte_flow_error err;
+ 	struct rte_flow *flow;
+-	struct rte_flow_item_eth eth = {0};
++	struct rte_flow_item_eth eth = { .hdr.ether_type = 0, };
+ 	static const struct rte_flow_item_eth eth_mask = {
+ 		.hdr.dst_addr.addr_bytes = "\x00\x00\x00\x00\x00\x00",
+ 		.hdr.src_addr.addr_bytes = "\x00\x00\x00\x00\x00\x00",
+@@ -890,14 +890,14 @@ test_macsec_sec_caps_verify(const struct mcs_test_opts *opts,
+ static int
+ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs_test_opts *opts)
+ {
+-	uint16_t rx_sa_id[MCS_MAX_FLOWS][RTE_SECURITY_MACSEC_NUM_AN] = {0};
++	uint16_t rx_sa_id[MCS_MAX_FLOWS][RTE_SECURITY_MACSEC_NUM_AN] = {{0}};
+ 	struct rte_security_capability_idx sec_cap_idx;
+ 	const struct rte_security_capability *sec_cap;
+-	uint16_t tx_sa_id[MCS_MAX_FLOWS][2] = {0};
++	uint16_t tx_sa_id[MCS_MAX_FLOWS][2] = {{0}};
+ 	uint16_t rx_sc_id[MCS_MAX_FLOWS] = {0};
+ 	uint16_t tx_sc_id[MCS_MAX_FLOWS] = {0};
+-	void *rx_sess[MCS_MAX_FLOWS];
+-	void *tx_sess[MCS_MAX_FLOWS];
++	void *rx_sess[MCS_MAX_FLOWS] = {0};
++	void *tx_sess[MCS_MAX_FLOWS] = {0};
+ 	struct rte_security_session_conf sess_conf = {0};
+ 	struct rte_security_macsec_sa sa_conf = {0};
+ 	struct rte_security_macsec_sc sc_conf = {0};
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index a486f30e09a04..2f85b2f7550c7 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -886,7 +886,7 @@ struct mcs_set_active_lmac {
+ 	struct mbox_msghdr hdr;
+ 	uint32_t __io lmac_bmap; /* bitmap of active lmac per mcs block */
+ 	uint8_t __io mcs_id;
+-	uint16_t channel_base; /* MCS channel base */
++	uint16_t __io channel_base; /* MCS channel base */
+ 	uint64_t __io rsvd;
+ };
+ 
+diff --git a/drivers/common/cnxk/roc_mcs.c b/drivers/common/cnxk/roc_mcs.c
+index 0760eb0a6717b..1f269ddae5627 100644
+--- a/drivers/common/cnxk/roc_mcs.c
++++ b/drivers/common/cnxk/roc_mcs.c
+@@ -1,5 +1,5 @@
+ /* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
++ * Copyright(C) 2023 Marvell.
+  */
+ 
+ #include "roc_api.h"
+@@ -141,7 +141,7 @@ roc_mcs_pn_threshold_set(struct roc_mcs *mcs, struct roc_mcs_set_pn_threshold *p
+ }
+ 
+ int
+-roc_mcs_alloc_ctrl_pkt_rule(struct roc_mcs *mcs, struct roc_mcs_alloc_ctrl_pkt_rule_req *req,
++roc_mcs_ctrl_pkt_rule_alloc(struct roc_mcs *mcs, struct roc_mcs_alloc_ctrl_pkt_rule_req *req,
+ 			    struct roc_mcs_alloc_ctrl_pkt_rule_rsp *rsp)
+ {
+ 	struct mcs_alloc_ctrl_pkt_rule_req *rule_req;
+@@ -173,7 +173,7 @@ roc_mcs_alloc_ctrl_pkt_rule(struct roc_mcs *mcs, struct roc_mcs_alloc_ctrl_pkt_r
+ }
+ 
+ int
+-roc_mcs_free_ctrl_pkt_rule(struct roc_mcs *mcs, struct roc_mcs_free_ctrl_pkt_rule_req *req)
++roc_mcs_ctrl_pkt_rule_free(struct roc_mcs *mcs, struct roc_mcs_free_ctrl_pkt_rule_req *req)
+ {
+ 	struct mcs_free_ctrl_pkt_rule_req *rule_req;
+ 	struct msg_rsp *rsp;
+@@ -617,7 +617,7 @@ roc_mcs_event_cb_register(struct roc_mcs *mcs, enum roc_mcs_event_type event,
+ 
+ 	MCS_SUPPORT_CHECK;
+ 
+-	TAILQ_FOREACH (cb, cb_list, next) {
++	TAILQ_FOREACH(cb, cb_list, next) {
+ 		if (cb->cb_fn == cb_fn && cb->cb_arg == cb_arg && cb->event == event)
+ 			break;
+ 	}
+@@ -670,7 +670,7 @@ mcs_event_cb_process(struct roc_mcs *mcs, struct roc_mcs_event_desc *desc)
+ 	struct mcs_event_cb *cb;
+ 	int rc = 0;
+ 
+-	TAILQ_FOREACH (cb, cb_list, next) {
++	TAILQ_FOREACH(cb, cb_list, next) {
+ 		if (cb->cb_fn == NULL || cb->event != desc->type)
+ 			continue;
+ 
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+index 9934e71411429..602f1cae1d3df 100644
+--- a/drivers/common/cnxk/roc_mcs.h
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -1,9 +1,9 @@
+ /* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
++ * Copyright(C) 2023 Marvell.
+  */
+ 
+-#ifndef _ROC_MCS_H_
+-#define _ROC_MCS_H_
++#ifndef ROC_MCS_H
++#define ROC_MCS_H
+ 
+ #define MCS_AES_GCM_256_KEYLEN 32
+ 
+@@ -522,19 +522,21 @@ __roc_api int roc_mcs_custom_tag_cfg_get(struct roc_mcs *mcs,
+ 					 struct roc_mcs_custom_tag_cfg_get_rsp *rsp);
+ 
+ /* Resource allocation and free */
+-__roc_api int roc_mcs_alloc_rsrc(struct roc_mcs *mcs, struct roc_mcs_alloc_rsrc_req *req,
++__roc_api int roc_mcs_rsrc_alloc(struct roc_mcs *mcs, struct roc_mcs_alloc_rsrc_req *req,
+ 				 struct roc_mcs_alloc_rsrc_rsp *rsp);
+-__roc_api int roc_mcs_free_rsrc(struct roc_mcs *mcs, struct roc_mcs_free_rsrc_req *req);
++__roc_api int roc_mcs_rsrc_free(struct roc_mcs *mcs, struct roc_mcs_free_rsrc_req *req);
+ /* SA policy read and write */
+ __roc_api int roc_mcs_sa_policy_write(struct roc_mcs *mcs,
+ 				      struct roc_mcs_sa_plcy_write_req *sa_plcy);
+ __roc_api int roc_mcs_sa_policy_read(struct roc_mcs *mcs,
+ 				     struct roc_mcs_sa_plcy_write_req *sa_plcy);
++
+ /* PN Table read and write */
+ __roc_api int roc_mcs_pn_table_write(struct roc_mcs *mcs,
+ 				     struct roc_mcs_pn_table_write_req *pn_table);
+ __roc_api int roc_mcs_pn_table_read(struct roc_mcs *mcs,
+ 				    struct roc_mcs_pn_table_write_req *pn_table);
++
+ /* RX SC read, write and enable */
+ __roc_api int roc_mcs_rx_sc_cam_write(struct roc_mcs *mcs,
+ 				      struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam);
+@@ -557,6 +559,7 @@ __roc_api int roc_mcs_tx_sc_sa_map_write(struct roc_mcs *mcs,
+ 					 struct roc_mcs_tx_sc_sa_map *tx_sc_sa_map);
+ __roc_api int roc_mcs_tx_sc_sa_map_read(struct roc_mcs *mcs,
+ 					struct roc_mcs_tx_sc_sa_map *tx_sc_sa_map);
++
+ /* Flow entry read, write and enable */
+ __roc_api int roc_mcs_flowid_entry_write(struct roc_mcs *mcs,
+ 					 struct roc_mcs_flowid_entry_write_req *flowid_req);
+@@ -566,10 +569,10 @@ __roc_api int roc_mcs_flowid_entry_enable(struct roc_mcs *mcs,
+ 					  struct roc_mcs_flowid_ena_dis_entry *entry);
+ 
+ /* Control packet rule alloc, free and write */
+-__roc_api int roc_mcs_alloc_ctrl_pkt_rule(struct roc_mcs *mcs,
++__roc_api int roc_mcs_ctrl_pkt_rule_alloc(struct roc_mcs *mcs,
+ 					  struct roc_mcs_alloc_ctrl_pkt_rule_req *req,
+ 					  struct roc_mcs_alloc_ctrl_pkt_rule_rsp *rsp);
+-__roc_api int roc_mcs_free_ctrl_pkt_rule(struct roc_mcs *mcs,
++__roc_api int roc_mcs_ctrl_pkt_rule_free(struct roc_mcs *mcs,
+ 					 struct roc_mcs_free_ctrl_pkt_rule_req *req);
+ __roc_api int roc_mcs_ctrl_pkt_rule_write(struct roc_mcs *mcs,
+ 					  struct roc_mcs_ctrl_pkt_rule_write_req *req);
+@@ -621,4 +624,4 @@ __roc_api int roc_mcs_fips_start(struct roc_mcs *mcs, struct roc_mcs_fips_req *r
+ /* FIPS result */
+ __roc_api int roc_mcs_fips_result_get(struct roc_mcs *mcs, struct roc_mcs_fips_req *req,
+ 				      struct roc_mcs_fips_result_rsp *rsp);
+-#endif /* _ROC_MCS_H_ */
++#endif /* ROC_MCS_H */
+diff --git a/drivers/common/cnxk/roc_mcs_priv.h b/drivers/common/cnxk/roc_mcs_priv.h
+index 2c40f71d1d91d..4289aa69684a6 100644
+--- a/drivers/common/cnxk/roc_mcs_priv.h
++++ b/drivers/common/cnxk/roc_mcs_priv.h
+@@ -1,5 +1,5 @@
+ /* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
++ * Copyright(C) 2023 Marvell.
+  */
+ 
+ #ifndef _ROC_MCS_PRIV_H_
+@@ -15,7 +15,7 @@ enum mcs_error_status {
+ 
+ #define MCS_SUPPORT_CHECK                                                                          \
+ 	do {                                                                                       \
+-		if (!(roc_model_is_cnf10kb() || roc_model_is_cn10kb_a0()))                         \
++		if (!(roc_feature_bphy_has_macsec() || roc_feature_nix_has_macsec()))              \
+ 			return MCS_ERR_HW_NOTSUP;                                                  \
+ 	} while (0)
+ 
+diff --git a/drivers/common/cnxk/roc_mcs_sec_cfg.c b/drivers/common/cnxk/roc_mcs_sec_cfg.c
+index 99afb63904532..7b3a4c91e81ec 100644
+--- a/drivers/common/cnxk/roc_mcs_sec_cfg.c
++++ b/drivers/common/cnxk/roc_mcs_sec_cfg.c
+@@ -6,7 +6,7 @@
+ #include "roc_priv.h"
+ 
+ int
+-roc_mcs_alloc_rsrc(struct roc_mcs *mcs, struct roc_mcs_alloc_rsrc_req *req,
++roc_mcs_rsrc_alloc(struct roc_mcs *mcs, struct roc_mcs_alloc_rsrc_req *req,
+ 		   struct roc_mcs_alloc_rsrc_rsp *rsp)
+ {
+ 	struct mcs_priv *priv = roc_mcs_to_mcs_priv(mcs);
+@@ -93,13 +93,13 @@ roc_mcs_alloc_rsrc(struct roc_mcs *mcs, struct roc_mcs_alloc_rsrc_req *req,
+ }
+ 
+ int
+-roc_mcs_free_rsrc(struct roc_mcs *mcs, struct roc_mcs_free_rsrc_req *free_req)
++roc_mcs_rsrc_free(struct roc_mcs *mcs, struct roc_mcs_free_rsrc_req *free_req)
+ {
+ 	struct mcs_priv *priv = roc_mcs_to_mcs_priv(mcs);
+ 	struct mcs_free_rsrc_req *req;
+ 	struct msg_rsp *rsp;
+ 	uint32_t pos;
+-	int rc;
++	int i, rc;
+ 
+ 	MCS_SUPPORT_CHECK;
+ 
+@@ -124,7 +124,7 @@ roc_mcs_free_rsrc(struct roc_mcs *mcs, struct roc_mcs_free_rsrc_req *free_req)
+ 	case MCS_RSRC_TYPE_FLOWID:
+ 		pos = free_req->rsrc_id + ((req->dir == MCS_TX) ? priv->tcam_entries : 0);
+ 		plt_bitmap_clear(priv->dev_rsrc.tcam_bmap, pos);
+-		for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++		for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
+ 			uint32_t set = plt_bitmap_get(priv->port_rsrc[i].tcam_bmap, pos);
+ 
+ 			if (set) {
+@@ -136,7 +136,7 @@ roc_mcs_free_rsrc(struct roc_mcs *mcs, struct roc_mcs_free_rsrc_req *free_req)
+ 	case MCS_RSRC_TYPE_SECY:
+ 		pos = free_req->rsrc_id + ((req->dir == MCS_TX) ? priv->secy_entries : 0);
+ 		plt_bitmap_clear(priv->dev_rsrc.secy_bmap, pos);
+-		for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++		for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
+ 			uint32_t set = plt_bitmap_get(priv->port_rsrc[i].secy_bmap, pos);
+ 
+ 			if (set) {
+@@ -148,7 +148,7 @@ roc_mcs_free_rsrc(struct roc_mcs *mcs, struct roc_mcs_free_rsrc_req *free_req)
+ 	case MCS_RSRC_TYPE_SC:
+ 		pos = free_req->rsrc_id + ((req->dir == MCS_TX) ? priv->sc_entries : 0);
+ 		plt_bitmap_clear(priv->dev_rsrc.sc_bmap, pos);
+-		for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++		for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
+ 			uint32_t set = plt_bitmap_get(priv->port_rsrc[i].sc_bmap, pos);
+ 
+ 			if (set) {
+@@ -160,7 +160,7 @@ roc_mcs_free_rsrc(struct roc_mcs *mcs, struct roc_mcs_free_rsrc_req *free_req)
+ 	case MCS_RSRC_TYPE_SA:
+ 		pos = free_req->rsrc_id + ((req->dir == MCS_TX) ? priv->sa_entries : 0);
+ 		plt_bitmap_clear(priv->dev_rsrc.sa_bmap, pos);
+-		for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++		for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
+ 			uint32_t set = plt_bitmap_get(priv->port_rsrc[i].sa_bmap, pos);
+ 
+ 			if (set) {
+@@ -248,7 +248,7 @@ roc_mcs_rx_sc_cam_write(struct roc_mcs *mcs, struct roc_mcs_rx_sc_cam_write_req
+ 	struct mcs_priv *priv = roc_mcs_to_mcs_priv(mcs);
+ 	struct mcs_rx_sc_cam_write_req *rx_sc;
+ 	struct msg_rsp *rsp;
+-	int rc;
++	int i, rc;
+ 
+ 	MCS_SUPPORT_CHECK;
+ 
+@@ -268,7 +268,7 @@ roc_mcs_rx_sc_cam_write(struct roc_mcs *mcs, struct roc_mcs_rx_sc_cam_write_req
+ 	if (rc)
+ 		return rc;
+ 
+-	for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++	for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
+ 		uint32_t set = plt_bitmap_get(priv->port_rsrc[i].secy_bmap, rx_sc_cam->secy_id);
+ 
+ 		if (set) {
+@@ -337,7 +337,7 @@ roc_mcs_rx_sc_sa_map_write(struct roc_mcs *mcs, struct roc_mcs_rx_sc_sa_map *rx_
+ 	struct mcs_rx_sc_sa_map *sa_map;
+ 	struct msg_rsp *rsp;
+ 	uint16_t sc_id;
+-	int rc;
++	int i, rc;
+ 
+ 	MCS_SUPPORT_CHECK;
+ 
+@@ -359,7 +359,7 @@ roc_mcs_rx_sc_sa_map_write(struct roc_mcs *mcs, struct roc_mcs_rx_sc_sa_map *rx_
+ 	if (rc)
+ 		return rc;
+ 
+-	for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++	for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
+ 		uint32_t set = plt_bitmap_get(priv->port_rsrc[i].sc_bmap, sc_id);
+ 
+ 		if (set) {
+@@ -389,7 +389,7 @@ roc_mcs_tx_sc_sa_map_write(struct roc_mcs *mcs, struct roc_mcs_tx_sc_sa_map *tx_
+ 	struct mcs_tx_sc_sa_map *sa_map;
+ 	struct msg_rsp *rsp;
+ 	uint16_t sc_id;
+-	int rc;
++	int i, rc;
+ 
+ 	MCS_SUPPORT_CHECK;
+ 
+@@ -415,7 +415,7 @@ roc_mcs_tx_sc_sa_map_write(struct roc_mcs *mcs, struct roc_mcs_tx_sc_sa_map *tx_
+ 		return rc;
+ 
+ 	sc_id = tx_sc_sa_map->sc_id;
+-	for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++	for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
+ 		uint32_t set = plt_bitmap_get(priv->port_rsrc[i].sc_bmap, sc_id + priv->sc_entries);
+ 
+ 		if (set) {
+diff --git a/drivers/common/cnxk/roc_mcs_stats.c b/drivers/common/cnxk/roc_mcs_stats.c
+index 24ac8a31cd0e5..cac611959da74 100644
+--- a/drivers/common/cnxk/roc_mcs_stats.c
++++ b/drivers/common/cnxk/roc_mcs_stats.c
+@@ -1,5 +1,5 @@
+ /* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
++ * Copyright(C) 2023 Marvell.
+  */
+ 
+ #include "roc_api.h"
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 891f81176717f..2be9bc79247e2 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -108,8 +108,8 @@ INTERNAL {
+ 	roc_se_ciph_key_set;
+ 	roc_se_ctx_init;
+ 	roc_mcs_active_lmac_set;
+-	roc_mcs_alloc_ctrl_pkt_rule;
+-	roc_mcs_alloc_rsrc;
++	roc_mcs_ctrl_pkt_rule_alloc;
++	roc_mcs_ctrl_pkt_rule_free;
+ 	roc_mcs_ctrl_pkt_rule_write;
+ 	roc_mcs_custom_tag_cfg_get;
+ 	roc_mcs_dev_init;
+@@ -121,8 +121,6 @@ INTERNAL {
+ 	roc_mcs_flowid_entry_read;
+ 	roc_mcs_flowid_entry_write;
+ 	roc_mcs_flowid_stats_get;
+-	roc_mcs_free_ctrl_pkt_rule;
+-	roc_mcs_free_rsrc;
+ 	roc_mcs_hw_info_get;
+ 	roc_mcs_intr_configure;
+ 	roc_mcs_lmac_mode_set;
+@@ -134,6 +132,8 @@ INTERNAL {
+ 	roc_mcs_port_recovery;
+ 	roc_mcs_port_reset;
+ 	roc_mcs_port_stats_get;
++	roc_mcs_rsrc_alloc;
++	roc_mcs_rsrc_free;
+ 	roc_mcs_rx_sc_cam_enable;
+ 	roc_mcs_rx_sc_cam_read;
+ 	roc_mcs_rx_sc_cam_write;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mcs.c b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+index 8983d8abb88cd..52647743948f5 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_mcs.c
++++ b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+@@ -11,14 +11,16 @@ mcs_resource_alloc(struct cnxk_mcs_dev *mcs_dev, enum mcs_direction dir, uint8_t
+ 		   uint8_t rsrc_cnt, enum cnxk_mcs_rsrc_type type)
+ {
+ 	struct roc_mcs_alloc_rsrc_req req = {0};
+-	struct roc_mcs_alloc_rsrc_rsp rsp = {0};
++	struct roc_mcs_alloc_rsrc_rsp rsp;
+ 	int i;
+ 
+ 	req.rsrc_type = type;
+ 	req.rsrc_cnt = rsrc_cnt;
+ 	req.dir = dir;
+ 
+-	if (roc_mcs_alloc_rsrc(mcs_dev->mdev, &req, &rsp)) {
++	memset(&rsp, 0, sizeof(struct roc_mcs_alloc_rsrc_rsp));
++
++	if (roc_mcs_rsrc_alloc(mcs_dev->mdev, &req, &rsp)) {
+ 		plt_err("Cannot allocate mcs resource.");
+ 		return -1;
+ 	}
+@@ -55,7 +57,7 @@ cnxk_eth_macsec_sa_create(void *device, struct rte_security_macsec_sa *conf)
+ 	uint8_t hash_key_rev[CNXK_MACSEC_HASH_KEY] = {0};
+ 	uint8_t hash_key[CNXK_MACSEC_HASH_KEY] = {0};
+ 	struct cnxk_mcs_dev *mcs_dev = dev->mcs_dev;
+-	struct roc_mcs_sa_plcy_write_req req = {0};
++	struct roc_mcs_sa_plcy_write_req req;
+ 	uint8_t ciph_key[32] = {0};
+ 	enum mcs_direction dir;
+ 	uint8_t sa_id = 0;
+@@ -70,6 +72,7 @@ cnxk_eth_macsec_sa_create(void *device, struct rte_security_macsec_sa *conf)
+ 		plt_err("Failed to allocate SA id.");
+ 		return -ENOMEM;
+ 	}
++	memset(&req, 0, sizeof(struct roc_mcs_sa_plcy_write_req));
+ 	req.sa_index[0] = sa_id;
+ 	req.sa_cnt = 1;
+ 	req.dir = dir;
+@@ -139,7 +142,7 @@ cnxk_eth_macsec_sa_destroy(void *device, uint16_t sa_id, enum rte_security_macse
+ 	req.dir = (dir == RTE_SECURITY_MACSEC_DIR_TX) ? MCS_TX : MCS_RX;
+ 	req.rsrc_type = CNXK_MCS_RSRC_TYPE_SA;
+ 
+-	ret = roc_mcs_free_rsrc(mcs_dev->mdev, &req);
++	ret = roc_mcs_rsrc_free(mcs_dev->mdev, &req);
+ 	if (ret)
+ 		plt_err("Failed to free SA id %u, dir %u.", sa_id, dir);
+ 
+@@ -249,7 +252,7 @@ cnxk_eth_macsec_sc_destroy(void *device, uint16_t sc_id, enum rte_security_macse
+ 	req.dir = (dir == RTE_SECURITY_MACSEC_DIR_TX) ? MCS_TX : MCS_RX;
+ 	req.rsrc_type = CNXK_MCS_RSRC_TYPE_SC;
+ 
+-	ret = roc_mcs_free_rsrc(mcs_dev->mdev, &req);
++	ret = roc_mcs_rsrc_free(mcs_dev->mdev, &req);
+ 	if (ret)
+ 		plt_err("Failed to free SC id.");
+ 
+@@ -380,7 +383,7 @@ cnxk_eth_macsec_session_destroy(struct cnxk_eth_dev *dev, struct rte_security_se
+ 	req.dir = s->dir;
+ 	req.rsrc_type = CNXK_MCS_RSRC_TYPE_SECY;
+ 
+-	ret = roc_mcs_free_rsrc(mcs_dev->mdev, &req);
++	ret = roc_mcs_rsrc_free(mcs_dev->mdev, &req);
+ 	if (ret)
+ 		plt_err("Failed to free SC id.");
+ 
+@@ -396,9 +399,9 @@ cnxk_mcs_flow_configure(struct rte_eth_dev *eth_dev, const struct rte_flow_attr
+ 			 struct rte_flow_error *error __rte_unused, void **mcs_flow)
+ {
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+-	struct roc_mcs_flowid_entry_write_req req = {0};
+ 	const struct rte_flow_item_eth *eth_item = NULL;
+ 	struct cnxk_mcs_dev *mcs_dev = dev->mcs_dev;
++	struct roc_mcs_flowid_entry_write_req req;
+ 	struct cnxk_mcs_flow_opts opts = {0};
+ 	struct cnxk_macsec_sess *sess;
+ 	struct rte_ether_addr src;
+@@ -420,6 +423,7 @@ cnxk_mcs_flow_configure(struct rte_eth_dev *eth_dev, const struct rte_flow_attr
+ 		plt_err("Failed to allocate FLow id.");
+ 		return -ENOMEM;
+ 	}
++	memset(&req, 0, sizeof(struct roc_mcs_flowid_entry_write_req));
+ 	req.sci = sess->sci;
+ 	req.flow_id = sess->flow_id;
+ 	req.secy_id = sess->secy_id;
+@@ -510,7 +514,7 @@ cnxk_mcs_flow_destroy(struct cnxk_eth_dev *dev, void *flow)
+ 	req.dir = s->dir;
+ 	req.rsrc_type = CNXK_MCS_RSRC_TYPE_FLOWID;
+ 
+-	ret = roc_mcs_free_rsrc(mcs_dev->mdev, &req);
++	ret = roc_mcs_rsrc_free(mcs_dev->mdev, &req);
+ 	if (ret)
+ 		plt_err("Failed to free flow_id: %d.", s->flow_id);
+ 
+@@ -563,16 +567,16 @@ cnxk_eth_macsec_session_stats_get(struct cnxk_eth_dev *dev, struct cnxk_macsec_s
+ 	req.dir = sess->dir;
+ 	roc_mcs_flowid_stats_get(mcs_dev->mdev, &req, &flow_stats);
+ 	plt_nix_dbg("\n******* FLOW_ID IDX[%u] STATS dir: %u********\n", sess->flow_id, sess->dir);
+-	plt_nix_dbg("TX: tcam_hit_cnt: 0x%lx\n", flow_stats.tcam_hit_cnt);
++	plt_nix_dbg("TX: tcam_hit_cnt: 0x%" PRIx64 "\n", flow_stats.tcam_hit_cnt);
+ 
+ 	req.id = mcs_dev->port_id;
+ 	req.dir = sess->dir;
+ 	roc_mcs_port_stats_get(mcs_dev->mdev, &req, &port_stats);
+ 	plt_nix_dbg("\n********** PORT[0] STATS ****************\n");
+-	plt_nix_dbg("RX tcam_miss_cnt: 0x%lx\n", port_stats.tcam_miss_cnt);
+-	plt_nix_dbg("RX parser_err_cnt: 0x%lx\n", port_stats.parser_err_cnt);
+-	plt_nix_dbg("RX preempt_err_cnt: 0x%lx\n", port_stats.preempt_err_cnt);
+-	plt_nix_dbg("RX sectag_insert_err_cnt: 0x%lx\n", port_stats.sectag_insert_err_cnt);
++	plt_nix_dbg("RX tcam_miss_cnt: 0x%" PRIx64 "\n", port_stats.tcam_miss_cnt);
++	plt_nix_dbg("RX parser_err_cnt: 0x%" PRIx64 "\n", port_stats.parser_err_cnt);
++	plt_nix_dbg("RX preempt_err_cnt: 0x%" PRIx64 "\n", port_stats.preempt_err_cnt);
++	plt_nix_dbg("RX sectag_insert_err_cnt: 0x%" PRIx64 "\n", port_stats.sectag_insert_err_cnt);
+ 
+ 	req.id = sess->secy_id;
+ 	req.dir = sess->dir;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mcs.h b/drivers/net/cnxk/cnxk_ethdev_mcs.h
+index 4a59dd3df9d5e..131dab10c5fa7 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_mcs.h
++++ b/drivers/net/cnxk/cnxk_ethdev_mcs.h
+@@ -2,6 +2,9 @@
+  * Copyright(C) 2023 Marvell.
+  */
+ 
++#ifndef CNXK_ETHDEV_MCS_H
++#define CNXK_ETHDEV_MCS_H
++
+ #include <cnxk_ethdev.h>
+ 
+ #define CNXK_MACSEC_HASH_KEY 16
+@@ -109,3 +112,5 @@ int cnxk_eth_macsec_session_stats_get(struct cnxk_eth_dev *dev, struct cnxk_macs
+ int cnxk_eth_macsec_session_create(struct cnxk_eth_dev *dev, struct rte_security_session_conf *conf,
+ 				   struct rte_security_session *sess);
+ int cnxk_eth_macsec_session_destroy(struct cnxk_eth_dev *dev, struct rte_security_session *sess);
++
++#endif /* CNXK_ETHDEV_MCS_H */
+-- 
+2.25.1
+

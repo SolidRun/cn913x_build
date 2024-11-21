@@ -1,0 +1,1301 @@
+From 5c861e7363e538131db83c4d251cd694a3eb2239 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 23 Feb 2023 00:18:20 +0530
+Subject: [PATCH 276/955] ci: msns: add perf mode with event worker
+
+Add perf mode with event worker by setting up event device.
+In perf mode all the whitelisted ports would be setup and
+one SA per alg would be setup on each of the ports.
+
+If PFC is requested, each port would have one PFC TC configured
+on its RQ0/SQ0.
+
+Change-Id: I403b559029d33045f340b10487fb0ce2adbcb653
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97655
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/ipsec_msns/README  |  14 +-
+ .../test/cnxk-tests/ipsec_msns/gentraffic.py  |  42 +
+ .../test/cnxk-tests/ipsec_msns/ipsec_msns.c   | 910 +++++++++++++++---
+ 3 files changed, 809 insertions(+), 157 deletions(-)
+ create mode 100755 marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/README b/marvell-ci/test/cnxk-tests/ipsec_msns/README
+index f68391b3bc1cf..137118d2f9f57 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/README
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/README
+@@ -38,4 +38,16 @@ And expects the received packet to be decrypted.
+ 
+ Usage:
+ ======
+-./cnxk_ipsec_msns -a 0002:02:00.0,custom_sa_act=1 -a 0002:1d:00.0 -a 0002:20:00.1
++./cnxk_ipsec_msns -a 0002:02:00.0,custom_sa_act=1 -a 0002:1d:00.0 -a 0002:20:00.1 -- [--perf] [--pfc]
++
++Perf mode:
++==========
++When "--perf" argument is given, the application runs in perf mode by creating one inbound SA per
++ALG for each port and then listening on the inbound inline traffic and forwarding successfully
++decrypted packets. To generate the pcap for matching SPI, ipsec_msns/gentraffic.py script can be
++used.
++
++PFC:
++====
++When "--pfc" argument is given, each port would be assigned a PFC channel sequentially and PFC
++would be enabled.
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py b/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py
+new file mode 100755
+index 0000000000000..4c0f8a26e396f
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py
+@@ -0,0 +1,42 @@
++#!/usr/bin/env python3
++# Copyright (C) 2022 Marvell.
++# SPDX-License-Identifier: BSD-3-Clause
++
++from scapy.all import *
++import argparse
++
++spi = 0x10000000
++dmac = '13:13:13:13:13:13'
++
++# Process command line args
++parser = argparse.ArgumentParser()
++parser.add_argument("--spi", type=str, help="SPI of ESP packet",
++		    default=None)
++parser.add_argument("--dmac", type=str, help="DMAC of pkts",
++		    default=dmac)
++
++args = parser.parse_args()
++if args.spi != None:
++	spi = int(args.spi, 16)
++
++key = b'\xfe\xff\xe9\x92\x86\x65\x73\x1c\x6d\x6a\x8f\x94\x67\x30\x83\x08\xca\xfe\xba\xbe'
++eth = Ether(src='12:12:12:12:12:12', dst=dmac)
++
++pkt = []
++ep = []
++tun=IP(src='192.168.1.2', dst='192.168.1.1')
++
++sa=SecurityAssociation(proto=ESP, spi=spi, crypt_algo='AES-GCM',
++                       crypt_key=key, tunnel_header=tun)
++
++ip=IP(src='11.11.11.1', dst='11.11.11.2')
++
++p=ip/TCP()/Raw(5 * 'a')
++
++pkt.append(eth/p)
++ep.append(eth/sa.encrypt(p))
++
++pcap_name = 'inbound_%08x.pcap' % spi
++wrpcap(pcap_name, ep)
++
++sys.stdout.write("Generated %s with SPI %08x\n" % (pcap_name, spi))
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+index b3a98c3fae0c8..7e9e61ad89289 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+@@ -3,6 +3,9 @@
+  */
+ 
+ #include <inttypes.h>
++#include <signal.h>
++#include <stdlib.h>
++
+ #include <rte_atomic.h>
+ #include <rte_bitmap.h>
+ #include <rte_byteorder.h>
+@@ -13,6 +16,9 @@
+ #include <rte_malloc.h>
+ #include <rte_pmd_cnxk.h>
+ #include <rte_security.h>
++#include <rte_eventdev.h>
++#include <rte_event_eth_rx_adapter.h>
++#include <rte_event_eth_tx_adapter.h>
+ 
+ #include "ipsec_msns.h"
+ 
+@@ -32,7 +38,7 @@
+ 
+ #define NB_MBUF 10240
+ 
+-static struct rte_mempool *mbufpool;
++static struct rte_mempool *mbufpool[RTE_MAX_ETHPORTS];
+ static struct rte_mempool *sess_pool;
+ /* ethernet addresses of ports */
+ static struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
+@@ -46,7 +52,7 @@ static struct rte_eth_conf port_conf = {
+ 			.mq_mode = RTE_ETH_MQ_TX_NONE,
+ 			.offloads = RTE_ETH_TX_OFFLOAD_SECURITY | RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE,
+ 		},
+-	.lpbk_mode = 1, /* enable loopback */
++	.lpbk_mode = 0,
+ };
+ 
+ static struct rte_eth_rxconf rx_conf = {
+@@ -71,12 +77,20 @@ static struct rte_eth_txconf tx_conf = {
+ struct lcore_cfg {
+ 	uint8_t socketid;
+ 	uint16_t nb_ports;
+-	uint16_t port;
++	uint16_t portid;
++	int eventdev_id;
++	int event_port_id;
++	int eventq_id;
++
++	/* Stats */
++	uint64_t rx_pkts;
++	uint64_t rx_ipsec_pkts;
++	uint64_t tx_pkts;
+ };
+ 
+-static struct lcore_cfg lcore_cfg;
++static struct lcore_cfg lcore_cfg[RTE_MAX_LCORE];
+ 
+-static struct rte_flow *default_flow[RTE_MAX_ETHPORTS];
++static struct rte_flow *default_flow[RTE_MAX_ETHPORTS][RTE_PMD_CNXK_SEC_ACTION_ALG4 + 1];
+ 
+ struct sa_index_map {
+ 	struct rte_bitmap *map;
+@@ -88,6 +102,26 @@ static struct sa_index_map bmap[RTE_MAX_ETHPORTS][2];
+ /* Example usage, max entries 4K */
+ #define MAX_SA_SIZE (4 * 1024)
+ 
++static uint32_t ethdev_port_mask = RTE_PORT_ALL;
++static volatile bool force_quit;
++static bool perf_mode;
++static bool pfc;
++static int eventdev_id;
++static int rx_adapter_id;
++static int tx_adapter_id;
++static int nb_event_queues;
++static int nb_event_ports;
++
++static void
++signal_handler(int signum)
++{
++	if (signum == SIGINT || signum == SIGTERM) {
++		printf("\n\nSignal %d received, preparing to exit...\n",
++				signum);
++		force_quit = true;
++	}
++}
++
+ static int
+ cnxk_sa_index_init(int port_id, enum rte_security_ipsec_sa_direction dir, uint32_t size)
+ {
+@@ -219,7 +253,8 @@ compare_pkt_data(struct rte_mbuf *m, uint8_t *ref, unsigned int tot_len)
+ /* Create Inline IPsec session */
+ static int
+ create_inline_ipsec_session(struct ipsec_session_data *sa, uint16_t portid,
+-			    struct rte_ipsec_session *ips, enum rte_security_ipsec_sa_direction dir,
++			    struct rte_security_session **ses,
++			    enum rte_security_ipsec_sa_direction dir,
+ 			    enum rte_security_ipsec_tunnel_type tun_type)
+ {
+ 	uint32_t src_v4 = rte_cpu_to_be_32(RTE_IPV4(192, 168, 1, 2));
+@@ -287,21 +322,18 @@ create_inline_ipsec_session(struct ipsec_session_data *sa, uint16_t portid,
+ 		memcpy(&sess_conf.ipsec.tunnel.ipv6.dst_addr, &dst_v6, sizeof(dst_v6));
+ 	}
+ 
+-	ips->security.ses = rte_security_session_create(sec_ctx, &sess_conf, sess_pool);
+-	if (ips->security.ses == NULL) {
++	*ses = rte_security_session_create(sec_ctx, &sess_conf, sess_pool);
++	if (*ses == NULL) {
+ 		printf("SEC Session init failed\n");
+ 		return -1;
+ 	}
+ 
+-	ips->security.ol_flags = sec_cap->ol_flags;
+-	ips->security.ctx = sec_ctx;
+-
+ 	return 0;
+ }
+ 
+ /* Check the link status of all ports in up to 3s, and print them finally */
+ static void
+-check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
++check_all_ports_link_status(uint32_t port_mask)
+ {
+ #define CHECK_INTERVAL 100 /* 100ms */
+ #define MAX_CHECK_TIME 30  /* 3s (30 * 100ms) in total */
+@@ -315,7 +347,7 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
+ 	fflush(stdout);
+ 	for (count = 0; count <= MAX_CHECK_TIME; count++) {
+ 		all_ports_up = 1;
+-		for (portid = 0; portid < port_num; portid++) {
++		RTE_ETH_FOREACH_DEV(portid) {
+ 			if ((port_mask & RTE_BIT64(portid)) == 0)
+ 				continue;
+ 			memset(&link, 0, sizeof(link));
+@@ -418,70 +450,73 @@ init_traffic(struct rte_mempool *mp, struct rte_mbuf **pkts_burst,
+ static void
+ init_lcore(void)
+ {
++	uint16_t ev_port_id = 0;
+ 	unsigned int lcore_id;
+-	uint16_t portid;
+ 
+ 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+-		lcore_cfg.socketid = rte_lcore_to_socket_id(lcore_id);
++		lcore_cfg[lcore_id].socketid = rte_lcore_to_socket_id(lcore_id);
+ 		if (rte_lcore_is_enabled(lcore_id) != 0) {
+-			RTE_ETH_FOREACH_DEV(portid) {
+-				if (lcore_cfg.socketid == rte_eth_dev_socket_id(portid)) {
+-					lcore_cfg.port = portid;
+-					break;
+-				}
++			if (perf_mode) {
++				/* Assign event port id */
++				lcore_cfg[lcore_id].eventdev_id = 0;
++				lcore_cfg[lcore_id].event_port_id = -1;
++				if (ev_port_id >= nb_event_ports)
++					continue;
++				lcore_cfg[lcore_id].event_port_id = ev_port_id++;
++			} else {
++				lcore_cfg[lcore_id].portid = 0;
+ 			}
+-			return;
+ 		}
+ 	}
+ }
+ 
+ static int
+-init_mempools(unsigned int nb_mbuf)
++init_sess_mempool(void)
+ {
+ 	struct rte_security_ctx *sec_ctx;
+ 	uint16_t nb_sess = 512;
+-	unsigned int lcore_id;
+ 	uint32_t sess_sz;
+-	int socketid;
++	int socketid = 0;
+ 	char s[64];
+ 
+-	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+-		if (rte_lcore_is_enabled(lcore_id) == 0)
+-			continue;
++	sec_ctx = rte_eth_dev_get_sec_ctx(0);
++	if (sec_ctx == NULL)
++		return -ENOENT;
+ 
+-		socketid = rte_lcore_to_socket_id(lcore_id);
+-		if (mbufpool == NULL) {
+-			snprintf(s, sizeof(s), "mbuf_pool_%d", socketid);
+-			mbufpool = rte_pktmbuf_pool_create(s, nb_mbuf, MEMPOOL_CACHE_SIZE, 0,
+-							   RTE_MBUF_DEFAULT_BUF_SIZE, socketid);
+-			if (mbufpool == NULL)
+-				printf("Cannot init mbuf pool on socket %d\n", socketid);
+-			printf("Allocated mbuf pool on socket %d\n", socketid);
++	sess_sz = rte_security_session_get_size(sec_ctx);
++	if (sess_pool == NULL) {
++		snprintf(s, sizeof(s), "sess_pool_%d", socketid);
++		sess_pool = rte_mempool_create(s, nb_sess, sess_sz, MEMPOOL_CACHE_SIZE, 0,
++					       NULL, NULL, NULL, NULL, socketid, 0);
++		if (sess_pool == NULL) {
++			printf("Cannot init sess pool on socket %d\n", socketid);
++			return -1;
+ 		}
++		printf("Allocated sess pool on socket %d\n", socketid);
++	}
++	return 0;
++}
+ 
+-		sec_ctx = rte_eth_dev_get_sec_ctx(lcore_cfg.port);
+-		if (sec_ctx == NULL)
+-			continue;
++static int
++init_pktmbuf_pool(uint32_t portid, unsigned int nb_mbuf)
++{
++	int socketid = 0;
++	char s[64];
+ 
+-		sess_sz = rte_security_session_get_size(sec_ctx);
+-		if (sess_pool == NULL) {
+-			snprintf(s, sizeof(s), "sess_pool_%d", socketid);
+-			sess_pool = rte_mempool_create(s, nb_sess, sess_sz, MEMPOOL_CACHE_SIZE, 0,
+-						       NULL, NULL, NULL, NULL, socketid, 0);
+-			if (sess_pool == NULL) {
+-				printf("Cannot init sess pool on socket %d\n", socketid);
+-				rte_mempool_free(mbufpool);
+-				return -1;
+-			}
+-			printf("Allocated sess pool on socket %d\n", socketid);
+-		}
++	if (mbufpool[portid] == NULL) {
++		snprintf(s, sizeof(s), "mbuf_pool_%d", portid);
++		mbufpool[portid] = rte_pktmbuf_pool_create(s, nb_mbuf, MEMPOOL_CACHE_SIZE, 0,
++							   RTE_MBUF_DEFAULT_BUF_SIZE, socketid);
++		if (mbufpool[portid] == NULL)
++			printf("Cannot init mbuf pool on socket %d\n", socketid);
++		printf("Allocated mbuf pool for port %d\n", portid);
+ 	}
+ 	return 0;
+ }
+ 
+ static int
+-create_default_flow(uint16_t port_id, enum rte_pmd_cnxk_sec_action_alg alg, uint16_t sa_lo,
+-		    uint16_t sa_hi, uint32_t sa_index)
++create_default_flow(uint16_t port_id, enum rte_pmd_cnxk_sec_action_alg alg, uint32_t spi,
++		    uint16_t sa_lo, uint16_t sa_hi, uint32_t sa_index)
+ {
+ 	struct rte_pmd_cnxk_sec_action sec = {0};
+ 	struct rte_flow_action_mark mark = {0};
+@@ -506,6 +541,8 @@ create_default_flow(uint16_t port_id, enum rte_pmd_cnxk_sec_action_alg alg, uint
+ 	action[act_count].conf = &sec;
+ 	act_count++;
+ 
++	esp.hdr.spi = RTE_BE32(spi);
++	mesp.hdr.spi = RTE_BE32(0xffffffff);
+ 	switch (alg) {
+ 	case RTE_PMD_CNXK_SEC_ACTION_ALG0:
+ 		/* SPI = 0x10000001, sa_index = 0 */
+@@ -565,7 +602,7 @@ create_default_flow(uint16_t port_id, enum rte_pmd_cnxk_sec_action_alg alg, uint
+ 		return -1;
+ 	}
+ 
+-	default_flow[port_id] = flow;
++	default_flow[port_id][alg] = flow;
+ 	return 0;
+ }
+ 
+@@ -573,64 +610,276 @@ static void
+ destroy_default_flow(uint16_t port_id)
+ {
+ 	struct rte_flow_error err;
++	uint8_t alg;
+ 	int ret;
+ 
+-	if (!default_flow[port_id])
+-		return;
+-	ret = rte_flow_destroy(port_id, default_flow[port_id], &err);
+-	if (ret) {
+-		printf("\nDefault flow rule destroy failed\n");
+-		return;
++	for (alg = RTE_PMD_CNXK_SEC_ACTION_ALG0; alg <= RTE_PMD_CNXK_SEC_ACTION_ALG4; alg++) {
++		if (!default_flow[port_id][alg])
++			continue;
++		ret = rte_flow_destroy(port_id, default_flow[port_id][alg], &err);
++		if (ret) {
++			printf("\nDefault flow rule destroy failed for port=%d alg=%d, rc=%d\n",
++			       port_id, alg, ret);
++			return;
++		}
++		default_flow[port_id][alg] = NULL;
+ 	}
+-	default_flow[port_id] = NULL;
+ }
+ 
+ static int
+-ut_setup_inline_ipsec(void)
++ut_eventdev_setup(void)
+ {
+-	uint16_t portid = lcore_cfg.port;
++	struct rte_event_eth_rx_adapter_queue_conf queue_conf;
++	struct rte_event_dev_info evdev_default_conf = {0};
++	struct rte_event_dev_config eventdev_conf = {0};
++	struct rte_event_queue_conf eventq_conf = {0};
++	struct rte_event_port_conf ev_port_conf = {0};
++	const int all_queues = -1;
++	uint8_t ev_queue_id = 0;
++	int portid, ev_port_id;
++	uint32_t caps = 0;
+ 	int ret;
+ 
+-	/* Start device */
+-	ret = rte_eth_dev_start(portid);
++	/* Setup eventdev */
++	eventdev_id = 0;
++	rx_adapter_id = 0;
++	tx_adapter_id = 0;
++
++	/* Get default conf of eventdev */
++	ret = rte_event_dev_info_get(eventdev_id, &evdev_default_conf);
+ 	if (ret < 0) {
+-		printf("rte_eth_dev_start: err=%d, port=%d\n", ret, portid);
++		printf("Error in getting event device info[devID:%d]\n",
++		       eventdev_id);
+ 		return ret;
+ 	}
+-	/* always enable promiscuous */
+-	ret = rte_eth_promiscuous_enable(portid);
+-	if (ret != 0) {
+-		printf("rte_eth_promiscuous_enable: err=%s, port=%d\n", rte_strerror(-ret), portid);
++	nb_event_ports = rte_lcore_count();
++	nb_event_queues = evdev_default_conf.max_event_queues;
++
++	/* Get Tx adapter capabilities */
++	ret = rte_event_eth_tx_adapter_caps_get(eventdev_id, tx_adapter_id, &caps);
++	if (ret < 0) {
++		printf("Failed to get event device %d eth tx adapter"
++		       " capabilities\n",
++		       eventdev_id);
++		return ret;
++	}
++
++	eventdev_conf.nb_events_limit =
++		evdev_default_conf.max_num_events;
++	eventdev_conf.nb_event_queue_flows =
++		evdev_default_conf.max_event_queue_flows;
++	eventdev_conf.nb_event_port_dequeue_depth =
++		evdev_default_conf.max_event_port_dequeue_depth;
++	eventdev_conf.nb_event_port_enqueue_depth =
++		evdev_default_conf.max_event_port_enqueue_depth;
++
++	eventdev_conf.nb_event_queues = nb_event_queues;
++	eventdev_conf.nb_event_ports = nb_event_ports;
++
++	/* Configure event device */
++
++	ret = rte_event_dev_configure(eventdev_id, &eventdev_conf);
++	if (ret < 0) {
++		printf("Error in configuring event device\n");
++		return ret;
++	}
++
++	/* Configure event queue */
++	eventq_conf.schedule_type = RTE_SCHED_TYPE_PARALLEL;
++	eventq_conf.nb_atomic_flows = 1024;
++	eventq_conf.nb_atomic_order_sequences = 1024;
++
++	/* Setup the queue */
++	for (ev_queue_id = 0; ev_queue_id < nb_event_queues; ev_queue_id++) {
++		ret = rte_event_queue_setup(eventdev_id, ev_queue_id, &eventq_conf);
++		if (ret < 0) {
++			printf("Failed to setup event queue %d, rc=%d\n", ev_queue_id, ret);
++			return ret;
++		}
++	}
++
++	/* Configure event port */
++	for (ev_port_id = 0; ev_port_id < nb_event_ports; ev_port_id++) {
++		ret = rte_event_port_setup(eventdev_id, ev_port_id, NULL);
++		if (ret < 0) {
++			printf("Failed to setup event port %d\n", ret);
++			return ret;
++		}
++
++		/* Make event queue - event port link */
++		ret = rte_event_port_link(eventdev_id, ev_port_id, NULL, NULL, 1);
++		if (ret < 0) {
++			printf("Failed to link event port %d\n", ret);
++			return ret;
++		}
++	}
++
++	/* Setup port conf */
++	ev_port_conf.new_event_threshold = 1200;
++	ev_port_conf.dequeue_depth =
++		evdev_default_conf.max_event_port_dequeue_depth;
++	ev_port_conf.enqueue_depth =
++		evdev_default_conf.max_event_port_enqueue_depth;
++
++	/* Create Rx adapter */
++	ret = rte_event_eth_rx_adapter_create(rx_adapter_id, eventdev_id,
++					      &ev_port_conf);
++	if (ret < 0) {
++		printf("Failed to create rx adapter %d\n", ret);
++		return ret;
++	}
++
++	/* Create tx adapter */
++	ret = rte_event_eth_tx_adapter_create(tx_adapter_id, eventdev_id,
++					      &ev_port_conf);
++	if (ret < 0) {
++		printf("Failed to create tx adapter %d\n", ret);
++		return ret;
++	}
++
++	RTE_ETH_FOREACH_DEV(portid) {
++		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
++			continue;
++		/* Setup queue conf */
++		memset(&queue_conf, 0, sizeof(queue_conf));
++		queue_conf.ev.queue_id = portid % nb_event_queues;
++		queue_conf.ev.sched_type = RTE_SCHED_TYPE_PARALLEL;
++		queue_conf.ev.event_type = RTE_EVENT_TYPE_ETHDEV;
++
++		/* Add queue to the adapter */
++		ret = rte_event_eth_rx_adapter_queue_add(rx_adapter_id, portid,
++							 all_queues, &queue_conf);
++		if (ret < 0) {
++			printf("Failed to add eth queue to rx adapter %d\n", ret);
++			return ret;
++		}
++
++		/* Add queue to the adapter */
++		ret = rte_event_eth_tx_adapter_queue_add(tx_adapter_id, portid,
++							 all_queues);
++		if (ret < 0) {
++			printf("Failed to add eth queue to tx adapter %d\n", ret);
++			return ret;
++		}
++
++	}
++	/* Start rx adapter */
++	ret = rte_event_eth_rx_adapter_start(rx_adapter_id);
++	if (ret < 0) {
++		printf("Failed to start rx adapter %d\n", ret);
++		return ret;
++	}
++
++	/* Start tx adapter */
++	ret = rte_event_eth_tx_adapter_start(tx_adapter_id);
++	if (ret < 0) {
++		printf("Failed to start tx adapter %d\n", ret);
++		return ret;
++	}
++
++	/* Start eventdev */
++	ret = rte_event_dev_start(eventdev_id);
++	if (ret < 0) {
++		printf("Failed to start event device %d\n", ret);
+ 		return ret;
+ 	}
+-	check_all_ports_link_status(1, RTE_PORT_ALL);
+ 
+ 	return 0;
+ }
+ 
+ static void
+-ut_teardown_inline_ipsec(void)
++ut_eventdev_teardown(void)
+ {
+-	int socketid = lcore_cfg.socketid;
+-	uint16_t portid = lcore_cfg.port;
+ 	int ret;
++	int portid;
++
++	/* Stop rx adapter */
++	ret = rte_event_eth_rx_adapter_stop(rx_adapter_id);
++	if (ret < 0)
++		printf("Failed to stop rx adapter %d\n", ret);
++
++	/* Stop tx adapter */
++	ret = rte_event_eth_tx_adapter_stop(tx_adapter_id);
++	if (ret < 0)
++		printf("Failed to stop tx adapter %d\n", ret);
+ 
+-	/* port tear down */
+ 	RTE_ETH_FOREACH_DEV(portid) {
+-		if (socketid != rte_eth_dev_socket_id(portid))
++		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
+ 			continue;
++		ret = rte_event_eth_rx_adapter_queue_del(rx_adapter_id, portid, -1);
++		if (ret < 0)
++			printf("Failed to remove rx adapter queues %d\n", ret);
++		ret = rte_event_eth_tx_adapter_queue_del(tx_adapter_id, portid, -1);
++		if (ret < 0)
++			printf("Failed to remove tx adapter queues %d\n", ret);
++	}
+ 
+-		ret = rte_eth_dev_stop(portid);
+-		if (ret != 0)
+-			printf("rte_eth_dev_stop: err=%s, port=%u\n", rte_strerror(-ret), portid);
++	/* Release rx adapter */
++	ret = rte_event_eth_rx_adapter_free(rx_adapter_id);
++	if (ret < 0)
++		printf("Failed to free rx adapter %d\n", ret);
++
++	/* Release tx adapter */
++	ret = rte_event_eth_tx_adapter_free(tx_adapter_id);
++	if (ret < 0)
++		printf("Failed to free tx adapter %d\n", ret);
++
++	/* Stop and release event devices */
++	rte_event_dev_stop(eventdev_id);
++	ret = rte_event_dev_close(eventdev_id);
++	if (ret < 0)
++		printf("Failed to close event dev %d, %d\n", eventdev_id, ret);
++}
++
++static void
++print_usage(const char *name)
++{
++	printf("Invalid arguments\n");
++	printf("usage: %s [--perf] [--pfc] [--portmask\n", name);
++}
++
++static int
++parse_args(int argc, char **argv)
++{
++	char *name = argv[0];
++
++	argc--;
++	argv++;
++	while (argc) {
++		if (!strcmp(argv[0], "--perf")) {
++			perf_mode = true;
++			argc--;
++			argv++;
++			continue;
++		}
++
++		if (!strcmp(argv[0], "--pfc")) {
++			pfc = true;
++			argc--;
++			argv++;
++			continue;
++		}
++
++		if (!strcmp(argv[0], "--portmask") && (argc > 1)) {
++			ethdev_port_mask = strtoul(argv[1], NULL, 0);
++			argc -= 2;
++			argv += 2;
++			continue;
++		}
++
++		/* Unknown args */
++		print_usage(name);
++		return -1;
+ 	}
++
++	return 0;
+ }
+ 
+ static int
+ ut_setup(int argc, char **argv)
+ {
+ 	uint16_t nb_rx_queue = 1, nb_tx_queue = 1;
+-	int socketid, ret;
++	int socketid = 0, ret;
+ 	uint16_t nb_ports;
+ 	uint16_t nb_rxd;
+ 	uint16_t nb_txd;
+@@ -644,72 +893,176 @@ ut_setup(int argc, char **argv)
+ 	argc -= ret;
+ 	argv += ret;
+ 
++	ret = parse_args(argc, argv);
++	if (ret < 0)
++		return ret;
++
+ 	nb_ports = rte_eth_dev_count_avail();
+-	if (nb_ports < NB_ETHPORTS_USED) {
++	if (nb_ports < NB_ETHPORTS_USED || ethdev_port_mask == 0) {
+ 		printf("At least %u port(s) used for test\n", NB_ETHPORTS_USED);
+ 		return -1;
+ 	}
+ 
+-	init_lcore();
+-
+-	ret = init_mempools(NB_MBUF);
++	ret = init_sess_mempool();
+ 	if (ret) {
+-		printf("Unable to initialize mempools: ret = %d\n", ret);
++		printf("Unable to initialize session mempool: ret = %d\n", ret);
+ 		return -1;
+ 	}
+ 
+-	portid = lcore_cfg.port;
+-	socketid = lcore_cfg.socketid;
+-
+ 	nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
+ 	nb_txd = RTE_TEST_TX_DESC_DEFAULT;
+ 
+-	/* port configure */
+-	ret = rte_eth_dev_configure(portid, nb_rx_queue, nb_tx_queue, &port_conf);
+-	if (ret < 0) {
+-		printf("Cannot configure device: err=%d, port=%d\n", ret, portid);
+-		return ret;
+-	}
+-	ret = rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
+-	if (ret < 0) {
+-		printf("Cannot get mac address: err=%d, port=%d\n", ret, portid);
+-		return ret;
++	/* Setup all available ports */
++	RTE_ETH_FOREACH_DEV(portid) {
++		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
++			continue;
++
++		ret = init_pktmbuf_pool(portid, NB_MBUF);
++		if (ret) {
++			printf("Failed to setup pktmbuf pool for port=%d, ret=%d", portid, ret);
++			return ret;
++		}
++
++		/* Enable loopback mode for non perf test */
++		port_conf.lpbk_mode = perf_mode ? 0 : 1;
++
++		/* port configure */
++		ret = rte_eth_dev_configure(portid, nb_rx_queue, nb_tx_queue, &port_conf);
++		if (ret < 0) {
++			printf("Cannot configure device: err=%d, port=%d\n", ret, portid);
++			return ret;
++		}
++		ret = rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
++		if (ret < 0) {
++			printf("Cannot get mac address: err=%d, port=%d\n", ret, portid);
++			return ret;
++		}
++		printf("Port %u ", portid);
++		print_ethaddr("Address:", &ports_eth_addr[portid]);
++		printf("\n");
++
++		/* tx queue setup */
++		ret = rte_eth_tx_queue_setup(portid, 0, nb_txd, socketid, &tx_conf);
++		if (ret < 0) {
++			printf("rte_eth_tx_queue_setup: err=%d, port=%d\n", ret, portid);
++			return ret;
++		}
++		/* rx queue steup */
++		ret = rte_eth_rx_queue_setup(portid, 0, nb_rxd, socketid, &rx_conf,
++					     mbufpool[portid]);
++		if (ret < 0) {
++			printf("rte_eth_rx_queue_setup: err=%d, port=%d\n", ret, portid);
++			return ret;
++		}
++
++		/* Init sa_index map with 4K size*/
++		ret = cnxk_sa_index_init(portid, RTE_SECURITY_IPSEC_SA_DIR_EGRESS, MAX_SA_SIZE);
++		if (ret) {
++			printf("egress sa index init failed: err=%d, port=%d\n", ret, portid);
++			return ret;
++		}
++
++		ret = cnxk_sa_index_init(portid, RTE_SECURITY_IPSEC_SA_DIR_INGRESS, MAX_SA_SIZE);
++		if (ret) {
++			printf("egress sa index init failed: err=%d, port=%d\n", ret, portid);
++			return ret;
++		}
+ 	}
+-	printf("Port %u ", portid);
+-	print_ethaddr("Address:", &ports_eth_addr[portid]);
+-	printf("\n");
+ 
+-	/* tx queue setup */
+-	ret = rte_eth_tx_queue_setup(portid, 0, nb_txd, socketid, &tx_conf);
+-	if (ret < 0) {
+-		printf("rte_eth_tx_queue_setup: err=%d, port=%d\n", ret, portid);
+-		return ret;
++	if (perf_mode) {
++		/* Setup event device */
++		ret = ut_eventdev_setup();
++		if (ret < 0) {
++			printf("Failed to setup eventdev, err=%d\n", ret);
++			return ret;
++		}
+ 	}
+-	/* rx queue steup */
+-	ret = rte_eth_rx_queue_setup(portid, 0, nb_rxd, socketid, &rx_conf, mbufpool);
+-	if (ret < 0) {
+-		printf("rte_eth_rx_queue_setup: err=%d, port=%d\n", ret, portid);
+-		return ret;
++
++	init_lcore();
++
++	RTE_ETH_FOREACH_DEV(portid) {
++		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
++			continue;
++		/* Enable PFC if requested */
++		if (pfc) {
++			struct rte_eth_pfc_queue_conf pfc_conf;
++			struct rte_eth_fc_conf fc_conf;
++
++			/* Disable flow control */
++			memset(&fc_conf, 0, sizeof(fc_conf));
++			fc_conf.mode = RTE_ETH_FC_NONE;
++			ret = rte_eth_dev_flow_ctrl_set(portid, &fc_conf);
++			if (ret) {
++				printf("Failed to disable flow control on port=%u, ret=%d\n",
++				       portid, ret);
++				return ret;
++			}
++
++			/* Enable PFC */
++			memset(&pfc_conf, 0, sizeof(pfc_conf));
++			pfc_conf.mode = RTE_ETH_FC_FULL;
++			pfc_conf.rx_pause.tx_qid = 0;
++			pfc_conf.rx_pause.tc = (portid + 3) % 8;
++			pfc_conf.tx_pause.rx_qid = 0;
++			pfc_conf.tx_pause.tc = (portid + 3) % 8;
++			ret = rte_eth_dev_priority_flow_ctrl_queue_configure(portid, &pfc_conf);
++			if (ret) {
++				printf("Failed to enable PFC %u on port=%u, ret=%d\n",
++				       pfc_conf.rx_pause.tc, portid, ret);
++				return ret;
++			}
++
++			printf("Enabled PFC class %u on port %d RX/TX\n", pfc_conf.rx_pause.tc,
++			       portid);
++		}
++
++		/* Start device */
++		ret = rte_eth_dev_start(portid);
++		if (ret < 0) {
++			printf("rte_eth_dev_start: err=%d, port=%d\n", ret, portid);
++			return ret;
++		}
++		/* always enable promiscuous */
++		ret = rte_eth_promiscuous_enable(portid);
++		if (ret != 0) {
++			printf("rte_eth_promiscuous_enable: err=%s, port=%d\n", rte_strerror(-ret),
++			       portid);
++			return ret;
++		}
+ 	}
+ 
++	check_all_ports_link_status(ethdev_port_mask);
+ 	return 0;
+ }
+ 
+ static void
+ ut_teardown(void)
+ {
+-	uint16_t socketid = lcore_cfg.socketid;
+-	uint16_t portid = lcore_cfg.port;
+ 	int ret;
++	int portid;
+ 
+-	/* port tear down */
+ 	RTE_ETH_FOREACH_DEV(portid) {
+-		if (socketid != rte_eth_dev_socket_id(portid))
++		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
+ 			continue;
++		ret = rte_eth_dev_stop(portid);
++		if (ret != 0)
++			printf("rte_eth_dev_stop: err=%s, port=%u\n", rte_strerror(-ret), portid);
++	}
++
++	/* Event device cleanup */
++	if (perf_mode)
++		ut_eventdev_teardown();
+ 
++	/* port tear down */
++	RTE_ETH_FOREACH_DEV(portid) {
++		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
++			continue;
+ 		ret = rte_eth_dev_reset(portid);
+ 		if (ret != 0)
+ 			printf("rte_eth_dev_reset: err=%s, port=%u\n", rte_strerror(-ret), portid);
++
++		cnxk_sa_index_fini(portid, RTE_SECURITY_IPSEC_SA_DIR_EGRESS);
++		cnxk_sa_index_fini(portid, RTE_SECURITY_IPSEC_SA_DIR_INGRESS);
+ 	}
+ }
+ 
+@@ -717,11 +1070,12 @@ static int
+ ut_ipsec_encap_decap(struct test_ipsec_vector *vector, enum rte_security_ipsec_tunnel_type tun_type,
+ 		     uint8_t alg)
+ {
++	struct rte_security_session *out_ses = NULL, *in_ses = NULL;
+ 	uint32_t in_sa_index = 0, out_sa_index = 0, spi = 0;
+ 	struct rte_security_session_conf conf = {0};
++	struct rte_security_ctx *sec_ctx = NULL;
+ 	uint32_t index_count = 0, sa_index = 0;
+-	struct rte_ipsec_session out_ips = {0};
+-	struct rte_ipsec_session in_ips = {0};
++	uint16_t lcore_id = rte_lcore_id();
+ 	struct ipsec_session_data sa_data;
+ 	unsigned int portid, nb_rx = 0, j;
+ 	unsigned int nb_sent = 0, nb_tx;
+@@ -731,26 +1085,13 @@ ut_ipsec_encap_decap(struct test_ipsec_vector *vector, enum rte_security_ipsec_t
+ 	int ret = 0;
+ 
+ 	nb_tx = 1;
+-	portid = lcore_cfg.port;
+-	ret = init_traffic(mbufpool, &tx_pkts, vector->frags);
++	portid = lcore_cfg[lcore_id].portid;
++	ret = init_traffic(mbufpool[portid], &tx_pkts, vector->frags);
+ 	if (ret != 0) {
+ 		ret = -1;
+ 		goto out;
+ 	}
+ 
+-	/* Init sa_index map with 4K size*/
+-	ret = cnxk_sa_index_init(portid, RTE_SECURITY_IPSEC_SA_DIR_EGRESS, MAX_SA_SIZE);
+-	if (ret) {
+-		ret = -1;
+-		goto out;
+-	}
+-
+-	ret = cnxk_sa_index_init(portid, RTE_SECURITY_IPSEC_SA_DIR_INGRESS, MAX_SA_SIZE);
+-	if (ret) {
+-		ret = -1;
+-		goto out;
+-	}
+-
+ 	switch (alg) {
+ 	case RTE_PMD_CNXK_SEC_ACTION_ALG0:
+ 		/* Allocate 1 index and use it */
+@@ -817,10 +1158,12 @@ ut_ipsec_encap_decap(struct test_ipsec_vector *vector, enum rte_security_ipsec_t
+ 		goto out;
+ 	}
+ 
++	sec_ctx = (struct rte_security_ctx *)rte_eth_dev_get_sec_ctx(portid);
++
+ 	memcpy(&sa_data, vector->sa_data, sizeof(sa_data));
+ 	sa_data.ipsec_xform.spi = out_sa_index;
+ 	/* Create Inline IPsec outbound session. */
+-	ret = create_inline_ipsec_session(&sa_data, portid, &out_ips,
++	ret = create_inline_ipsec_session(&sa_data, portid, &out_ses,
+ 					  RTE_SECURITY_IPSEC_SA_DIR_EGRESS, tun_type);
+ 	if (ret)
+ 		goto out;
+@@ -833,23 +1176,21 @@ ut_ipsec_encap_decap(struct test_ipsec_vector *vector, enum rte_security_ipsec_t
+ 	conf.protocol = RTE_SECURITY_PROTOCOL_IPSEC;
+ 	memcpy(&conf.ipsec, &sa_data.ipsec_xform, sizeof(struct rte_security_ipsec_xform));
+ 	conf.crypto_xform = &sa_data.xform.aead;
+-	ret = rte_security_session_update(out_ips.security.ctx, out_ips.security.ses, &conf);
++	ret = rte_security_session_update(sec_ctx, out_ses, &conf);
+ 	if (ret) {
+ 		printf("Security session update failed outbound\n");
+ 		goto out;
+ 	}
+ 	printf("Updated Outbound session with SPI = 0x%x\n", sa_data.ipsec_xform.spi);
+ 
+-	if (out_ips.security.ol_flags & RTE_SECURITY_TX_OLOAD_NEED_MDATA)
+-		rte_security_set_pkt_metadata(out_ips.security.ctx, out_ips.security.ses, tx_pkts,
+-					      NULL);
++	rte_security_set_pkt_metadata(sec_ctx, out_ses, tx_pkts, NULL);
+ 	tx_pkts->ol_flags |= RTE_MBUF_F_TX_SEC_OFFLOAD;
+ 	tx_pkts->l2_len = RTE_ETHER_HDR_LEN;
+ 
+ 	memcpy(&sa_data, vector->sa_data, sizeof(sa_data));
+ 	sa_data.ipsec_xform.spi = sa_index;
+ 	/* Create Inline IPsec inbound session. */
+-	ret = create_inline_ipsec_session(&sa_data, portid, &in_ips,
++	ret = create_inline_ipsec_session(&sa_data, portid, &in_ses,
+ 					  RTE_SECURITY_IPSEC_SA_DIR_INGRESS, tun_type);
+ 	if (ret)
+ 		goto out;
+@@ -861,14 +1202,14 @@ ut_ipsec_encap_decap(struct test_ipsec_vector *vector, enum rte_security_ipsec_t
+ 	conf.protocol = RTE_SECURITY_PROTOCOL_IPSEC;
+ 	memcpy(&conf.ipsec, &sa_data.ipsec_xform, sizeof(struct rte_security_ipsec_xform));
+ 	conf.crypto_xform = &sa_data.xform.aead;
+-	ret = rte_security_session_update(in_ips.security.ctx, in_ips.security.ses, &conf);
++	ret = rte_security_session_update(sec_ctx, in_ses, &conf);
+ 	if (ret) {
+ 		printf("Security session update failed inbound\n");
+ 		goto out;
+ 	}
+ 	printf("Updated Inbound session with SPI = 0x%x\n", sa_data.ipsec_xform.spi);
+ 
+-	ret = create_default_flow(portid, alg, sa_lo, sa_hi, sa_index);
++	ret = create_default_flow(portid, alg, spi, sa_lo, sa_hi, sa_index);
+ 	if (ret) {
+ 		printf("Flow creation failed\n");
+ 		goto out;
+@@ -922,14 +1263,11 @@ ut_ipsec_encap_decap(struct test_ipsec_vector *vector, enum rte_security_ipsec_t
+ 	cnxk_sa_index_free(portid, RTE_SECURITY_IPSEC_SA_DIR_EGRESS, out_sa_index, index_count);
+ 	cnxk_sa_index_free(portid, RTE_SECURITY_IPSEC_SA_DIR_INGRESS, in_sa_index, index_count);
+ 
+-	cnxk_sa_index_fini(portid, RTE_SECURITY_IPSEC_SA_DIR_EGRESS);
+-	cnxk_sa_index_fini(portid, RTE_SECURITY_IPSEC_SA_DIR_INGRESS);
+-
+ 	/* Clear session data. */
+-	if (out_ips.security.ses)
+-		rte_security_session_destroy(out_ips.security.ctx, out_ips.security.ses);
+-	if (in_ips.security.ses)
+-		rte_security_session_destroy(in_ips.security.ctx, in_ips.security.ses);
++	if (out_ses)
++		rte_security_session_destroy(sec_ctx, out_ses);
++	if (in_ses)
++		rte_security_session_destroy(sec_ctx, in_ses);
+ 
+ 	rte_pktmbuf_free(tx_pkts);
+ 	rte_pktmbuf_free(rx_pkts);
+@@ -974,27 +1312,287 @@ ut_ipsec_ipv4_burst_encap_decap(void)
+ 	return 0;
+ }
+ 
++static void
++print_stats(void)
++{
++	uint64_t last_rx = 0, last_tx = 0;
++	uint64_t curr_rx = 0, curr_tx = 0;
++	uint64_t curr_rx_ipsec = 0;
++	uint64_t timeout = 5;
++	uint16_t lcore_id;
++
++	while (!force_quit) {
++		curr_rx = 0;
++		curr_tx = 0;
++		curr_rx_ipsec = 0;
++		RTE_LCORE_FOREACH_WORKER(lcore_id) {
++			curr_rx += lcore_cfg[lcore_id].rx_pkts;
++			curr_tx += lcore_cfg[lcore_id].tx_pkts;
++			curr_rx_ipsec += lcore_cfg[lcore_id].rx_ipsec_pkts;
++		}
++
++		printf("%" PRIu64 " Rx pps(%" PRIu64 " ipsec pkts), %" PRIu64 " Tx pps, "
++		       "%" PRIu64 " drops\n",
++		       (curr_rx - last_rx) / timeout, curr_rx_ipsec, (curr_tx - last_tx) / timeout,
++		       curr_rx - curr_tx);
++
++		sleep(timeout);
++		last_rx = curr_rx;
++		last_tx = curr_tx;
++	}
++}
++
++/*
++ * Event mode exposes various operating modes depending on the
++ * capabilities of the event device and the operating mode
++ * selected.
++ */
++
++static void
++ipsec_event_port_flush(uint8_t eventdev_id __rte_unused, struct rte_event ev,
++		       void *args __rte_unused)
++{
++	rte_pktmbuf_free(ev.mbuf);
++}
++
++static int
++event_worker(void *args)
++{
++	uint32_t lcore_id = rte_lcore_id();
++	struct lcore_cfg *info = &lcore_cfg[lcore_id];
++	unsigned int nb_rx = 0, nb_tx;
++	struct rte_mbuf *pkt;
++	struct rte_event ev;
++
++	(void)args;
++
++	printf("Launching event mode worker on lcore=%u, event_port_id=%u\n", lcore_id,
++	       info->event_port_id);
++
++	while (!force_quit) {
++		/* Read packet from event queues */
++		nb_rx = rte_event_dequeue_burst(info->eventdev_id, info->event_port_id,
++						&ev, 1, 0);
++		if (nb_rx == 0)
++			continue;
++
++		switch (ev.event_type) {
++		case RTE_EVENT_TYPE_ETHDEV:
++			break;
++		default:
++			printf("Invalid event type %u",	ev.event_type);
++			continue;
++		}
++
++		pkt = ev.mbuf;
++
++		info->rx_pkts += nb_rx;
++		info->rx_ipsec_pkts += !!(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD);
++
++		rte_prefetch0(rte_pktmbuf_mtod(pkt, void *));
++		/* Drop packets received with offload failure */
++		if (pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED) {
++			rte_pktmbuf_free(ev.mbuf);
++			continue;
++		}
++
++		/* Save eth queue for Tx */
++		rte_event_eth_tx_adapter_txq_set(pkt, 0);
++
++		/*
++		 * Since tx internal port is available, events can be
++		 * directly enqueued to the adapter and it would be
++		 * internally submitted to the eth device.
++		 */
++		nb_tx = rte_event_eth_tx_adapter_enqueue(info->eventdev_id,
++							 info->event_port_id,
++							 &ev, /* events */
++							 1,   /* nb_events */
++							 0 /* flags */);
++		if (!nb_tx)
++			rte_pktmbuf_free(ev.mbuf);
++		info->tx_pkts += nb_tx;
++	}
++
++	if (ev.u64) {
++		ev.op = RTE_EVENT_OP_RELEASE;
++		rte_event_enqueue_burst(info->eventdev_id,
++					info->event_port_id, &ev, 1);
++	}
++
++	rte_event_port_quiesce(info->eventdev_id, info->event_port_id,
++			       ipsec_event_port_flush, NULL);
++	return 0;
++}
++
++static int
++ut_ipsec_ipv4_perf(void)
++{
++	struct rte_security_session *in_ses[RTE_MAX_ETHPORTS][RTE_PMD_CNXK_SEC_ACTION_ALG3 + 1];
++	enum rte_security_ipsec_tunnel_type tun_type = RTE_SECURITY_IPSEC_TUNNEL_IPV4;
++	struct rte_security_session_conf conf = {0};
++	enum rte_security_ipsec_sa_direction dir;
++	struct rte_security_ctx *sec_ctx = NULL;
++	uint32_t sa_indices[RTE_MAX_ETHPORTS];
++	uint32_t sa_index = 0;
++	struct ipsec_session_data sa_data;
++	unsigned int portid;
++	uint16_t sa_hi = 0, sa_lo = 0;
++	uint16_t lcore_id;
++	uint32_t spi = 0;
++	int ret = 0, i;
++	uint8_t alg;
++
++	memset(&in_ses, 0, sizeof(in_ses));
++	memset(sa_indices, 0xFF, sizeof(sa_indices));
++	/* Create one ESP rule per alg on port 0 and it would apply on all ports
++	 * due to custom_act
++	 */
++	printf("\nCrypto Alg: AES-GCM-128\n");
++	printf("Crypto Key: ");
++	for (i = 0; i < 15; i++)
++		printf("%02x:", conf_aes_128_gcm.key.data[i]);
++	printf("%02x\n", conf_aes_128_gcm.key.data[i]);
++
++	printf("Crypto Salt: %02x:%02x:%02x:%02x\n",
++	       conf_aes_128_gcm.ipsec_xform.salt >> 24,
++	       (conf_aes_128_gcm.ipsec_xform.salt >> 16) & 0xFF,
++	       (conf_aes_128_gcm.ipsec_xform.salt >> 8) & 0xFF,
++	       conf_aes_128_gcm.ipsec_xform.salt & 0xFF);
++
++	dir = RTE_SECURITY_IPSEC_SA_DIR_INGRESS;
++	RTE_ETH_FOREACH_DEV(portid) {
++		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
++			continue;
++		sec_ctx = (struct rte_security_ctx *)rte_eth_dev_get_sec_ctx(portid);
++
++		sa_index = cnxk_sa_index_alloc(0, dir, 16);
++		for (alg = RTE_PMD_CNXK_SEC_ACTION_ALG0; alg <= RTE_PMD_CNXK_SEC_ACTION_ALG3;
++		     alg++) {
++
++			switch (alg) {
++			case RTE_PMD_CNXK_SEC_ACTION_ALG0:
++				spi = (0x1 << 28 | sa_index);
++				sa_hi = (spi >> 16) & 0xffff;
++				sa_lo = 0x0;
++				break;
++			case RTE_PMD_CNXK_SEC_ACTION_ALG1:
++				spi = (sa_index << 28) | 0x0000001;
++				sa_hi = (spi >> 16) & 0xffff;
++				sa_lo = 0x0001;
++				break;
++			case RTE_PMD_CNXK_SEC_ACTION_ALG2:
++				spi = (sa_index << 25) | 0x00000001;
++				sa_hi = (spi >> 16) & 0xffff;
++				sa_lo = 0x0001;
++				break;
++			case RTE_PMD_CNXK_SEC_ACTION_ALG3:
++				spi = (sa_index << 25) | 0x00000001;
++				sa_hi = (spi >> 16) & 0xffff;
++				sa_lo = 0x0001;
++				break;
++			default:
++				break;
++			}
++
++			memcpy(&sa_data, &conf_aes_128_gcm, sizeof(sa_data));
++			sa_data.ipsec_xform.spi = sa_index;
++			/* Create Inline IPsec inbound session. */
++			ret = create_inline_ipsec_session(&sa_data, portid, &in_ses[portid][alg],
++							  dir, tun_type);
++			if (ret)
++				goto out;
++			printf("Port %d: Created alg %d Inbound session with sa_index = 0x%x\n",
++			       portid, alg, sa_data.ipsec_xform.spi);
++
++			sa_data.ipsec_xform.spi = spi;
++			sa_data.ipsec_xform.direction = dir;
++			conf.action_type = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL;
++			conf.protocol = RTE_SECURITY_PROTOCOL_IPSEC;
++			memcpy(&conf.ipsec, &sa_data.ipsec_xform,
++			       sizeof(struct rte_security_ipsec_xform));
++			conf.crypto_xform = &sa_data.xform.aead;
++			ret = rte_security_session_update(sec_ctx, in_ses[portid][alg], &conf);
++			if (ret) {
++				printf("Security session update failed inbound\n");
++				goto out;
++			}
++			printf("Port %d: Updated alg %d Inbound session with SPI = 0x%x\n",
++			       portid, alg, sa_data.ipsec_xform.spi);
++
++			/* Create all flow rules on port 0 and it would get applied on all ports due
++			 * to channel mask.
++			 */
++			ret = create_default_flow(portid, alg, sa_data.ipsec_xform.spi,
++						  sa_lo, sa_hi, sa_index);
++			if (ret) {
++				printf("Flow creation failed\n");
++				goto out;
++			}
++			sa_index++;
++		}
++	}
++
++	printf("\n");
++
++	/* launch per-lcore init on every lcore */
++	rte_eal_mp_remote_launch(event_worker, NULL, SKIP_MAIN);
++
++	/* Print stats */
++	print_stats();
++
++	RTE_LCORE_FOREACH_WORKER(lcore_id) {
++		if (rte_eal_wait_lcore(lcore_id) < 0)
++			return -1;
++	}
++out:
++	RTE_ETH_FOREACH_DEV(portid) {
++		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
++			continue;
++		destroy_default_flow(portid);
++
++		if (sa_indices[portid] != UINT32_MAX)
++			cnxk_sa_index_free(portid, dir, sa_indices[portid], 16);
++		sa_indices[portid] = UINT32_MAX;
++
++		/* Clear session data. */
++		for (alg = 0; alg <= RTE_PMD_CNXK_SEC_ACTION_ALG3; alg++) {
++			if (in_ses[portid][alg])
++				rte_security_session_destroy(sec_ctx, in_ses[portid][alg]);
++		}
++	}
++	return ret;
++}
++
+ int
+ main(int argc, char **argv)
+ {
+ 	int rc;
+ 
++	signal(SIGINT, signal_handler);
++	signal(SIGTERM, signal_handler);
++
+ 	rc = ut_setup(argc, argv);
+ 	if (rc) {
+ 		printf("TEST FAILED: ut_setup\n");
+ 		return rc;
+ 	}
+-	rc = ut_setup_inline_ipsec();
+-	if (rc) {
+-		printf("TEST FAILED: ut_setup_inline_ipsec\n");
+-		return rc;
+-	}
+-	rc = ut_ipsec_ipv4_burst_encap_decap();
+-	if (rc) {
+-		printf("TEST FAILED: ut_ipsec_ipv4_burst_encap_decap\n");
+-		return rc;
++
++	if (perf_mode) {
++		printf("Running in perf mode\n");
++		rc = ut_ipsec_ipv4_perf();
++		if (rc) {
++			printf("Failed to run perf mode\n");
++			return rc;
++		}
++
++	} else {
++		rc = ut_ipsec_ipv4_burst_encap_decap();
++		if (rc) {
++			printf("TEST FAILED: ut_ipsec_ipv4_burst_encap_decap\n");
++			return rc;
++		}
+ 	}
+-	ut_teardown_inline_ipsec();
+ 	ut_teardown();
+ 	return 0;
+ }
+-- 
+2.25.1
+

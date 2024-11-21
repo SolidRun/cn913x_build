@@ -1,0 +1,54 @@
+From 52a025daf75cc4116a5e1d6f520b85028ae49b57 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Thu, 7 Sep 2023 17:06:41 +0530
+Subject: [PATCH 632/955] common/cnxk: split XAQ counts
+
+Split XAQ counts into reserved and cached to allow more events
+to be inflight.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I2ab1c74ce22f64b7a4bee263f88a2a30ffc29068
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/111504
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_sso.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index c0347f8255418..0f588b4650b41 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -5,7 +5,8 @@
+ #include "roc_api.h"
+ #include "roc_priv.h"
+ 
+-#define SSO_XAQ_CACHE_CNT (0x7)
++#define SSO_XAQ_CACHE_CNT (0x3)
++#define SSO_XAQ_RSVD_CNT  (0x4)
+ #define SSO_XAQ_SLACK	  (16)
+ 
+ /* Private functions. */
+@@ -530,6 +531,7 @@ sso_hwgrp_init_xaq_aura(struct dev *dev, struct roc_sso_xaq_data *xaq,
+ 	 * pipelining.
+ 	 */
+ 	xaq->nb_xaq = (SSO_XAQ_CACHE_CNT * nb_hwgrp);
++	xaq->nb_xaq += (SSO_XAQ_RSVD_CNT * nb_hwgrp);
+ 	xaq->nb_xaq += PLT_MAX(1 + ((xaq->nb_xae - 1) / xae_waes), xaq->nb_xaq);
+ 	xaq->nb_xaq += SSO_XAQ_SLACK;
+ 
+@@ -573,8 +575,7 @@ sso_hwgrp_init_xaq_aura(struct dev *dev, struct roc_sso_xaq_data *xaq,
+ 	 * There should be a minimum headroom of 7 XAQs per HWGRP for SSO
+ 	 * to request XAQ to cache them even before enqueue is called.
+ 	 */
+-	xaq->xaq_lmt =
+-		xaq->nb_xaq - (nb_hwgrp * SSO_XAQ_CACHE_CNT) - SSO_XAQ_SLACK;
++	xaq->xaq_lmt = xaq->nb_xaq - (nb_hwgrp * SSO_XAQ_CACHE_CNT) - SSO_XAQ_SLACK;
+ 
+ 	return 0;
+ npa_fill_fail:
+-- 
+2.25.1
+

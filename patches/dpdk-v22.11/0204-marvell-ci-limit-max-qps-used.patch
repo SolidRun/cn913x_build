@@ -1,0 +1,55 @@
+From 4c6427aaf82e819cfcc5e194e8e52fcc38578273 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 9 Feb 2023 08:02:32 +0000
+Subject: [PATCH 204/955] marvell-ci: limit max qps used
+
+Limit max qps used for cn9k autotest.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ibd6cf97ae8dda021740504d4faac48c803e2c92c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96497
+Reviewed-by: Shijith Thotton <sthotton@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ .../cnxk-tests/crypto_autotest/crypto_autotest.sh   | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+index fc1d00dfd9f3c..f7baa9fbcb8e1 100755
+--- a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
++++ b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+@@ -6,11 +6,16 @@ set -euo pipefail
+ 
+ SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+ 
++CNXK_MEMPOOL_DEVICE=$(lspci -d :a0fb | tail -1 | awk -e '{ print $1 }')
++
+ CN10K_CRYPTO_DEVICE="0002:20:00.1"
+-CN10K_MEMPOOL_DEVICE="0002:1f:00.0"
+-CN10K_EAL_ARGS="-a $CN10K_CRYPTO_DEVICE,max_qps_limit=4 -a $CN10K_MEMPOOL_DEVICE"
++CN10K_EAL_ARGS="-a $CN10K_CRYPTO_DEVICE,max_qps_limit=4 -a $CNXK_MEMPOOL_DEVICE"
+ CN10K_EAL_ARGS+=" --log-level=7"
+ 
++CN9K_CRYPTO_DEVICE="0002:10:00.1"
++CN9K_EAL_ARGS="-a $CN9K_CRYPTO_DEVICE,max_qps_limit=4 -a $CNXK_MEMPOOL_DEVICE"
++CN9K_EAL_ARGS+=" --log-level=7"
++
+ if [[ -f $SCRIPTPATH/../../../../app/test/dpdk-test ]]; then
+ 	# This is running from build directory
+ 	DPDK_TEST_BIN=$SCRIPTPATH/../../../../app/test/dpdk-test
+@@ -31,8 +36,8 @@ run_cn10k_crypto_autotest() {
+ }
+ 
+ run_cn9k_crypto_autotest() {
+-	DPDK_TEST=cryptodev_cn9k_autotest $DPDK_TEST_BIN
+-	DPDK_TEST=cryptodev_cn9k_asym_autotest $DPDK_TEST_BIN
++	DPDK_TEST=cryptodev_cn9k_autotest $DPDK_TEST_BIN $CN9K_EAL_ARGS
++	DPDK_TEST=cryptodev_cn9k_asym_autotest $DPDK_TEST_BIN $CN9K_EAL_ARGS
+ }
+ 
+ run_crypto_autotest() {
+-- 
+2.25.1
+

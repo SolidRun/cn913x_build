@@ -1,0 +1,85 @@
+From 23f14df6816700d41565d128313d957958aea501 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Mon, 20 Nov 2023 17:49:59 +0530
+Subject: [PATCH 008/513] app/dma-perf: abstract csv file write error log
+
+Abstract csv file open and write for invalid/skip test case.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I5c3a8993c089b88c6baa6db6d2c1810f588d93bf
+---
+ app/test-dma-perf/main.c | 43 ++++++++++++++--------------------------
+ 1 file changed, 15 insertions(+), 28 deletions(-)
+
+diff --git a/app/test-dma-perf/main.c b/app/test-dma-perf/main.c
+index 4671ca53354dc..3eddf2e40a391 100644
+--- a/app/test-dma-perf/main.c
++++ b/app/test-dma-perf/main.c
+@@ -87,6 +87,19 @@ output_header(uint32_t case_id, struct test_configure *case_cfg)
+ 	output_csv(true);
+ }
+ 
++static int
++open_output_csv(const char *rst_path_ptr)
++{
++	fd = fopen(rst_path_ptr, "a");
++	if (!fd) {
++		printf("Open output CSV file error.\n");
++		return 1;
++	}
++	output_csv(true);
++	fclose(fd);
++	return 0;
++}
++
+ static void
+ run_test_case(struct test_configure *case_cfg)
+ {
+@@ -602,42 +615,16 @@ main(int argc, char *argv[])
+ 			printf("Test case %d configured to be skipped.\n\n", i + 1);
+ 			snprintf(output_str[0], MAX_OUTPUT_STR_LEN, "Skip the test-case %d\n",
+ 				 i + 1);
+-
+-			fd = fopen(rst_path_ptr, "a");
+-			if (!fd) {
+-				printf("Open output CSV file error.\n");
++			if (open_output_csv(rst_path_ptr))
+ 				return 0;
+-			}
+-			output_csv(true);
+-			fclose(fd);
+ 			continue;
+ 		}
+ 
+ 		if (!test_cases[i].is_valid) {
+ 			printf("Invalid test case %d.\n\n", i + 1);
+ 			snprintf(output_str[0], MAX_OUTPUT_STR_LEN, "Invalid case %d\n", i + 1);
+-
+-			fd = fopen(rst_path_ptr, "a");
+-			if (!fd) {
+-				printf("Open output CSV file error.\n");
+-				return 0;
+-			}
+-			output_csv(true);
+-			fclose(fd);
+-			continue;
+-		}
+-
+-		if (test_cases[i].test_type == TEST_TYPE_NONE) {
+-			printf("No valid test type in test case %d.\n\n", i + 1);
+-			snprintf(output_str[0], MAX_OUTPUT_STR_LEN, "Invalid case %d\n", i + 1);
+-
+-			fd = fopen(rst_path_ptr, "a");
+-			if (!fd) {
+-				printf("Open output CSV file error.\n");
++			if (open_output_csv(rst_path_ptr))
+ 				return 0;
+-			}
+-			output_csv(true);
+-			fclose(fd);
+ 			continue;
+ 		}
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,47 @@
+From 01546a00d6d107dd4c89a61dccf1abbc3ad0fe8e Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Wed, 24 Jan 2024 16:16:09 +0530
+Subject: [PATCH 178/513] ci: add cryptodev cn10k raw API autotest suite
+
+Move cryptodev_cn10k_raw_api_autotest suite under
+cryptodev_cnxk_autotest to reduce log output.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I98dc2939ca59236320ce52b9d12533f3b4135b99
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120390
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh | 1 +
+ marvell-ci/test/env/cn10k.env                                 | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+index 0711c8a39ad2a..0c2303b711ab4 100755
+--- a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
++++ b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+@@ -34,6 +34,7 @@ fi
+ run_cn10k_crypto_autotest() {
+ 	DPDK_TEST=cryptodev_cn10k_autotest $DPDK_TEST_BIN $CN10K_EAL_ARGS
+ 	DPDK_TEST=cryptodev_cn10k_asym_autotest $DPDK_TEST_BIN $CN10K_EAL_ARGS
++	DPDK_TEST=cryptodev_cn10k_raw_api_autotest $DPDK_TEST_BIN $CN10K_EAL_ARGS
+ 	DPDK_TEST=cryptodev_crosscheck $DPDK_TEST_BIN $CN10K_EAL_ARGS $CNXK_EAL_VDEV_OPENSSL
+ }
+ 
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 011af32d9d07e..be83d8956d894 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -91,6 +91,7 @@ DEFAULT_SKIP_TESTS="
+ 	cryptodev_cn9k_autotest
+ 	cryptodev_cn10k_asym_autotest
+ 	cryptodev_cn10k_autotest
++	cryptodev_cn10k_raw_api_autotest
+ 	cryptodev_cnxk_autotest
+ 	cryptodev_dpaa_sec_autotest
+ 	cryptodev_dpaa2_sec_autotest
+-- 
+2.25.1
+

@@ -1,0 +1,52 @@
+From 5aba9513f224e5b71ec4339a0050c9ff1e630a0f Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Thu, 16 Mar 2023 15:18:08 +0530
+Subject: [PATCH 349/955] ethdev: fix trace global buffer overflow
+
+With clang 10 compilation, the address sanitizer reports global buffer
+overflow issue. The issue is observed during trace point registration
+in rte_trace_point_emit_string, for strings in iterator structure.
+
+As a workaround for this clang issue, this patch removes the
+rte_trace_point_emit_string and instead adds rte_trace_point_emit_ptr
+to capture the iterator pointer.
+
+Bugzilla ID: 1184
+Fixes: 6679cf21d608 ("ethdev: add trace points")
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Acked-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Change-Id: I0c6103cc3e4b9a56d273b45ac0f60a3383bfc1e1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100511
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ lib/ethdev/ethdev_trace.h | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/lib/ethdev/ethdev_trace.h b/lib/ethdev/ethdev_trace.h
+index 66ca26b03d6a5..cc02d7fe2bc69 100644
+--- a/lib/ethdev/ethdev_trace.h
++++ b/lib/ethdev/ethdev_trace.h
+@@ -100,16 +100,14 @@ RTE_TRACE_POINT(
+ RTE_TRACE_POINT(
+ 	rte_eth_trace_iterator_next,
+ 	RTE_TRACE_POINT_ARGS(const struct rte_dev_iterator *iter, uint16_t id),
+-	rte_trace_point_emit_string(iter->bus_str);
+-	rte_trace_point_emit_string(iter->cls_str);
++	rte_trace_point_emit_ptr(iter);
+ 	rte_trace_point_emit_u16(id);
+ )
+ 
+ RTE_TRACE_POINT(
+ 	rte_eth_trace_iterator_cleanup,
+ 	RTE_TRACE_POINT_ARGS(const struct rte_dev_iterator *iter),
+-	rte_trace_point_emit_string(iter->bus_str);
+-	rte_trace_point_emit_string(iter->cls_str);
++	rte_trace_point_emit_ptr(iter);
+ )
+ 
+ RTE_TRACE_POINT(
+-- 
+2.25.1
+

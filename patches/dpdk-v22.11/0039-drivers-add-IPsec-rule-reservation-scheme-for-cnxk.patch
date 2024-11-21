@@ -1,0 +1,787 @@
+From 4474c7703036bc87ddb4bd48a3d6583407164fbc Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Tue, 22 Nov 2022 16:05:17 +0530
+Subject: [PATCH 039/955] drivers: add IPsec rule reservation scheme for cnxk
+
+For inline IPsec device, reserve number of rules specified by
+``max_ipsec_rules`` and use them while installing rules with
+action as security. Rule priority should be 0. If specified
+number of rules not available, then only available number of
+rules will be allocated and used. If application try to insert
+more then allocated rules, flow creation will fail.
+
+ci: skip_checkformat skip_klockwork
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Change-Id: I88f0a3467161584bc5c5adb373e7bfbde913a4ae
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91044
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satheesh Paul Antonysamy <psatheesh@marvell.com>
+---
+ doc/guides/nics/cnxk.rst               |  18 +++++
+ drivers/common/cnxk/roc_nix_inl.h      |   1 +
+ drivers/common/cnxk/roc_nix_inl_dev.c  |  35 +++++++-
+ drivers/common/cnxk/roc_nix_inl_priv.h |   6 ++
+ drivers/common/cnxk/roc_npc.c          | 108 +++++++++++++++++++++----
+ drivers/common/cnxk/roc_npc.h          |   4 +
+ drivers/common/cnxk/roc_npc_mcam.c     |  92 +++++++++++++--------
+ drivers/common/cnxk/roc_npc_priv.h     |  15 ++--
+ drivers/common/cnxk/version.map        |   2 +
+ drivers/net/cnxk/cnxk_ethdev_sec.c     |  23 +++++-
+ drivers/net/cnxk/cnxk_flow.c           |  13 ++-
+ 11 files changed, 258 insertions(+), 59 deletions(-)
+
+diff --git a/doc/guides/nics/cnxk.rst b/doc/guides/nics/cnxk.rst
+index 7da6cb3967ff9..2243f78d9f46d 100644
+--- a/doc/guides/nics/cnxk.rst
++++ b/doc/guides/nics/cnxk.rst
+@@ -348,6 +348,24 @@ Runtime Config Options
+    set with this custom mask, inbound encrypted traffic from all ports with
+    matching channel number pattern will be directed to the inline IPSec device.
+ 
++- ``Inline IPsec device flow rules`` (default ``none``)
++
++   For inline IPsec device, reserve number of rules specified by ``max_ipsec_rules``
++   and use them while installing rules with action as security. Rule priority should
++   be 0. If specified number of rules not available, then only available number
++   of rules will be allocated and used. If application try to insert more then
++   allocated rules, flow creation will fail.
++
++   For example::
++
++      -a 0002:1d:00.0,max_ipsec_rules=100
++
++   With the above configuration, 100 rules will be allocated from 0-99 if available
++   and will be used for rules with action security. If 100 rules are not available,
++   and only 50 are available, then only 50 rules will be allocated and used for
++   flow rule creation. If application try to add more than 50 rules, the flow
++   create will fail.
++
+ - ``SDP device channel and mask`` (default ``none``)
+    Set channel and channel mask configuration for the SDP device. This
+    will be used when creating flow rules on the SDP device.
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index c5372628199ee..99d128116908e 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -186,6 +186,7 @@ struct roc_nix_inl_dev {
+ 	uint32_t soft_exp_poll_freq; /* Polling disabled if 0 */
+ 	uint32_t nb_meta_bufs;
+ 	uint32_t meta_buf_sz;
++	uint32_t max_ipsec_rules;
+ 	/* End of input parameters */
+ 
+ #define ROC_NIX_INL_MEM_SZ (1280)
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index c3d94dd0daa29..35a289329f4da 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -807,7 +807,9 @@ roc_nix_inl_dev_init(struct roc_nix_inl_dev *roc_inl_dev)
+ 	struct plt_pci_device *pci_dev;
+ 	struct nix_inl_dev *inl_dev;
+ 	struct idev_cfg *idev;
+-	int rc;
++	int start_index;
++	int resp_count;
++	int rc, i;
+ 
+ 	pci_dev = roc_inl_dev->pci_dev;
+ 
+@@ -890,6 +892,30 @@ roc_nix_inl_dev_init(struct roc_nix_inl_dev *roc_inl_dev)
+ 		if (rc)
+ 			goto cpt_release;
+ 	}
++	inl_dev->max_ipsec_rules = roc_inl_dev->max_ipsec_rules;
++
++	if (inl_dev->max_ipsec_rules && roc_inl_dev->is_multi_channel) {
++		inl_dev->ipsec_index =
++			plt_zmalloc(sizeof(int) * inl_dev->max_ipsec_rules, PLT_CACHE_LINE_SIZE);
++		if (inl_dev->ipsec_index == NULL) {
++			rc = NPC_ERR_NO_MEM;
++			goto cpt_release;
++		}
++		rc = npc_mcam_alloc_entries(inl_dev->dev.mbox, inl_dev->max_ipsec_rules,
++					    inl_dev->ipsec_index, inl_dev->max_ipsec_rules,
++					    NPC_MCAM_HIGHER_PRIO, &resp_count, 1);
++		if (rc) {
++			plt_free(inl_dev->ipsec_index);
++			goto cpt_release;
++		}
++
++		start_index = inl_dev->ipsec_index[0];
++		for (i = 0; i < resp_count; i++)
++			inl_dev->ipsec_index[i] = start_index + i;
++
++		inl_dev->curr_ipsec_idx = 0;
++		inl_dev->alloc_ipsec_rules = resp_count;
++	}
+ 
+ 	idev->nix_inl_dev = inl_dev;
+ 
+@@ -914,6 +940,7 @@ roc_nix_inl_dev_fini(struct roc_nix_inl_dev *roc_inl_dev)
+ 	struct plt_pci_device *pci_dev;
+ 	struct nix_inl_dev *inl_dev;
+ 	struct idev_cfg *idev;
++	uint32_t i;
+ 	int rc;
+ 
+ 	idev = idev_get_cfg();
+@@ -927,6 +954,12 @@ roc_nix_inl_dev_fini(struct roc_nix_inl_dev *roc_inl_dev)
+ 	inl_dev = idev->nix_inl_dev;
+ 	pci_dev = inl_dev->pci_dev;
+ 
++	if (inl_dev->ipsec_index && roc_inl_dev->is_multi_channel) {
++		for (i = inl_dev->curr_ipsec_idx; i < inl_dev->alloc_ipsec_rules; i++)
++			npc_mcam_free_entry(inl_dev->dev.mbox, inl_dev->ipsec_index[i]);
++		plt_free(inl_dev->ipsec_index);
++	}
++
+ 	if (inl_dev->set_soft_exp_poll) {
+ 		soft_exp_poll_thread_exit = true;
+ 		pthread_join(inl_dev->soft_exp_poll_thread, NULL);
+diff --git a/drivers/common/cnxk/roc_nix_inl_priv.h b/drivers/common/cnxk/roc_nix_inl_priv.h
+index ccd2adf982431..528d2db365991 100644
+--- a/drivers/common/cnxk/roc_nix_inl_priv.h
++++ b/drivers/common/cnxk/roc_nix_inl_priv.h
+@@ -90,6 +90,12 @@ struct nix_inl_dev {
+ 	bool ts_ena;
+ 	uint32_t nb_meta_bufs;
+ 	uint32_t meta_buf_sz;
++
++	/* NPC */
++	int *ipsec_index;
++	uint32_t curr_ipsec_idx;
++	uint32_t max_ipsec_rules;
++	uint32_t alloc_ipsec_rules;
+ };
+ 
+ int nix_inl_sso_register_irqs(struct nix_inl_dev *inl_dev);
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 374c5c1aef326..de3352250bbf2 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -27,7 +27,36 @@ roc_npc_mcam_free_counter(struct roc_npc *roc_npc, uint16_t ctr_id)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 
+-	return npc_mcam_free_counter(npc, ctr_id);
++	return npc_mcam_free_counter(npc->mbox, ctr_id);
++}
++
++int
++roc_npc_inl_mcam_read_counter(uint32_t ctr_id, uint64_t *count)
++{
++	struct nix_inl_dev *inl_dev = NULL;
++	struct idev_cfg *idev;
++
++	idev = idev_get_cfg();
++	if (idev)
++		inl_dev = idev->nix_inl_dev;
++	if (!inl_dev)
++		return 0;
++	return npc_mcam_read_counter(inl_dev->dev.mbox, ctr_id, count);
++}
++
++int
++roc_npc_inl_mcam_clear_counter(uint32_t ctr_id)
++{
++	struct nix_inl_dev *inl_dev = NULL;
++	struct idev_cfg *idev;
++
++	idev = idev_get_cfg();
++	if (idev)
++		inl_dev = idev->nix_inl_dev;
++	if (!inl_dev)
++		return 0;
++
++	return npc_mcam_clear_counter(inl_dev->dev.mbox, ctr_id);
+ }
+ 
+ int
+@@ -36,7 +65,7 @@ roc_npc_mcam_read_counter(struct roc_npc *roc_npc, uint32_t ctr_id,
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 
+-	return npc_mcam_read_counter(npc, ctr_id, count);
++	return npc_mcam_read_counter(npc->mbox, ctr_id, count);
+ }
+ 
+ int
+@@ -44,7 +73,7 @@ roc_npc_mcam_clear_counter(struct roc_npc *roc_npc, uint32_t ctr_id)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 
+-	return npc_mcam_clear_counter(npc, ctr_id);
++	return npc_mcam_clear_counter(npc->mbox, ctr_id);
+ }
+ 
+ int
+@@ -52,7 +81,7 @@ roc_npc_mcam_free_entry(struct roc_npc *roc_npc, uint32_t entry)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 
+-	return npc_mcam_free_entry(npc, entry);
++	return npc_mcam_free_entry(npc->mbox, entry);
+ }
+ 
+ int
+@@ -117,8 +146,8 @@ roc_npc_mcam_alloc_entries(struct roc_npc *roc_npc, int ref_entry,
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 
+-	return npc_mcam_alloc_entries(npc, ref_entry, alloc_entry, req_count,
+-				      priority, resp_count);
++	return npc_mcam_alloc_entries(npc->mbox, ref_entry, alloc_entry, req_count, priority,
++				      resp_count, 0);
+ }
+ 
+ int
+@@ -153,7 +182,7 @@ roc_npc_mcam_write_entry(struct roc_npc *roc_npc, struct roc_npc_flow *mcam)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 
+-	return npc_mcam_write_entry(npc, mcam);
++	return npc_mcam_write_entry(npc->mbox, mcam);
+ }
+ 
+ int
+@@ -249,6 +278,8 @@ roc_npc_init(struct roc_npc *roc_npc)
+ 	}
+ 
+ 	npc_mem = mem;
++
++	TAILQ_INIT(&npc->ipsec_list);
+ 	for (idx = 0; idx < npc->flow_max_priority; idx++) {
+ 		TAILQ_INIT(&npc->flow_list[idx]);
+ 		TAILQ_INIT(&npc->prio_flow_list[idx]);
+@@ -531,6 +562,7 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 				}
+ 				rq = inl_rq->qid;
+ 				pf_func = nix_inl_dev_pffunc_get();
++				flow->is_inline_dev = 1;
+ 			}
+ 			sec_action = actions;
+ 			break;
+@@ -1276,6 +1308,41 @@ npc_vtag_action_program(struct roc_npc *roc_npc,
+ 	return 0;
+ }
+ 
++static int
++npc_inline_dev_ipsec_action_free(struct npc *npc, struct roc_npc_flow *flow)
++{
++	struct nix_inl_dev *inl_dev;
++	struct idev_cfg *idev;
++	int rc;
++
++	RTE_SET_USED(npc);
++
++	idev = idev_get_cfg();
++	if (!idev)
++		return 1;
++
++	inl_dev = idev->nix_inl_dev;
++
++	if (flow->nix_intf == NIX_INTF_RX && inl_dev && inl_dev->ipsec_index &&
++	    ((flow->npc_action & 0xF) == NIX_RX_ACTIONOP_UCAST_IPSEC)) {
++		inl_dev->curr_ipsec_idx--;
++		inl_dev->ipsec_index[inl_dev->curr_ipsec_idx] = flow->mcam_id;
++		flow->enable = 0;
++		if (flow->use_ctr) {
++			rc = npc_mcam_clear_counter(inl_dev->dev.mbox, flow->ctr_id);
++			if (rc)
++				return rc;
++
++			rc = npc_mcam_free_counter(inl_dev->dev.mbox, flow->ctr_id);
++			if (rc)
++				return rc;
++		}
++		return npc_mcam_write_entry(inl_dev->dev.mbox, flow);
++	}
++
++	return 1;
++}
++
+ struct roc_npc_flow *
+ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		    const struct roc_npc_item_info pattern[],
+@@ -1336,7 +1403,10 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		goto set_rss_failed;
+ 	}
+ 
+-	list = &npc->flow_list[flow->priority];
++	if (flow->use_pre_alloc == 0)
++		list = &npc->flow_list[flow->priority];
++	else
++		list = &npc->ipsec_list;
+ 	/* List in ascending order of mcam entries */
+ 	TAILQ_FOREACH(flow_iter, list, next) {
+ 		if (flow_iter->mcam_id > flow->mcam_id) {
+@@ -1344,16 +1414,19 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			return flow;
+ 		}
+ 	}
+-
+ 	TAILQ_INSERT_TAIL(list, flow, next);
+ 	return flow;
+ 
+ set_rss_failed:
+-	rc = roc_npc_mcam_free_entry(roc_npc, flow->mcam_id);
+-	if (rc != 0) {
+-		*errcode = rc;
+-		plt_free(flow);
+-		return NULL;
++	if (flow->use_pre_alloc == 0) {
++		rc = roc_npc_mcam_free_entry(roc_npc, flow->mcam_id);
++		if (rc != 0) {
++			*errcode = rc;
++			plt_free(flow);
++			return NULL;
++		}
++	} else {
++		npc_inline_dev_ipsec_action_free(npc, flow);
+ 	}
+ err_exit:
+ 	plt_free(flow);
+@@ -1408,6 +1481,12 @@ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 	if (rc)
+ 		return rc;
+ 
++	if (npc_inline_dev_ipsec_action_free(npc, flow) == 0) {
++		TAILQ_REMOVE(&npc->ipsec_list, flow, next);
++		goto done;
++	}
++
++
+ 	rc = npc_rss_group_free(npc, flow);
+ 	if (rc != 0) {
+ 		plt_err("Failed to free rss action rc = %d", rc);
+@@ -1428,6 +1507,7 @@ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 
+ 	npc_delete_prio_list_entry(npc, flow);
+ 
++done:
+ 	plt_free(flow);
+ 	return 0;
+ }
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 80d70dd4c40d0..c7001c7685049 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -280,6 +280,8 @@ struct roc_npc_flow {
+ 	struct roc_npc_msns_action_info msns_info;
+ 	bool is_validate;
+ 	uint16_t match_id;
++	uint8_t is_inline_dev;
++	bool use_pre_alloc;
+ 
+ 	TAILQ_ENTRY(roc_npc_flow) next;
+ };
+@@ -378,6 +380,8 @@ int __roc_api roc_npc_mcam_read_counter(struct roc_npc *roc_npc,
+ 					uint32_t ctr_id, uint64_t *count);
+ int __roc_api roc_npc_mcam_clear_counter(struct roc_npc *roc_npc,
+ 					 uint32_t ctr_id);
++int __roc_api roc_npc_inl_mcam_read_counter(uint32_t ctr_id, uint64_t *count);
++int __roc_api roc_npc_inl_mcam_clear_counter(uint32_t ctr_id);
+ int __roc_api roc_npc_mcam_free_all_resources(struct roc_npc *roc_npc);
+ void __roc_api roc_npc_flow_dump(FILE *file, struct roc_npc *roc_npc);
+ void __roc_api roc_npc_flow_mcam_dump(FILE *file, struct roc_npc *roc_npc,
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index 526a6d157940c..c419ce3a4cc93 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -5,11 +5,10 @@
+ #include "roc_priv.h"
+ 
+ static int
+-npc_mcam_alloc_counter(struct npc *npc, uint16_t *ctr)
++npc_mcam_alloc_counter(struct mbox *mbox, uint16_t *ctr)
+ {
+ 	struct npc_mcam_alloc_counter_req *req;
+ 	struct npc_mcam_alloc_counter_rsp *rsp;
+-	struct mbox *mbox = npc->mbox;
+ 	int rc = -ENOSPC;
+ 
+ 	req = mbox_alloc_msg_npc_mcam_alloc_counter(mbox);
+@@ -24,10 +23,9 @@ npc_mcam_alloc_counter(struct npc *npc, uint16_t *ctr)
+ }
+ 
+ int
+-npc_mcam_free_counter(struct npc *npc, uint16_t ctr_id)
++npc_mcam_free_counter(struct mbox *mbox, uint16_t ctr_id)
+ {
+ 	struct npc_mcam_oper_counter_req *req;
+-	struct mbox *mbox = npc->mbox;
+ 	int rc = -ENOSPC;
+ 
+ 	req = mbox_alloc_msg_npc_mcam_free_counter(mbox);
+@@ -38,11 +36,10 @@ npc_mcam_free_counter(struct npc *npc, uint16_t ctr_id)
+ }
+ 
+ int
+-npc_mcam_read_counter(struct npc *npc, uint32_t ctr_id, uint64_t *count)
++npc_mcam_read_counter(struct mbox *mbox, uint32_t ctr_id, uint64_t *count)
+ {
+ 	struct npc_mcam_oper_counter_req *req;
+ 	struct npc_mcam_oper_counter_rsp *rsp;
+-	struct mbox *mbox = npc->mbox;
+ 	int rc = -ENOSPC;
+ 
+ 	req = mbox_alloc_msg_npc_mcam_counter_stats(mbox);
+@@ -57,10 +54,9 @@ npc_mcam_read_counter(struct npc *npc, uint32_t ctr_id, uint64_t *count)
+ }
+ 
+ int
+-npc_mcam_clear_counter(struct npc *npc, uint32_t ctr_id)
++npc_mcam_clear_counter(struct mbox *mbox, uint32_t ctr_id)
+ {
+ 	struct npc_mcam_oper_counter_req *req;
+-	struct mbox *mbox = npc->mbox;
+ 	int rc = -ENOSPC;
+ 
+ 	req = mbox_alloc_msg_npc_mcam_clear_counter(mbox);
+@@ -71,10 +67,9 @@ npc_mcam_clear_counter(struct npc *npc, uint32_t ctr_id)
+ }
+ 
+ int
+-npc_mcam_free_entry(struct npc *npc, uint32_t entry)
++npc_mcam_free_entry(struct mbox *mbox, uint32_t entry)
+ {
+ 	struct npc_mcam_free_entry_req *req;
+-	struct mbox *mbox = npc->mbox;
+ 	int rc = -ENOSPC;
+ 
+ 	req = mbox_alloc_msg_npc_mcam_free_entry(mbox);
+@@ -306,19 +301,18 @@ npc_update_kex_info(struct npc_xtract_info *xtract_info, uint64_t val)
+ }
+ 
+ int
+-npc_mcam_alloc_entries(struct npc *npc, int ref_mcam, int *alloc_entry,
+-		       int req_count, int prio, int *resp_count)
++npc_mcam_alloc_entries(struct mbox *mbox, int ref_mcam, int *alloc_entry, int req_count, int prio,
++		       int *resp_count, bool is_conti)
+ {
+ 	struct npc_mcam_alloc_entry_req *req;
+ 	struct npc_mcam_alloc_entry_rsp *rsp;
+-	struct mbox *mbox = npc->mbox;
+ 	int rc = -ENOSPC;
+ 	int i;
+ 
+ 	req = mbox_alloc_msg_npc_mcam_alloc_entry(mbox);
+ 	if (req == NULL)
+ 		return rc;
+-	req->contig = 0;
++	req->contig = is_conti;
+ 	req->count = req_count;
+ 	req->priority = prio;
+ 	req->ref_entry = ref_mcam;
+@@ -329,6 +323,8 @@ npc_mcam_alloc_entries(struct npc *npc, int ref_mcam, int *alloc_entry,
+ 	for (i = 0; i < rsp->count; i++)
+ 		alloc_entry[i] = rsp->entry_list[i];
+ 	*resp_count = rsp->count;
++	if (is_conti)
++		alloc_entry[0] = rsp->entry;
+ 	return 0;
+ }
+ 
+@@ -379,22 +375,21 @@ npc_mcam_ena_dis_entry(struct npc *npc, struct roc_npc_flow *mcam, bool enable)
+ }
+ 
+ int
+-npc_mcam_write_entry(struct npc *npc, struct roc_npc_flow *mcam)
++npc_mcam_write_entry(struct mbox *mbox, struct roc_npc_flow *mcam)
+ {
+ 	struct npc_mcam_write_entry_req *req;
+-	struct mbox *mbox = npc->mbox;
+ 	struct mbox_msghdr *rsp;
+ 	int rc = -ENOSPC;
+ 	uint16_t ctr = 0;
+ 	int i;
+ 
+ 	if (mcam->use_ctr && mcam->ctr_id == NPC_COUNTER_NONE) {
+-		rc = npc_mcam_alloc_counter(npc, &ctr);
++		rc = npc_mcam_alloc_counter(mbox, &ctr);
+ 		if (rc)
+ 			return rc;
+ 		mcam->ctr_id = ctr;
+ 
+-		rc = npc_mcam_clear_counter(npc, mcam->ctr_id);
++		rc = npc_mcam_clear_counter(mbox, mcam->ctr_id);
+ 		if (rc)
+ 			return rc;
+ 	}
+@@ -402,7 +397,7 @@ npc_mcam_write_entry(struct npc *npc, struct roc_npc_flow *mcam)
+ 	req = mbox_alloc_msg_npc_mcam_write_entry(mbox);
+ 	if (req == NULL) {
+ 		if (mcam->use_ctr)
+-			npc_mcam_free_counter(npc, ctr);
++			npc_mcam_free_counter(mbox, ctr);
+ 
+ 		return rc;
+ 	}
+@@ -558,22 +553,40 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow,
+ 
+ 	PLT_SET_USED(pst);
+ 
++	idev = idev_get_cfg();
++	if (idev)
++		inl_dev = idev->nix_inl_dev;
++
++	if (inl_dev && inl_dev->ipsec_index) {
++		if (flow->is_inline_dev)
++			mbox = inl_dev->dev.mbox;
++	}
++
+ 	if (flow->use_ctr) {
+-		rc = npc_mcam_alloc_counter(npc, &ctr);
++		rc = npc_mcam_alloc_counter(mbox, &ctr);
+ 		if (rc)
+ 			return rc;
+ 
+ 		flow->ctr_id = ctr;
+-		rc = npc_mcam_clear_counter(npc, flow->ctr_id);
++		rc = npc_mcam_clear_counter(mbox, flow->ctr_id);
+ 		if (rc)
+ 			return rc;
+ 	}
+ 
+-	entry = npc_get_free_mcam_entry(mbox, flow, npc);
+-	if (entry < 0) {
+-		if (flow->use_ctr)
+-			npc_mcam_free_counter(npc, ctr);
+-		return NPC_ERR_MCAM_ALLOC;
++	if (flow->nix_intf == NIX_INTF_RX && flow->is_inline_dev && inl_dev &&
++	    inl_dev->ipsec_index && inl_dev->is_multi_channel) {
++		if (inl_dev->curr_ipsec_idx >= inl_dev->alloc_ipsec_rules)
++			return NPC_ERR_MCAM_ALLOC;
++		entry = inl_dev->ipsec_index[inl_dev->curr_ipsec_idx];
++		inl_dev->curr_ipsec_idx++;
++		flow->use_pre_alloc = 1;
++	} else {
++		entry = npc_get_free_mcam_entry(mbox, flow, npc);
++		if (entry < 0) {
++			if (flow->use_ctr)
++				npc_mcam_free_counter(mbox, ctr);
++			return NPC_ERR_MCAM_ALLOC;
++		}
+ 	}
+ 
+ 	req = mbox_alloc_msg_npc_mcam_write_entry(mbox);
+@@ -606,10 +619,6 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow,
+ 		req->entry_data.kw_mask[idx] = flow->mcam_mask[idx];
+ 	}
+ 
+-	idev = idev_get_cfg();
+-	if (idev)
+-		inl_dev = idev->nix_inl_dev;
+-
+ 	if (flow->nix_intf == NIX_INTF_RX) {
+ 		if (inl_dev && inl_dev->is_multi_channel &&
+ 		    (flow->npc_action & NIX_RX_ACTIONOP_UCAST_IPSEC)) {
+@@ -847,8 +856,10 @@ npc_program_mcam(struct npc *npc, struct npc_parse_state *pst, bool mcam_alloc)
+ int
+ npc_flow_enable_all_entries(struct npc *npc, bool enable)
+ {
++	struct nix_inl_dev *inl_dev;
+ 	struct npc_flow_list *list;
+ 	struct roc_npc_flow *flow;
++	struct idev_cfg *idev;
+ 	int rc = 0, idx;
+ 
+ 	/* Free any MCAM counters and delete flow list */
+@@ -856,7 +867,22 @@ npc_flow_enable_all_entries(struct npc *npc, bool enable)
+ 		list = &npc->flow_list[idx];
+ 		TAILQ_FOREACH(flow, list, next) {
+ 			flow->enable = enable;
+-			rc = npc_mcam_write_entry(npc, flow);
++			rc = npc_mcam_write_entry(npc->mbox, flow);
++			if (rc)
++				return rc;
++		}
++	}
++
++	list = &npc->ipsec_list;
++	idev = idev_get_cfg();
++	if (!idev)
++		return 0;
++	inl_dev = idev->nix_inl_dev;
++
++	if (inl_dev) {
++		TAILQ_FOREACH(flow, list, next) {
++			flow->enable = enable;
++			rc = npc_mcam_write_entry(inl_dev->dev.mbox, flow);
+ 			if (rc)
+ 				return rc;
+ 		}
+@@ -878,8 +904,8 @@ npc_flow_free_all_resources(struct npc *npc)
+ 		while ((flow = TAILQ_FIRST(&npc->flow_list[idx])) != NULL) {
+ 			npc_rss_group_free(npc, flow);
+ 			if (flow->ctr_id != NPC_COUNTER_NONE) {
+-				rc |= npc_mcam_clear_counter(npc, flow->ctr_id);
+-				rc |= npc_mcam_free_counter(npc, flow->ctr_id);
++				rc |= npc_mcam_clear_counter(npc->mbox, flow->ctr_id);
++				rc |= npc_mcam_free_counter(npc->mbox, flow->ctr_id);
+ 			}
+ 
+ 			npc_delete_prio_list_entry(npc, flow);
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 09a727b13e45f..fe19329a7fa7e 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -396,6 +396,7 @@ struct npc {
+ 	struct npc_flow_list *flow_list;
+ 	struct npc_prio_flow_list_head *prio_flow_list;
+ 	struct plt_bitmap *rss_grp_entries;
++	struct npc_flow_list ipsec_list;
+ };
+ 
+ static inline struct npc *
+@@ -404,22 +405,22 @@ roc_npc_to_npc_priv(struct roc_npc *npc)
+ 	return (struct npc *)npc->reserved;
+ }
+ 
+-int npc_mcam_free_counter(struct npc *npc, uint16_t ctr_id);
+-int npc_mcam_read_counter(struct npc *npc, uint32_t ctr_id, uint64_t *count);
+-int npc_mcam_clear_counter(struct npc *npc, uint32_t ctr_id);
+-int npc_mcam_free_entry(struct npc *npc, uint32_t entry);
++int npc_mcam_free_counter(struct mbox *mbox, uint16_t ctr_id);
++int npc_mcam_read_counter(struct mbox *mbox, uint32_t ctr_id, uint64_t *count);
++int npc_mcam_clear_counter(struct mbox *mbox, uint32_t ctr_id);
++int npc_mcam_free_entry(struct mbox *mbox, uint32_t entry);
+ int npc_mcam_free_all_entries(struct npc *npc);
+ int npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow,
+ 			     struct npc_parse_state *pst);
+ int npc_mcam_alloc_entry(struct npc *npc, struct roc_npc_flow *mcam,
+ 			 struct roc_npc_flow *ref_mcam, int prio,
+ 			 int *resp_count);
+-int npc_mcam_alloc_entries(struct npc *npc, int ref_mcam, int *alloc_entry,
+-			   int req_count, int prio, int *resp_count);
++int npc_mcam_alloc_entries(struct mbox *mbox, int ref_mcam, int *alloc_entry, int req_count,
++			   int prio, int *resp_count, bool is_conti);
+ 
+ int npc_mcam_ena_dis_entry(struct npc *npc, struct roc_npc_flow *mcam,
+ 			   bool enable);
+-int npc_mcam_write_entry(struct npc *npc, struct roc_npc_flow *mcam);
++int npc_mcam_write_entry(struct mbox *mbox, struct roc_npc_flow *mcam);
+ int npc_flow_enable_all_entries(struct npc *npc, bool enable);
+ int npc_update_parse_state(struct npc_parse_state *pst,
+ 			   struct npc_parse_item_info *info, int lid, int lt,
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 77bf3f280797a..ce4348483a443 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -343,6 +343,7 @@ INTERNAL {
+ 	roc_npc_mcam_alloc_entries;
+ 	roc_npc_mcam_alloc_entry;
+ 	roc_npc_mcam_clear_counter;
++	roc_npc_inl_mcam_clear_counter;
+ 	roc_npc_mcam_enable_all_entries;
+ 	roc_npc_mcam_ena_dis_entry;
+ 	roc_npc_mcam_free_all_resources;
+@@ -354,6 +355,7 @@ INTERNAL {
+ 	roc_npc_mcam_merge_base_steering_rule;
+ 	roc_npc_mcam_write_entry;
+ 	roc_npc_mcam_read_counter;
++	roc_npc_inl_mcam_read_counter;
+ 	roc_npc_profile_name_get;
+ 	roc_npc_validate_portid_action;
+ 	roc_ot_ipsec_inb_sa_init;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index 8bec9acb54585..6c71f9554b5d1 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -13,6 +13,7 @@
+ #define CNXK_NIX_INL_NB_META_BUFS     "nb_meta_bufs"
+ #define CNXK_NIX_INL_META_BUF_SZ      "meta_buf_sz"
+ #define CNXK_NIX_SOFT_EXP_POLL_FREQ   "soft_exp_poll_freq"
++#define CNXK_MAX_IPSEC_RULES	"max_ipsec_rules"
+ 
+ /* Default soft expiry poll freq in usec */
+ #define CNXK_NIX_SOFT_EXP_POLL_FREQ_DFLT 100
+@@ -115,6 +116,22 @@ cnxk_nix_inl_meta_pool_cb(uint64_t *aura_handle, uint32_t buf_sz, uint32_t nb_bu
+ 	return rc;
+ }
+ 
++static int
++parse_max_ipsec_rules(const char *key, const char *value, void *extra_args)
++{
++	RTE_SET_USED(key);
++	uint32_t val;
++
++	val = atoi(value);
++
++	if (val < 1 || val > 4095)
++		return -EINVAL;
++
++	*(uint32_t *)extra_args = val;
++
++	return 0;
++}
++
+ int
+ cnxk_eth_outb_sa_idx_get(struct cnxk_eth_dev *dev, uint32_t *idx_p,
+ 			 uint32_t spi)
+@@ -271,6 +288,7 @@ nix_inl_parse_devargs(struct rte_devargs *devargs,
+ 	uint32_t ipsec_in_max_spi = BIT(8) - 1;
+ 	uint32_t ipsec_in_min_spi = 0;
+ 	struct inl_cpt_channel cpt_channel;
++	uint32_t max_ipsec_rules = 0;
+ 	struct rte_kvargs *kvlist;
+ 	uint32_t nb_meta_bufs = 0;
+ 	uint32_t meta_buf_sz = 0;
+@@ -299,6 +317,7 @@ nix_inl_parse_devargs(struct rte_devargs *devargs,
+ 			   &meta_buf_sz);
+ 	rte_kvargs_process(kvlist, CNXK_NIX_SOFT_EXP_POLL_FREQ,
+ 			   &parse_val_u32, &soft_exp_poll_freq);
++	rte_kvargs_process(kvlist, CNXK_MAX_IPSEC_RULES, &parse_max_ipsec_rules, &max_ipsec_rules);
+ 	rte_kvargs_free(kvlist);
+ 
+ null_devargs:
+@@ -311,6 +330,7 @@ nix_inl_parse_devargs(struct rte_devargs *devargs,
+ 	inl_dev->nb_meta_bufs = nb_meta_bufs;
+ 	inl_dev->meta_buf_sz = meta_buf_sz;
+ 	inl_dev->soft_exp_poll_freq = soft_exp_poll_freq;
++	inl_dev->max_ipsec_rules = max_ipsec_rules;
+ 	return 0;
+ exit:
+ 	return -EINVAL;
+@@ -437,4 +457,5 @@ RTE_PMD_REGISTER_PARAM_STRING(cnxk_nix_inl,
+ 			      CNXK_INL_CPT_CHANNEL "=<1-4095>/<1-4095>"
+ 			      CNXK_NIX_INL_NB_META_BUFS "=<1-U32_MAX>"
+ 			      CNXK_NIX_INL_META_BUF_SZ "=<1-U32_MAX>"
+-			      CNXK_NIX_SOFT_EXP_POLL_FREQ "=<0-U32_MAX>");
++			      CNXK_NIX_SOFT_EXP_POLL_FREQ "=<0-U32_MAX>"
++			      CNXK_MAX_IPSEC_RULES "=<1-4095>");
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index bf4c55f00aa72..f13d8e5582368 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -409,7 +409,10 @@ cnxk_flow_query(struct rte_eth_dev *eth_dev, struct rte_flow *flow,
+ 		goto err_exit;
+ 	}
+ 
+-	rc = roc_npc_mcam_read_counter(npc, in_flow->ctr_id, &query->hits);
++	if (in_flow->use_pre_alloc)
++		rc = roc_npc_inl_mcam_read_counter(in_flow->ctr_id, &query->hits);
++	else
++		rc = roc_npc_mcam_read_counter(npc, in_flow->ctr_id, &query->hits);
+ 	if (rc != 0) {
+ 		errcode = EIO;
+ 		errmsg = "Error reading flow counter";
+@@ -418,8 +421,12 @@ cnxk_flow_query(struct rte_eth_dev *eth_dev, struct rte_flow *flow,
+ 	query->hits_set = 1;
+ 	query->bytes_set = 0;
+ 
+-	if (query->reset)
+-		rc = roc_npc_mcam_clear_counter(npc, in_flow->ctr_id);
++	if (query->reset) {
++		if (in_flow->use_pre_alloc)
++			rc = roc_npc_inl_mcam_clear_counter(in_flow->ctr_id);
++		else
++			rc = roc_npc_mcam_clear_counter(npc, in_flow->ctr_id);
++	}
+ 	if (rc != 0) {
+ 		errcode = EIO;
+ 		errmsg = "Error clearing flow counter";
+-- 
+2.25.1
+

@@ -1,0 +1,57 @@
+From 905ae4df21f408c47ea8f8235e55caeec75c5afb Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Thu, 7 Sep 2023 11:05:07 +0000
+Subject: [PATCH 633/955] net/octeon_ep: update logic to find packets to
+ transmit
+
+Updated the logic to find the number of packets to transmit in the xmit
+routine. With current logic, it is possible to overwrite the packets
+that are not yet flushed in the instruction queue.
+
+Fixes: a99699a2fde7 ("net/octeon_ep: improve transmit and receive routines")
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: If0e318f757915555c592eb37a33b32483c4e571c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/111787
+Reviewed-by: Vamsi Krishna Attunuru <vattunuru@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_rxtx.c | 14 +-------------
+ 1 file changed, 1 insertion(+), 13 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index b137cb3bd25fc..d23fbec0820d4 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -685,18 +685,6 @@ otx_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ 	return count;
+ }
+ 
+-static inline int32_t __rte_hot
+-otx_ep_pkts_to_xmit(struct otx_ep_instr_queue *iq, uint16_t nb_pkts)
+-{
+-	uint16_t tx_pkts;
+-
+-	if (iq->host_write_index < iq->flush_index)
+-		tx_pkts = iq->flush_index - iq->host_write_index;
+-	else
+-		tx_pkts = iq->nb_desc - iq->host_write_index + iq->flush_index;
+-
+-	return RTE_MIN(nb_pkts, tx_pkts);
+-}
+ 
+ /* Enqueue requests/packets to OTX_EP IQ queue.
+  * returns number of requests enqueued successfully
+@@ -711,7 +699,7 @@ otx2_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ 	uint32_t pkt_len;
+ 	uint16_t count, tx_pkts;
+ 
+-	tx_pkts = otx_ep_pkts_to_xmit(iq, nb_pkts);
++	tx_pkts = RTE_MIN(nb_pkts, iq->nb_desc - iq->instr_pending);
+ 
+ 	for (count = 0; count < tx_pkts; count++) {
+ 		iqcmd = (struct otx2_ep_instr_32B *)(iq->base_addr + (iq->host_write_index *
+-- 
+2.25.1
+

@@ -1,0 +1,32 @@
+From 48093971d452bd2c9b816c18b1582b3f346888cd Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 5 Feb 2024 13:31:51 +0530
+Subject: [PATCH 815/955] ci: reduce eia3 numbers
+
+The dip is due to PDCP_CHAIN migration.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I7191dcb2dfbbb94390478750ccdf7cfb395feeea
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121183
+(cherry picked from commit cbd909fb07cdcd55d1b1d4bc7a6872bc3770b161)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121243
+---
+ .../crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx       | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+index ccd74cae6d0d9..1f5af5f4abc61 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+@@ -25,7 +25,7 @@ aes-gcm-ipsec
+ <end>
+ zuc-eia3
+ 64: 17.412 25.186 24.776
+-384: 18.001 18.588 18.446
++384: 17.443 18.588 18.446
+ 1504: 9.948 9.983 9.955
+ <end>
+ zuc-eea3
+-- 
+2.25.1
+

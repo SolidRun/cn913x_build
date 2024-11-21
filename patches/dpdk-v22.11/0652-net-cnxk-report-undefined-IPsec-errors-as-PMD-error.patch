@@ -1,0 +1,44 @@
+From dad26f1f33f0a587739fcc487e6abea0ee55936f Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 4 Oct 2023 17:32:54 +0530
+Subject: [PATCH 652/955] net/cnxk: report undefined IPsec errors as PMD error
+
+Report IPsec event subtype as PMD error for errors that are not
+defined in spec.
+
+Change-Id: I8e812c9c88afa079a0e54cbcd0a55d948e3957fe
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113145
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev_sec.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index b54795565d486..575d0fabd5a96 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -615,7 +615,7 @@ cn10k_eth_sec_sso_work_cb(uint64_t *gw, void *args, uint32_t soft_exp_event)
+ 			plt_warn("Outbound error, bad ip pkt, mbuf %p,"
+ 				 " sa_index %u (total warnings %" PRIu64 ")",
+ 				 mbuf, sess_priv.sa_idx, warn_cnt);
+-		desc.subtype = RTE_ETH_EVENT_IPSEC_UNKNOWN;
++		desc.subtype = -res->uc_compcode;
+ 		break;
+ 	default:
+ 		warn_cnt++;
+@@ -625,7 +625,7 @@ cn10k_eth_sec_sso_work_cb(uint64_t *gw, void *args, uint32_t soft_exp_event)
+ 				 " (total warnings %" PRIu64 ")",
+ 				 mbuf, sess_priv.sa_idx, res->compcode,
+ 				 res->uc_compcode, warn_cnt);
+-		desc.subtype = RTE_ETH_EVENT_IPSEC_UNKNOWN;
++		desc.subtype = -res->uc_compcode;
+ 		break;
+ 	}
+ 
+-- 
+2.25.1
+

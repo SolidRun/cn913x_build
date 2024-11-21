@@ -1,0 +1,312 @@
+From b6082c330bacdeb14e7d665e55d42c088fed2474 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Fri, 30 Dec 2022 05:58:24 -0800
+Subject: [PATCH 127/955] net/octeon_ep: add SDP packet mode
+
+add the 'sdp_packet_mode' parameter to allow the EP driver
+to be used in both nic mode, with 24/8 byte headers to/from
+OcteonTX, and in loop mode with no headers.When used in loop
+mode unmodified DPDK applications such as testpmd can be
+used on both the host and OcteonTX.If the parameter is not
+provided, the driver defaults to nic mode to match the prior
+behavior.
+Usage: sdp_packet_mode=<nic|loop>
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I5980bc1b5c371456743aa2be704c43dacd0bad32
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93424
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/otx2_ep_vf.h    |  2 +-
+ drivers/net/octeon_ep/otx_ep_common.h | 30 ++++++++++---
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 63 ++++++++++++++++++++++++---
+ drivers/net/octeon_ep/otx_ep_rxtx.c   | 22 +++++++---
+ drivers/net/octeon_ep/otx_ep_rxtx.h   |  3 +-
+ 5 files changed, 100 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.h b/drivers/net/octeon_ep/otx2_ep_vf.h
+index 757eeae9f0077..becda4c77f961 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.h
++++ b/drivers/net/octeon_ep/otx2_ep_vf.h
+@@ -113,7 +113,7 @@
+ #define otx2_read64(addr) rte_read64_relaxed((void *)(addr))
+ #define otx2_write64(val, addr) rte_write64_relaxed((val), (void *)(addr))
+ 
+-#define PCI_DEVID_CN9K_EP_NET_VF		0xB203 /* OCTEON 9 EP mode */
++#define PCI_DEVID_OCTEONTX2_EP_NET_VF		0xB203 /* OCTEON 9 EP mode */
+ #define PCI_DEVID_CN98XX_EP_NET_VF		0xB103
+ 
+ int
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 7eb50af75aee4..a5b7a9ac2bc29 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -31,7 +31,20 @@
+ #define OTX_EP_NORESP_LAST          (4)
+ #define OTX_EP_PCI_RING_ALIGN   65536
+ #define SDP_PKIND 40
+-#define SDP_OTX2_PKIND 57
++#define SDP_OTX2_PKIND_FS24 57	/* Front size 24, NIC mode */
++/* Use LBK PKIND */
++#define SDP_OTX2_PKIND_FS0  0	/* Front size 0, LOOP packet mode */
++
++/*
++ * Values for SDP packet mode
++ * NIC: Has 24 byte header Host-> Octeon, 8 byte header Octeon->Host,
++ *      application must handle these
++ * LOOP: No headers, standard DPDK apps work on both ends.
++ * The mode is selected by a parameter provided to the HOST DPDK driver
++ */
++#define SDP_PACKET_MODE_PARAM	"sdp_packet_mode"
++#define SDP_PACKET_MODE_NIC	0x0
++#define SDP_PACKET_MODE_LOOP	0x1
+ 
+ #define      ORDERED_TAG 0
+ #define      ATOMIC_TAG  1
+@@ -228,11 +241,12 @@ struct otx_ep_droq_desc {
+ };
+ #define OTX_EP_DROQ_DESC_SIZE	(sizeof(struct otx_ep_droq_desc))
+ 
+-/* Receive Header */
++/* Receive Header, only present in NIC mode. */
+ union otx_ep_rh {
+ 	uint64_t rh64;
+ };
+-#define OTX_EP_RH_SIZE (sizeof(union otx_ep_rh))
++#define OTX_EP_RH_SIZE_NIC (sizeof(union otx_ep_rh))
++#define OTX_EP_RH_SIZE_LOOP 0  /* Nothing in LOOP mode */
+ 
+ /** Information about packet DMA'ed by OCTEON 9.
+  *  The format of the information available at Info Pointer after OCTEON 9
+@@ -244,10 +258,13 @@ struct otx_ep_droq_info {
+ 	/* The Length of the packet. */
+ 	uint64_t length;
+ 
+-	/* The Output Receive Header. */
++	/* The Output Receive Header, only present in NIC mode */
+ 	union otx_ep_rh rh;
+ };
+-#define OTX_EP_DROQ_INFO_SIZE	(sizeof(struct otx_ep_droq_info))
++#define OTX_EP_DROQ_INFO_SIZE_NIC	(sizeof(struct otx_ep_droq_info))
++#define OTX_EP_DROQ_INFO_SIZE_LOOP	(sizeof(struct otx_ep_droq_info) + \
++						OTX_EP_RH_SIZE_LOOP - \
++						OTX_EP_RH_SIZE_NIC)
+ 
+ /* DROQ statistics. Each output queue has four stats fields. */
+ struct otx_ep_droq_stats {
+@@ -455,6 +472,9 @@ struct otx_ep_device {
+ 	uint64_t rx_offloads;
+ 
+ 	uint64_t tx_offloads;
++
++	/* Packet mode (LOOP vs NIC), set by parameter */
++	uint8_t sdp_packet_mode;
+ };
+ 
+ int otx_ep_setup_iqs(struct otx_ep_device *otx_ep, uint32_t iq_no,
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index c8f4abe4ca7a9..aa13801615517 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -3,6 +3,7 @@
+  */
+ 
+ #include <ethdev_pci.h>
++#include <rte_kvargs.h>
+ 
+ #include "otx_ep_common.h"
+ #include "otx_ep_vf.h"
+@@ -103,7 +104,7 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 		ret = otx_ep_vf_setup_device(otx_epvf);
+ 		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+ 		break;
+-	case PCI_DEVID_CN9K_EP_NET_VF:
++	case PCI_DEVID_OCTEONTX2_EP_NET_VF:
+ 	case PCI_DEVID_CN98XX_EP_NET_VF:
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = otx2_ep_vf_setup_device(otx_epvf);
+@@ -143,7 +144,7 @@ otx_epdev_init(struct otx_ep_device *otx_epvf)
+ 	otx_epvf->eth_dev->rx_pkt_burst = &otx_ep_recv_pkts;
+ 	if (otx_epvf->chip_id == PCI_DEVID_OCTEONTX_EP_VF)
+ 		otx_epvf->eth_dev->tx_pkt_burst = &otx_ep_xmit_pkts;
+-	else if (otx_epvf->chip_id == PCI_DEVID_CN9K_EP_NET_VF ||
++	else if (otx_epvf->chip_id == PCI_DEVID_OCTEONTX2_EP_NET_VF ||
+ 		 otx_epvf->chip_id == PCI_DEVID_CN98XX_EP_NET_VF)
+ 		otx_epvf->eth_dev->tx_pkt_burst = &otx2_ep_xmit_pkts;
+ 	else if (otx_epvf->chip_id == PCI_DEVID_CNXK_EP_NET_VF)
+@@ -473,6 +474,48 @@ otx_ep_eth_dev_uninit(struct rte_eth_dev *eth_dev)
+ 	return 0;
+ }
+ 
++static inline int
++otx_ep_parse_parameters(struct rte_eth_dev *dev)
++{
++	int ret = 0;
++	unsigned int i;
++	struct rte_kvargs *kvlist;
++	static const char *const params[] = {
++		SDP_PACKET_MODE_PARAM,
++		NULL};
++	struct otx_ep_device *otx_ep_dev = OTX_EP_DEV(dev);
++
++	/* Default to NIC mode */
++	otx_ep_dev->sdp_packet_mode = SDP_PACKET_MODE_NIC;
++
++	kvlist = rte_kvargs_parse(dev->device->devargs->args, params);
++	if (!kvlist)
++		return -EINVAL;
++
++	if (kvlist->count == 0)
++		goto exit;
++
++	for (i = 0; i != kvlist->count; ++i) {
++		const struct rte_kvargs_pair *pair = &kvlist->pairs[i];
++
++		if (!strcmp(pair->key, SDP_PACKET_MODE_PARAM)) {
++			if (!strcmp(pair->value, "nic"))
++				otx_ep_dev->sdp_packet_mode =
++							SDP_PACKET_MODE_NIC;
++			else if (!strcmp(pair->value, "loop"))
++				otx_ep_dev->sdp_packet_mode =
++							SDP_PACKET_MODE_LOOP;
++			else
++				otx_ep_err("Invalid packet_mode: %s, defaulting to nic mode.\n",
++					   pair->value);
++		}
++	}
++
++exit:
++	rte_kvargs_free(kvlist);
++	return ret;
++}
++
+ static int
+ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ {
+@@ -484,6 +527,8 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+ 		return 0;
+ 
++	otx_ep_parse_parameters(eth_dev);
++
+ 	otx_epvf->eth_dev = eth_dev;
+ 	otx_epvf->port_id = eth_dev->data->port_id;
+ 	eth_dev->dev_ops = &otx_ep_eth_dev_ops;
+@@ -499,10 +544,15 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	otx_epvf->pdev = pdev;
+ 
+ 	otx_epdev_init(otx_epvf);
+-	if (pdev->id.device_id == PCI_DEVID_CN9K_EP_NET_VF)
+-		otx_epvf->pkind = SDP_OTX2_PKIND;
+-	else
++	if (pdev->id.device_id == PCI_DEVID_OCTEONTX2_EP_NET_VF ||
++	    pdev->id.device_id == PCI_DEVID_CN98XX_EP_NET_VF) {
++		if (otx_epvf->sdp_packet_mode == SDP_PACKET_MODE_NIC)
++			otx_epvf->pkind = SDP_OTX2_PKIND_FS24;
++		else
++			otx_epvf->pkind = SDP_OTX2_PKIND_FS0;
++	} else {
+ 		otx_epvf->pkind = SDP_PKIND;
++	}
+ 	otx_ep_info("using pkind %d\n", otx_epvf->pkind);
+ 
+ 	return 0;
+@@ -527,7 +577,7 @@ otx_ep_eth_dev_pci_remove(struct rte_pci_device *pci_dev)
+ /* Set of PCI devices this driver supports */
+ static const struct rte_pci_id pci_id_otx_ep_map[] = {
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_OCTEONTX_EP_VF) },
+-	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CN9K_EP_NET_VF) },
++	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_OCTEONTX2_EP_NET_VF) },
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CN98XX_EP_NET_VF) },
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNXK_EP_NET_VF) },
+ 	{ .vendor_id = 0, /* sentinel */ }
+@@ -544,3 +594,4 @@ RTE_PMD_REGISTER_PCI(net_otx_ep, rte_otx_ep_pmd);
+ RTE_PMD_REGISTER_PCI_TABLE(net_otx_ep, pci_id_otx_ep_map);
+ RTE_PMD_REGISTER_KMOD_DEP(net_otx_ep, "* igb_uio | vfio-pci");
+ RTE_LOG_REGISTER_DEFAULT(otx_net_ep_logtype, NOTICE);
++RTE_PMD_REGISTER_PARAM_STRING(net_otx_ep, SDP_PACKET_MODE_PARAM "=<string>");
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 59df6ad857a99..3fe6c2761c2cd 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -20,6 +20,12 @@
+ #define INFO_SIZE 8
+ #define DROQ_REFILL_THRESHOLD 16
+ 
++/* These arrays indexed by otx_ep_device->sdp_packet_mode */
++static uint8_t front_size[2] = {OTX2_EP_FSZ_NIC, OTX2_EP_FSZ_LOOP};
++static uint8_t rh_size[2] = {OTX_EP_RH_SIZE_NIC, OTX_EP_RH_SIZE_LOOP};
++static uint8_t droq_info_size[2] = {OTX_EP_DROQ_INFO_SIZE_NIC,
++				    OTX_EP_DROQ_INFO_SIZE_LOOP};
++
+ static void
+ otx_ep_dmazone_free(const struct rte_memzone *mz)
+ {
+@@ -678,9 +684,9 @@ otx2_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ 	iqcmd2.irh.u64 = 0;
+ 
+ 	/* ih invars */
+-	iqcmd2.ih.s.fsz = OTX2_EP_FSZ;
++	iqcmd2.ih.s.fsz = front_size[otx_ep->sdp_packet_mode];
+ 	iqcmd2.ih.s.pkind = otx_ep->pkind; /* The SDK decided PKIND value */
+-	/* irh invars */
++	/* irh invars, ignored in LOOP mode */
+ 	iqcmd2.irh.s.opcode = OTX_EP_NW_PKT_OP;
+ 
+ 	for (i = 0; i < nb_pkts; i++) {
+@@ -838,7 +844,9 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 	uint64_t total_pkt_len;
+ 	uint32_t pkt_len = 0;
+ 	int next_idx;
++	int info_size;
+ 
++	info_size = droq_info_size[otx_ep->sdp_packet_mode];
+ 	droq_pkt  = droq->recv_buf_list[droq->read_idx];
+ 	droq_pkt2  = droq->recv_buf_list[droq->read_idx];
+ 	info = rte_pktmbuf_mtod(droq_pkt, struct otx_ep_droq_info *);
+@@ -877,10 +885,10 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 	/* Deduce the actual data size */
+ 	total_pkt_len = info->length + INFO_SIZE;
+ 	if (total_pkt_len <= droq->buffer_size) {
+-		info->length -=  OTX_EP_RH_SIZE;
++		info->length -=  rh_size[otx_ep->sdp_packet_mode];
+ 		droq_pkt  = droq->recv_buf_list[droq->read_idx];
+ 		if (likely(droq_pkt != NULL)) {
+-			droq_pkt->data_off += OTX_EP_DROQ_INFO_SIZE;
++			droq_pkt->data_off += info_size;
+ 			/* otx_ep_dbg("OQ: pkt_len[%ld], buffer_size %d\n",
+ 			 * (long)info->length, droq->buffer_size);
+ 			 */
+@@ -917,11 +925,11 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 				droq_pkt->port = otx_ep->port_id;
+ 				if (!pkt_len) {
+ 					droq_pkt->data_off +=
+-						OTX_EP_DROQ_INFO_SIZE;
++						info_size;
+ 					droq_pkt->pkt_len =
+-						cpy_len - OTX_EP_DROQ_INFO_SIZE;
++						cpy_len - info_size;
+ 					droq_pkt->data_len =
+-						cpy_len - OTX_EP_DROQ_INFO_SIZE;
++						cpy_len - info_size;
+ 				} else {
+ 					droq_pkt->pkt_len = cpy_len;
+ 					droq_pkt->data_len = cpy_len;
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.h b/drivers/net/octeon_ep/otx_ep_rxtx.h
+index 1527d350b5ce0..a7dc1a21c8b2f 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.h
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.h
+@@ -16,7 +16,8 @@
+ #define OTX_EP_MAX_DELAYED_PKT_RETRIES 10000
+ 
+ #define OTX_EP_FSZ 28
+-#define OTX2_EP_FSZ 24
++#define OTX2_EP_FSZ_LOOP 0
++#define OTX2_EP_FSZ_NIC 24
+ #define OTX_EP_MAX_INSTR 16
+ 
+ static inline void
+-- 
+2.25.1
+

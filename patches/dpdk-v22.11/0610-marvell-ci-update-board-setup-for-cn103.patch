@@ -1,0 +1,66 @@
+From 92d5109650d6a447b1f15de944c11809ce3b8c34 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Wed, 5 Jul 2023 01:44:22 +0530
+Subject: [PATCH 610/955] marvell-ci: update board setup for cn103
+
+Updated cnxk-target-setup.sh to support CN103 boards.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ib7ceec629526faaea91d7b3e47ab1434992b243c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107130
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/board/cnxk-target-setup.sh | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/board/cnxk-target-setup.sh b/marvell-ci/test/board/cnxk-target-setup.sh
+index a7e0b2d43894a..79a05666bdf09 100755
+--- a/marvell-ci/test/board/cnxk-target-setup.sh
++++ b/marvell-ci/test/board/cnxk-target-setup.sh
+@@ -86,12 +86,13 @@ function setup_devices() {
+ 	local inl_pf
+ 	local devs
+ 	local nix_lbk_vfs
++	local nix_pfs
+ 	local pcid
+ 
+ 	nix_lbk_vfs="0002:01:00.1 0002:01:00.2 0002:01:00.3"
+ 	devs=${DEVS:-$nix_lbk_vfs}
+ 
+-	if [[ $CPU == "cn10ka" ]]; then
++	if [[ $CPU == "cn10ka" ]] || [[ $CPU == "cn10kb" ]]; then
+ 		cpt_pf="0002:20:00.0"
+ 		cpt_vf="0002:20:00.1"
+ 	elif [[ $IS_CN9K -eq 1 ]]; then
+@@ -100,7 +101,11 @@ function setup_devices() {
+ 	fi
+ 
+ 	# Set KVF Limits
+-	echo 24 > /sys/bus/pci/devices/$cpt_pf/kvf_limits
++	if [[ $CPU == "cn10kb" ]]; then
++		echo 8 > /sys/bus/pci/devices/$cpt_pf/kvf_limits
++	else
++		echo 24 > /sys/bus/pci/devices/$cpt_pf/kvf_limits
++	fi
+ 
+ 	# Disable existing VFs and enable CPT VFs
+ 	if [[ -e /sys/bus/pci/devices/$cpt_pf/sriov_numvfs ]]; then
+@@ -121,6 +126,11 @@ function setup_devices() {
+ 		devs+=" $inl_pf"
+ 	fi
+ 
++	if [[ $CPU == "cn10kb" ]]; then
++		nix_pfs=${ETH_DEV:-$(lspci -d :a063 | tail -1 | awk -e '{ print $1 }')}
++		devs+=" $nix_pfs"
++	fi
++
+ 	# Unbind all SSO devices first
+ 	for d in $(lspci -d :a0f9 | awk -e '{ print $1 }'); do
+ 		$VFIO_DEVBIND -u $d || exit 1
+-- 
+2.25.1
+

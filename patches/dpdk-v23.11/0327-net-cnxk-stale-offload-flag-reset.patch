@@ -1,0 +1,41 @@
+From 996f8bd6e4098e92069b66b09605fc1234f903cc Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Wed, 15 May 2024 14:56:03 +0530
+Subject: [PATCH 327/513] net/cnxk: stale offload flag reset
+
+mbuf buffer is not reset on tx and hence few fields has stale data from
+previous packets. Due to stale offload flags, in one of the scenarios
+with OVS, VxLAN offload flag was set while packet did not have the VxLAN
+header. In the OVS packet path, the flag was read and accordingly VxLAN
+processing was done but as packet did not have VxLAN header it caused
+segfault.
+
+This patch resets mbuf offload flags in rx burst function.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I7d71a2cf99dd0990d7fb3b6695f845b2764bdcfc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/127824
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/net/cnxk/cnxk_eswitch_rxtx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cnxk_eswitch_rxtx.c b/drivers/net/cnxk/cnxk_eswitch_rxtx.c
+index d57e32b091844..0200392f2d7e6 100644
+--- a/drivers/net/cnxk/cnxk_eswitch_rxtx.c
++++ b/drivers/net/cnxk/cnxk_eswitch_rxtx.c
+@@ -194,7 +194,7 @@ cnxk_eswitch_dev_rx_burst(struct cnxk_eswitch_dev *eswitch_dev, uint16_t qid,
+ 			mbuf->vlan_tci = rx->vtag0_tci;
+ 		/* Populate RSS hash */
+ 		mbuf->hash.rss = cqe->tag;
+-		mbuf->ol_flags |= RTE_MBUF_F_RX_RSS_HASH;
++		mbuf->ol_flags = RTE_MBUF_F_RX_RSS_HASH;
+ 		pkts[pkt] = mbuf;
+ 		roc_prefetch_store_keep(mbuf);
+ 		plt_esw_dbg("Packet %d rec on queue %d esw qid %d hash %x mbuf %p vlan tci %d",
+-- 
+2.25.1
+

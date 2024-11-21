@@ -1,0 +1,123 @@
+From a26ef6cd3a2fb8dc4d331b66da5d9a53db6a68d9 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Mon, 9 Jan 2023 17:28:52 +0530
+Subject: [PATCH 154/955] crypto/cnxk: make sg version check const
+
+Remove sg_ver2 from burst structure and make it as
+const argument for compiler optimized code.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Idde42598a78d571e2f69b5737c57e54acd01ca1e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94113
+Reviewed-by: Volodymyr Fialko <vfialko@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 26 +++++++++++------------
+ 1 file changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 4ee6b944c4cc8..92f7002db9ee6 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -38,7 +38,6 @@ struct ops_burst {
+ 	struct cn10k_sso_hws *ws;
+ 	struct cnxk_cpt_qp *qp;
+ 	uint16_t nb_ops;
+-	bool is_sg_ver2;
+ };
+ 
+ /* Holds information required to send vector of operations */
+@@ -489,7 +488,8 @@ cn10k_cpt_vec_submit(struct vec_request vec_tbl[], uint16_t vec_tbl_len, struct
+ }
+ 
+ static inline int
+-ca_lmtst_vec_submit(struct ops_burst *burst, struct vec_request vec_tbl[], uint16_t *vec_tbl_len)
++ca_lmtst_vec_submit(struct ops_burst *burst, struct vec_request vec_tbl[], uint16_t *vec_tbl_len,
++		    const bool is_sg_ver2)
+ {
+ 	struct cpt_inflight_req *infl_reqs[PKTS_PER_LOOP];
+ 	uint64_t lmt_base, lmt_arg, io_addr;
+@@ -537,7 +537,7 @@ ca_lmtst_vec_submit(struct ops_burst *burst, struct vec_request vec_tbl[], uint1
+ 		infl_req = infl_reqs[i];
+ 		infl_req->op_flags = 0;
+ 
+-		ret = cn10k_cpt_fill_inst(qp, &burst->op[i], inst, infl_req, burst->is_sg_ver2);
++		ret = cn10k_cpt_fill_inst(qp, &burst->op[i], inst, infl_req, is_sg_ver2);
+ 		if (unlikely(ret != 1)) {
+ 			plt_cpt_dbg("Could not process op: %p", burst->op[i]);
+ 			if (i != 0)
+@@ -620,7 +620,7 @@ next_op:;
+ }
+ 
+ static inline uint16_t
+-ca_lmtst_burst_submit(struct ops_burst *burst)
++ca_lmtst_burst_submit(struct ops_burst *burst, const bool is_sg_ver2)
+ {
+ 	struct cpt_inflight_req *infl_reqs[PKTS_PER_LOOP];
+ 	uint64_t lmt_base, lmt_arg, io_addr;
+@@ -660,7 +660,7 @@ ca_lmtst_burst_submit(struct ops_burst *burst)
+ 		infl_req = infl_reqs[i];
+ 		infl_req->op_flags = 0;
+ 
+-		ret = cn10k_cpt_fill_inst(qp, &burst->op[i], inst, infl_req, burst->is_sg_ver2);
++		ret = cn10k_cpt_fill_inst(qp, &burst->op[i], inst, infl_req, is_sg_ver2);
+ 		if (unlikely(ret != 1)) {
+ 			plt_dp_dbg("Could not process op: %p", burst->op[i]);
+ 			if (i != 0)
+@@ -729,7 +729,6 @@ cn10k_cpt_crypto_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_ev
+ 	burst.ws = ws;
+ 	burst.qp = NULL;
+ 	burst.nb_ops = 0;
+-	burst.is_sg_ver2 = is_sg_ver2;
+ 
+ 	for (i = 0; i < nb_events; i++) {
+ 		op = ev[i].event_ptr;
+@@ -743,8 +742,8 @@ cn10k_cpt_crypto_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_ev
+ 		if (qp != burst.qp) {
+ 			if (burst.nb_ops) {
+ 				if (is_vector) {
+-					submitted =
+-						ca_lmtst_vec_submit(&burst, vec_tbl, &vec_tbl_len);
++					submitted = ca_lmtst_vec_submit(&burst, vec_tbl,
++									&vec_tbl_len, is_sg_ver2);
+ 					/*
+ 					 * Vector submission is required on qp change, but not in
+ 					 * other cases, since we could send several vectors per
+@@ -753,7 +752,7 @@ cn10k_cpt_crypto_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_ev
+ 					cn10k_cpt_vec_submit(vec_tbl, vec_tbl_len, burst.qp);
+ 					vec_tbl_len = 0;
+ 				} else {
+-					submitted = ca_lmtst_burst_submit(&burst);
++					submitted = ca_lmtst_burst_submit(&burst, is_sg_ver2);
+ 				}
+ 				count += submitted;
+ 				if (unlikely(submitted != burst.nb_ops))
+@@ -769,9 +768,10 @@ cn10k_cpt_crypto_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_ev
+ 		/* Max nb_ops per burst check */
+ 		if (++burst.nb_ops == PKTS_PER_LOOP) {
+ 			if (is_vector)
+-				submitted = ca_lmtst_vec_submit(&burst, vec_tbl, &vec_tbl_len);
++				submitted = ca_lmtst_vec_submit(&burst, vec_tbl, &vec_tbl_len,
++								is_sg_ver2);
+ 			else
+-				submitted = ca_lmtst_burst_submit(&burst);
++				submitted = ca_lmtst_burst_submit(&burst, is_sg_ver2);
+ 			count += submitted;
+ 			if (unlikely(submitted != burst.nb_ops))
+ 				goto vec_submit;
+@@ -781,9 +781,9 @@ cn10k_cpt_crypto_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_ev
+ 	/* Submit the rest of crypto operations */
+ 	if (burst.nb_ops) {
+ 		if (is_vector)
+-			count += ca_lmtst_vec_submit(&burst, vec_tbl, &vec_tbl_len);
++			count += ca_lmtst_vec_submit(&burst, vec_tbl, &vec_tbl_len, is_sg_ver2);
+ 		else
+-			count += ca_lmtst_burst_submit(&burst);
++			count += ca_lmtst_burst_submit(&burst, is_sg_ver2);
+ 	}
+ 
+ vec_submit:
+-- 
+2.25.1
+

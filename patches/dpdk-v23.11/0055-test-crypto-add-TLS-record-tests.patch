@@ -1,0 +1,652 @@
+From dd80a8af0e0a23c814a6af2540b806c86d10f2b5 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 9 Aug 2023 12:35:11 +0000
+Subject: [PATCH 055/513] test/crypto: add TLS record tests
+
+Add framework for testing TLS record cases. The framework supports
+testing with known vector tests in both session types (read & write).
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I0ea977c19955b0e3d80944ee47857dd00289f5ed
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117480
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/meson.build                          |   1 +
+ app/test/test_cryptodev.c                     | 282 +++++++++++++++++-
+ app/test/test_cryptodev.h                     |   2 +
+ app/test/test_cryptodev_security_tls_record.c | 151 ++++++++++
+ app/test/test_cryptodev_security_tls_record.h |  71 +++++
+ ...yptodev_security_tls_record_test_vectors.h |  16 +
+ 6 files changed, 515 insertions(+), 8 deletions(-)
+ create mode 100644 app/test/test_cryptodev_security_tls_record.c
+ create mode 100644 app/test/test_cryptodev_security_tls_record.h
+ create mode 100644 app/test/test_cryptodev_security_tls_record_test_vectors.h
+
+diff --git a/app/test/meson.build b/app/test/meson.build
+index 58e120a6aba6e..f9e81eda2eb6a 100644
+--- a/app/test/meson.build
++++ b/app/test/meson.build
+@@ -56,6 +56,7 @@ source_file_deps = {
+     'test_cryptodev_crosscheck.c': test_cryptodev_deps,
+     'test_cryptodev_security_ipsec.c': test_cryptodev_deps,
+     'test_cryptodev_security_pdcp.c': test_cryptodev_deps,
++    'test_cryptodev_security_tls_record.c': ['cryptodev', 'security'],
+     'test_cycles.c': [],
+     'test_debug.c': [],
+     'test_devargs.c': ['kvargs'],
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index dd519338dad84..093d2a334f215 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -53,6 +53,7 @@
+ #include "test_cryptodev_security_pdcp_sdap_test_vectors.h"
+ #include "test_cryptodev_security_pdcp_test_func.h"
+ #include "test_cryptodev_security_docsis_test_vectors.h"
++#include "test_cryptodev_security_tls_record.h"
+ #include "test_security_proto.h"
+ 
+ #define SDAP_DISABLED	0
+@@ -807,7 +808,7 @@ crypto_gen_testsuite_setup(void)
+ 
+ #ifdef RTE_LIB_SECURITY
+ static int
+-ipsec_proto_testsuite_setup(void)
++sec_proto_testsuite_setup(enum rte_security_session_protocol protocol)
+ {
+ 	struct crypto_testsuite_params *ts_params = &testsuite_params;
+ 	struct crypto_unittest_params *ut_params = &unittest_params;
+@@ -817,8 +818,8 @@ ipsec_proto_testsuite_setup(void)
+ 	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
+ 
+ 	if (!(dev_info.feature_flags & RTE_CRYPTODEV_FF_SECURITY)) {
+-		RTE_LOG(INFO, USER1, "Feature flag requirements for IPsec Proto "
+-				"testsuite not met\n");
++		RTE_LOG(INFO, USER1,
++			"Feature flag requirements for security protocol testsuite not met\n");
+ 		return TEST_SKIPPED;
+ 	}
+ 
+@@ -830,11 +831,9 @@ ipsec_proto_testsuite_setup(void)
+ 	/* Set action type */
+ 	ut_params->type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL;
+ 
+-	if (security_proto_supported(
+-			RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+-			RTE_SECURITY_PROTOCOL_IPSEC) < 0) {
+-		RTE_LOG(INFO, USER1, "Capability requirements for IPsec Proto "
+-				"test not met\n");
++	if (security_proto_supported(RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL, protocol) < 0) {
++		RTE_LOG(INFO, USER1,
++			"Capability requirements for security protocol test not met\n");
+ 		ret = TEST_SKIPPED;
+ 	}
+ 
+@@ -850,6 +849,18 @@ ipsec_proto_testsuite_setup(void)
+ 	return ret;
+ }
+ 
++static int
++ipsec_proto_testsuite_setup(void)
++{
++	return sec_proto_testsuite_setup(RTE_SECURITY_PROTOCOL_IPSEC);
++}
++
++static int
++tls_record_proto_testsuite_setup(void)
++{
++	return sec_proto_testsuite_setup(RTE_SECURITY_PROTOCOL_TLS_RECORD);
++}
++
+ static int
+ pdcp_proto_testsuite_setup(void)
+ {
+@@ -11725,6 +11736,244 @@ test_docsis_proto_downlink(const void *data)
+ 
+ 	return ret;
+ }
++
++static void
++test_tls_record_imp_nonce_update(const struct tls_record_test_data *td,
++				 struct rte_security_tls_record_xform *tls_record_xform)
++{
++	unsigned int imp_nonce_len;
++	uint8_t *imp_nonce;
++
++	switch (tls_record_xform->ver) {
++	case RTE_SECURITY_VERSION_TLS_1_2:
++		imp_nonce_len = RTE_SECURITY_TLS_1_2_IMP_NONCE_LEN;
++		imp_nonce = tls_record_xform->tls_1_2.imp_nonce;
++		break;
++	case RTE_SECURITY_VERSION_DTLS_1_2:
++		imp_nonce_len = RTE_SECURITY_DTLS_1_2_IMP_NONCE_LEN;
++		imp_nonce = tls_record_xform->dtls_1_2.imp_nonce;
++		break;
++	case RTE_SECURITY_VERSION_TLS_1_3:
++		imp_nonce_len = RTE_SECURITY_TLS_1_3_IMP_NONCE_LEN;
++		imp_nonce = tls_record_xform->tls_1_3.imp_nonce;
++		break;
++	default:
++		return;
++	}
++
++	imp_nonce_len = RTE_MIN(imp_nonce_len, td[0].imp_nonce.len);
++	memcpy(imp_nonce, td[0].imp_nonce.data, imp_nonce_len);
++}
++
++static int
++test_tls_record_proto_process(const struct tls_record_test_data td[],
++			      struct tls_record_test_data res_d[], int nb_td, bool silent,
++			      const struct tls_record_test_flags *flags)
++{
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct crypto_unittest_params *ut_params = &unittest_params;
++	struct rte_security_tls_record_xform tls_record_xform;
++	struct rte_security_capability_idx sec_cap_idx;
++	const struct rte_security_capability *sec_cap;
++	enum rte_security_tls_sess_type sess_type;
++	uint8_t dev_id = ts_params->valid_devs[0];
++	struct rte_security_ctx *ctx;
++	int i, ret = TEST_SUCCESS;
++
++	ut_params->type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL;
++	gbl_action_type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL;
++
++	/* Use first test data to create session */
++
++	/* Copy TLS record xform */
++	memcpy(&tls_record_xform, &td[0].tls_record_xform, sizeof(tls_record_xform));
++
++	sess_type = tls_record_xform.type;
++
++	ctx = rte_cryptodev_get_sec_ctx(dev_id);
++
++	sec_cap_idx.action = ut_params->type;
++	sec_cap_idx.protocol = RTE_SECURITY_PROTOCOL_TLS_RECORD;
++	sec_cap_idx.tls_record.type = tls_record_xform.type;
++	sec_cap_idx.tls_record.ver = tls_record_xform.ver;
++
++	sec_cap = rte_security_capability_get(ctx, &sec_cap_idx);
++	if (sec_cap == NULL)
++		return TEST_SKIPPED;
++
++	/* Copy cipher session parameters */
++	if (td[0].aead) {
++		memcpy(&ut_params->aead_xform, &td[0].xform.aead, sizeof(ut_params->aead_xform));
++		ut_params->aead_xform.aead.key.data = td[0].key.data;
++		ut_params->aead_xform.aead.iv.offset = IV_OFFSET;
++
++		/* Verify crypto capabilities */
++		if (test_sec_crypto_caps_aead_verify(sec_cap, &ut_params->aead_xform) != 0) {
++			if (!silent)
++				RTE_LOG(INFO, USER1, "Crypto capabilities not supported\n");
++			return TEST_SKIPPED;
++		}
++	} else {
++		memcpy(&ut_params->cipher_xform, &td[0].xform.chain.cipher,
++		       sizeof(ut_params->cipher_xform));
++		memcpy(&ut_params->auth_xform, &td[0].xform.chain.auth,
++		       sizeof(ut_params->auth_xform));
++		ut_params->cipher_xform.cipher.key.data = td[0].key.data;
++		ut_params->cipher_xform.cipher.iv.offset = IV_OFFSET;
++		ut_params->auth_xform.auth.key.data = td[0].auth_key.data;
++
++		/* Verify crypto capabilities */
++
++		if (test_sec_crypto_caps_cipher_verify(sec_cap, &ut_params->cipher_xform) != 0) {
++			if (!silent)
++				RTE_LOG(INFO, USER1, "Cipher crypto capabilities not supported\n");
++			return TEST_SKIPPED;
++		}
++
++		if (test_sec_crypto_caps_auth_verify(sec_cap, &ut_params->auth_xform) != 0) {
++			if (!silent)
++				RTE_LOG(INFO, USER1, "Auth crypto capabilities not supported\n");
++			return TEST_SKIPPED;
++		}
++	}
++
++	if (test_tls_record_sec_caps_verify(&tls_record_xform, sec_cap, silent) != 0)
++		return TEST_SKIPPED;
++
++	struct rte_security_session_conf sess_conf = {
++		.action_type = ut_params->type,
++		.protocol = RTE_SECURITY_PROTOCOL_TLS_RECORD,
++	};
++
++	if (td[0].aead)
++		test_tls_record_imp_nonce_update(&td[0], &tls_record_xform);
++
++	sess_conf.tls_record = tls_record_xform;
++
++	if (td[0].aead) {
++		sess_conf.crypto_xform = &ut_params->aead_xform;
++	} else {
++		if (sess_type == RTE_SECURITY_TLS_SESS_TYPE_READ) {
++			sess_conf.crypto_xform = &ut_params->cipher_xform;
++			ut_params->cipher_xform.next = &ut_params->auth_xform;
++		} else {
++			sess_conf.crypto_xform = &ut_params->auth_xform;
++			ut_params->auth_xform.next = &ut_params->cipher_xform;
++		}
++	}
++
++	/* Create security session */
++	ut_params->sec_session = rte_security_session_create(ctx, &sess_conf,
++					ts_params->session_mpool);
++	if (ut_params->sec_session == NULL)
++		return TEST_SKIPPED;
++
++	for (i = 0; i < nb_td; i++) {
++		/* Setup source mbuf payload */
++		ut_params->ibuf = create_segmented_mbuf(ts_params->mbuf_pool, td[i].input_text.len,
++				1, 0);
++		pktmbuf_write(ut_params->ibuf, 0, td[i].input_text.len, td[i].input_text.data);
++
++		/* Generate crypto op data structure */
++		ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
++						    RTE_CRYPTO_OP_TYPE_SYMMETRIC);
++		if (ut_params->op == NULL) {
++			printf("Could not allocate crypto op");
++			ret = TEST_FAILED;
++			goto crypto_op_free;
++		}
++
++		/* Attach session to operation */
++		rte_security_attach_session(ut_params->op, ut_params->sec_session);
++
++		/* Set crypto operation mbufs */
++		ut_params->op->sym->m_src = ut_params->ibuf;
++		ut_params->op->sym->m_dst = NULL;
++		ut_params->op->param1.tls_record.content_type = td[i].app_type;
++
++		/* Copy IV in crypto operation when IV generation is disabled */
++		if (sess_type == RTE_SECURITY_TLS_SESS_TYPE_WRITE &&
++		    tls_record_xform.options.iv_gen_disable == 1) {
++			uint8_t *iv;
++			int len;
++
++			iv = rte_crypto_op_ctod_offset(ut_params->op, uint8_t *, IV_OFFSET);
++			if (td[i].aead)
++				len = td[i].xform.aead.aead.iv.length - 4;
++			else
++				len = td[i].xform.chain.cipher.cipher.iv.length;
++			memcpy(iv, td[i].iv.data, len);
++		}
++
++		/* Process crypto operation */
++		process_crypto_request(dev_id, ut_params->op);
++
++		ret = test_tls_record_status_check(ut_params->op);
++		if (ret != TEST_SUCCESS)
++			goto crypto_op_free;
++
++		ret = test_tls_record_post_process(ut_params->ibuf, &td[i], NULL, silent);
++		if (ret != TEST_SUCCESS)
++			goto crypto_op_free;
++
++
++		rte_crypto_op_free(ut_params->op);
++		ut_params->op = NULL;
++
++		rte_pktmbuf_free(ut_params->ibuf);
++		ut_params->ibuf = NULL;
++	}
++
++crypto_op_free:
++	rte_crypto_op_free(ut_params->op);
++	ut_params->op = NULL;
++
++	rte_pktmbuf_free(ut_params->ibuf);
++	ut_params->ibuf = NULL;
++
++	if (ut_params->sec_session)
++		rte_security_session_destroy(ctx, ut_params->sec_session);
++	ut_params->sec_session = NULL;
++
++	RTE_SET_USED(res_d);
++	RTE_SET_USED(flags);
++
++	return ret;
++}
++
++static int
++test_tls_record_proto_known_vec(const void *test_data)
++{
++	struct tls_record_test_data td_write;
++	struct tls_record_test_flags flags;
++
++	memset(&flags, 0, sizeof(flags));
++
++	memcpy(&td_write, test_data, sizeof(td_write));
++
++	/* Disable IV gen to be able to test with known vectors */
++	td_write.tls_record_xform.options.iv_gen_disable = 1;
++
++	return test_tls_record_proto_process(&td_write, NULL, 1, false, &flags);
++}
++
++static int
++test_tls_record_proto_known_vec_read(const void *test_data)
++{
++	const struct tls_record_test_data *td = test_data;
++	struct tls_record_test_flags flags;
++	struct tls_record_test_data td_inb;
++
++	memset(&flags, 0, sizeof(flags));
++
++	if (td->tls_record_xform.type == RTE_SECURITY_TLS_SESS_TYPE_WRITE)
++		test_tls_record_td_read_from_write(td, &td_inb);
++	else
++		memcpy(&td_inb, td, sizeof(td_inb));
++
++	return test_tls_record_proto_process(&td_inb, NULL, 1, false, &flags);
++}
++
+ #endif
+ 
+ static int
+@@ -16638,6 +16887,22 @@ static struct unit_test_suite pdcp_proto_testsuite  = {
+ 	}
+ };
+ 
++static struct unit_test_suite tls12_record_proto_testsuite  = {
++	.suite_name = "TLS 1.2 Record Protocol Unit Test Suite",
++	.setup = tls_record_proto_testsuite_setup,
++	.unit_test_cases = {
++		TEST_CASE_NAMED_WITH_DATA(
++			"Known vector TBD",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_known_vec, &tls_test_data1),
++		TEST_CASE_NAMED_WITH_DATA(
++			"Known vector TBD",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_known_vec_read, &tls_test_data1),
++		TEST_CASES_END() /**< NULL terminate unit test array */
++	}
++};
++
+ #define ADD_UPLINK_TESTCASE(data)						\
+ 	TEST_CASE_NAMED_WITH_DATA(data.test_descr_uplink, ut_setup_security,	\
+ 	ut_teardown, test_docsis_proto_uplink, (const void *) &data),		\
+@@ -17645,6 +17910,7 @@ run_cryptodev_testsuite(const char *pmd_name)
+ 		&ipsec_proto_testsuite,
+ 		&pdcp_proto_testsuite,
+ 		&docsis_proto_testsuite,
++		&tls12_record_proto_testsuite,
+ #endif
+ 		&end_testsuite
+ 	};
+diff --git a/app/test/test_cryptodev.h b/app/test/test_cryptodev.h
+index f2c417a267634..f27d9697fd4fd 100644
+--- a/app/test/test_cryptodev.h
++++ b/app/test/test_cryptodev.h
+@@ -4,6 +4,8 @@
+ #ifndef TEST_CRYPTODEV_H_
+ #define TEST_CRYPTODEV_H_
+ 
++#include <rte_cryptodev.h>
++
+ #define HEX_DUMP 0
+ 
+ #define FALSE                           0
+diff --git a/app/test/test_cryptodev_security_tls_record.c b/app/test/test_cryptodev_security_tls_record.c
+new file mode 100644
+index 0000000000000..be8f5270cc7b2
+--- /dev/null
++++ b/app/test/test_cryptodev_security_tls_record.c
+@@ -0,0 +1,151 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include <rte_crypto.h>
++
++#include "test.h"
++#include "test_cryptodev_security_tls_record.h"
++#include "test_cryptodev_security_tls_record_test_vectors.h"
++
++int
++test_tls_record_status_check(struct rte_crypto_op *op)
++{
++	int ret = TEST_SUCCESS;
++
++	if (op->status != RTE_CRYPTO_OP_STATUS_SUCCESS)
++		ret = TEST_FAILED;
++
++	return ret;
++}
++
++int
++test_tls_record_sec_caps_verify(struct rte_security_tls_record_xform *tls_record_xform,
++				const struct rte_security_capability *sec_cap, bool silent)
++{
++	/* Verify security capabilities */
++
++	RTE_SET_USED(tls_record_xform);
++	RTE_SET_USED(sec_cap);
++	RTE_SET_USED(silent);
++
++	return 0;
++}
++
++void
++test_tls_record_td_read_from_write(const struct tls_record_test_data *td_out,
++				   struct tls_record_test_data *td_in)
++{
++	memcpy(td_in, td_out, sizeof(*td_in));
++
++	/* Populate output text of td_in with input text of td_out */
++	memcpy(td_in->output_text.data, td_out->input_text.data, td_out->input_text.len);
++	td_in->output_text.len = td_out->input_text.len;
++
++	/* Populate input text of td_in with output text of td_out */
++	memcpy(td_in->input_text.data, td_out->output_text.data, td_out->output_text.len);
++	td_in->input_text.len = td_out->output_text.len;
++
++	td_in->tls_record_xform.type = RTE_SECURITY_TLS_SESS_TYPE_READ;
++
++	if (td_in->aead) {
++		td_in->xform.aead.aead.op = RTE_CRYPTO_AEAD_OP_DECRYPT;
++	} else {
++		td_in->xform.chain.auth.auth.op = RTE_CRYPTO_AUTH_OP_VERIFY;
++		td_in->xform.chain.cipher.cipher.op = RTE_CRYPTO_CIPHER_OP_DECRYPT;
++	}
++}
++
++static int
++test_tls_record_td_verify(uint8_t *output_text, uint32_t len, const struct tls_record_test_data *td,
++			 bool silent)
++{
++	if (len != td->output_text.len) {
++		printf("Output length (%d) not matching with expected (%d)\n",
++			len, td->output_text.len);
++		return TEST_FAILED;
++	}
++
++	if (memcmp(output_text, td->output_text.data, len)) {
++		if (silent)
++			return TEST_FAILED;
++
++		printf("[%s : %d] %s\n", __func__, __LINE__, "Output text not as expected\n");
++
++		rte_hexdump(stdout, "expected", td->output_text.data, len);
++		rte_hexdump(stdout, "actual", output_text, len);
++		return TEST_FAILED;
++	}
++
++	return TEST_SUCCESS;
++}
++
++static int
++test_tls_record_res_d_prepare(const uint8_t *output_text, uint32_t len,
++			      const struct tls_record_test_data *td,
++			      struct tls_record_test_data *res_d)
++{
++	memcpy(res_d, td, sizeof(*res_d));
++
++	memcpy(&res_d->input_text.data, output_text, len);
++	res_d->input_text.len = len;
++
++	res_d->tls_record_xform.type = RTE_SECURITY_TLS_SESS_TYPE_READ;
++	if (res_d->aead) {
++		res_d->xform.aead.aead.op = RTE_CRYPTO_AEAD_OP_DECRYPT;
++	} else {
++		res_d->xform.chain.cipher.cipher.op = RTE_CRYPTO_CIPHER_OP_DECRYPT;
++		res_d->xform.chain.auth.auth.op = RTE_CRYPTO_AUTH_OP_VERIFY;
++	}
++
++	return TEST_SUCCESS;
++}
++
++int
++test_tls_record_post_process(const struct rte_mbuf *m, const struct tls_record_test_data *td,
++			     struct tls_record_test_data *res_d, bool silent)
++{
++	uint32_t len = rte_pktmbuf_pkt_len(m), data_len;
++	uint8_t output_text[TLS_RECORD_MAX_LEN];
++	const struct rte_mbuf *seg;
++	const uint8_t *output;
++
++	memset(output_text, 0, TLS_RECORD_MAX_LEN);
++
++	/*
++	 * Actual data in packet might be less in error cases, hence take minimum of pkt_len and sum
++	 * of data_len. This is done to run through negative test cases.
++	 */
++	data_len = 0;
++	seg = m;
++	while (seg) {
++		data_len += seg->data_len;
++		seg = seg->next;
++	}
++
++	len = RTE_MIN(len, data_len);
++	TEST_ASSERT(len <= TLS_RECORD_MAX_LEN, "Invalid packet length: %u", len);
++
++	/* Copy mbuf payload to continuous buffer */
++	output = rte_pktmbuf_read(m, 0, len, output_text);
++	if (output != output_text) {
++		/* Single segment mbuf, copy manually */
++		memcpy(output_text, output, len);
++	}
++
++	/*
++	 * In case of known vector tests & all record read (decrypt) tests, res_d provided would be
++	 * NULL and output data need to be validated against expected. For record read (decrypt),
++	 * output_text would be plain payload and for record write (encrypt), output_text would TLS
++	 * record. Validate by comparing against known vectors.
++	 *
++	 * In case of combined mode tests, the output_text from TLS write (encrypt) operation (ie,
++	 * TLS record) would need to be decrypted using a TLS read operation to obtain the plain
++	 * text. Copy output_text to result data, 'res_d', so that inbound processing can be done.
++	 */
++
++	if (res_d == NULL)
++		return test_tls_record_td_verify(output_text, len, td, silent);
++	else
++		return test_tls_record_res_d_prepare(output_text, len, td, res_d);
++}
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+new file mode 100644
+index 0000000000000..9a0cf702189fc
+--- /dev/null
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -0,0 +1,71 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#ifndef _TEST_CRYPTODEV_SECURITY_TLS_RECORD_H_
++#define _TEST_CRYPTODEV_SECURITY_TLS_RECORD_H_
++
++#include <rte_cryptodev.h>
++#include <rte_security.h>
++
++#define TLS_RECORD_MAX_LEN 16384u
++
++struct tls_record_test_data {
++	struct {
++		uint8_t data[32];
++	} key;
++
++	struct {
++		uint8_t data[64];
++	} auth_key;
++
++	struct {
++		uint8_t data[TLS_RECORD_MAX_LEN];
++		unsigned int len;
++	} input_text;
++
++	struct {
++		uint8_t data[TLS_RECORD_MAX_LEN];
++		unsigned int len;
++	} output_text;
++
++	struct {
++		uint8_t data[12];
++		unsigned int len;
++	} imp_nonce;
++
++	struct {
++		uint8_t data[16];
++	} iv;
++
++	union {
++		struct {
++			struct rte_crypto_sym_xform cipher;
++			struct rte_crypto_sym_xform auth;
++		} chain;
++		struct rte_crypto_sym_xform aead;
++	} xform;
++
++	struct rte_security_tls_record_xform tls_record_xform;
++	uint8_t app_type;
++	bool aead;
++};
++
++struct tls_record_test_flags {
++	bool display_alg;
++};
++
++extern struct tls_record_test_data tls_test_data1;
++
++int test_tls_record_status_check(struct rte_crypto_op *op);
++
++int test_tls_record_sec_caps_verify(struct rte_security_tls_record_xform *tls_record_xform,
++				    const struct rte_security_capability *sec_cap, bool silent);
++
++void test_tls_record_td_read_from_write(const struct tls_record_test_data *td_out,
++					struct tls_record_test_data *td_in);
++
++int test_tls_record_post_process(const struct rte_mbuf *m, const struct tls_record_test_data *td,
++				 struct tls_record_test_data *res_d, bool silent);
++
++#endif
+diff --git a/app/test/test_cryptodev_security_tls_record_test_vectors.h b/app/test/test_cryptodev_security_tls_record_test_vectors.h
+new file mode 100644
+index 0000000000000..5aa0d27fdab02
+--- /dev/null
++++ b/app/test/test_cryptodev_security_tls_record_test_vectors.h
+@@ -0,0 +1,16 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(c) 2023 Marvell
++ */
++
++#ifndef _TEST_CRYPTODEV_SECURITY_TLS_RECORD_TEST_VECTORS_H_
++#define _TEST_CRYPTODEV_SECURITY_TLS_RECORD_TEST_VECTORS_H_
++
++#include <rte_crypto.h>
++#include <rte_security.h>
++
++#include "test_cryptodev.h"
++#include "test_cryptodev_security_tls_record.h"
++
++struct tls_record_test_data tls_test_data1;
++
++#endif
+-- 
+2.25.1
+

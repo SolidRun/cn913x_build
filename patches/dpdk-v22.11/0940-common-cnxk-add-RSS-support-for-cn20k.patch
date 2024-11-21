@@ -1,0 +1,129 @@
+From 43e9e8f8a7a23e2e115d6ce20ba9efb3b5dc771d Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 2 Aug 2024 12:41:38 +0530
+Subject: [PATCH 940/955] common/cnxk: add RSS support for cn20k
+
+Add RSS configuration support for cn20k.
+
+Change-Id: Ibab2dc2236ef84ee7b4efcae6b0f7acae186d56b
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_rss.c | 74 +++++++++++++++++++++++++++++--
+ 1 file changed, 70 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_rss.c b/drivers/common/cnxk/roc_nix_rss.c
+index 2b88e1360d32a..fd1472e9b9e5b 100644
+--- a/drivers/common/cnxk/roc_nix_rss.c
++++ b/drivers/common/cnxk/roc_nix_rss.c
+@@ -70,7 +70,7 @@ nix_cn9k_rss_reta_set(struct nix *nix, uint8_t group,
+ 				goto exit;
+ 			req = mbox_alloc_msg_nix_aq_enq(mbox);
+ 			if (!req) {
+-				rc =  NIX_ERR_NO_MEM;
++				rc = NIX_ERR_NO_MEM;
+ 				goto exit;
+ 			}
+ 		}
+@@ -93,7 +93,7 @@ nix_cn9k_rss_reta_set(struct nix *nix, uint8_t group,
+ 				goto exit;
+ 			req = mbox_alloc_msg_nix_aq_enq(mbox);
+ 			if (!req) {
+-				rc =  NIX_ERR_NO_MEM;
++				rc = NIX_ERR_NO_MEM;
+ 				goto exit;
+ 			}
+ 		}
+@@ -115,8 +115,8 @@ nix_cn9k_rss_reta_set(struct nix *nix, uint8_t group,
+ }
+ 
+ static int
+-nix_rss_reta_set(struct nix *nix, uint8_t group,
+-		 uint16_t reta[ROC_NIX_RSS_RETA_MAX], uint8_t lock_rx_ctx)
++nix_cn10k_rss_reta_set(struct nix *nix, uint8_t group, uint16_t reta[ROC_NIX_RSS_RETA_MAX],
++		       uint8_t lock_rx_ctx)
+ {
+ 	struct mbox *mbox = mbox_get((&nix->dev)->mbox);
+ 	struct nix_cn10k_aq_enq_req *req;
+@@ -178,6 +178,70 @@ nix_rss_reta_set(struct nix *nix, uint8_t group,
+ 	return rc;
+ }
+ 
++static int
++nix_rss_reta_set(struct nix *nix, uint8_t group, uint16_t reta[ROC_NIX_RSS_RETA_MAX],
++		 uint8_t lock_rx_ctx)
++{
++	struct mbox *mbox = mbox_get((&nix->dev)->mbox);
++	struct nix_cn20k_aq_enq_req *req;
++	uint16_t idx;
++	int rc;
++
++	for (idx = 0; idx < nix->reta_sz; idx++) {
++		req = mbox_alloc_msg_nix_cn20k_aq_enq(mbox);
++		if (!req) {
++			/* The shared memory buffer can be full.
++			 * Flush it and retry
++			 */
++			rc = mbox_process(mbox);
++			if (rc < 0)
++				goto exit;
++			req = mbox_alloc_msg_nix_cn20k_aq_enq(mbox);
++			if (!req) {
++				rc =  NIX_ERR_NO_MEM;
++				goto exit;
++			}
++		}
++		req->rss.rq = reta[idx];
++		/* Fill AQ info */
++		req->qidx = (group * nix->reta_sz) + idx;
++		req->ctype = NIX_AQ_CTYPE_RSS;
++		req->op = NIX_AQ_INSTOP_INIT;
++
++		if (!lock_rx_ctx)
++			continue;
++
++		req = mbox_alloc_msg_nix_cn20k_aq_enq(mbox);
++		if (!req) {
++			/* The shared memory buffer can be full.
++			 * Flush it and retry
++			 */
++			rc = mbox_process(mbox);
++			if (rc < 0)
++				goto exit;
++			req = mbox_alloc_msg_nix_cn20k_aq_enq(mbox);
++			if (!req) {
++				rc =  NIX_ERR_NO_MEM;
++				goto exit;
++			}
++		}
++		req->rss.rq = reta[idx];
++		/* Fill AQ info */
++		req->qidx = (group * nix->reta_sz) + idx;
++		req->ctype = NIX_AQ_CTYPE_RSS;
++		req->op = NIX_AQ_INSTOP_LOCK;
++	}
++
++	rc = mbox_process(mbox);
++	if (rc < 0)
++		goto exit;
++
++	rc = 0;
++exit:
++	mbox_put(mbox);
++	return rc;
++}
++
+ int
+ roc_nix_rss_reta_set(struct roc_nix *roc_nix, uint8_t group,
+ 		     uint16_t reta[ROC_NIX_RSS_RETA_MAX])
+@@ -191,6 +255,8 @@ roc_nix_rss_reta_set(struct roc_nix *roc_nix, uint8_t group,
+ 	if (roc_model_is_cn9k())
+ 		rc = nix_cn9k_rss_reta_set(nix, group, reta,
+ 					   roc_nix->lock_rx_ctx);
++	else if (roc_model_is_cn10k())
++		rc = nix_cn10k_rss_reta_set(nix, group, reta, roc_nix->lock_rx_ctx);
+ 	else
+ 		rc = nix_rss_reta_set(nix, group, reta, roc_nix->lock_rx_ctx);
+ 	if (rc)
+-- 
+2.25.1
+

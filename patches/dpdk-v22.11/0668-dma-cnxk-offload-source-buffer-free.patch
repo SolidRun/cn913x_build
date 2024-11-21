@@ -1,0 +1,179 @@
+From ded25789905a8fb8f5d342d010eb5840cff58f23 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Wed, 16 Aug 2023 21:03:52 +0530
+Subject: [PATCH 668/955] dma/cnxk: offload source buffer free
+
+Added support in driver, to offload source buffer free to hardware
+on completion of DMA transfer.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I943aeb9df7a0410df8583cb0ef38a0a1be8e5abc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109894
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Vamsi Krishna Attunuru <vattunuru@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114164
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.c    | 48 +++++++++++++++++++++++++++----
+ drivers/dma/cnxk/cnxk_dmadev_fp.c |  8 +++---
+ 2 files changed, 46 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index 6c030ad5b3e18..f2e48bc2c3fb8 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -16,7 +16,8 @@ cnxk_dmadev_info_get(const struct rte_dma_dev *dev, struct rte_dma_info *dev_inf
+ 	dev_info->nb_vchans = dpivf->num_vchans;
+ 	dev_info->dev_capa = RTE_DMA_CAPA_MEM_TO_MEM | RTE_DMA_CAPA_MEM_TO_DEV |
+ 			     RTE_DMA_CAPA_DEV_TO_MEM | RTE_DMA_CAPA_DEV_TO_DEV |
+-			     RTE_DMA_CAPA_OPS_COPY | RTE_DMA_CAPA_OPS_COPY_SG;
++			     RTE_DMA_CAPA_OPS_COPY | RTE_DMA_CAPA_OPS_COPY_SG |
++			     RTE_DMA_CAPA_M2D_AUTO_FREE;
+ 	dev_info->max_desc = CNXK_DPI_MAX_DESC;
+ 	dev_info->min_desc = CNXK_DPI_MIN_DESC;
+ 	dev_info->max_sges = CNXK_DPI_MAX_POINTER;
+@@ -115,9 +116,26 @@ cnxk_dmadev_configure(struct rte_dma_dev *dev, const struct rte_dma_conf *conf,
+ 	return 0;
+ }
+ 
+-static void
++static int
++dmadev_src_buf_aura_get(struct rte_mempool *sb_mp, const char *mp_ops_name)
++{
++	struct rte_mempool_ops *ops;
++
++	if (sb_mp == NULL)
++		return 0;
++
++	ops = rte_mempool_get_ops(sb_mp->ops_index);
++	if (strcmp(ops->name, mp_ops_name) != 0)
++		return -EINVAL;
++
++	return roc_npa_aura_handle_to_aura(sb_mp->pool_id);
++}
++
++static int
+ cn9k_dmadev_setup_hdr(union cnxk_dpi_instr_cmd *header, const struct rte_dma_vchan_conf *conf)
+ {
++	int aura;
++
+ 	header->cn9k.pt = DPI_HDR_PT_ZBW_CA;
+ 
+ 	switch (conf->direction) {
+@@ -140,6 +158,11 @@ cn9k_dmadev_setup_hdr(union cnxk_dpi_instr_cmd *header, const struct rte_dma_vch
+ 			header->cn9k.func = conf->dst_port.pcie.pfid << 12;
+ 			header->cn9k.func |= conf->dst_port.pcie.vfid;
+ 		}
++		aura = dmadev_src_buf_aura_get(conf->auto_free.m2d.pool, "cn9k_mempool_ops");
++		if (aura < 0)
++			return aura;
++		header->cn9k.aura = aura;
++		header->cn9k.ii = 1;
+ 		break;
+ 	case RTE_DMA_DIR_MEM_TO_MEM:
+ 		header->cn9k.xtype = DPI_XTYPE_INTERNAL_ONLY;
+@@ -153,11 +176,15 @@ cn9k_dmadev_setup_hdr(union cnxk_dpi_instr_cmd *header, const struct rte_dma_vch
+ 		header->cn9k.fport = conf->dst_port.pcie.coreid;
+ 		header->cn9k.pvfe = 0;
+ 	};
++
++	return 0;
+ }
+ 
+-static void
++static int
+ cn10k_dmadev_setup_hdr(union cnxk_dpi_instr_cmd *header, const struct rte_dma_vchan_conf *conf)
+ {
++	int aura;
++
+ 	header->cn10k.pt = DPI_HDR_PT_ZBW_CA;
+ 
+ 	switch (conf->direction) {
+@@ -180,6 +207,10 @@ cn10k_dmadev_setup_hdr(union cnxk_dpi_instr_cmd *header, const struct rte_dma_vc
+ 			header->cn10k.func = conf->dst_port.pcie.pfid << 12;
+ 			header->cn10k.func |= conf->dst_port.pcie.vfid;
+ 		}
++		aura = dmadev_src_buf_aura_get(conf->auto_free.m2d.pool, "cn10k_mempool_ops");
++		if (aura < 0)
++			return aura;
++		header->cn10k.aura = aura;
+ 		break;
+ 	case RTE_DMA_DIR_MEM_TO_MEM:
+ 		header->cn10k.xtype = DPI_XTYPE_INTERNAL_ONLY;
+@@ -193,6 +224,8 @@ cn10k_dmadev_setup_hdr(union cnxk_dpi_instr_cmd *header, const struct rte_dma_vc
+ 		header->cn10k.fport = conf->dst_port.pcie.coreid;
+ 		header->cn10k.pvfe = 0;
+ 	};
++
++	return 0;
+ }
+ 
+ static int
+@@ -204,16 +237,19 @@ cnxk_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 	union cnxk_dpi_instr_cmd *header;
+ 	uint16_t max_desc;
+ 	uint32_t size;
+-	int i;
++	int i, ret;
+ 
+ 	RTE_SET_USED(conf_sz);
+ 
+ 	header = (union cnxk_dpi_instr_cmd *)&dpi_conf->cmd.u;
+ 
+ 	if (dpivf->is_cn10k)
+-		cn10k_dmadev_setup_hdr(header, conf);
++		ret = cn10k_dmadev_setup_hdr(header, conf);
+ 	else
+-		cn9k_dmadev_setup_hdr(header, conf);
++		ret = cn9k_dmadev_setup_hdr(header, conf);
++
++	if (ret)
++		return ret;
+ 
+ 	/* Free up descriptor memory before allocating. */
+ 	cnxk_dmadev_vchan_free(dpivf, vchan);
+diff --git a/drivers/dma/cnxk/cnxk_dmadev_fp.c b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+index 16d7b5426bb3d..95df19a2db4ac 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev_fp.c
++++ b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+@@ -252,7 +252,7 @@ cnxk_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t d
+ 	CNXK_DPI_STRM_INC(dpi_conf->c_desc, tail);
+ 
+ 	cmd[0] = (1UL << 54) | (1UL << 48);
+-	cmd[1] = dpi_conf->cmd.u;
++	cmd[1] = dpi_conf->cmd.u | ((flags & RTE_DMA_OP_FLAG_AUTO_FREE) << 37);
+ 	cmd[2] = (uint64_t)comp_ptr;
+ 	cmd[4] = length;
+ 	cmd[6] = length;
+@@ -308,7 +308,7 @@ cnxk_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge
+ 	comp_ptr = dpi_conf->c_desc.compl_ptr[dpi_conf->c_desc.tail];
+ 	CNXK_DPI_STRM_INC(dpi_conf->c_desc, tail);
+ 
+-	hdr[1] = dpi_conf->cmd.u;
++	hdr[1] = dpi_conf->cmd.u | ((flags & RTE_DMA_OP_FLAG_AUTO_FREE) << 37);
+ 	hdr[2] = (uint64_t)comp_ptr;
+ 
+ 	/*
+@@ -365,7 +365,7 @@ cn10k_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t
+ 
+ 	cmd[0] = dpi_conf->cmd.u | (1U << 6) | 1U;
+ 	cmd[1] = (uint64_t)comp_ptr;
+-	cmd[2] = 0;
++	cmd[2] = (1UL << 47) | ((flags & RTE_DMA_OP_FLAG_AUTO_FREE) << 43);
+ 	cmd[4] = length;
+ 	cmd[5] = src;
+ 	cmd[6] = length;
+@@ -412,7 +412,7 @@ cn10k_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge
+ 
+ 	hdr[0] = dpi_conf->cmd.u | (nb_dst << 6) | nb_src;
+ 	hdr[1] = (uint64_t)comp_ptr;
+-	hdr[2] = 0;
++	hdr[2] = (1UL << 47) | ((flags & RTE_DMA_OP_FLAG_AUTO_FREE) << 43);
+ 
+ 	rc = __dpi_queue_write_sg(dpivf, hdr, src, dst, nb_src, nb_dst);
+ 	if (unlikely(rc)) {
+-- 
+2.25.1
+

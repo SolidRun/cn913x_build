@@ -1,0 +1,49 @@
+From 1bfbc7ef81195c5098c8f981646244f5feae828e Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 14 Jul 2023 13:41:47 +0530
+Subject: [PATCH 531/955] common/cnxk: fix leak in error path
+
+Fixed resource leak when pthread create fails in dev_init().
+
+Fixes: b892396cfb4c ("common/cnxk: thread to handle VF messages")
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I171135781507eb3760cf300b0c2893fd89b9a71f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107530
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 128b9751e437c..18d7981825ccf 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -1472,7 +1472,7 @@ dev_init(struct dev *dev, struct plt_pci_device *pci_dev)
+ 					    pf_vf_mbox_thread_main, dev);
+ 		if (rc != 0) {
+ 			plt_err("Failed to create thread for VF mbox handling\n");
+-			goto iounmap;
++			goto thread_fail;
+ 		}
+ 	}
+ 
+@@ -1500,9 +1500,10 @@ dev_init(struct dev *dev, struct plt_pci_device *pci_dev)
+ 		dev->sync.start_thread = false;
+ 		pthread_cond_signal(&dev->sync.pfvf_msg_cond);
+ 		pthread_join(dev->sync.pfvf_msg_thread, NULL);
+-		pthread_mutex_destroy(&dev->sync.mutex);
+-		pthread_cond_destroy(&dev->sync.pfvf_msg_cond);
+ 	}
++thread_fail:
++	pthread_mutex_destroy(&dev->sync.mutex);
++	pthread_cond_destroy(&dev->sync.pfvf_msg_cond);
+ iounmap:
+ 	dev_vf_mbase_put(pci_dev, vf_mbase);
+ mbox_unregister:
+-- 
+2.25.1
+

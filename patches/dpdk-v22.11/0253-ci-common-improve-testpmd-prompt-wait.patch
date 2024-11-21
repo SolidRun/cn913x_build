@@ -1,0 +1,59 @@
+From 898662f62e60e722a52b0faa97ef58530878ec70 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 24 Feb 2023 17:06:33 +0530
+Subject: [PATCH 253/955] ci: common: improve testpmd prompt wait
+
+Testpmd prompt currently just waits for prompt at the end of file.
+This might go wrong if the out file is read early.
+Instead get the file size before issuing command and wait for data
+after those many bytes.
+
+Change-Id: I2a0f3e0c99bb5dc3844c40312bd5a4b7071b9622
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97838
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/common/testpmd/common.env       | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/common/testpmd/common.env b/marvell-ci/test/cnxk-tests/common/testpmd/common.env
+index ae40cf42f5d73..fcd6b12de0831 100644
+--- a/marvell-ci/test/cnxk-tests/common/testpmd/common.env
++++ b/marvell-ci/test/cnxk-tests/common/testpmd/common.env
+@@ -37,10 +37,18 @@ function testpmd_prompt()
+ {
+ 	local prefix=$1
+ 	local refresh=${2:-}
++	local skip_bytes=${3:-}
+ 	local in=testpmd.in.$prefix
+ 	local out=testpmd.out.$prefix
+ 
+-	while ! (tail -n1 $out | grep -q "^testpmd> $"); do
++	local cmd="tail -n1 $out"
++
++	if [[ "$skip_bytes" != "" ]]
++	then
++		cmd="tail -c +$skip_bytes $out"
++	fi
++
++	while ! ($cmd | grep -q "^testpmd> $"); do
+ 		if [ "$refresh" == "yes" ]
+ 		then
+ 			sleep 0.01
+@@ -79,9 +87,10 @@ function testpmd_cmd()
+ 	local prefix=$1
+ 	local cmd=$2
+ 	local in=testpmd.in.$prefix
++	local skip_bytes=$(stat -c %s testpmd.out.$prefix)
+ 
+ 	echo "$cmd" >> $in
+-	testpmd_prompt $prefix
++	testpmd_prompt $prefix "no"  $skip_bytes
+ }
+ 
+ function testpmd_cmd_refresh()
+-- 
+2.25.1
+

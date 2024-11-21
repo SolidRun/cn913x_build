@@ -1,0 +1,40 @@
+From 22d5d889c835ad7c4503fbd9d2a48201e4bf4517 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 7 Feb 2024 13:16:18 +0530
+Subject: [PATCH 211/513] net/virtio-user: add VIRTIO_F_ORDER_PLATFORM to
+ feature list
+
+VIRTIO_F_ORDER_PLATFORM is needed feature when working with
+real HW platforms that are exposing virtio-net devices
+via VDPA framework. This feature helps in having more
+real ordering requirements between descriptor updates and
+notification data updates. Hence enable it if the
+device supports the feature.
+
+Change-Id: I9fc6b8e7bcd3ab83ef38392ab6dd92dff095d963
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121443
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Srujana Challa <schalla@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/virtio/virtio_user/virtio_user_dev.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.c b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+index 3232109898c9a..bac702d76f9d3 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.c
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+@@ -706,6 +706,7 @@ virtio_user_free_vrings(struct virtio_user_dev *dev)
+ 	 1ULL << VIRTIO_F_VERSION_1		|	\
+ 	 1ULL << VIRTIO_F_RING_PACKED		|	\
+ 	 1ULL << VIRTIO_F_NOTIFICATION_DATA	|	\
++	 1ULL << VIRTIO_F_ORDER_PLATFORM        |       \
+ 	 1ULL << VIRTIO_NET_F_RSS)
+ 
+ int
+-- 
+2.25.1
+

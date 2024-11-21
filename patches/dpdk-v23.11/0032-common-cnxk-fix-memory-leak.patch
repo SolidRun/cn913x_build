@@ -1,0 +1,44 @@
+From f8e628d4aaf72a5577a179a1627d6dec5b88a169 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 14 Jul 2023 23:08:33 +0530
+Subject: [PATCH 032/513] common/cnxk: fix memory leak
+
+dev_init() acquires some resources which need to be cleaned
+in case a failure is observed afterwards.
+
+Fixes: c045d2e5cbbc ("common/cnxk: add CPT configuration")
+
+Change-Id: I29727097165251b1ee0aad6d8c2fa7e048d4b7a5
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117457
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index 981e85a204a1e..4e23d8c135523 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -756,7 +756,7 @@ roc_cpt_dev_init(struct roc_cpt *roc_cpt)
+ 	rc = dev_init(dev, pci_dev);
+ 	if (rc) {
+ 		plt_err("Failed to init roc device");
+-		goto fail;
++		return rc;
+ 	}
+ 
+ 	cpt->pci_dev = pci_dev;
+@@ -788,6 +788,7 @@ roc_cpt_dev_init(struct roc_cpt *roc_cpt)
+ 	return 0;
+ 
+ fail:
++	dev_fini(dev, pci_dev);
+ 	return rc;
+ }
+ 
+-- 
+2.25.1
+

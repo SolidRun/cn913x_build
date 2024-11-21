@@ -1,0 +1,34 @@
+From e596b9bad4da5f51af56d62bcdadaef7a58f05ae Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 17 Jan 2023 09:57:58 +0530
+Subject: [PATCH 169/955] common/cnxk: ensure flush inval completion with CSR
+ read
+
+If a CSR read is issued after a write, the read would block till the
+write operation is complete. This would help in determining when the
+FLUSH+INVALIDATE operation is complete.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Id191b492308e539a78f02a3d26f673520020f0f6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94633
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index e21d37c0adb16..67bd7e3243d42 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -765,8 +765,6 @@ cnxk_ae_session_clear(struct rte_cryptodev *dev, struct rte_cryptodev_asym_sessi
+ 	/* Trigger CTX flush + invalidate to remove from CTX_CACHE */
+ 	roc_cpt_lf_ctx_flush(priv->lf, &priv->hw_ctx, true);
+ 
+-	plt_delay_ms(1);
+-
+ 	/* Free resources allocated in session_cfg */
+ 	cnxk_ae_free_session_parameters(priv);
+ 
+-- 
+2.25.1
+

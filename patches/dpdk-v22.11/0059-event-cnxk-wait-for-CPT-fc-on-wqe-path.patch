@@ -1,0 +1,56 @@
+From 1b370f88cb3bc8223898e632582e06697679a4c2 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Tue, 15 Nov 2022 17:53:11 +0530
+Subject: [PATCH 059/955] event/cnxk: wait for CPT fc on wqe path
+
+Wait for CPT flow control on WQE path.
+
+ci: skip_checkformat skip_checkpatch
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I2746aec62e6086945fa1a8eee7639b92f22c63ba
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/90759
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91779
+---
+ drivers/event/cnxk/cn9k_worker.h |  1 +
+ drivers/net/cnxk/cn9k_tx.h       | 10 ++++++++++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/drivers/event/cnxk/cn9k_worker.h b/drivers/event/cnxk/cn9k_worker.h
+index 54213db3b4aaf..1ce4b044e8df3 100644
+--- a/drivers/event/cnxk/cn9k_worker.h
++++ b/drivers/event/cnxk/cn9k_worker.h
+@@ -730,6 +730,7 @@ cn9k_sso_hws_xmit_sec_one(const struct cn9k_eth_txq *txq, uint64_t base,
+ 
+ 	rte_io_wmb();
+ 	cn9k_sso_txq_fc_wait(txq);
++	cn9k_nix_sec_fc_wait_one(txq);
+ 
+ 	/* Write CPT instruction to lmt line */
+ 	vst1q_u64(lmt_addr, cmd01);
+diff --git a/drivers/net/cnxk/cn9k_tx.h b/drivers/net/cnxk/cn9k_tx.h
+index 17bbdce3a0d26..a0d67330a2aae 100644
+--- a/drivers/net/cnxk/cn9k_tx.h
++++ b/drivers/net/cnxk/cn9k_tx.h
+@@ -81,6 +81,16 @@ cn9k_nix_tx_skeleton(struct cn9k_eth_txq *txq, uint64_t *cmd,
+ 	}
+ }
+ 
++static __rte_always_inline void
++cn9k_nix_sec_fc_wait_one(const struct cn9k_eth_txq *txq)
++{
++	uint64_t nb_desc = txq->cpt_desc;
++	uint64_t *fc = txq->cpt_fc;
++
++	while (nb_desc <= __atomic_load_n(fc, __ATOMIC_RELAXED))
++		;
++}
++
+ static __rte_always_inline uint64_t
+ cn9k_nix_prefree_seg(struct rte_mbuf *m, struct cn9k_eth_txq *txq,
+ 		struct nix_send_hdr_s *send_hdr)
+-- 
+2.25.1
+

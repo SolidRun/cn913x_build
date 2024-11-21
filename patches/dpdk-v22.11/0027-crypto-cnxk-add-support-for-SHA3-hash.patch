@@ -1,0 +1,371 @@
+From 2a2d0a0f7622b72ae11ea4ad795ccf474b020b86 Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Tue, 8 Nov 2022 11:14:08 +0100
+Subject: [PATCH 027/955] crypto/cnxk: add support for SHA3 hash
+
+Add support for SHA3 family hash and hmac operations.
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: I96bd7896cb4d986d8459ae9d8dc4ff5c832ba76c
+---
+ doc/guides/cryptodevs/cnxk.rst                |   8 +
+ doc/guides/cryptodevs/features/cn10k.ini      |   8 +
+ doc/guides/cryptodevs/features/cn9k.ini       |   8 +
+ drivers/crypto/cnxk/cnxk_cryptodev.h          |   2 +-
+ .../crypto/cnxk/cnxk_cryptodev_capabilities.c | 164 ++++++++++++++++++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c      |   2 +-
+ drivers/crypto/cnxk/cnxk_se.h                 |  33 +++-
+ 7 files changed, 222 insertions(+), 3 deletions(-)
+
+diff --git a/doc/guides/cryptodevs/cnxk.rst b/doc/guides/cryptodevs/cnxk.rst
+index baf0e3c4fd0f7..9b01e04e5fb65 100644
+--- a/doc/guides/cryptodevs/cnxk.rst
++++ b/doc/guides/cryptodevs/cnxk.rst
+@@ -59,6 +59,14 @@ Hash algorithms:
+ * ``RTE_CRYPTO_AUTH_SHA384_HMAC``
+ * ``RTE_CRYPTO_AUTH_SHA512``
+ * ``RTE_CRYPTO_AUTH_SHA512_HMAC``
++* ``RTE_CRYPTO_AUTH_SHA3_224``
++* ``RTE_CRYPTO_AUTH_SHA3_224_HMAC``
++* ``RTE_CRYPTO_AUTH_SHA3_256``
++* ``RTE_CRYPTO_AUTH_SHA3_256_HMAC``
++* ``RTE_CRYPTO_AUTH_SHA3_384``
++* ``RTE_CRYPTO_AUTH_SHA3_384_HMAC``
++* ``RTE_CRYPTO_AUTH_SHA3_512``
++* ``RTE_CRYPTO_AUTH_SHA3_512_HMAC``
+ * ``RTE_CRYPTO_AUTH_SNOW3G_UIA2``
+ * ``RTE_CRYPTO_AUTH_ZUC_EIA3``
+ * ``RTE_CRYPTO_AUTH_AES_CMAC``
+diff --git a/doc/guides/cryptodevs/features/cn10k.ini b/doc/guides/cryptodevs/features/cn10k.ini
+index 6e4e0e0095a54..44b61663fc530 100644
+--- a/doc/guides/cryptodevs/features/cn10k.ini
++++ b/doc/guides/cryptodevs/features/cn10k.ini
+@@ -63,6 +63,14 @@ ZUC EIA3        = Y
+ AES CMAC (128)  = Y
+ AES CMAC (192)  = Y
+ AES CMAC (256)  = Y
++SHA3_224        = Y
++SHA3_224 HMAC   = Y
++SHA3_256        = Y
++SHA3_256 HMAC   = Y
++SHA3_384        = Y
++SHA3_384 HMAC   = Y
++SHA3_512        = Y
++SHA3_512 HMAC   = Y
+ 
+ ;
+ ; Supported AEAD algorithms of 'cn10k' crypto driver.
+diff --git a/doc/guides/cryptodevs/features/cn9k.ini b/doc/guides/cryptodevs/features/cn9k.ini
+index f9c896f6bdb22..e7b287db26edf 100644
+--- a/doc/guides/cryptodevs/features/cn9k.ini
++++ b/doc/guides/cryptodevs/features/cn9k.ini
+@@ -64,6 +64,14 @@ ZUC EIA3        = Y
+ AES CMAC (128)  = Y
+ AES CMAC (192)  = Y
+ AES CMAC (256)  = Y
++SHA3_224        = Y
++SHA3_224 HMAC   = Y
++SHA3_256        = Y
++SHA3_256 HMAC   = Y
++SHA3_384        = Y
++SHA3_384 HMAC   = Y
++SHA3_512        = Y
++SHA3_512 HMAC   = Y
+ 
+ ;
+ ; Supported AEAD algorithms of 'cn9k' crypto driver.
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.h b/drivers/crypto/cnxk/cnxk_cryptodev.h
+index 48bd6e144c6b9..8241ee67d0994 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.h
+@@ -10,7 +10,7 @@
+ 
+ #include "roc_cpt.h"
+ 
+-#define CNXK_CPT_MAX_CAPS	 37
++#define CNXK_CPT_MAX_CAPS	 45
+ #define CNXK_SEC_CRYPTO_MAX_CAPS 16
+ #define CNXK_SEC_MAX_CAPS	 9
+ #define CNXK_AE_EC_ID_MAX	 8
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index 9dfbf875ec07a..b2197a12be548 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -337,6 +337,169 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 	},
+ };
+ 
++static const struct rte_cryptodev_capabilities caps_sha3[] = {
++	{	/* SHA3_224 */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHA3_224,
++				.block_size = 144,
++					.key_size = {
++					.min = 0,
++					.max = 0,
++					.increment = 0
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 28,
++					.increment = 1
++				},
++			}, }
++		}, }
++	},
++	{	/* SHA3_224 HMAC */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHA3_224_HMAC,
++				.block_size = 144,
++					.key_size = {
++					.min = 1,
++					.max = 1024,
++					.increment = 1
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 28,
++					.increment = 1
++				},
++			}, }
++		}, }
++	},
++	{	/* SHA3_256 */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHA3_256,
++				.block_size = 136,
++				.key_size = {
++					.min = 0,
++					.max = 0,
++					.increment = 0
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 32,
++					.increment = 1
++				},
++			}, }
++		}, }
++	},
++	{	/* SHA3_256 HMAC */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHA3_256_HMAC,
++				.block_size = 136,
++				.key_size = {
++					.min = 1,
++					.max = 1024,
++					.increment = 1
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 32,
++					.increment = 1
++				},
++			}, }
++		}, }
++	},
++	{	/* SHA3_384 */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHA3_384,
++				.block_size = 104,
++				.key_size = {
++					.min = 0,
++					.max = 0,
++					.increment = 0
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 48,
++					.increment = 0
++					},
++			}, }
++		}, }
++	},
++	{	/* SHA3_384 HMAC */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHA3_384_HMAC,
++				.block_size = 104,
++				.key_size = {
++					.min = 1,
++					.max = 1024,
++					.increment = 1
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 48,
++					.increment = 1
++					},
++			}, }
++		}, }
++	},
++	{	/* SHA3_512 */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHA3_512,
++				.block_size = 72,
++				.key_size = {
++					.min = 0,
++					.max = 0,
++					.increment = 0
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 64,
++					.increment = 1
++				},
++			}, }
++		}, }
++	},
++	{	/* SHA3_512 HMAC */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHA3_512_HMAC,
++				.block_size = 72,
++				.key_size = {
++					.min = 1,
++					.max = 1024,
++					.increment = 1
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 64,
++					.increment = 1
++				},
++			}, }
++		}, }
++	},
++};
++
+ static const struct rte_cryptodev_capabilities caps_chacha20[] = {
+ 	{	/* Chacha20-Poly1305 */
+ 		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
+@@ -1265,6 +1428,7 @@ crypto_caps_populate(struct rte_cryptodev_capabilities cnxk_caps[],
+ 
+ 	CPT_CAPS_ADD(cnxk_caps, &cur_pos, hw_caps, mul);
+ 	CPT_CAPS_ADD(cnxk_caps, &cur_pos, hw_caps, sha1_sha2);
++	CPT_CAPS_ADD(cnxk_caps, &cur_pos, hw_caps, sha3);
+ 	CPT_CAPS_ADD(cnxk_caps, &cur_pos, hw_caps, chacha20);
+ 	CPT_CAPS_ADD(cnxk_caps, &cur_pos, hw_caps, zuc_snow3g);
+ 	CPT_CAPS_ADD(cnxk_caps, &cur_pos, hw_caps, aes);
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index eb2ed0d103d5d..92e8755671683 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -627,7 +627,7 @@ cnxk_cpt_inst_w7_get(struct cnxk_se_sess *sess, struct roc_cpt *roc_cpt)
+ 	inst_w7.s.cptr = (uint64_t)&sess->roc_se_ctx.se_ctx;
+ 
+ 	/* Set the engine group */
+-	if (sess->zsk_flag || sess->aes_ctr_eea2)
++	if (sess->zsk_flag || sess->aes_ctr_eea2 || sess->is_sha3)
+ 		inst_w7.s.egrp = roc_cpt->eng_grp[CPT_ENG_TYPE_SE];
+ 	else
+ 		inst_w7.s.egrp = roc_cpt->eng_grp[CPT_ENG_TYPE_IE];
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index 88049ac431c17..092cdd88e782b 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -39,6 +39,8 @@ struct cnxk_se_sess {
+ 	uint16_t zs_auth : 4;
+ 	uint16_t dp_thr_type : 8;
+ 	uint16_t aad_length;
++	uint8_t is_sha3 : 1;
++	uint8_t rsvd : 7;
+ 	uint8_t mac_len;
+ 	uint8_t iv_length;
+ 	uint8_t auth_iv_length;
+@@ -163,18 +165,26 @@ cpt_mac_len_verify(struct rte_crypto_auth_xform *auth)
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA224:
+ 	case RTE_CRYPTO_AUTH_SHA224_HMAC:
++	case RTE_CRYPTO_AUTH_SHA3_224:
++	case RTE_CRYPTO_AUTH_SHA3_224_HMAC:
+ 		ret = (mac_len <= 28) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA256:
+ 	case RTE_CRYPTO_AUTH_SHA256_HMAC:
++	case RTE_CRYPTO_AUTH_SHA3_256:
++	case RTE_CRYPTO_AUTH_SHA3_256_HMAC:
+ 		ret = (mac_len <= 32) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA384:
+ 	case RTE_CRYPTO_AUTH_SHA384_HMAC:
++	case RTE_CRYPTO_AUTH_SHA3_384:
++	case RTE_CRYPTO_AUTH_SHA3_384_HMAC:
+ 		ret = (mac_len <= 48) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA512:
+ 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
++	case RTE_CRYPTO_AUTH_SHA3_512:
++	case RTE_CRYPTO_AUTH_SHA3_512_HMAC:
+ 		ret = (mac_len <= 64) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_NULL:
+@@ -1848,7 +1858,7 @@ fill_sess_cipher(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ static __rte_always_inline int
+ fill_sess_auth(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ {
+-	uint8_t zsk_flag = 0, zs_auth = 0, aes_gcm = 0, is_null = 0;
++	uint8_t zsk_flag = 0, zs_auth = 0, aes_gcm = 0, is_null = 0, is_sha3 = 0;
+ 	struct rte_crypto_auth_xform *a_form;
+ 	roc_se_auth_type auth_type = 0; /* NULL Auth type */
+ 
+@@ -1900,6 +1910,26 @@ fill_sess_auth(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 	case RTE_CRYPTO_AUTH_SHA384:
+ 		auth_type = ROC_SE_SHA2_SHA384;
+ 		break;
++	case RTE_CRYPTO_AUTH_SHA3_224_HMAC:
++	case RTE_CRYPTO_AUTH_SHA3_224:
++		is_sha3 = 1;
++		auth_type = ROC_SE_SHA3_SHA224;
++		break;
++	case RTE_CRYPTO_AUTH_SHA3_256_HMAC:
++	case RTE_CRYPTO_AUTH_SHA3_256:
++		is_sha3 = 1;
++		auth_type = ROC_SE_SHA3_SHA256;
++		break;
++	case RTE_CRYPTO_AUTH_SHA3_384_HMAC:
++	case RTE_CRYPTO_AUTH_SHA3_384:
++		is_sha3 = 1;
++		auth_type = ROC_SE_SHA3_SHA384;
++		break;
++	case RTE_CRYPTO_AUTH_SHA3_512_HMAC:
++	case RTE_CRYPTO_AUTH_SHA3_512:
++		is_sha3 = 1;
++		auth_type = ROC_SE_SHA3_SHA512;
++		break;
+ 	case RTE_CRYPTO_AUTH_MD5_HMAC:
+ 	case RTE_CRYPTO_AUTH_MD5:
+ 		auth_type = ROC_SE_MD5_TYPE;
+@@ -1959,6 +1989,7 @@ fill_sess_auth(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 	sess->aes_gcm = aes_gcm;
+ 	sess->mac_len = a_form->digest_length;
+ 	sess->is_null = is_null;
++	sess->is_sha3 = is_sha3;
+ 	if (zsk_flag) {
+ 		sess->auth_iv_offset = a_form->iv.offset;
+ 		sess->auth_iv_length = a_form->iv.length;
+-- 
+2.25.1
+

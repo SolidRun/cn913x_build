@@ -1,0 +1,37 @@
+From d368387009808e2dd176667734688829390e217e Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Mon, 26 Jun 2023 15:56:28 +0530
+Subject: [PATCH 515/955] ci: update mbuf size in testpmd
+
+appended mbuf size to 4096 while running testpmd
+application to avoid failure while setting mtu to
+maximum configurable length of RX packet.This patch
+fixes the same in CI
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I0133e341f2c7a0a6cb947a9cc5d16f4a4a10265f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106363
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+index b7e179c80581c..84be2a635a4d7 100755
+--- a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
++++ b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+@@ -124,7 +124,7 @@ function macfltr_launch()
+ 
+ 	testpmd_launch $PRFX \
+ 		"-c $coremask -a $port --vdev eth_pcap0,rx_pcap=$pcapin,tx_pcap=out.pcap" \
+-		"--port-topology=paired --portlist=0,1 --no-flush-rx --max-pkt-len=9200"
++		"--port-topology=paired --portlist=0,1 --no-flush-rx --max-pkt-len=9200 --mbuf-size=4096"
+ }
+ 
+ function macfltr_pkt_test_verify()
+-- 
+2.25.1
+

@@ -1,0 +1,188 @@
+From 299d8b32bc2c0e0268aa621e32549d4be07cabb8 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 27 Feb 2024 12:15:47 +0000
+Subject: [PATCH 283/513] dma/odm: add framework for ODM DMA device
+
+Add framework for Odyssey ODM DMA device.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Id12120834d108c6f1f911cdf3572e7be5177c91c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122741
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ MAINTAINERS                  |  6 +++
+ drivers/dma/meson.build      |  1 +
+ drivers/dma/odm/meson.build  | 14 +++++++
+ drivers/dma/odm/odm.h        | 25 ++++++++++++
+ drivers/dma/odm/odm_dmadev.c | 74 ++++++++++++++++++++++++++++++++++++
+ 5 files changed, 120 insertions(+)
+ create mode 100644 drivers/dma/odm/meson.build
+ create mode 100644 drivers/dma/odm/odm.h
+ create mode 100644 drivers/dma/odm/odm_dmadev.c
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 2716178e18df1..c80471cbaf4b3 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -1261,6 +1261,12 @@ T: git://dpdk.org/next/dpdk-next-net-mrvl
+ F: drivers/dma/cnxk/
+ F: doc/guides/dmadevs/cnxk.rst
+ 
++Marvell Odyssey ODM DMA
++M: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
++M: Vidya Sagar Velumuri <vvelumuri@marvell.com>
++T: git://dpdk.org/next/dpdk-next-net-mrvl
++F: drivers/dma/odm/
++
+ NXP DPAA DMA
+ M: Gagandeep Singh <g.singh@nxp.com>
+ M: Sachin Saxena <sachin.saxena@oss.nxp.com>
+diff --git a/drivers/dma/meson.build b/drivers/dma/meson.build
+index 582654ea1b6ad..358132759adca 100644
+--- a/drivers/dma/meson.build
++++ b/drivers/dma/meson.build
+@@ -8,6 +8,7 @@ drivers = [
+         'hisilicon',
+         'idxd',
+         'ioat',
++        'odm',
+         'skeleton',
+ ]
+ std_deps = ['dmadev']
+diff --git a/drivers/dma/odm/meson.build b/drivers/dma/odm/meson.build
+new file mode 100644
+index 0000000000000..227b10c890dd3
+--- /dev/null
++++ b/drivers/dma/odm/meson.build
+@@ -0,0 +1,14 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2024 Marvell.
++
++if not is_linux or not dpdk_conf.get('RTE_ARCH_64')
++    build = false
++    reason = 'only supported on 64-bit Linux'
++    subdir_done()
++endif
++
++deps += ['bus_pci', 'dmadev', 'eal', 'mempool', 'pci']
++
++sources = files('odm_dmadev.c')
++
++pmd_supports_disable_iova_as_pa = true
+diff --git a/drivers/dma/odm/odm.h b/drivers/dma/odm/odm.h
+new file mode 100644
+index 0000000000000..0ef308e301ce1
+--- /dev/null
++++ b/drivers/dma/odm/odm.h
+@@ -0,0 +1,25 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#ifndef _ODM_H_
++#define _ODM_H_
++
++#include <rte_log.h>
++
++extern int odm_logtype;
++
++#define odm_err(fmt, args...)                                                                      \
++	rte_log(RTE_LOG_ERR, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
++#define odm_info(fmt, args...)                                                                     \
++	rte_log(RTE_LOG_INFO, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
++
++struct odm_dev {
++	struct rte_pci_device *pci_dev;
++	uint8_t *rbase;
++	uint16_t vfid;
++	uint8_t max_qs;
++	uint8_t num_qs;
++} __rte_cache_aligned;
++
++#endif /* _ODM_H_ */
+diff --git a/drivers/dma/odm/odm_dmadev.c b/drivers/dma/odm/odm_dmadev.c
+new file mode 100644
+index 0000000000000..cc3342cf7b92d
+--- /dev/null
++++ b/drivers/dma/odm/odm_dmadev.c
+@@ -0,0 +1,74 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include <string.h>
++
++#include <bus_pci_driver.h>
++#include <rte_bus_pci.h>
++#include <rte_common.h>
++#include <rte_dmadev.h>
++#include <rte_dmadev_pmd.h>
++#include <rte_pci.h>
++
++#include "odm.h"
++
++#define PCI_VENDOR_ID_CAVIUM	 0x177D
++#define PCI_DEVID_ODYSSEY_ODM_VF 0xA08C
++#define PCI_DRIVER_NAME		 dma_odm
++
++static int
++odm_dmadev_probe(struct rte_pci_driver *pci_drv __rte_unused, struct rte_pci_device *pci_dev)
++{
++	char name[RTE_DEV_NAME_MAX_LEN];
++	struct odm_dev *odm = NULL;
++	struct rte_dma_dev *dmadev;
++
++	if (!pci_dev->mem_resource[0].addr)
++		return -ENODEV;
++
++	memset(name, 0, sizeof(name));
++	rte_pci_device_name(&pci_dev->addr, name, sizeof(name));
++
++	dmadev = rte_dma_pmd_allocate(name, pci_dev->device.numa_node, sizeof(*odm));
++	if (dmadev == NULL) {
++		odm_err("DMA device allocation failed for %s", name);
++		return -ENOMEM;
++	}
++
++	odm_info("DMA device %s probed", name);
++
++	return 0;
++}
++
++static int
++odm_dmadev_remove(struct rte_pci_device *pci_dev)
++{
++	char name[RTE_DEV_NAME_MAX_LEN];
++
++	memset(name, 0, sizeof(name));
++	rte_pci_device_name(&pci_dev->addr, name, sizeof(name));
++
++	return rte_dma_pmd_release(name);
++}
++
++static const struct rte_pci_id odm_dma_pci_map[] = {
++	{
++		RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_ODYSSEY_ODM_VF)
++	},
++	{
++		.vendor_id = 0,
++	},
++};
++
++static struct rte_pci_driver odm_dmadev = {
++	.id_table = odm_dma_pci_map,
++	.drv_flags = RTE_PCI_DRV_NEED_MAPPING,
++	.probe = odm_dmadev_probe,
++	.remove = odm_dmadev_remove,
++};
++
++RTE_PMD_REGISTER_PCI(PCI_DRIVER_NAME, odm_dmadev);
++RTE_PMD_REGISTER_PCI_TABLE(PCI_DRIVER_NAME, odm_dma_pci_map);
++RTE_PMD_REGISTER_KMOD_DEP(PCI_DRIVER_NAME, "vfio-pci");
++RTE_LOG_REGISTER_DEFAULT(odm_logtype, NOTICE);
+-- 
+2.25.1
+

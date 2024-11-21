@@ -1,0 +1,136 @@
+From 9dada08afb45a099a5b3099d3b67c86c61d40750 Mon Sep 17 00:00:00 2001
+From: Veerasenareddy Burru <vburru@marvell.com>
+Date: Mon, 9 Jan 2023 03:39:19 -0800
+Subject: [PATCH 156/955] net/octeon_ep: get and set MTU per max Rx pktlen
+
+Get and set MTU as per max_rx_pktlen and overhead headers.
+Account for output queue info structure in Rx overhead,
+for max MTU calculation.
+
+Set min_mtu/max_mtu correctly and use these to check valid MTU range
+while handling mtu changes.
+
+Remove enabling/disabling DEV_RX_OFFLOAD_JUMBO_FRAME flag, as this flag
+is deprecated.
+
+Signed-off-by: Veerasenareddy Burru <vburru@marvell.com>
+Change-Id: I1d31a313218c1c2cb158edf7f52c65d5dff96ba5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94373
+Tested-by: Satananda Burla <sburla@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_common.h | 10 ++++++--
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 34 ++++++++++++---------------
+ drivers/net/octeon_ep/otx_ep_mbox.c   |  1 +
+ 3 files changed, 24 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 8c38503a9aca0..08579db0b21a4 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -572,9 +572,15 @@ struct otx_ep_buf_free_info {
+ #define OTX_EP_CLEAR_SLIST_DBELL 0xFFFFFFFF
+ #define OTX_EP_CLEAR_SDP_OUT_PKT_CNT 0xFFFFFFFFF
+ 
++/* Max overhead includes
++ * - Ethernet hdr
++ * - CRC
++ * - nested VLANs
++ * - octeon rx info for NIC mode
++ */
+ #define OTX_EP_ETH_OVERHEAD \
+-	(RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN + 8)
+-#define OTX_EP_FRAME_SIZE_MAX       9000
++	(RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN + \
++	 (2 * RTE_VLAN_HLEN) + OTX_EP_DROQ_INFO_SIZE_NIC)
+ 
+ /* PCI IDs */
+ #define PCI_VENDOR_ID_CAVIUM			0x177D
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 2a9beb105b58c..4bec912a8058c 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -41,10 +41,8 @@ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 	otx_epvf = OTX_EP_DEV(eth_dev);
+ 
+ 	max_rx_pktlen = otx_ep_mbox_get_max_pkt_len(eth_dev);
+-	if (max_rx_pktlen > 0) {
+-		max_rx_pktlen = max_rx_pktlen + RTE_ETHER_CRC_LEN;
+-	} else {
+-		otx_ep_err("Get MTU info failed\n");
++	if (!max_rx_pktlen) {
++		otx_ep_err("Failed to get Max Rx packet length");
+ 		return -EINVAL;
+ 	}
+ 
+@@ -54,10 +52,9 @@ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 
+ 	devinfo->min_rx_bufsize = OTX_EP_MIN_RX_BUF_SIZE;
+ 	devinfo->max_rx_pktlen = max_rx_pktlen;
+-	devinfo->max_mtu = devinfo->max_rx_pktlen - (RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN);
++	devinfo->max_mtu = devinfo->max_rx_pktlen - OTX_EP_ETH_OVERHEAD;
+ 	devinfo->min_mtu = RTE_ETHER_MIN_LEN;
+-	devinfo->rx_offload_capa = DEV_RX_OFFLOAD_JUMBO_FRAME;
+-	devinfo->rx_offload_capa |= DEV_RX_OFFLOAD_SCATTER;
++	devinfo->rx_offload_capa = DEV_RX_OFFLOAD_SCATTER;
+ 	devinfo->tx_offload_capa = DEV_TX_OFFLOAD_MULTI_SEGS;
+ 
+ 	devinfo->max_mac_addrs = OTX_EP_MAX_MAC_ADDRS;
+@@ -91,17 +88,22 @@ otx_ep_dev_link_update(struct rte_eth_dev *eth_dev,
+ static int
+ otx_ep_dev_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ {
+-	int32_t frame_size = mtu + OTX_EP_ETH_OVERHEAD;
++	struct rte_eth_dev_info devinfo;
+ 	int32_t ret = 0;
+ 
++	if (otx_ep_dev_info_get(eth_dev, &devinfo)) {
++		otx_ep_err("Cannot set MTU to %u: failed to get device info", mtu);
++		return -EPERM;
++	}
++
+ 	/* Check if MTU is within the allowed range */
+-	if (frame_size  < RTE_ETHER_MIN_LEN) {
+-		otx_ep_err("MTU is lesser than minimum");
++	if (mtu < devinfo.min_mtu) {
++		otx_ep_err("Invalid MTU %u: lower than minimum MTU %u", mtu, devinfo.min_mtu);
+ 		return -EINVAL;
+ 	}
+ 
+-	if ((frame_size - RTE_ETHER_CRC_LEN) > ((int32_t)otx_ep_mbox_get_max_pkt_len(eth_dev))) {
+-		otx_ep_err("MTU is greater than maximum");
++	if (mtu > devinfo.max_mtu) {
++		otx_ep_err("Invalid MTU %u; higher than maximum MTU %u", mtu, devinfo.max_mtu);
+ 		return -EINVAL;
+ 	}
+ 
+@@ -109,13 +111,7 @@ otx_ep_dev_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ 	if (ret)
+ 		return -EINVAL;
+ 
+-	if (frame_size > RTE_ETHER_MAX_LEN)
+-		eth_dev->data->dev_conf.rxmode.offloads |=
+-				DEV_RX_OFFLOAD_JUMBO_FRAME;
+-	else
+-		eth_dev->data->dev_conf.rxmode.offloads &=
+-				~DEV_RX_OFFLOAD_JUMBO_FRAME;
+-	otx_ep_dbg("mtu set  success mtu %u\n", mtu);
++	otx_ep_dbg("MTU is set to %u", mtu);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index 04cc91270e25f..8e866efd15f13 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -260,6 +260,7 @@ otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev)
+ 	union otx_ep_mbox_word rsp;
+ 	int ret;
+ 
++	rsp.u64 = 0;
+ 	cmd.u64 = 0;
+ 	cmd.s_get_mtu.opcode = OTX_EP_MBOX_CMD_GET_MTU;
+ 
+-- 
+2.25.1
+

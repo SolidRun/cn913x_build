@@ -1,0 +1,600 @@
+From 531593b7722be6a0b21bc9ba73d34aa0c9cd85fb Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Fri, 10 Mar 2023 18:09:37 +0530
+Subject: [PATCH 325/955] crypto/cnxk: add CN10K pdcp chain support
+
+Adding CN10K pdcp chain support.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Iadad233b9e1f19c3fbcb8f8f9dce28c96f6db2db
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98999
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/roc_se.c             |  44 +--
+ drivers/common/cnxk/roc_se.h             |   7 +-
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c |   2 +-
+ drivers/crypto/cnxk/cnxk_se.h            | 332 +++++++++++++++--------
+ 4 files changed, 253 insertions(+), 132 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index aad2b513c7d7c..7ce89e10b031e 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -52,9 +52,9 @@ cpt_ciph_aes_key_validate(uint16_t key_len)
+ }
+ 
+ static inline int
+-cpt_ciph_type_set(roc_se_cipher_type type, struct roc_se_ctx *ctx,
+-		  uint16_t key_len)
++cpt_ciph_type_set(roc_se_cipher_type type, struct roc_se_ctx *ctx, uint16_t key_len)
+ {
++	bool chained_op = ctx->ciph_then_auth || ctx->auth_then_ciph;
+ 	int fc_type = 0;
+ 
+ 	switch (type) {
+@@ -90,7 +90,7 @@ cpt_ciph_type_set(roc_se_cipher_type type, struct roc_se_ctx *ctx,
+ 		fc_type = ROC_SE_FC_GEN;
+ 		break;
+ 	case ROC_SE_ZUC_EEA3:
+-		if (ctx->hash_type)
++		if (chained_op)
+ 			fc_type = ROC_SE_PDCP_CHAIN;
+ 		else
+ 			fc_type = ROC_SE_PDCP;
+@@ -98,13 +98,13 @@ cpt_ciph_type_set(roc_se_cipher_type type, struct roc_se_ctx *ctx,
+ 	case ROC_SE_SNOW3G_UEA2:
+ 		if (unlikely(key_len != 16))
+ 			return -1;
+-		if (ctx->hash_type)
++		if (chained_op)
+ 			fc_type = ROC_SE_PDCP_CHAIN;
+ 		else
+ 			fc_type = ROC_SE_PDCP;
+ 		break;
+ 	case ROC_SE_AES_CTR_EEA2:
+-		if (ctx->hash_type)
++		if (chained_op)
+ 			fc_type = ROC_SE_PDCP_CHAIN;
+ 		else
+ 			fc_type = ROC_SE_PDCP;
+@@ -427,6 +427,7 @@ roc_se_auth_key_set(struct roc_se_ctx *se_ctx, roc_se_auth_type type,
+ 				se_ctx->fc_type = ROC_SE_PDCP;
+ 			}
+ 			se_ctx->pdcp_auth_alg = ROC_SE_PDCP_ALG_TYPE_AES_CMAC;
++			se_ctx->eia2 = 1;
+ 			se_ctx->zsk_flags = 0x1;
+ 			break;
+ 		case ROC_SE_KASUMI_F9_ECB:
+@@ -444,14 +445,19 @@ roc_se_auth_key_set(struct roc_se_ctx *se_ctx, roc_se_auth_type type,
+ 		default:
+ 			return -1;
+ 		}
++
++		if ((se_ctx->fc_type == ROC_SE_PDCP_CHAIN) && (mac_len != 4)) {
++			plt_err("Only digest length of 4 is supported with PDCP chain");
++			return -1;
++		}
++
+ 		se_ctx->mac_len = mac_len;
+ 		se_ctx->hash_type = type;
+ 		pdcp_alg = zs_ctx->zuc.otk_ctx.w0.s.alg_type;
+-		if (roc_model_is_cn9k())
+-			if (chained_op == true)
+-				opcode_minor = se_ctx->ciph_then_auth ? 2 : 3;
+-			else
+-				opcode_minor = ((1 << 7) | (pdcp_alg << 5) | 1);
++		if (chained_op)
++			opcode_minor = se_ctx->ciph_then_auth ? 2 : 3;
++		else if (roc_model_is_cn9k())
++			opcode_minor = ((1 << 7) | (pdcp_alg << 5) | 1);
+ 		else
+ 			opcode_minor = ((1 << 4) | 1);
+ 
+@@ -510,7 +516,7 @@ roc_se_ciph_key_set(struct roc_se_ctx *se_ctx, roc_se_cipher_type type, const ui
+ 	struct roc_se_zuc_snow3g_ctx *zs_ctx = &se_ctx->se_ctx.zs_ctx;
+ 	struct roc_se_context *fctx = &se_ctx->se_ctx.fctx;
+ 	struct roc_se_zuc_snow3g_chain_ctx *zs_ch_ctx;
+-	uint8_t opcode_minor;
++	uint8_t opcode_minor = 0;
+ 	uint8_t *zuc_const;
+ 	uint32_t keyx[4];
+ 	uint8_t *ci_key;
+@@ -699,17 +705,14 @@ roc_se_ciph_key_set(struct roc_se_ctx *se_ctx, roc_se_cipher_type type, const ui
+ 
+ success:
+ 	se_ctx->enc_cipher = type;
+-	if (se_ctx->fc_type == ROC_SE_PDCP) {
++	if (se_ctx->fc_type == ROC_SE_PDCP_CHAIN) {
++		se_ctx->template_w4.s.opcode_minor = se_ctx->ciph_then_auth ? 2 : 3;
++	} else if (se_ctx->fc_type == ROC_SE_PDCP) {
+ 		if (roc_model_is_cn9k())
+-			if (chained_op == true)
+-				opcode_minor = se_ctx->ciph_then_auth ? 2 : 3;
+-			else
+-				opcode_minor =
+-					((1 << 7) | (se_ctx->pdcp_ci_alg << 5) |
+-					 (se_ctx->zsk_flags & 0x7));
++			opcode_minor =
++				((1 << 7) | (se_ctx->pdcp_ci_alg << 5) | (se_ctx->zsk_flags & 0x7));
+ 		else
+ 			opcode_minor = ((1 << 4));
+-
+ 		se_ctx->template_w4.s.opcode_minor = opcode_minor;
+ 	}
+ 	return 0;
+@@ -723,6 +726,9 @@ roc_se_ctx_swap(struct roc_se_ctx *se_ctx)
+ 	if (roc_model_is_cn9k())
+ 		return;
+ 
++	if (se_ctx->fc_type == ROC_SE_PDCP_CHAIN)
++		return;
++
+ 	zs_ctx->zuc.otk_ctx.w0.u64 = htobe64(zs_ctx->zuc.otk_ctx.w0.u64);
+ }
+ 
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index a0c97b26c5526..7771f22c6683d 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -230,14 +230,16 @@ struct roc_se_onk_zuc_chain_ctx {
+ 	} w0;
+ 	union {
+ 		struct {
+-			uint8_t encr_lfsr_state[64];
+-			uint8_t auth_lfsr_state[64];
++			uint8_t encr_lfsr_state[72];
++			uint8_t auth_lfsr_state[72];
+ 		};
+ 		struct {
+ 			uint8_t ci_key[32];
+ 			uint8_t ci_zuc_const[32];
++			uint8_t rsvd[8];
+ 			uint8_t auth_key[32];
+ 			uint8_t auth_zuc_const[32];
++			uint8_t rsvd1[8];
+ 		};
+ 	} st;
+ };
+@@ -297,6 +299,7 @@ struct roc_se_ctx {
+ 	uint64_t pdcp_auth_alg : 2;
+ 	uint64_t ciph_then_auth : 1;
+ 	uint64_t auth_then_ciph : 1;
++	uint64_t eia2 : 1;
+ 	union cpt_inst_w4 template_w4;
+ 	/* Below fields are accessed by hardware */
+ 	struct se_ctx_s {
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 85123d8afed83..dd35ee127838c 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -493,7 +493,7 @@ cnxk_sess_fill(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xform,
+ 	bool pdcp_chain_supported = false;
+ 	bool ciph_then_auth = false;
+ 
+-	if (roc_model_is_cn9k() && (roc_cpt->hw_caps[CPT_ENG_TYPE_SE].pdcp_chain))
++	if (roc_cpt->hw_caps[CPT_ENG_TYPE_SE].pdcp_chain)
+ 		pdcp_chain_supported = true;
+ 
+ 	if (xform == NULL)
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index bf473e4233c59..d780bdaede77f 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -808,6 +808,207 @@ cpt_digest_gen_sg_ver2_prep(uint32_t flags, uint64_t d_lens, struct roc_se_fc_pa
+ 	return 0;
+ }
+ 
++static inline int
++pdcp_chain_sg1_prep(struct roc_se_fc_params *params, struct roc_se_ctx *cpt_ctx,
++		    struct cpt_inst_s *inst, union cpt_inst_w4 w4, int32_t inputlen,
++		    uint8_t hdr_len, uint64_t offset_ctrl, uint32_t req_flags, uint8_t *cipher_iv,
++		    uint8_t *auth_iv, const int pack_iv, const uint8_t pdcp_ci_alg,
++		    const uint8_t pdcp_auth_alg)
++{
++	struct roc_sglist_comp *scatter_comp, *gather_comp;
++	void *m_vaddr = params->meta_buf.vaddr;
++	uint32_t i, g_size_bytes, s_size_bytes;
++	const uint32_t mac_len = 4;
++	uint8_t *iv_d, *in_buffer;
++	uint64_t *offset_vaddr;
++	uint32_t size;
++
++	/* save space for IV */
++	offset_vaddr = m_vaddr;
++
++	m_vaddr = PLT_PTR_ADD(m_vaddr, ROC_SE_OFF_CTRL_LEN + PLT_ALIGN_CEIL(hdr_len, 8));
++
++	w4.s.opcode_major |= (uint64_t)ROC_DMA_MODE_SG;
++
++	/* DPTR has SG list */
++	in_buffer = m_vaddr;
++
++	((uint16_t *)in_buffer)[0] = 0;
++	((uint16_t *)in_buffer)[1] = 0;
++
++	gather_comp = PLT_PTR_ADD(m_vaddr, 8);
++
++	/* Input Gather List */
++	i = 0;
++
++	/* Offset control word followed by IV */
++
++	i = fill_sg_comp(gather_comp, i, (uint64_t)offset_vaddr, ROC_SE_OFF_CTRL_LEN + hdr_len);
++
++	*(uint64_t *)offset_vaddr = offset_ctrl;
++
++	/* Cipher IV */
++	iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN);
++	pdcp_iv_copy(iv_d, cipher_iv, pdcp_ci_alg, pack_iv);
++
++	/* Auth IV */
++	iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + 16);
++	pdcp_iv_copy(iv_d, auth_iv, pdcp_auth_alg, pack_iv);
++
++	/* input data */
++	size = inputlen - hdr_len;
++	if (size) {
++		i = fill_sg_comp_from_iov(gather_comp, i, params->src_iov, 0, &size, NULL, 0);
++		if (unlikely(size)) {
++			plt_dp_err("Insufficient buffer space, size %d needed", size);
++			return -1;
++		}
++	}
++	((uint16_t *)in_buffer)[2] = rte_cpu_to_be_16(i);
++	g_size_bytes = ((i + 3) / 4) * sizeof(struct roc_sglist_comp);
++
++	/*
++	 * Output Scatter List
++	 */
++
++	i = 0;
++	scatter_comp = PLT_PTR_ADD(gather_comp, g_size_bytes);
++
++	if ((hdr_len)) {
++		i = fill_sg_comp(scatter_comp, i, (uint64_t)offset_vaddr + ROC_SE_OFF_CTRL_LEN,
++				 hdr_len);
++	}
++
++	/* Add output data */
++	if (cpt_ctx->ciph_then_auth && (req_flags & ROC_SE_VALID_MAC_BUF))
++		size = inputlen;
++	else
++		/* Output including mac */
++		size = inputlen + mac_len;
++
++	size -= hdr_len;
++
++	if (size) {
++		i = fill_sg_comp_from_iov(scatter_comp, i, params->dst_iov, 0, &size, NULL, 0);
++
++		if (unlikely(size)) {
++			plt_dp_err("Insufficient buffer space, size %d needed", size);
++			return -1;
++		}
++	}
++
++	((uint16_t *)in_buffer)[3] = rte_cpu_to_be_16(i);
++	s_size_bytes = ((i + 3) / 4) * sizeof(struct roc_sglist_comp);
++
++	size = g_size_bytes + s_size_bytes + ROC_SG_LIST_HDR_SIZE;
++
++	/* This is DPTR len in case of SG mode */
++	w4.s.dlen = size;
++	inst->w4.u64 = w4.u64;
++
++	inst->dptr = (uint64_t)in_buffer;
++
++	return 0;
++}
++
++static inline int
++pdcp_chain_sg2_prep(struct roc_se_fc_params *params, struct roc_se_ctx *cpt_ctx,
++		    struct cpt_inst_s *inst, union cpt_inst_w4 w4, int32_t inputlen,
++		    uint8_t hdr_len, uint64_t offset_ctrl, uint32_t req_flags, uint8_t *cipher_iv,
++		    uint8_t *auth_iv, const int pack_iv, const uint8_t pdcp_ci_alg,
++		    const uint8_t pdcp_auth_alg)
++{
++	struct roc_sg2list_comp *gather_comp, *scatter_comp;
++	void *m_vaddr = params->meta_buf.vaddr;
++	const uint32_t mac_len = 4;
++	uint32_t i, g_size_bytes;
++	uint64_t *offset_vaddr;
++	union cpt_inst_w5 w5;
++	union cpt_inst_w6 w6;
++	uint8_t *iv_d;
++	uint32_t size;
++
++	/* save space for IV */
++	offset_vaddr = m_vaddr;
++
++	m_vaddr = PLT_PTR_ADD(m_vaddr, ROC_SE_OFF_CTRL_LEN + RTE_ALIGN_CEIL(hdr_len, 8));
++
++	w4.s.opcode_major |= (uint64_t)ROC_DMA_MODE_SG;
++	w4.s.dlen = inputlen + ROC_SE_OFF_CTRL_LEN;
++
++	/* DPTR has SG list */
++	inst->dptr = PLT_U64_CAST(m_vaddr);
++
++	gather_comp = m_vaddr;
++
++	/* Input Gather List */
++	i = 0;
++
++	/* Offset control word followed by IV */
++	*(uint64_t *)offset_vaddr = offset_ctrl;
++
++	i = fill_sg2_comp(gather_comp, i, (uint64_t)offset_vaddr, ROC_SE_OFF_CTRL_LEN + hdr_len);
++
++	/* Cipher IV */
++	iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN);
++	pdcp_iv_copy(iv_d, cipher_iv, pdcp_ci_alg, pack_iv);
++
++	/* Auth IV */
++	iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + 16);
++	pdcp_iv_copy(iv_d, auth_iv, pdcp_auth_alg, pack_iv);
++
++	/* input data */
++	size = inputlen - hdr_len;
++	if (size) {
++		i = fill_sg2_comp_from_iov(gather_comp, i, params->src_iov, 0, &size, NULL, 0);
++		if (unlikely(size)) {
++			plt_dp_err("Insufficient buffer space, size %d needed", size);
++			return -1;
++		}
++	}
++	w5.s.gather_sz = ((i + 2) / 3);
++	w5.s.dptr = (uint64_t)gather_comp;
++	g_size_bytes = ((i + 2) / 3) * sizeof(struct roc_sg2list_comp);
++
++	/*
++	 * Output Scatter List
++	 */
++
++	i = 0;
++	scatter_comp = PLT_PTR_ADD(gather_comp, g_size_bytes);
++
++	if ((hdr_len))
++		i = fill_sg2_comp(scatter_comp, i, (uint64_t)(offset_vaddr) + ROC_SE_OFF_CTRL_LEN,
++				  hdr_len);
++
++	/* Add output data */
++	if (cpt_ctx->ciph_then_auth && (req_flags & ROC_SE_VALID_MAC_BUF))
++		size = inputlen;
++	else
++		/* Output including mac */
++		size = inputlen + mac_len;
++
++	size -= hdr_len;
++
++	if (size) {
++		i = fill_sg2_comp_from_iov(scatter_comp, i, params->dst_iov, 0, &size, NULL, 0);
++
++		if (unlikely(size)) {
++			plt_dp_err("Insufficient buffer space, size %d needed", size);
++			return -1;
++		}
++	}
++
++	w6.s.scatter_sz = ((i + 2) / 3);
++	w6.s.rptr = (uint64_t)scatter_comp;
++
++	inst->w4.u64 = w4.u64;
++	inst->w5.u64 = w5.u64;
++	inst->w6.u64 = w6.u64;
++
++	return 0;
++}
++
+ static __rte_always_inline int
+ cpt_enc_hmac_prep(uint32_t flags, uint64_t d_offs, uint64_t d_lens,
+ 		  struct roc_se_fc_params *fc_params, struct cpt_inst_s *inst,
+@@ -1138,7 +1339,8 @@ cpt_dec_hmac_prep(uint32_t flags, uint64_t d_offs, uint64_t d_lens,
+ 
+ static __rte_always_inline int
+ cpt_pdcp_chain_alg_prep(uint32_t req_flags, uint64_t d_offs, uint64_t d_lens,
+-			struct roc_se_fc_params *params, struct cpt_inst_s *inst)
++			struct roc_se_fc_params *params, struct cpt_inst_s *inst,
++			const bool is_sg_ver2)
+ {
+ 	uint32_t encr_data_len, auth_data_len, aad_len, passthr_len, pad_len, hdr_len;
+ 	uint32_t encr_offset, auth_offset, iv_offset = 0;
+@@ -1146,10 +1348,10 @@ cpt_pdcp_chain_alg_prep(uint32_t req_flags, uint64_t d_offs, uint64_t d_lens,
+ 	uint8_t pdcp_ci_alg, pdcp_auth_alg;
+ 	union cpt_inst_w4 cpt_inst_w4;
+ 	struct roc_se_ctx *se_ctx;
++	uint64_t *offset_vaddr;
+ 	const int iv_len = 32;
+-	uint32_t mac_len = 0;
++	uint64_t offset_ctrl;
+ 	uint8_t pack_iv = 0;
+-	void *offset_vaddr;
+ 	int32_t inputlen;
+ 	void *dm_vaddr;
+ 	uint8_t *iv_d;
+@@ -1166,7 +1368,6 @@ cpt_pdcp_chain_alg_prep(uint32_t req_flags, uint64_t d_offs, uint64_t d_lens,
+ 	}
+ 
+ 	se_ctx = params->ctx;
+-	mac_len = se_ctx->mac_len;
+ 	pdcp_ci_alg = se_ctx->pdcp_ci_alg;
+ 	pdcp_auth_alg = se_ctx->pdcp_auth_alg;
+ 
+@@ -1207,6 +1408,9 @@ cpt_pdcp_chain_alg_prep(uint32_t req_flags, uint64_t d_offs, uint64_t d_lens,
+ 
+ 	inputlen += (encr_offset + pad_len);
+ 
++	offset_ctrl = rte_cpu_to_be_64(((uint64_t)(aad_len) << 16) | ((uint64_t)(iv_offset) << 8) |
++				       ((uint64_t)(passthr_len)));
++
+ 	if (likely(((req_flags & ROC_SE_SINGLE_BUF_INPLACE)) &&
+ 		   ((req_flags & ROC_SE_SINGLE_BUF_HEADROOM)))) {
+ 
+@@ -1215,6 +1419,7 @@ cpt_pdcp_chain_alg_prep(uint32_t req_flags, uint64_t d_offs, uint64_t d_lens,
+ 		/* Use Direct mode */
+ 
+ 		offset_vaddr = PLT_PTR_SUB(dm_vaddr, ROC_SE_OFF_CTRL_LEN + hdr_len);
++		*offset_vaddr = offset_ctrl;
+ 
+ 		/* DPTR */
+ 		inst->dptr = (uint64_t)offset_vaddr;
+@@ -1223,118 +1428,25 @@ cpt_pdcp_chain_alg_prep(uint32_t req_flags, uint64_t d_offs, uint64_t d_lens,
+ 
+ 		cpt_inst_w4.s.dlen = inputlen + ROC_SE_OFF_CTRL_LEN;
+ 
+-		*(uint64_t *)offset_vaddr =
+-			rte_cpu_to_be_64(((uint64_t)(aad_len) << 16) |
+-					 ((uint64_t)(iv_offset) << 8) | ((uint64_t)(passthr_len)));
+-
+ 		iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN);
+ 		pdcp_iv_copy(iv_d, cipher_iv, pdcp_ci_alg, pack_iv);
+ 
+ 		iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + 16);
+ 		pdcp_iv_copy(iv_d, auth_iv, pdcp_auth_alg, pack_iv);
+ 
+-	} else {
+-		struct roc_sglist_comp *scatter_comp, *gather_comp;
+-		void *m_vaddr = params->meta_buf.vaddr;
+-		uint32_t i, g_size_bytes, s_size_bytes;
+-		uint8_t *in_buffer;
+-		uint32_t size;
+-
+-		/* save space for IV */
+-		offset_vaddr = m_vaddr;
+-
+-		m_vaddr = PLT_PTR_ADD(m_vaddr, ROC_SE_OFF_CTRL_LEN + RTE_ALIGN_CEIL(hdr_len, 8));
+-
+-		cpt_inst_w4.s.opcode_major |= (uint64_t)ROC_DMA_MODE_SG;
+-
+-		/* DPTR has SG list */
+-		in_buffer = m_vaddr;
+-
+-		((uint16_t *)in_buffer)[0] = 0;
+-		((uint16_t *)in_buffer)[1] = 0;
+-
+-		gather_comp = (struct roc_sglist_comp *)((uint8_t *)m_vaddr + 8);
+-
+-		/* Input Gather List */
+-		i = 0;
+-
+-		/* Offset control word followed by iv */
+-
+-		i = fill_sg_comp(gather_comp, i, (uint64_t)offset_vaddr,
+-				 ROC_SE_OFF_CTRL_LEN + hdr_len);
+-
+-		*(uint64_t *)offset_vaddr =
+-			rte_cpu_to_be_64(((uint64_t)(aad_len) << 16) |
+-					 ((uint64_t)(iv_offset) << 8) | ((uint64_t)(passthr_len)));
+-
+-		iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN);
+-		pdcp_iv_copy(iv_d, cipher_iv, pdcp_ci_alg, pack_iv);
+-
+-		iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + 16);
+-		pdcp_iv_copy(iv_d, auth_iv, pdcp_auth_alg, pack_iv);
+-
+-		/* input data */
+-		size = inputlen - hdr_len;
+-		if (size) {
+-			i = fill_sg_comp_from_iov(gather_comp, i, params->src_iov, 0, &size, NULL,
+-						  0);
+-			if (unlikely(size)) {
+-				plt_dp_err("Insufficient buffer space,"
+-					   " size %d needed",
+-					   size);
+-				return -1;
+-			}
+-		}
+-		((uint16_t *)in_buffer)[2] = rte_cpu_to_be_16(i);
+-		g_size_bytes = ((i + 3) / 4) * sizeof(struct roc_sglist_comp);
+-
+-		/*
+-		 * Output Scatter List
+-		 */
+-
+-		i = 0;
+-		scatter_comp = (struct roc_sglist_comp *)((uint8_t *)gather_comp + g_size_bytes);
+-
+-		if ((hdr_len)) {
+-			i = fill_sg_comp(scatter_comp, i,
+-					 (uint64_t)offset_vaddr + ROC_SE_OFF_CTRL_LEN, hdr_len);
+-		}
++		inst->w4.u64 = cpt_inst_w4.u64;
++		return 0;
+ 
+-		/* Add output data */
+-		if (se_ctx->ciph_then_auth && (req_flags & ROC_SE_VALID_MAC_BUF))
+-			size = inputlen;
++	} else {
++		if (is_sg_ver2)
++			return pdcp_chain_sg2_prep(params, se_ctx, inst, cpt_inst_w4, inputlen,
++						   hdr_len, offset_ctrl, req_flags, cipher_iv,
++						   auth_iv, pack_iv, pdcp_ci_alg, pdcp_auth_alg);
+ 		else
+-			/* Output including mac */
+-			size = inputlen + mac_len;
+-
+-		size -= hdr_len;
+-
+-		if (size) {
+-			i = fill_sg_comp_from_iov(scatter_comp, i, params->dst_iov, 0, &size, NULL,
+-						  0);
+-
+-			if (unlikely(size)) {
+-				plt_dp_err("Insufficient buffer space,"
+-					   " size %d needed",
+-					   size);
+-				return -1;
+-			}
+-		}
+-
+-		((uint16_t *)in_buffer)[3] = rte_cpu_to_be_16(i);
+-		s_size_bytes = ((i + 3) / 4) * sizeof(struct roc_sglist_comp);
+-
+-		size = g_size_bytes + s_size_bytes + ROC_SG_LIST_HDR_SIZE;
+-
+-		/* This is DPTR len in case of SG mode */
+-		cpt_inst_w4.s.dlen = size;
+-
+-		inst->dptr = (uint64_t)in_buffer;
++			return pdcp_chain_sg1_prep(params, se_ctx, inst, cpt_inst_w4, inputlen,
++						   hdr_len, offset_ctrl, req_flags, cipher_iv,
++						   auth_iv, pack_iv, pdcp_ci_alg, pdcp_auth_alg);
+ 	}
+-
+-	inst->w4.u64 = cpt_inst_w4.u64;
+-
+-	return 0;
+ }
+ 
+ static __rte_always_inline int
+@@ -2520,7 +2632,7 @@ fill_pdcp_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ static __rte_always_inline int
+ fill_pdcp_chain_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 		       struct cpt_qp_meta_info *m_info, struct cpt_inflight_req *infl_req,
+-		       struct cpt_inst_s *inst)
++		       struct cpt_inst_s *inst, const bool is_sg_ver2)
+ {
+ 	uint32_t ci_data_length, ci_data_offset, a_data_length, a_data_offset;
+ 	struct rte_crypto_sym_op *sym_op = cop->sym;
+@@ -2643,7 +2755,7 @@ fill_pdcp_chain_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	}
+ 
+ 	/* Finally prepare the instruction */
+-	ret = cpt_pdcp_chain_alg_prep(flags, d_offs, d_lens, &fc_params, inst);
++	ret = cpt_pdcp_chain_alg_prep(flags, d_offs, d_lens, &fc_params, inst, is_sg_ver2);
+ 	if (unlikely(ret)) {
+ 		plt_dp_err("Could not prepare instruction");
+ 		goto free_mdata_and_exit;
+@@ -2879,7 +2991,7 @@ cpt_sym_inst_fill(struct cnxk_cpt_qp *qp, struct rte_crypto_op *op, struct cnxk_
+ 				     is_sg_ver2);
+ 		break;
+ 	case CPT_DP_THREAD_TYPE_PDCP_CHAIN:
+-		ret = fill_pdcp_chain_params(op, sess, &qp->meta_info, infl_req, inst);
++		ret = fill_pdcp_chain_params(op, sess, &qp->meta_info, infl_req, inst, is_sg_ver2);
+ 		break;
+ 	case CPT_DP_THREAD_TYPE_KASUMI:
+ 		ret = fill_fc_params(op, sess, &qp->meta_info, infl_req, inst, true, false,
+-- 
+2.25.1
+

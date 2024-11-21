@@ -1,0 +1,49 @@
+From 9407c176681bbb5896fca7b83c5701dedb74ae93 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Fri, 24 May 2024 17:34:51 +0530
+Subject: [PATCH 868/955] net/cnxk: fix promiscuous state after MAC change
+
+If promiscuous mode is enabled and default MAC address is set
+again then promiscuous mode gets disabled in hardware.
+
+This change will restore promiscuous behavior after configuring
+default MAC address.
+
+Fixes: 5fe86db2a0dd ("net/cnxk: support MAC address set")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I0490e198c2aadf7ad17fdf783c2ee6ccb52fb747
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128470
+Reviewed-by: Sunil Kumar Kori <skori@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit 43bd3c0cb101b48850090872ccff92a81154e615)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128513
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index c8260fcb9c581..b1093dd5840fb 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -451,6 +451,13 @@ cnxk_nix_mac_addr_set(struct rte_eth_dev *eth_dev, struct rte_ether_addr *addr)
+ 			roc_nix_npc_mac_addr_set(nix, dev->mac_addr);
+ 			goto exit;
+ 		}
++
++		if (eth_dev->data->promiscuous) {
++			rc = roc_nix_mac_promisc_mode_enable(nix, true);
++			if (rc)
++				plt_err("Failed to setup promisc mode in mac, rc=%d(%s)", rc,
++					roc_error_msg_get(rc));
++		}
+ 	}
+ 
+ 	/* Update mac address to cnxk ethernet device */
+-- 
+2.25.1
+

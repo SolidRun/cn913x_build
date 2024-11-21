@@ -1,0 +1,256 @@
+From b411bf85860cbe1fd96323b2ae0715bc9f9e46ef Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 22 Jun 2023 23:27:42 +0530
+Subject: [PATCH 516/955] common/cnxk: add workaround for CPT ctx fetch issue
+
+Add workaround for CPT context fetch issue in CN10KB
+by setting CTX_ILEN to that of CTX_SIZE and enabling
+FLR_FLUSH in CPT_LF_CTX_CTL.
+
+Change-Id: I0c718f6bbbf0bfaccf77b17c6660066e412cc99b
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106227
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c         | 23 ++++++++++++++++++++---
+ drivers/common/cnxk/roc_cpt.h         |  2 ++
+ drivers/common/cnxk/roc_cpt_priv.h    |  4 ++--
+ drivers/common/cnxk/roc_errata.h      |  7 +++++++
+ drivers/common/cnxk/roc_ie_ot.h       |  3 +++
+ drivers/common/cnxk/roc_mbox.h        |  4 ++++
+ drivers/common/cnxk/roc_nix_inl.c     | 14 +++++++++++++-
+ drivers/common/cnxk/roc_nix_inl_dev.c | 10 +++++++++-
+ 8 files changed, 60 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index d235ff51ca875..981e85a204a1e 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -331,6 +331,8 @@ roc_cpt_inline_ipsec_inb_cfg(struct roc_cpt *roc_cpt, struct roc_cpt_inline_ipse
+ 	req->param2 = cfg->param2;
+ 	req->opcode = cfg->opcode;
+ 	req->bpid = cfg->bpid;
++	req->ctx_ilen_valid = cfg->ctx_ilen_valid;
++	req->ctx_ilen = cfg->ctx_ilen;
+ 
+ 	rc = mbox_process(mbox);
+ exit:
+@@ -460,8 +462,8 @@ cpt_available_lfs_get(struct dev *dev, uint16_t *nb_lf)
+ }
+ 
+ int
+-cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blkaddr,
+-	      bool inl_dev_sso)
++cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blkaddr, bool inl_dev_sso,
++	      bool ctx_ilen_valid, uint8_t ctx_ilen)
+ {
+ 	struct cpt_lf_alloc_req_msg *req;
+ 	struct mbox *mbox = mbox_get(dev->mbox);
+@@ -485,6 +487,8 @@ cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blkaddr,
+ 		req->sso_pf_func = idev_sso_pffunc_get();
+ 	req->eng_grpmsk = eng_grpmsk;
+ 	req->blkaddr = blkaddr;
++	req->ctx_ilen_valid = ctx_ilen_valid;
++	req->ctx_ilen = ctx_ilen;
+ 
+ 	rc = mbox_process(mbox);
+ exit:
+@@ -587,6 +591,8 @@ roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf)
+ 	struct cpt *cpt = roc_cpt_to_cpt_priv(roc_cpt);
+ 	uint8_t blkaddr[ROC_CPT_MAX_BLKS];
+ 	struct msix_offset_rsp *rsp;
++	bool ctx_ilen_valid = false;
++	uint16_t ctx_ilen = 0;
+ 	uint8_t eng_grpmsk;
+ 	int blknum = 0;
+ 	int rc, i;
+@@ -618,7 +624,13 @@ roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf)
+ 		     (1 << roc_cpt->eng_grp[CPT_ENG_TYPE_SE]) |
+ 		     (1 << roc_cpt->eng_grp[CPT_ENG_TYPE_IE]);
+ 
+-	rc = cpt_lfs_alloc(&cpt->dev, eng_grpmsk, blkaddr[blknum], false);
++	if (roc_errata_cpt_has_ctx_fetch_issue()) {
++		ctx_ilen_valid = true;
++		/* Inbound SA size is max context size */
++		ctx_ilen = (PLT_ALIGN(ROC_OT_IPSEC_SA_SZ_MAX, ROC_ALIGN) / 128) - 1;
++	}
++
++	rc = cpt_lfs_alloc(&cpt->dev, eng_grpmsk, blkaddr[blknum], false, ctx_ilen_valid, ctx_ilen);
+ 	if (rc)
+ 		goto lfs_detach;
+ 
+@@ -1108,6 +1120,11 @@ roc_cpt_iq_enable(struct roc_cpt_lf *lf)
+ 	lf_inprog.s.eena = 1;
+ 	plt_write64(lf_inprog.u, lf->rbase + CPT_LF_INPROG);
+ 
++	if (roc_errata_cpt_has_ctx_fetch_issue()) {
++		/* Enable flush on FLR */
++		plt_write64(1, lf->rbase + CPT_LF_CTX_CTL);
++	}
++
+ 	cpt_lf_dump(lf);
+ }
+ 
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index d541ddcdf009e..dbe77879d2c38 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -161,6 +161,8 @@ struct roc_cpt_inline_ipsec_inb_cfg {
+ 	uint16_t bpid;
+ 	uint32_t credit_th;
+ 	uint8_t egrp;
++	uint8_t ctx_ilen_valid : 1;
++	uint8_t ctx_ilen : 7;
+ };
+ 
+ 
+diff --git a/drivers/common/cnxk/roc_cpt_priv.h b/drivers/common/cnxk/roc_cpt_priv.h
+index 61dec9a168749..4ed87c857b45c 100644
+--- a/drivers/common/cnxk/roc_cpt_priv.h
++++ b/drivers/common/cnxk/roc_cpt_priv.h
+@@ -21,8 +21,8 @@ roc_cpt_to_cpt_priv(struct roc_cpt *roc_cpt)
+ int cpt_lfs_attach(struct dev *dev, uint8_t blkaddr, bool modify,
+ 		   uint16_t nb_lf);
+ int cpt_lfs_detach(struct dev *dev);
+-int cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blk,
+-		  bool inl_dev_sso);
++int cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blk, bool inl_dev_sso,
++		  bool ctx_ilen_valid, uint8_t ctx_ilen);
+ int cpt_lfs_free(struct dev *dev);
+ int cpt_lf_init(struct roc_cpt_lf *lf);
+ void cpt_lf_fini(struct roc_cpt_lf *lf);
+diff --git a/drivers/common/cnxk/roc_errata.h b/drivers/common/cnxk/roc_errata.h
+index 22d2406e94933..6f84e06603b5f 100644
+--- a/drivers/common/cnxk/roc_errata.h
++++ b/drivers/common/cnxk/roc_errata.h
+@@ -82,6 +82,13 @@ roc_errata_cpt_hang_on_x2p_bp(void)
+ 	return roc_model_is_cn10ka_a0() || roc_model_is_cn10ka_a1();
+ }
+ 
++/* Errata IPBUCPT-38756 */
++static inline bool
++roc_errata_cpt_has_ctx_fetch_issue(void)
++{
++	return roc_model_is_cn10kb();
++}
++
+ /* IPBUNIXRX-40400 */
+ static inline bool
+ roc_errata_nix_no_meta_aura(void)
+diff --git a/drivers/common/cnxk/roc_ie_ot.h b/drivers/common/cnxk/roc_ie_ot.h
+index b7fcdf9ba7c69..af2691e0eb284 100644
+--- a/drivers/common/cnxk/roc_ie_ot.h
++++ b/drivers/common/cnxk/roc_ie_ot.h
+@@ -570,6 +570,9 @@ PLT_STATIC_ASSERT(offsetof(struct roc_ot_ipsec_outb_sa, hmac_opad_ipad) ==
+ PLT_STATIC_ASSERT(offsetof(struct roc_ot_ipsec_outb_sa, ctx) ==
+ 		  31 * sizeof(uint64_t));
+ 
++#define ROC_OT_IPSEC_SA_SZ_MAX \
++	(PLT_MAX(sizeof(struct roc_ot_ipsec_inb_sa), sizeof(struct roc_ot_ipsec_outb_sa)))
++
+ void __roc_api roc_ot_ipsec_inb_sa_init(struct roc_ot_ipsec_inb_sa *sa,
+ 					bool is_inline);
+ void __roc_api roc_ot_ipsec_outb_sa_init(struct roc_ot_ipsec_outb_sa *sa);
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 2f85b2f7550c7..f038d3e02bad7 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -2002,6 +2002,8 @@ struct cpt_lf_alloc_req_msg {
+ 	uint16_t __io sso_pf_func;
+ 	uint16_t __io eng_grpmsk;
+ 	uint8_t __io blkaddr;
++	uint8_t __io ctx_ilen_valid : 1;
++	uint8_t __io ctx_ilen : 7;
+ };
+ 
+ #define CPT_INLINE_INBOUND  0
+@@ -2083,6 +2085,8 @@ struct cpt_rx_inline_lf_cfg_msg {
+ 	uint32_t __io credit_th;
+ 	uint16_t __io bpid;
+ 	uint32_t __io reserved;
++	uint8_t __io ctx_ilen_valid : 1;
++	uint8_t __io ctx_ilen : 7;
+ };
+ 
+ struct cpt_caps_rsp_msg {
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 16f858f5619a8..5cb1f11f534cb 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -851,6 +851,11 @@ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ 			nix->cpt_nixbpid = bpids[0];
+ 			cfg.bpid = nix->cpt_nixbpid;
+ 		}
++
++		if (roc_errata_cpt_has_ctx_fetch_issue()) {
++			cfg.ctx_ilen_valid = true;
++			cfg.ctx_ilen = (ROC_NIX_INL_OT_IPSEC_INB_HW_SZ / 128) - 1;
++		}
+ 	}
+ 
+ 	/* Do onetime Inbound Inline config in CPTPF */
+@@ -931,7 +936,9 @@ roc_nix_inl_outb_init(struct roc_nix *roc_nix)
+ 	struct dev *dev = &nix->dev;
+ 	struct msix_offset_rsp *rsp;
+ 	struct nix_inl_dev *inl_dev;
++	bool ctx_ilen_valid = false;
+ 	size_t sa_sz, ring_sz;
++	uint8_t ctx_ilen = 0;
+ 	uint16_t sso_pffunc;
+ 	uint8_t eng_grpmask;
+ 	uint64_t blkaddr, i;
+@@ -967,12 +974,17 @@ roc_nix_inl_outb_init(struct roc_nix *roc_nix)
+ 		return rc;
+ 	}
+ 
++	if (!roc_model_is_cn9k() && roc_errata_cpt_has_ctx_fetch_issue()) {
++		ctx_ilen = (ROC_NIX_INL_OT_IPSEC_OUTB_HW_SZ / 128) - 1;
++		ctx_ilen_valid = true;
++	}
++
+ 	/* Alloc CPT LF */
+ 	eng_grpmask = (1ULL << ROC_CPT_DFLT_ENG_GRP_SE |
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_SE_IE |
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_AE);
+ 	rc = cpt_lfs_alloc(dev, eng_grpmask, blkaddr,
+-			   !roc_nix->ipsec_out_sso_pffunc);
++			   !roc_nix->ipsec_out_sso_pffunc, ctx_ilen_valid, ctx_ilen);
+ 	if (rc) {
+ 		plt_err("Failed to alloc CPT LF resources, rc=%d", rc);
+ 		goto lf_detach;
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index d76158e30d04b..2863d5da515ff 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -176,7 +176,9 @@ nix_inl_cpt_setup(struct nix_inl_dev *inl_dev, bool inl_dev_sso)
+ {
+ 	struct roc_cpt_lf *lf = &inl_dev->cpt_lf;
+ 	struct dev *dev = &inl_dev->dev;
++	bool ctx_ilen_valid = false;
+ 	uint8_t eng_grpmask;
++	uint8_t ctx_ilen = 0;
+ 	int rc;
+ 
+ 	if (!inl_dev->attach_cptlf)
+@@ -186,7 +188,13 @@ nix_inl_cpt_setup(struct nix_inl_dev *inl_dev, bool inl_dev_sso)
+ 	eng_grpmask = (1ULL << ROC_CPT_DFLT_ENG_GRP_SE |
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_SE_IE |
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_AE);
+-	rc = cpt_lfs_alloc(dev, eng_grpmask, RVU_BLOCK_ADDR_CPT0, inl_dev_sso);
++	if (roc_errata_cpt_has_ctx_fetch_issue()) {
++		ctx_ilen = (ROC_NIX_INL_OT_IPSEC_INB_HW_SZ / 128) - 1;
++		ctx_ilen_valid = true;
++	}
++
++	rc = cpt_lfs_alloc(dev, eng_grpmask, RVU_BLOCK_ADDR_CPT0, inl_dev_sso, ctx_ilen_valid,
++			   ctx_ilen);
+ 	if (rc) {
+ 		plt_err("Failed to alloc CPT LF resources, rc=%d", rc);
+ 		return rc;
+-- 
+2.25.1
+

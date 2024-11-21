@@ -1,0 +1,158 @@
+From 2f38a99de2629e26a683957453d6bcf0ad0ed8fc Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Mon, 6 May 2024 17:37:12 +0530
+Subject: [PATCH 353/513] app/crypto-perf: add function to check asymmetric
+ operation
+
+Replace checking input option for every asymmetric test case by
+a function.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Idc981be2c3df8ca4ff75ce570fda860dcc06a903
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126736
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test-crypto-perf/cperf_test_common.c     | 12 +++++++++++-
+ app/test-crypto-perf/cperf_test_common.h     |  2 ++
+ app/test-crypto-perf/cperf_test_latency.c    |  8 ++++----
+ app/test-crypto-perf/cperf_test_throughput.c |  3 +--
+ app/test-crypto-perf/cperf_test_verify.c     |  3 +--
+ app/test-crypto-perf/main.c                  |  7 ++++---
+ 6 files changed, 23 insertions(+), 12 deletions(-)
+
+diff --git a/app/test-crypto-perf/cperf_test_common.c b/app/test-crypto-perf/cperf_test_common.c
+index 255fa896fbd51..831c8d7e2a833 100644
+--- a/app/test-crypto-perf/cperf_test_common.c
++++ b/app/test-crypto-perf/cperf_test_common.c
+@@ -153,7 +153,7 @@ cperf_alloc_common_memory(const struct cperf_options *options,
+ 	uint16_t crypto_op_size = sizeof(struct rte_crypto_op);
+ 	uint16_t crypto_op_private_size;
+ 
+-	if (options->op_type == CPERF_ASYM_MODEX || options->op_type == CPERF_ASYM_SM2) {
++	if (cperf_is_asym_test(options)) {
+ 		crypto_op_size += sizeof(struct rte_crypto_asym_op);
+ 		snprintf(pool_name, RTE_MEMPOOL_NAMESIZE, "perf_asym_op_pool%u",
+ 			 rte_socket_id());
+@@ -301,3 +301,13 @@ cperf_mbuf_set(struct rte_mbuf *mbuf,
+ 		mbuf = mbuf->next;
+ 	}
+ }
++
++bool
++cperf_is_asym_test(const struct cperf_options *options)
++{
++	if (options->op_type == CPERF_ASYM_MODEX ||
++	    options->op_type == CPERF_ASYM_SM2)
++		return true;
++
++	return false;
++}
+diff --git a/app/test-crypto-perf/cperf_test_common.h b/app/test-crypto-perf/cperf_test_common.h
+index a603a607d5c6a..2d1f69aaa2d51 100644
+--- a/app/test-crypto-perf/cperf_test_common.h
++++ b/app/test-crypto-perf/cperf_test_common.h
+@@ -26,4 +26,6 @@ cperf_mbuf_set(struct rte_mbuf *mbuf,
+ 		const struct cperf_options *options,
+ 		const struct cperf_test_vector *test_vector);
+ 
++bool
++cperf_is_asym_test(const struct cperf_options *options);
+ #endif /* _CPERF_TEST_COMMON_H_ */
+diff --git a/app/test-crypto-perf/cperf_test_latency.c b/app/test-crypto-perf/cperf_test_latency.c
+index 1bc07d7ccfb9d..f288d9dc45283 100644
+--- a/app/test-crypto-perf/cperf_test_latency.c
++++ b/app/test-crypto-perf/cperf_test_latency.c
+@@ -47,8 +47,7 @@ cperf_latency_test_free(struct cperf_latency_ctx *ctx)
+ 		return;
+ 
+ 	if (ctx->sess != NULL) {
+-		if (ctx->options->op_type == CPERF_ASYM_MODEX ||
+-				ctx->options->op_type == CPERF_ASYM_SM2)
++		if (cperf_is_asym_test(ctx->options))
+ 			rte_cryptodev_asym_session_free(ctx->dev_id, ctx->sess);
+ #ifdef RTE_LIB_SECURITY
+ 		else if (ctx->options->op_type == CPERF_PDCP ||
+@@ -218,8 +217,9 @@ cperf_latency_test_runner(void *arg)
+ 					&imix_idx, &tsc_start);
+ 
+ 			/* Populate the mbuf with the test vector */
+-			for (i = 0; i < burst_size; i++)
+-				cperf_mbuf_set(ops[i]->sym->m_src,
++			if (!cperf_is_asym_test(ctx->options))
++				for (i = 0; i < burst_size; i++)
++					cperf_mbuf_set(ops[i]->sym->m_src,
+ 						ctx->options,
+ 						ctx->test_vector);
+ 
+diff --git a/app/test-crypto-perf/cperf_test_throughput.c b/app/test-crypto-perf/cperf_test_throughput.c
+index 17779e09cdba2..8eeff510c4dfc 100644
+--- a/app/test-crypto-perf/cperf_test_throughput.c
++++ b/app/test-crypto-perf/cperf_test_throughput.c
+@@ -37,8 +37,7 @@ cperf_throughput_test_free(struct cperf_throughput_ctx *ctx)
+ 	if (!ctx)
+ 		return;
+ 	if (ctx->sess) {
+-		if (ctx->options->op_type == CPERF_ASYM_MODEX ||
+-				ctx->options->op_type == CPERF_ASYM_SM2)
++		if (cperf_is_asym_test(ctx->options))
+ 			rte_cryptodev_asym_session_free(ctx->dev_id,
+ 					(void *)ctx->sess);
+ #ifdef RTE_LIB_SECURITY
+diff --git a/app/test-crypto-perf/cperf_test_verify.c b/app/test-crypto-perf/cperf_test_verify.c
+index e6a6bf3449775..976702c951041 100644
+--- a/app/test-crypto-perf/cperf_test_verify.c
++++ b/app/test-crypto-perf/cperf_test_verify.c
+@@ -42,8 +42,7 @@ cperf_verify_test_free(struct cperf_verify_ctx *ctx)
+ 		return;
+ 
+ 	if (ctx->sess != NULL) {
+-		if (ctx->options->op_type == CPERF_ASYM_MODEX ||
+-				ctx->options->op_type == CPERF_ASYM_SM2)
++		if (cperf_is_asym_test(ctx->options))
+ 			rte_cryptodev_asym_session_free(ctx->dev_id, ctx->sess);
+ #ifdef RTE_LIB_SECURITY
+ 		else if (ctx->options->op_type == CPERF_PDCP ||
+diff --git a/app/test-crypto-perf/main.c b/app/test-crypto-perf/main.c
+index 02dac5b32f018..2f39edbe6a5e1 100644
+--- a/app/test-crypto-perf/main.c
++++ b/app/test-crypto-perf/main.c
+@@ -18,6 +18,7 @@
+ #include "cperf.h"
+ #include "cperf_options.h"
+ #include "cperf_test_vector_parsing.h"
++#include "cperf_test_common.h"
+ #include "cperf_test_throughput.h"
+ #include "cperf_test_latency.h"
+ #include "cperf_test_verify.h"
+@@ -204,7 +205,7 @@ cperf_initialize_cryptodev(struct cperf_options *opts, uint8_t *enabled_cdevs)
+ 
+ 		rte_cryptodev_info_get(cdev_id, &cdev_info);
+ 
+-		if (opts->op_type == CPERF_ASYM_MODEX || opts->op_type == CPERF_ASYM_SM2) {
++		if (cperf_is_asym_test(opts)) {
+ 			if ((cdev_info.feature_flags &
+ 			     RTE_CRYPTODEV_FF_ASYMMETRIC_CRYPTO) == 0)
+ 				continue;
+@@ -291,7 +292,7 @@ cperf_initialize_cryptodev(struct cperf_options *opts, uint8_t *enabled_cdevs)
+ 			return -ENOTSUP;
+ 		}
+ 
+-		if (opts->op_type == CPERF_ASYM_MODEX || opts->op_type == CPERF_ASYM_SM2)
++		if (cperf_is_asym_test(opts))
+ 			ret = create_asym_op_pool_socket(socket_id,
+ 							 sessions_needed);
+ 		else
+@@ -302,7 +303,7 @@ cperf_initialize_cryptodev(struct cperf_options *opts, uint8_t *enabled_cdevs)
+ 
+ 		qp_conf.mp_session = session_pool_socket[socket_id].sess_mp;
+ 
+-		if (opts->op_type == CPERF_ASYM_MODEX || opts->op_type == CPERF_ASYM_SM2)
++		if (cperf_is_asym_test(opts))
+ 			qp_conf.mp_session = NULL;
+ 
+ 		ret = rte_cryptodev_configure(cdev_id, &conf);
+-- 
+2.25.1
+

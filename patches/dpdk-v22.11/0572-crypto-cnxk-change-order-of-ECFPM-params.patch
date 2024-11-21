@@ -1,0 +1,96 @@
+From 057653f4d2b449acfab5ff863c1b6f0fc8f9acbd Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Thu, 27 Jul 2023 17:35:26 +0530
+Subject: [PATCH 572/955] crypto/cnxk: change order of ECFPM params
+
+Change order of ECFPM params to match changes in v2.0 microcode.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I96bcbf379392c352c5ad6d6f8bbfeffc286606e0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108868
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_ae.h | 49 ++++++++++++++---------------------
+ 1 file changed, 20 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_ae.h b/drivers/crypto/cnxk/cnxk_ae.h
+index 8bd8573f24fa8..7523aebe67005 100644
+--- a/drivers/crypto/cnxk/cnxk_ae.h
++++ b/drivers/crypto/cnxk/cnxk_ae.h
+@@ -698,7 +698,7 @@ static __rte_always_inline int
+ cnxk_ae_ecfpm_prep(struct rte_crypto_ecpm_op_param *ecpm,
+ 		   struct roc_ae_buf_ptr *meta_buf, uint64_t *fpm_iova,
+ 		   struct roc_ae_ec_group *ec_grp, uint8_t curveid,
+-		   struct cpt_inst_s *inst, int cpt_ver)
++		   struct cpt_inst_s *inst)
+ {
+ 	uint16_t scalar_align, p_align;
+ 	uint16_t dlen, prime_len;
+@@ -717,34 +717,26 @@ cnxk_ae_ecfpm_prep(struct rte_crypto_ecpm_op_param *ecpm,
+ 	scalar_align = RTE_ALIGN_CEIL(ecpm->scalar.length, 8);
+ 
+ 	/*
+-	 * Set dlen = sum(prime, scalar length, table address and
+-	 * optionally ROUNDUP8(input point(x and y coordinates)).
++	 * Set dlen = sum(ROUNDUP8(input point(x and y coordinates), prime,
++	 * scalar length),
+ 	 * Please note point length is equivalent to prime of the curve
+ 	 */
+-	if (cpt_ver == ROC_CPT_REVISION_ID_96XX_B0 || cpt_ver == ROC_CPT_REVISION_ID_96XX_C0 ||
+-	    cpt_ver == ROC_CPT_REVISION_ID_98XX) {
+-		dlen = sizeof(fpm_table_iova) + 3 * p_align + scalar_align;
+-		memset(dptr, 0, dlen);
+-		*(uint64_t *)dptr = fpm_table_iova;
+-		dptr += sizeof(fpm_table_iova);
+-		memcpy(dptr, ecpm->scalar.data, ecpm->scalar.length);
+-		dptr += scalar_align;
+-		memcpy(dptr, ec_grp->prime.data, ec_grp->prime.length);
+-		dptr += p_align;
+-		memcpy(dptr, ec_grp->consta.data, ec_grp->consta.length);
+-		dptr += p_align;
+-		memcpy(dptr, ec_grp->constb.data, ec_grp->constb.length);
+-		dptr += p_align;
+-	} else {
+-		dlen = sizeof(fpm_table_iova) + p_align + scalar_align;
+-		memset(dptr, 0, dlen);
+-		memcpy(dptr, ecpm->scalar.data, ecpm->scalar.length);
+-		dptr += scalar_align;
+-		memcpy(dptr, ec_grp->prime.data, ec_grp->prime.length);
+-		dptr += p_align;
+-		*(uint64_t *)dptr = fpm_table_iova;
+-		dptr += sizeof(fpm_table_iova);
+-	}
++	dlen = sizeof(fpm_table_iova) + 3 * p_align + scalar_align;
++
++	memset(dptr, 0, dlen);
++
++	*(uint64_t *)dptr = fpm_table_iova;
++	dptr += sizeof(fpm_table_iova);
++
++	/* Copy scalar, prime */
++	memcpy(dptr, ecpm->scalar.data, ecpm->scalar.length);
++	dptr += scalar_align;
++	memcpy(dptr, ec_grp->prime.data, ec_grp->prime.length);
++	dptr += p_align;
++	memcpy(dptr, ec_grp->consta.data, ec_grp->consta.length);
++	dptr += p_align;
++	memcpy(dptr, ec_grp->constb.data, ec_grp->constb.length);
++	dptr += p_align;
+ 
+ 	/* Setup opcodes */
+ 	w4.s.opcode_major = ROC_AE_MAJOR_OP_ECC;
+@@ -975,8 +967,7 @@ cnxk_ae_enqueue(struct cnxk_cpt_qp *qp, struct rte_crypto_op *op,
+ 		ret = cnxk_ae_ecfpm_prep(&asym_op->ecpm, &meta_buf,
+ 					 sess->cnxk_fpm_iova,
+ 					 sess->ec_grp[sess->ec_ctx.curveid],
+-					 sess->ec_ctx.curveid, inst,
+-					 sess->lf->roc_cpt->cpt_revision);
++					 sess->ec_ctx.curveid, inst);
+ 		if (unlikely(ret))
+ 			goto req_fail;
+ 		break;
+-- 
+2.25.1
+

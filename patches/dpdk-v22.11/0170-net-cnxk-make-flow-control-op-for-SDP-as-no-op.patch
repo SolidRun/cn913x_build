@@ -1,0 +1,39 @@
+From 78e6a59b39668df38b64be15ae5c3fa5efa96a7c Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Wed, 7 Dec 2022 18:42:00 +0530
+Subject: [PATCH 170/955] net/cnxk: make flow control op for SDP as no-op
+
+no action is taken when application calls
+rte_eth_dev_flow_ctrl_get(), for sdp port
+which is inline with rte_eth_dev_flow_ctrl_set()
+for sdp port
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I4bb65b07621e57315347f80067043dcdb36506b1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92075
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94002
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Sunil Kumar Kori <skori@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index 8f7287161b2da..a6ab493626aec 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -212,6 +212,9 @@ cnxk_nix_flow_ctrl_get(struct rte_eth_dev *eth_dev,
+ 	struct roc_nix *nix = &dev->nix;
+ 	int mode;
+ 
++	if (roc_nix_is_sdp(nix))
++		return 0;
++
+ 	mode = roc_nix_fc_mode_get(nix);
+ 	if (mode < 0)
+ 		return mode;
+-- 
+2.25.1
+

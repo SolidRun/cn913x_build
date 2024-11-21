@@ -1,0 +1,299 @@
+From a3dc6450899552e1e175f231b8dd132d83d6986b Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Wed, 30 Nov 2022 10:47:27 +0530
+Subject: [PATCH 037/955] common/cnxk: add RTE Flow support for SPI to SA index
+
+In case of IPsec, the inbound SPI can be random. HW supports mapping
+SPI to an arbitrary SA index. SPI to SA index is done using a lookup
+in NPC cam entry with key as SPI, MATCH_ID, LFID. Adding Mbox API
+changes to configure the match table. And adding RTE FLow changes to
+program the match table.
+
+ci: skip_checkformat skip_checkpatch
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: I1cbbbae128cd032802d43dbd1b9db1bd22fa9162
+---
+ drivers/common/cnxk/roc_mbox.h      | 28 +++++++++-
+ drivers/common/cnxk/roc_npc.c       | 87 ++++++++++++++++++++++++-----
+ drivers/common/cnxk/roc_npc.h       | 19 +++++++
+ drivers/common/cnxk/roc_npc_parse.c |  4 ++
+ 4 files changed, 123 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 8b0384c7371f4..0989bddc3b78d 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -268,7 +268,11 @@ struct mbox_msghdr {
+ 	M(NIX_READ_INLINE_IPSEC_CFG, 0x8023, nix_read_inline_ipsec_cfg,        \
+ 	  msg_req, nix_inline_ipsec_cfg)				       \
+ 	M(NIX_LF_INLINE_RQ_CFG, 0x8024, nix_lf_inline_rq_cfg,                  \
+-	  nix_rq_cpt_field_mask_cfg_req, msg_rsp)
++	  nix_rq_cpt_field_mask_cfg_req, msg_rsp)                              \
++	M(NIX_SPI_TO_SA_ADD, 0x8026, nix_spi_to_sa_add, nix_spi_to_sa_add_req, \
++	  nix_spi_to_sa_add_rsp)                                               \
++	M(NIX_SPI_TO_SA_DELETE, 0x8027, nix_spi_to_sa_delete,                  \
++	  nix_spi_to_sa_delete_req, msg_rsp)
+ 
+ /* Messages initiated by AF (range 0xC00 - 0xDFF) */
+ #define MBOX_UP_CGX_MESSAGES                                                   \
+@@ -2048,4 +2052,26 @@ struct sdp_chan_info_msg {
+ 	struct sdp_node_info info;
+ };
+ 
++/* For SPI to SA index add */
++struct nix_spi_to_sa_add_req {
++	struct mbox_msghdr hdr;
++	uint32_t __io sa_index;
++	uint32_t __io spi_index;
++	uint16_t __io match_id;
++	bool __io valid;
++};
++
++struct nix_spi_to_sa_add_rsp {
++	struct mbox_msghdr hdr;
++	uint16_t __io hash_index;
++	uint8_t __io way;
++	uint8_t __io is_duplicate;
++};
++
++/* To free SPI to SA index */
++struct nix_spi_to_sa_delete_req {
++	struct mbox_msghdr hdr;
++	uint16_t __io hash_index;
++	uint8_t __io way;
++};
+ #endif /* __ROC_MBOX_H__ */
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index b38389b18a8fe..374c5c1aef326 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -341,17 +341,23 @@ roc_npc_validate_portid_action(struct roc_npc *roc_npc_src,
+ }
+ 
+ static int
+-npc_parse_msns_action(struct roc_npc *roc_npc, const struct roc_npc_action *act,
+-		      struct roc_npc_flow *flow, uint8_t *has_msns_action)
++npc_parse_spi_to_sa_action(struct roc_npc *roc_npc, const struct roc_npc_action *act,
++			   struct roc_npc_flow *flow, uint8_t *has_msns_action)
+ {
+ 	const struct roc_npc_sec_action *sec_action;
++	struct nix_spi_to_sa_add_req *req;
++	struct nix_spi_to_sa_add_rsp *rsp;
++	struct nix_inl_dev *inl_dev;
++	struct idev_cfg *idev;
+ 	union {
+ 		uint64_t reg;
+ 		union nix_rx_vtag_action_u act;
+ 	} vtag_act;
++	struct mbox *mbox;
++	int rc;
+ 
+-	if (roc_npc->roc_nix->custom_sa_action == 0 ||
+-	    roc_model_is_cn9k() == 1 || act->conf == NULL)
++	if (roc_npc->roc_nix->custom_sa_action == 0 || roc_model_is_cn9k() == 1 ||
++	    act->conf == NULL || flow->is_validate)
+ 		return 0;
+ 
+ 	*has_msns_action = true;
+@@ -362,6 +368,12 @@ npc_parse_msns_action(struct roc_npc *roc_npc, const struct roc_npc_action *act,
+ 	vtag_act.act.sa_hi = sec_action->sa_hi;
+ 	vtag_act.act.sa_lo = sec_action->sa_lo;
+ 
++	idev = idev_get_cfg();
++	if (!idev)
++		return -1;
++
++	inl_dev = idev->nix_inl_dev;
++
+ 	switch (sec_action->alg) {
+ 	case ROC_NPC_SEC_ACTION_ALG0:
+ 		break;
+@@ -373,6 +385,25 @@ npc_parse_msns_action(struct roc_npc *roc_npc, const struct roc_npc_action *act,
+ 		vtag_act.act.vtag1_valid = false;
+ 		vtag_act.act.vtag1_lid = ROC_NPC_SEC_ACTION_ALG2;
+ 		break;
++	case ROC_NPC_SEC_ACTION_ALG3:
++		vtag_act.act.vtag1_valid = false;
++		vtag_act.act.vtag1_lid = 0;
++		mbox = inl_dev->dev.mbox;
++		req = mbox_alloc_msg_nix_spi_to_sa_add(mbox);
++		if (req == NULL)
++			return -ENOSPC;
++		req->sa_index = sec_action->sa_index;
++		req->spi_index = plt_be_to_cpu_32(flow->msns_info.spi);
++		req->match_id = flow->match_id;
++		req->valid = true;
++		rc = mbox_process_msg(mbox, (void *)&rsp);
++		if (rc)
++			return rc;
++		flow->msns_info.hash_index = rsp->hash_index;
++		flow->msns_info.way = rsp->way;
++		flow->msns_info.duplicate = rsp->is_duplicate;
++		flow->msns_info.has_action = true;
++		break;
+ 	default:
+ 		return -1;
+ 	}
+@@ -389,6 +420,7 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ {
+ 	const struct roc_npc_action_port_id *act_portid;
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++	const struct roc_npc_action *sec_action = NULL;
+ 	const struct roc_npc_action_mark *act_mark;
+ 	const struct roc_npc_action_meter *act_mtr;
+ 	const struct roc_npc_action_queue *act_q;
+@@ -421,6 +453,7 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			}
+ 			mark = act_mark->id + 1;
+ 			req_act |= ROC_NPC_ACTION_TYPE_MARK;
++			flow->match_id = mark;
+ 			break;
+ 
+ 		case ROC_NPC_ACTION_TYPE_FLAG:
+@@ -499,12 +532,7 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 				rq = inl_rq->qid;
+ 				pf_func = nix_inl_dev_pffunc_get();
+ 			}
+-			rc = npc_parse_msns_action(roc_npc, actions, flow,
+-						   &has_msns_act);
+-			if (rc) {
+-				errcode = NPC_ERR_ACTION_NOTSUP;
+-				goto err_exit;
+-			}
++			sec_action = actions;
+ 			break;
+ 		case ROC_NPC_ACTION_TYPE_VLAN_STRIP:
+ 			req_act |= ROC_NPC_ACTION_TYPE_VLAN_STRIP;
+@@ -530,13 +558,19 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		}
+ 	}
+ 
+-	if (req_act & (ROC_NPC_ACTION_TYPE_VLAN_INSERT |
+-		       ROC_NPC_ACTION_TYPE_VLAN_ETHTYPE_INSERT |
++	if (sec_action) {
++		rc = npc_parse_spi_to_sa_action(roc_npc, sec_action, flow, &has_msns_act);
++		if (rc) {
++			errcode = NPC_ERR_ACTION_NOTSUP;
++			goto err_exit;
++		}
++	}
++
++	if (req_act & (ROC_NPC_ACTION_TYPE_VLAN_INSERT | ROC_NPC_ACTION_TYPE_VLAN_ETHTYPE_INSERT |
+ 		       ROC_NPC_ACTION_TYPE_VLAN_PCP_INSERT))
+ 		vlan_insert_action = true;
+ 
+-	if ((req_act & (ROC_NPC_ACTION_TYPE_VLAN_INSERT |
+-			ROC_NPC_ACTION_TYPE_VLAN_ETHTYPE_INSERT |
++	if ((req_act & (ROC_NPC_ACTION_TYPE_VLAN_INSERT | ROC_NPC_ACTION_TYPE_VLAN_ETHTYPE_INSERT |
+ 			ROC_NPC_ACTION_TYPE_VLAN_PCP_INSERT)) ==
+ 	    ROC_NPC_ACTION_TYPE_VLAN_PCP_INSERT) {
+ 		plt_err("PCP insert action can't be supported alone");
+@@ -1343,12 +1377,37 @@ npc_rss_group_free(struct npc *npc, struct roc_npc_flow *flow)
+ 	return 0;
+ }
+ 
++static int
++roc_npc_delete_msns_action(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
++{
++	struct roc_nix *roc_nix = roc_npc->roc_nix;
++	struct nix_spi_to_sa_delete_req *req;
++	struct mbox *mbox;
++	struct nix *nix;
++
++	if (!flow->msns_info.has_action || flow->msns_info.duplicate)
++		return 0;
++
++	nix = roc_nix_to_nix_priv(roc_nix);
++	mbox = (&nix->dev)->mbox;
++	req = mbox_alloc_msg_nix_spi_to_sa_delete(mbox);
++	if (req == NULL)
++		return -ENOSPC;
++	req->hash_index = flow->msns_info.hash_index;
++	req->way = flow->msns_info.way;
++	return mbox_process_msg(mbox, NULL);
++}
++
+ int
+ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	int rc;
+ 
++	rc = roc_npc_delete_msns_action(roc_npc, flow);
++	if (rc)
++		return rc;
++
+ 	rc = npc_rss_group_free(npc, flow);
+ 	if (rc != 0) {
+ 		plt_err("Failed to free rss action rc = %d", rc);
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 1b4e5521cb3ae..80d70dd4c40d0 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -191,6 +191,14 @@ struct roc_npc_action_port_id {
+ 	uint32_t id;		/**< port ID. */
+ };
+ 
++/**
++ * ESP Header
++ */
++struct roc_npc_item_esp_hdr {
++	uint32_t spi; /**< Security Parameters Index */
++	uint32_t seq; /**< packet sequence number */
++};
++
+ struct roc_npc_action_queue {
+ 	uint16_t index; /**< Queue index to use. */
+ };
+@@ -242,6 +250,14 @@ struct roc_npc_flow_dump_data {
+ 	uint16_t ltype;
+ };
+ 
++struct roc_npc_msns_action_info {
++	uint32_t spi;
++	uint32_t hash_index;
++	uint8_t way;
++	bool duplicate;
++	bool has_action;
++};
++
+ struct roc_npc_flow {
+ 	uint8_t nix_intf;
+ 	uint8_t enable;
+@@ -261,6 +277,9 @@ struct roc_npc_flow {
+ #define ROC_NPC_MAX_FLOW_PATTERNS 32
+ 	struct roc_npc_flow_dump_data dump_data[ROC_NPC_MAX_FLOW_PATTERNS];
+ 	uint16_t num_patterns;
++	struct roc_npc_msns_action_info msns_info;
++	bool is_validate;
++	uint16_t match_id;
+ 
+ 	TAILQ_ENTRY(roc_npc_flow) next;
+ };
+diff --git a/drivers/common/cnxk/roc_npc_parse.c b/drivers/common/cnxk/roc_npc_parse.c
+index 947e1ec53dc4e..746a79a836ee6 100644
+--- a/drivers/common/cnxk/roc_npc_parse.c
++++ b/drivers/common/cnxk/roc_npc_parse.c
+@@ -731,6 +731,7 @@ int
+ npc_parse_le(struct npc_parse_state *pst)
+ {
+ 	const struct roc_npc_item_info *pattern = pst->pattern;
++	const struct roc_npc_item_esp_hdr *esp = NULL;
+ 	char hw_mask[NPC_MAX_EXTRACT_HW_LEN];
+ 	struct npc_parse_item_info info;
+ 	int lid, lt, lflags;
+@@ -787,6 +788,9 @@ npc_parse_le(struct npc_parse_state *pst)
+ 	case ROC_NPC_ITEM_TYPE_ESP:
+ 		lt = NPC_LT_LE_ESP;
+ 		info.len = pst->pattern->size;
++		esp = (const struct roc_npc_item_esp_hdr *)pattern->spec;
++		if (esp)
++			pst->flow->msns_info.spi = esp->spi;
+ 		break;
+ 	default:
+ 		return 0;
+-- 
+2.25.1
+

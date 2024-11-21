@@ -1,0 +1,36 @@
+From 079b27b72946b22e02c866c2a79b8f8c06aa5ce2 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 26 Jun 2023 11:30:50 +0530
+Subject: [PATCH 521/955] net/cnxk: support rate limit in PFC TM tree
+
+SQ rate limit was different in PFC tree compared to regular rate
+limit tree.
+
+Change-Id: Ib3f67c779ddb50bd975383e687c67efbc56acae6
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106306
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cnxk_tm.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_tm.c b/drivers/net/cnxk/cnxk_tm.c
+index 9d8cd3f0a9dbc..c799193cb89b1 100644
+--- a/drivers/net/cnxk/cnxk_tm.c
++++ b/drivers/net/cnxk/cnxk_tm.c
+@@ -765,6 +765,9 @@ cnxk_nix_tm_set_queue_rate_limit(struct rte_eth_dev *eth_dev,
+ 	if (queue_idx >= eth_dev->data->nb_tx_queues)
+ 		goto exit;
+ 
++	if (roc_nix_tm_tree_type_get(nix) == ROC_NIX_TM_PFC)
++		return roc_nix_tm_pfc_rlimit_sq(nix, queue_idx, tx_rate);
++
+ 	if ((roc_nix_tm_tree_type_get(nix) != ROC_NIX_TM_RLIMIT) &&
+ 	    eth_dev->data->nb_tx_queues > 1) {
+ 		/*
+-- 
+2.25.1
+

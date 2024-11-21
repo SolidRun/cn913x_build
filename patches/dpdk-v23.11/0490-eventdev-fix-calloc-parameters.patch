@@ -1,0 +1,50 @@
+From af16e6ccabc581cd6b4d7c8687ae69253cb176ee Mon Sep 17 00:00:00 2001
+From: Ferruh Yigit <ferruh.yigit@amd.com>
+Date: Wed, 24 Jan 2024 18:54:01 +0000
+Subject: [PATCH 490/513] eventdev: fix calloc parameters
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+gcc [1] generates warning [2] about calloc usage, because calloc
+parameter order is wrong, fixing it by replacing parameters.
+
+[1]
+gcc (GCC) 14.0.1 20240124 (experimental)
+
+[2]
+Compiling C object lib/librte_eventdev.a.p/eventdev_rte_eventdev.c.o
+../lib/eventdev/rte_eventdev.c: In function ‘handle_dev_dump’:
+../lib/eventdev/rte_eventdev.c:2005:29:
+  warning: ‘calloc’ sizes specified with ‘sizeof’ in the earlier
+  argument and not in the later argument [-Wcalloc-transposed-args]
+ 2005 |     buf = calloc(sizeof(char), RTE_TEL_MAX_SINGLE_STRING_LEN);
+      |                         ^~~~
+
+Fixes: a3b7b476d723 ("eventdev: support telemetry dump eventdev")
+Cc: stable@dpdk.org
+
+Signed-off-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Acked-by: Morten Brørup <mb@smartsharesystems.com>
+Reviewed-by: Chengwen Feng <fengchengwen@huawei.com>
+Change-Id: I87c988d33c9118b3e6b1785d7496e1cb7455a283
+---
+ lib/eventdev/rte_eventdev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/eventdev/rte_eventdev.c b/lib/eventdev/rte_eventdev.c
+index 0ca32d6721753..88f415ea49af5 100644
+--- a/lib/eventdev/rte_eventdev.c
++++ b/lib/eventdev/rte_eventdev.c
+@@ -2002,7 +2002,7 @@ handle_dev_dump(const char *cmd __rte_unused,
+ 
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
+ 
+-	buf = calloc(sizeof(char), RTE_TEL_MAX_SINGLE_STRING_LEN);
++	buf = calloc(RTE_TEL_MAX_SINGLE_STRING_LEN, sizeof(char));
+ 	if (buf == NULL)
+ 		return -ENOMEM;
+ 
+-- 
+2.25.1
+

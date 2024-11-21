@@ -1,0 +1,1205 @@
+From a369663dcacf87c6b367b85dd8f1a3530d7123b6 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 23 Oct 2023 09:14:44 +0000
+Subject: [PATCH 316/513] marvell-ci: add CPT raw tests
+
+Add tests for CPT RAW API. Adding performance test cases.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ia63bcaddcaeca657f9e6746e1c3bbab80ddc5e9f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118317
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+---
+ .../test/cnxk-tests/cpt_raw_test/hw/cpt.h     | 133 ++++
+ .../test/cnxk-tests/cpt_raw_test/main.c       | 701 ++++++++++++++++++
+ .../test/cnxk-tests/cpt_raw_test/meson.build  |  33 +
+ .../test/cnxk-tests/cpt_raw_test/test_cases.h | 154 ++++
+ .../test/cnxk-tests/cpt_raw_test/ucode/se.h   |  61 ++
+ marvell-ci/test/cnxk-tests/meson.build        |   1 +
+ marvell-ci/test/env/cn106-perf.env            |   1 +
+ marvell-ci/test/env/cn10k.env                 |   1 +
+ marvell-ci/test/env/cn96-perf.env             |   1 +
+ marvell-ci/test/env/cn9k.env                  |   1 +
+ 10 files changed, 1087 insertions(+)
+ create mode 100644 marvell-ci/test/cnxk-tests/cpt_raw_test/hw/cpt.h
+ create mode 100644 marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
+ create mode 100644 marvell-ci/test/cnxk-tests/cpt_raw_test/meson.build
+ create mode 100644 marvell-ci/test/cnxk-tests/cpt_raw_test/test_cases.h
+ create mode 100644 marvell-ci/test/cnxk-tests/cpt_raw_test/ucode/se.h
+
+diff --git a/marvell-ci/test/cnxk-tests/cpt_raw_test/hw/cpt.h b/marvell-ci/test/cnxk-tests/cpt_raw_test/hw/cpt.h
+new file mode 100644
+index 0000000000000..38e10980e8f25
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/cpt_raw_test/hw/cpt.h
+@@ -0,0 +1,133 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#ifndef _HW_CPT_H_
++#define _HW_CPT_H_
++
++#include <stdint.h>
++
++#define ROC_ALIGN	128
++
++/* Completion codes */
++#define CPT_COMP_NOT_DONE (0x0ull)
++#define CPT_COMP_GOOD	  (0x1ull)
++#define CPT_COMP_FAULT	  (0x2ull)
++#define CPT_COMP_SWERR	  (0x3ull)
++#define CPT_COMP_HWERR	  (0x4ull)
++#define CPT_COMP_INSTERR  (0x5ull)
++#define CPT_COMP_WARN	  (0x6ull) /* [CN10K, .) */
++
++/* Default engine groups */
++#define ROC_CPT_DFLT_ENG_GRP_SE	   0UL
++#define ROC_CPT_DFLT_ENG_GRP_SE_IE 1UL
++#define ROC_CPT_DFLT_ENG_GRP_AE	   2UL
++
++union cpt_inst_w4 {
++	uint64_t u64;
++	struct {
++		uint64_t dlen : 16;
++		uint64_t param2 : 16;
++		uint64_t param1 : 16;
++		uint64_t opcode_major : 8;
++		uint64_t opcode_minor : 8;
++	} s;
++};
++
++union cpt_inst_w5 {
++	uint64_t u64;
++	struct {
++		uint64_t dptr : 60;
++		uint64_t gather_sz : 4;
++	} s;
++};
++
++union cpt_inst_w6 {
++	uint64_t u64;
++	struct {
++		uint64_t rptr : 60;
++		uint64_t scatter_sz : 4;
++	} s;
++};
++
++union cpt_inst_w7 {
++	uint64_t u64;
++	struct {
++		uint64_t cptr : 60;
++		uint64_t ctx_val : 1;
++		uint64_t egrp : 3;
++	} s;
++};
++
++struct cpt_inst_s {
++	union cpt_inst_w0 {
++		struct {
++			uint64_t nixtxl : 3;
++			uint64_t doneint : 1;
++			uint64_t nixtx_addr : 60;
++		} s;
++		uint64_t u64;
++	} w0;
++
++	uint64_t res_addr;
++
++	union cpt_inst_w2 {
++		struct {
++			uint64_t tag : 32;
++			uint64_t tt : 2;
++			uint64_t grp : 10;
++			uint64_t reserved_172_175 : 4;
++			uint64_t rvu_pf_func : 16;
++		} s;
++		uint64_t u64;
++	} w2;
++
++	union cpt_inst_w3 {
++		struct {
++			uint64_t qord : 1;
++			uint64_t reserved_194_193 : 2;
++			uint64_t wqe_ptr : 61;
++		} s;
++		uint64_t u64;
++	} w3;
++
++	union cpt_inst_w4 w4;
++
++	union {
++		union cpt_inst_w5 w5;
++		uint64_t dptr;
++	};
++
++	union {
++		union cpt_inst_w6 w6;
++		uint64_t rptr;
++	};
++
++	union cpt_inst_w7 w7;
++};
++
++union cpt_res_s {
++	struct cpt_cn10k_res_s {
++		uint64_t compcode : 7;
++		uint64_t doneint : 1;
++		uint64_t uc_compcode : 8;
++		uint64_t rlen : 16;
++		uint64_t spi : 32;
++
++		uint64_t esn;
++	} cn10k;
++
++	struct cpt_cn9k_res_s {
++		uint64_t compcode : 8;
++		uint64_t uc_compcode : 8;
++		uint64_t doneint : 1;
++		uint64_t reserved_17_63 : 47;
++
++		uint64_t reserved_64_127;
++	} cn9k;
++
++	uint64_t u64[2];
++};
++
++
++#endif /* _HW_CPT_H_ */
+diff --git a/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c b/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
+new file mode 100644
+index 0000000000000..72ec672df9b33
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
+@@ -0,0 +1,701 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include <stdlib.h>
++
++#include <rte_common.h>
++#include <rte_cryptodev.h>
++#include <rte_eal.h>
++#include <rte_malloc.h>
++
++#include <rte_pmd_cnxk_crypto.h>
++
++#include "hw/cpt.h"
++#include "test_cases.h"
++#include "ucode/se.h"
++
++#define TEST_SUCCESS EXIT_SUCCESS
++#define TEST_FAILED  -1
++#define TEST_SKIPPED  77
++
++#define NB_DESC		20000
++#define NB_CPTR		1
++#define MAX_CPTR_LEN	8192
++#define MAX_DLEN	16384
++#define CPT_RES_ALIGN	sizeof(union cpt_res_s)
++
++struct lcore_conf {
++	uint8_t dev_id;
++	uint8_t qp_id;
++	struct test_ctx *ctx;
++};
++
++enum cdev_type {
++	CDEV_TYPE_CRYPTO_CN9K = 1,
++	CDEV_TYPE_CRYPTO_CN10K,
++};
++
++#define CPT_CTX_CACHE_SIZE 256
++
++struct ctx_cache_mirror {
++	void *cptrs[CPT_CTX_CACHE_SIZE];
++	uint16_t head;
++	uint16_t tail;
++};
++
++struct test_ctx {
++	struct lcore_conf lconf[RTE_MAX_LCORE];
++	struct rte_mempool *cptr_mp;
++	struct rte_mempool *dptr_mp;
++	struct rte_mempool *rptr_mp;
++	uint8_t nb_cryptodevs;
++	uint8_t enabled_cdevs[RTE_CRYPTO_MAX_DEVS];
++	enum cdev_type cdev_type;
++	struct ctx_cache_mirror ctx_cache;
++};
++
++static struct test_ctx ctx;
++
++static const char *
++uc_opcode_major_to_str(uint16_t major_opcode)
++{
++	switch (major_opcode) {
++	case ROC_SE_MAJOR_OP_MISC:
++		return "MISC";
++	case ROC_SE_MAJOR_OP_FC:
++		return "Flexi Crypto";
++	default:
++		return "Invalid";
++	}
++}
++
++static int
++cryptodev_init(struct test_ctx *ctx, uint8_t nb_lcores)
++{
++	struct rte_cryptodev_qp_conf qp_conf;
++	struct rte_cryptodev_info dev_info;
++	struct rte_cryptodev_config config;
++	unsigned int j, nb_qp, qps_reqd;
++	uint8_t socket_id;
++	uint32_t dev_cnt;
++	int ret, core_id;
++	uint64_t i;
++
++	dev_cnt = rte_cryptodev_devices_get("crypto_cn9k", ctx->enabled_cdevs, RTE_CRYPTO_MAX_DEVS);
++	if (dev_cnt) {
++		ctx->cdev_type = CDEV_TYPE_CRYPTO_CN9K;
++		goto cdev_init;
++	}
++
++	dev_cnt = rte_cryptodev_devices_get("crypto_cn10k", ctx->enabled_cdevs,
++					    RTE_CRYPTO_MAX_DEVS);
++	if (dev_cnt) {
++		ctx->cdev_type = CDEV_TYPE_CRYPTO_CN10K;
++		goto cdev_init;
++	}
++
++	if (dev_cnt == 0)
++		return -1;
++
++cdev_init:
++	socket_id = rte_socket_id();
++	qps_reqd = nb_lcores;
++	core_id = 0;
++	i = 0;
++
++	do {
++		rte_cryptodev_info_get(i, &dev_info);
++		qps_reqd = RTE_MIN(dev_info.max_nb_queue_pairs, qps_reqd);
++
++		for (j = 0; j < qps_reqd; j++) {
++			ctx->lconf[core_id].dev_id = i;
++			ctx->lconf[core_id].qp_id = j;
++			ctx->lconf[core_id].ctx = ctx;
++			core_id++;
++			if (core_id == RTE_MAX_LCORE)
++				break;
++		}
++
++		nb_qp = j;
++
++		memset(&config, 0, sizeof(config));
++		config.nb_queue_pairs = nb_qp;
++		config.socket_id = socket_id;
++
++		ret = rte_cryptodev_configure(i, &config);
++		if (ret < 0) {
++			RTE_LOG(ERR, USER1, "Could not configure cryptodev - %" PRIu64 "\n", i);
++			return -1;
++		}
++
++		memset(&qp_conf, 0, sizeof(qp_conf));
++		qp_conf.nb_descriptors = NB_DESC;
++
++		for (j = 0; j < nb_qp; j++) {
++			ret = rte_cryptodev_queue_pair_setup(i, j, &qp_conf,
++							     socket_id);
++			if (ret < 0) {
++				RTE_LOG(ERR, USER1,
++					"Could not configure queue pair: %" PRIu64 " - %d\n", i, j);
++				return -1;
++			}
++		}
++
++		ret = rte_cryptodev_start(i);
++		if (ret < 0) {
++			RTE_LOG(ERR, USER1, "Could not start cryptodev\n");
++			return -1;
++		}
++
++		i++;
++		qps_reqd -= j;
++
++	} while (i < dev_cnt && core_id < RTE_MAX_LCORE);
++
++	ctx->nb_cryptodevs = i;
++
++	return 0;
++}
++
++static int
++cryptodev_fini(struct test_ctx *ctx)
++{
++	int i, ret = 0;
++
++	for (i = 0; i < ctx->nb_cryptodevs && i < RTE_CRYPTO_MAX_DEVS; i++) {
++		rte_cryptodev_stop(ctx->enabled_cdevs[i]);
++		ret = rte_cryptodev_close(ctx->enabled_cdevs[i]);
++		if (ret)
++			RTE_LOG(ERR, USER1, "Could not close device [err: %d]\n", ret);
++	}
++
++	return ret;
++}
++
++static int
++mempool_init(struct test_ctx *ctx)
++{
++	struct rte_mempool *mp;
++	unsigned int len;
++	int nb_elt;
++
++	/* Allocate CPTR mempool. */
++
++	len = MAX_CPTR_LEN;
++
++	/* Increment by 1 to make sure we can allocate all buffers. */
++	nb_elt = RTE_MAX(NB_CPTR, CPT_CTX_CACHE_SIZE) + 1;
++
++	mp = rte_mempool_create("test_cptr_mp", nb_elt, len, 0, 0, NULL,
++				NULL, NULL, NULL, SOCKET_ID_ANY, 0);
++	if (mp == NULL) {
++		RTE_LOG(ERR, USER1, "Could not create CPTR mempool\n");
++		return -1;
++	}
++
++	ctx->cptr_mp = mp;
++
++	/* Allocate data pointer mempool. */
++
++	/* CPT_RES_S would be placed at the beginning of data pointer. */
++	len = sizeof(union cpt_res_s) + MAX_DLEN;
++
++	nb_elt = NB_DESC;
++
++	mp = rte_mempool_create("test_dptr_mp", nb_elt, len, RTE_MEMPOOL_CACHE_MAX_SIZE, 0, NULL,
++				NULL, NULL, NULL, SOCKET_ID_ANY, 0);
++	if (mp == NULL) {
++		RTE_LOG(ERR, USER1, "Could not create DPTR mempool\n");
++		goto cptr_mp_free;
++	}
++
++	ctx->dptr_mp = mp;
++
++	mp = rte_mempool_create("test_rptr_mp", nb_elt, len, RTE_MEMPOOL_CACHE_MAX_SIZE, 0, NULL,
++				NULL, NULL, NULL, SOCKET_ID_ANY, 0);
++	if (mp == NULL) {
++		RTE_LOG(ERR, USER1, "Could not create RPTR mempool\n");
++		goto dptr_mp_free;
++	}
++
++	ctx->rptr_mp = mp;
++
++	return 0;
++
++dptr_mp_free:
++	rte_mempool_free(ctx->dptr_mp);
++cptr_mp_free:
++	rte_mempool_free(ctx->cptr_mp);
++	return -1;
++}
++
++static int
++mempool_fini(struct test_ctx *ctx)
++{
++	rte_mempool_free(ctx->rptr_mp);
++	rte_mempool_free(ctx->dptr_mp);
++	rte_mempool_free(ctx->cptr_mp);
++
++	return 0;
++}
++
++static void
++cptr_fc_init(struct se_ctx_s *ctx)
++{
++	struct roc_se_context *fctx = &ctx->fctx;
++
++	fctx->enc.iv_source = 0;
++	fctx->enc.aes_key = 1;
++	fctx->enc.rsvd_59 = 0;
++	fctx->enc.enc_cipher = 2;
++	fctx->enc.auth_input_type = 0;
++	fctx->enc.auth_key_src = 0;
++	fctx->enc.rsvd_50_51 = 0;
++	fctx->enc.hash_type = 0;
++	fctx->enc.mac_len = 0;
++	fctx->enc.rsvd_16_39 = 0;
++	fctx->enc.hmac_key_sz = 0;
++}
++
++static void
++cptr_ctx_init(struct test_case_params *tc_params)
++{
++	uint8_t opcode_major = tc_params->opcode_major;
++	struct se_ctx_s *ctx = tc_params->cptr;
++	uint64_t ctx_len, *uc_ctx;
++	uint8_t i;
++
++	switch (opcode_major) {
++	case ROC_SE_MAJOR_OP_MISC:
++		ctx_len = 0;
++		break;
++	case ROC_SE_MAJOR_OP_FC:
++		ctx_len = sizeof(struct roc_se_context);
++		cptr_fc_init(ctx);
++		break;
++	default:
++		rte_panic("Invalid opcode for CTX\n");
++	}
++
++	if (!tc_params->ctx_val)
++		return;
++
++	/* Populate CTX region & swap CPTR data. */
++
++	ctx_len = RTE_ALIGN_CEIL(ctx_len, 8);
++
++	/* Skip w0 for swap */
++	uc_ctx = RTE_PTR_ADD(ctx, sizeof(ctx->w0));
++	for (i = 0; i < (ctx_len / 8); i++)
++		uc_ctx[i] = rte_cpu_to_be_64(((uint64_t *)uc_ctx)[i]);
++
++	/* Include w0 */
++	ctx_len += sizeof(ctx->w0);
++	ctx_len = RTE_ALIGN_CEIL(ctx_len, 8);
++
++	ctx->w0.s.aop_valid = 1;
++	ctx->w0.s.ctx_hdr_size = 0;
++
++	ctx->w0.s.ctx_size = RTE_ALIGN_FLOOR(ctx_len, 128);
++	if (ctx->w0.s.ctx_size == 0)
++		ctx->w0.s.ctx_size = 1;
++
++	ctx->w0.s.ctx_push_size = ctx_len / 8;
++	if (ctx->w0.s.ctx_push_size > 32)
++		ctx->w0.s.ctx_push_size = 32;
++}
++
++static void
++fc_inst_populate(struct cpt_inst_s *inst, struct test_case_params *tc_params)
++{
++	uint64_t *dptr = tc_params->dptr;
++	uint32_t encr_offset;
++	uint64_t offset_ctrl;
++
++	if (!tc_params->dlen)
++		rte_panic("DLEN = 0 not supported with FC\n");
++
++	/* Encr range is after IV. */
++	encr_offset = 16;
++
++	inst->w4.s.dlen = tc_params->dlen + encr_offset;
++	inst->w4.s.param1 = tc_params->dlen;
++	inst->w4.s.param2 = 0;
++
++	offset_ctrl = rte_cpu_to_be_64((uint64_t)encr_offset << 16);
++
++	dptr[0] = offset_ctrl;
++
++	inst->dptr = (uint64_t)dptr;
++}
++
++static void
++pt_inst_populate(struct cpt_inst_s *inst, struct test_case_params *tc_params)
++{
++	if (tc_params->dlen) {
++		inst->w4.s.param1 = tc_params->dlen;
++		inst->w4.s.dlen = tc_params->dlen;
++		inst->w4.s.param2 = 0;
++		inst->dptr = (uint64_t)tc_params->dptr;
++		inst->rptr = (uint64_t)tc_params->rptr;
++	} else {
++		inst->w4.s.param1 = 1;
++		inst->w4.s.param2 = 1;
++		inst->w4.s.dlen = 0;
++	}
++}
++
++static void
++inst_populate(struct cpt_inst_s *inst, struct test_case_params *tc_params)
++{
++	if (tc_params->ctx_val == 1) {
++		inst->w7.s.ctx_val = 1;
++		inst->w7.s.cptr = (uint64_t)tc_params->cptr;
++	} else {
++		inst->w7.s.cptr = (uint64_t)RTE_PTR_ADD(tc_params->cptr, 8);
++	}
++
++	/* Set in-place bit in major opcode. */
++	inst->w4.s.opcode_major = 1 << 6 | tc_params->opcode_major;
++	inst->w4.s.opcode_minor = tc_params->opcode_minor;
++
++	switch (tc_params->opcode_major) {
++	case ROC_SE_MAJOR_OP_MISC:
++		inst->w7.s.egrp = ROC_CPT_DFLT_ENG_GRP_SE;
++		pt_inst_populate(inst, tc_params);
++		break;
++	case ROC_SE_MAJOR_OP_FC:
++		inst->w7.s.egrp = ROC_CPT_DFLT_ENG_GRP_SE_IE;
++		fc_inst_populate(inst, tc_params);
++		break;
++	default:
++		rte_panic("Invalid opcode\n");
++	};
++}
++
++static int
++cptr_get(struct test_ctx *ctx, void *cptrs[], int nb_cptr)
++{
++	uint16_t ctx_in_use, head, tail;
++	int ret, avail_count, i;
++
++	head = ctx->ctx_cache.head;
++	tail = ctx->ctx_cache.tail;
++
++	ctx_in_use = (CPT_CTX_CACHE_SIZE + head - ctx->ctx_cache.tail) &
++		     (CPT_CTX_CACHE_SIZE - 1);
++
++	/* Decrement avail_count by 1 since allocation fails when avail_count is 1*/
++	avail_count = rte_mempool_avail_count(ctx->cptr_mp) - 1;
++
++	if (avail_count + ctx_in_use < nb_cptr) {
++		printf("Invalid number of CPTRs requested.\n");
++		return -ENOENT;
++	}
++
++	if (avail_count >= nb_cptr) {
++		ret = rte_mempool_get_bulk(ctx->cptr_mp, cptrs, nb_cptr);
++		if (ret) {
++			printf("Could not allocate context buffers from the pool\n");
++			return ret;
++		}
++	} else {
++		if (avail_count > 0) {
++			ret = rte_mempool_get_bulk(ctx->cptr_mp, cptrs, avail_count);
++			if (ret) {
++				printf("Could not allocate context buffers from available pool\n");
++				return ret;
++			}
++		}
++
++		for (i = 0; i < nb_cptr - avail_count; i++) {
++			rte_mempool_put(ctx->cptr_mp, ctx->ctx_cache.cptrs[tail]);
++			tail = (tail + 1) & (CPT_CTX_CACHE_SIZE - 1);
++		}
++
++		ret = rte_mempool_get_bulk(ctx->cptr_mp,
++					   RTE_PTR_ADD(cptrs, sizeof(void *) * avail_count),
++					   nb_cptr - avail_count);
++		if (ret) {
++			printf("Could not allocate context buffers after freeing cache buffers\n");
++			rte_mempool_put_bulk(ctx->cptr_mp, cptrs, avail_count);
++			return ret;
++		}
++	}
++
++	ctx->ctx_cache.head = head;
++	ctx->ctx_cache.tail = tail;
++
++	return 0;
++}
++
++static void
++cptr_put(struct test_ctx *ctx, void **cptrs, int nb_cptr)
++{
++	uint16_t free_slot, ctx_in_use, head, tail, i, nb_release;
++
++	head = ctx->ctx_cache.head;
++	tail = ctx->ctx_cache.tail;
++
++	ctx_in_use = (CPT_CTX_CACHE_SIZE + head - tail) & (CPT_CTX_CACHE_SIZE - 1);
++	free_slot = CPT_CTX_CACHE_SIZE - ctx_in_use;
++
++	if (free_slot > nb_cptr) {
++		for (i = 0; i < nb_cptr; i++) {
++			ctx->ctx_cache.cptrs[head] = cptrs[i];
++			head = (head + 1) & (CPT_CTX_CACHE_SIZE - 1);
++		}
++	} else {
++		if ((ctx_in_use + nb_cptr) > CPT_CTX_CACHE_SIZE)
++			nb_release = ctx_in_use + nb_cptr - CPT_CTX_CACHE_SIZE;
++		else
++			nb_release = 0;
++
++		/* Release the ones in CTX cache to mempool. */
++		for (i = 0; i < RTE_MIN(nb_release, ctx_in_use); i++) {
++			rte_mempool_put(ctx->cptr_mp, ctx->ctx_cache.cptrs[tail]);
++			tail = (tail + 1) & (CPT_CTX_CACHE_SIZE - 1);
++		}
++
++		ctx_in_use -= i;
++		nb_release -= i;
++
++		/* Release the exceeding ones to mempool directly. */
++		if (nb_release)
++			rte_mempool_put_bulk(ctx->cptr_mp, cptrs, nb_release);
++
++		/* Keep the remaining ones in the CTX cache. */
++		for (i = 0; i < RTE_MIN(nb_release, ctx_in_use); i++) {
++			ctx->ctx_cache.cptrs[head] = cptrs[nb_release + i];
++			head = (head + 1) & (CPT_CTX_CACHE_SIZE - 1);
++		}
++	}
++
++	ctx->ctx_cache.head = head;
++	ctx->ctx_cache.tail = tail;
++}
++
++static void
++cptr_flush(struct test_ctx *ctx)
++{
++	uint16_t ctx_in_use, head, tail, i;
++
++	head = ctx->ctx_cache.head;
++	tail = ctx->ctx_cache.tail;
++
++	ctx_in_use = (CPT_CTX_CACHE_SIZE + head - tail) & (CPT_CTX_CACHE_SIZE - 1);
++
++	/* Release the ones in CTX cache to mempool. */
++	for (i = 0; i < ctx_in_use; i++) {
++		rte_mempool_put(ctx->cptr_mp, ctx->ctx_cache.cptrs[tail]);
++		tail = (tail + 1) & (CPT_CTX_CACHE_SIZE - 1);
++	}
++
++	ctx->ctx_cache.head = head;
++	ctx->ctx_cache.tail = tail;
++}
++
++static int
++test_cpt_raw_api(struct test_ctx *ctx, struct test_case_params *tc_params, int nb_dptrs)
++{
++	void *data_ptrs[NB_DESC], *rptrs[NB_DESC], *cptrs[NB_CPTR];
++	uint64_t timeout, tsc_start, tsc_end, tsc_cycles;
++	double test_us, throughput_gbps, ops_per_second;
++	struct cpt_inst_s *inst_mem, *inst;
++	int ret, i, status = TEST_SUCCESS;
++	union cpt_res_s res, *hw_res;
++	void *qptr, *dptr;
++
++	const union cpt_res_s res_init = {
++		.cn10k.compcode = CPT_COMP_NOT_DONE,
++	};
++
++	if (tc_params->dlen > MAX_DLEN) {
++		printf("Invalid dlen requested. Max: %d, requested:%d\n", MAX_DLEN,
++		       tc_params->dlen);
++		return TEST_FAILED;
++	}
++
++	if (tc_params->ctx_val && ctx->cdev_type != CDEV_TYPE_CRYPTO_CN10K)
++		return TEST_SKIPPED;
++
++
++	qptr = rte_pmd_cnxk_crypto_qptr_get(0, 0);
++	if (qptr == NULL) {
++		printf("Could not get QPTR\n");
++		return TEST_FAILED;
++	}
++
++	inst_mem = rte_malloc(NULL, NB_DESC * sizeof(struct cpt_inst_s), 0);
++	if (inst_mem == NULL) {
++		printf("Could not allocate instruction memory\n");
++		return TEST_FAILED;
++	}
++
++	ret = rte_mempool_get_bulk(ctx->dptr_mp, data_ptrs, nb_dptrs);
++	if (ret) {
++		printf("Could not allocate data buffers\n");
++		status = TEST_FAILED;
++		goto inst_mem_free;
++	}
++
++	ret = rte_mempool_get_bulk(ctx->rptr_mp, rptrs, nb_dptrs);
++	if (ret) {
++		printf("Could not allocate result buffers\n");
++		status = TEST_FAILED;
++		goto dptrs_free;
++	}
++
++	ret = cptr_get(ctx, cptrs, NB_CPTR);
++	if (ret) {
++		printf("Could not allocate context buffers\n");
++		status = TEST_FAILED;
++		goto rptrs_free;
++	}
++
++	for (i = 0; i < nb_dptrs; i++) {
++		inst = RTE_PTR_ADD(inst_mem, i * sizeof(struct cpt_inst_s));
++		hw_res = RTE_PTR_ALIGN_CEIL(data_ptrs[i], CPT_RES_ALIGN);
++
++		memset(inst, 0, sizeof(struct cpt_inst_s));
++
++		inst->w3.s.qord = 1;
++
++		dptr = RTE_PTR_ADD(hw_res, sizeof(union cpt_res_s));
++		tc_params->dptr = dptr;
++		tc_params->rptr = rptrs[i];
++		tc_params->cptr = RTE_PTR_ALIGN_CEIL(cptrs[0], ROC_ALIGN);
++
++		cptr_ctx_init(tc_params);
++
++		inst_populate(inst, tc_params);
++
++		inst->res_addr = (uint64_t)hw_res;
++		__atomic_store_n(&hw_res->u64[0], res_init.u64[0], __ATOMIC_RELAXED);
++	}
++
++	inst = inst_mem;
++
++	timeout = rte_rdtsc() + rte_get_tsc_hz() * 60;
++
++	tsc_start = rte_rdtsc_precise();
++	rte_pmd_cnxk_crypto_submit(qptr, inst, nb_dptrs);
++
++	do {
++		hw_res = data_ptrs[nb_dptrs - 1];
++		res.u64[0] = __atomic_load_n(&hw_res->u64[0], __ATOMIC_RELAXED);
++	} while ((res.cn10k.compcode == CPT_COMP_NOT_DONE) && (rte_rdtsc() < timeout));
++
++	tsc_end = rte_rdtsc_precise();
++
++	tsc_cycles = tsc_end - tsc_start;
++	test_us = (double)tsc_cycles * 1000 * 1000 / rte_get_tsc_hz();
++
++	/* Calculate average operations processed per second */
++	ops_per_second = ((double)nb_dptrs / tsc_cycles) * rte_get_tsc_hz();
++
++	/* Calculate average throughput (Gbps) in bits per second */
++	throughput_gbps = ((ops_per_second * tc_params->dlen * 8) / 1000000000);
++
++	printf("%18s%#18x%18u%18u%18u%18"PRIu64"%18.2f%18.2f%18.2f\n",
++			uc_opcode_major_to_str(tc_params->opcode_major),
++			tc_params->opcode_minor,
++			tc_params->ctx_val,
++			tc_params->dlen,
++			nb_dptrs,
++			tsc_cycles,
++			test_us,
++			ops_per_second / (1000 * 1000),
++			throughput_gbps);
++
++	if (res.cn10k.compcode != CPT_COMP_GOOD && res.cn10k.compcode != CPT_COMP_WARN) {
++		printf("Completion code: 0x%x\n", res.cn10k.compcode);
++		status = TEST_FAILED;
++	}
++
++	if (res.cn10k.uc_compcode != 0) {
++		printf("Microcode completion code: 0x%x\n", res.cn10k.uc_compcode);
++		status = TEST_FAILED;
++	}
++
++	cptr_put(ctx, cptrs, NB_CPTR);
++
++rptrs_free:
++	rte_mempool_put_bulk(ctx->rptr_mp, rptrs, nb_dptrs);
++
++dptrs_free:
++	rte_mempool_put_bulk(ctx->dptr_mp, data_ptrs, nb_dptrs);
++
++inst_mem_free:
++	rte_free(inst_mem);
++
++	return status;
++}
++
++int main(int argc, char **argv)
++{
++	int i, ret, nb_cases, nb_skipped = 0;
++	uint8_t nb_lcores;
++
++	ret = rte_eal_init(argc, argv);
++	if (ret < 0)
++		rte_exit(EXIT_FAILURE, "Invalid EAL arguments\n");
++
++	argc -= ret;
++	argv += ret;
++
++	nb_lcores = rte_lcore_count() - 1;
++	if (nb_lcores < 1) {
++		RTE_LOG(ERR, USER1,
++			"Number of worker cores need to be higher than 1\n");
++		return -EINVAL;
++	}
++
++	ret = cryptodev_init(&ctx, nb_lcores);
++	if (ret)
++		goto exit;
++
++	ret = mempool_init(&ctx);
++	if (ret)
++		goto cryptodev_fini;
++
++	nb_cases = RTE_DIM(test_cases);
++
++	printf("\nTest Params\n");
++	printf("-----------\n");
++	printf("Number of operations: %d\n", NB_DESC);
++	printf("Number of CPTRs     : %d\n", NB_CPTR);
++
++	printf("\n%18s%18s%18s%18s%18s%18s%18s%18s%18s\n", "Opcode major", "Opcode minor",
++	       "CTX val", "Data Len", "nb_dptrs", "Cycles", "Total Time(us)", "Mops",
++	       "Throughput(Gbps)");
++
++	for (i = 0; i < nb_cases; i++) {
++		ret = test_cpt_raw_api(&ctx, &test_cases[i], NB_DESC);
++		if (ret == TEST_FAILED)
++			break;
++		else if (ret == TEST_SKIPPED)
++			nb_skipped++;
++	}
++
++	printf("\nTest Summary\n");
++	printf("------------\n");
++	printf("Total number of cases   : %d\n", nb_cases);
++	printf("Number of cases run     : %d\n", i);
++	printf("Number of cases skipped : %d\n", nb_skipped);
++	if (ret == TEST_FAILED)
++		printf("Overall status		: [FAIL]\n");
++	else
++		printf("Overall status		: [SUCCESS]\n");
++
++	cptr_flush(&ctx);
++	cryptodev_fini(&ctx);
++	mempool_fini(&ctx);
++
++	return ret;
++cryptodev_fini:
++	cryptodev_fini(&ctx);
++exit:
++	return EXIT_FAILURE;
++}
+diff --git a/marvell-ci/test/cnxk-tests/cpt_raw_test/meson.build b/marvell-ci/test/cnxk-tests/cpt_raw_test/meson.build
+new file mode 100644
+index 0000000000000..97618a3bbea3b
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/cpt_raw_test/meson.build
+@@ -0,0 +1,33 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2024 Marvell.
++#
++
++sources = files( 'main.c')
++
++# Test name
++test_name = 'cpt_raw_test'
++
++# Test directory name relative to build directory.
++test_dir = meson.current_build_dir()
++
++# Test executable
++test_exec='cpt_raw_test'
++
++# Create the test executable
++raw_test=executable(
++    test_exec,
++    sources,
++    link_whole: link_libs,
++    dependencies:[ext_deps, get_variable(def_lib + '_rte_crypto_cnxk')],
++    c_args: cflags,
++    install_dir: 'bin/cnxk/crypto',
++    install: true
++)
++
++# Add the meson test
++test(
++    test_name,
++    raw_test,
++    env : ['DPDK_TEST=' + test_name, 'TEST_DIR=' + test_dir],
++    is_parallel : false,
++    suite : 'cnxk-tests')
+\ No newline at end of file
+diff --git a/marvell-ci/test/cnxk-tests/cpt_raw_test/test_cases.h b/marvell-ci/test/cnxk-tests/cpt_raw_test/test_cases.h
+new file mode 100644
+index 0000000000000..addfb4f6ac957
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/cpt_raw_test/test_cases.h
+@@ -0,0 +1,154 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#ifndef _TEST_CASES_
++#define _TEST_CASES_
++
++#include <stdint.h>
++
++#include "ucode/se.h"
++
++struct test_case_params {
++	uint8_t opcode_major;
++	uint8_t opcode_minor;
++	uint16_t dlen;
++	void *dptr;
++	void *rptr;
++	void *cptr;
++	uint8_t ctx_val;
++};
++
++struct test_case_params test_cases[] = {
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_MISC,
++		.opcode_minor = ROC_SE_MISC_MINOR_OP_PASSTHROUGH,
++		.dlen = 0,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_MISC,
++		.opcode_minor = ROC_SE_MISC_MINOR_OP_PASSTHROUGH,
++		.dlen = 32,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_MISC,
++		.opcode_minor = ROC_SE_MISC_MINOR_OP_PASSTHROUGH,
++		.dlen = 64,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_MISC,
++		.opcode_minor = ROC_SE_MISC_MINOR_OP_PASSTHROUGH,
++		.dlen = 512,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_MISC,
++		.opcode_minor = ROC_SE_MISC_MINOR_OP_PASSTHROUGH,
++		.dlen = 1024,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_MISC,
++		.opcode_minor = ROC_SE_MISC_MINOR_OP_PASSTHROUGH,
++		.dlen = 2048,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_MISC,
++		.opcode_minor = ROC_SE_MISC_MINOR_OP_PASSTHROUGH,
++		.dlen = 8192,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_MISC,
++		.opcode_minor = ROC_SE_MISC_MINOR_OP_PASSTHROUGH,
++		.dlen = 0,
++		.ctx_val = 1,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 64,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 128,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 256,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 512,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 1024,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 1344,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 2048,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 8192,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 64,
++		.ctx_val = 1,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 128,
++		.ctx_val = 1,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 256,
++		.ctx_val = 1,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 512,
++		.ctx_val = 1,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 1024,
++		.ctx_val = 1,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 1536,
++		.ctx_val = 1,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 2048,
++		.ctx_val = 1,
++	},
++	{
++		.opcode_major = ROC_SE_MAJOR_OP_FC,
++		.opcode_minor = 0,
++		.dlen = 8192,
++		.ctx_val = 1,
++	},
++};
++
++#endif /* _TEST_CASES_ */
+diff --git a/marvell-ci/test/cnxk-tests/cpt_raw_test/ucode/se.h b/marvell-ci/test/cnxk-tests/cpt_raw_test/ucode/se.h
+new file mode 100644
+index 0000000000000..6f976fda9d921
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/cpt_raw_test/ucode/se.h
+@@ -0,0 +1,61 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#ifndef _SE_H_
++#define _SE_H_
++
++struct roc_se_enc_context {
++	uint64_t iv_source : 1;
++	uint64_t aes_key : 2;
++	uint64_t rsvd_59 : 1;
++	uint64_t enc_cipher : 4;
++	uint64_t auth_input_type : 1;
++	uint64_t auth_key_src : 1;
++	uint64_t rsvd_50_51 : 2;
++	uint64_t hash_type : 4;
++	uint64_t mac_len : 8;
++	uint64_t rsvd_16_39 : 24;
++	uint64_t hmac_key_sz : 16;
++	uint8_t encr_key[32];
++	uint8_t encr_iv[16];
++};
++
++struct roc_se_hmac_context {
++	uint8_t ipad[64];
++	uint8_t opad[64];
++};
++
++struct roc_se_context {
++	struct roc_se_enc_context enc;
++	struct roc_se_hmac_context hmac;
++};
++
++struct se_ctx_s {
++	/* Word0 */
++	union {
++		struct {
++			uint64_t rsvd : 48;
++
++			uint64_t ctx_push_size : 7;
++			uint64_t rsvd1 : 1;
++
++			uint64_t ctx_hdr_size : 2;
++			uint64_t aop_valid : 1;
++			uint64_t rsvd2 : 1;
++			uint64_t ctx_size : 4;
++		} s;
++		uint64_t u64;
++	} w0;
++	union {
++		struct roc_se_context fctx;
++	};
++} se_ctx __rte_aligned(128);
++
++/* SE opcodes */
++#define ROC_SE_MAJOR_OP_FC	      0x33
++
++#define ROC_SE_MAJOR_OP_MISC		 0x01ULL
++#define ROC_SE_MISC_MINOR_OP_PASSTHROUGH 0x03ULL
++
++#endif /* _SE_H_ */
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index 591837de756ea..cddaa3eb25a32 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -103,6 +103,7 @@ test_subdirs_arm = [
+         'policer_test',
+         'flow_aging',
+         'l3fwd_non_eal',
++        'cpt_raw_test',
+ ]
+ 
+ test_subdirs_x86 = [
+diff --git a/marvell-ci/test/env/cn106-perf.env b/marvell-ci/test/env/cn106-perf.env
+index dfad794634844..7001f3b44450f 100644
+--- a/marvell-ci/test/env/cn106-perf.env
++++ b/marvell-ci/test/env/cn106-perf.env
+@@ -17,6 +17,7 @@ RUN_TESTS="
+ 	cnxk_fwd_perf
+ 	cnxk_dma_perf
+ 	cnxk_mac_test
++	cpt_raw_test
+ "
+ 
+ # Update command timeout
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index be83d8956d894..2076d6eb3bb84 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -220,6 +220,7 @@ DEFAULT_SKIP_TESTS="
+ 	telemetry_all
+ 	cnxk_mac_test
+ 	cnxk_ingress_policer
++	cpt_raw_test
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+diff --git a/marvell-ci/test/env/cn96-perf.env b/marvell-ci/test/env/cn96-perf.env
+index 7249e12f0afad..50cc68257d813 100644
+--- a/marvell-ci/test/env/cn96-perf.env
++++ b/marvell-ci/test/env/cn96-perf.env
+@@ -17,6 +17,7 @@ RUN_TESTS="
+ 	cnxk_mempool_perf
+ 	flow_perf
+ 	cnxk_mac_test
++	cpt_raw_test
+ "
+ 
+ # Update command timeout
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index caa2607e65191..daa030257413b 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -224,6 +224,7 @@ DEFAULT_SKIP_TESTS="
+ 	telemetry_all
+ 	cnxk_mac_test
+ 	cnxk_ingress_policer
++	cpt_raw_test
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+-- 
+2.25.1
+

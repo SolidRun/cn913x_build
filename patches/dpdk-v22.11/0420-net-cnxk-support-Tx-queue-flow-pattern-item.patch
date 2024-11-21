@@ -1,0 +1,36 @@
+From 93768a034a219535020b2641ac8a725a27f861cd Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Tue, 16 May 2023 11:28:07 +0530
+Subject: [PATCH 420/955] net/cnxk: support Tx queue flow pattern item
+
+Added support for Tx queue flow pattern item.
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I23c85aa53ad9f128059a97cdae8e215d78d1808f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103674
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/cnxk/cnxk_flow.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index f13d8e5582368..9595fe9386c5a 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -58,7 +58,9 @@ const struct cnxk_rte_flow_term_info term[] = {
+ 	[RTE_FLOW_ITEM_TYPE_RAW] = {ROC_NPC_ITEM_TYPE_RAW,
+ 				    sizeof(struct rte_flow_item_raw)},
+ 	[RTE_FLOW_ITEM_TYPE_MARK] = {ROC_NPC_ITEM_TYPE_MARK,
+-				     sizeof(struct rte_flow_item_mark)}};
++				     sizeof(struct rte_flow_item_mark)},
++	[RTE_FLOW_ITEM_TYPE_TX_QUEUE] = {ROC_NPC_ITEM_TYPE_TX_QUEUE,
++				     sizeof(struct rte_flow_item_tx_queue)}};
+ 
+ static int
+ npc_rss_action_validate(struct rte_eth_dev *eth_dev,
+-- 
+2.25.1
+

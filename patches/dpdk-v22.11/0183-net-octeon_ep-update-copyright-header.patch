@@ -1,0 +1,38 @@
+From 8e2398623353d21503c54d02ce57ab8587b08140 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Wed, 25 Jan 2023 08:30:23 -0800
+Subject: [PATCH 183/955] net/octeon_ep: update copyright header
+
+update copyright header to BSD-3
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I26f0b661519b86f15f4cc6544a9d8e71d3e495f4
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95240
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_mbox.h | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.h b/drivers/net/octeon_ep/otx_ep_mbox.h
+index 453117f0d7173..311b3aa0fdffd 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.h
++++ b/drivers/net/octeon_ep/otx_ep_mbox.h
+@@ -1,9 +1,7 @@
+-/* SPDX-License-Identifier: GPL-2.0 */
+-/* Marvell Octeon EP (EndPoint) Ethernet Driver
+- *
+- * Copyright (C) 2020 Marvell.
+- *
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2021 Marvell.
+  */
++
+ #ifndef _OTX_EP_MBOX_H_
+ #define _OTX_EP_MBOX_H_
+ 
+-- 
+2.25.1
+

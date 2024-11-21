@@ -1,0 +1,227 @@
+From 417ff3a46e539d40f09a1275f62b9b46f8ffbe6b Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Fri, 4 Nov 2022 19:30:53 +0530
+Subject: [PATCH 018/955] crypto/cnxk: support truncated digest length
+
+Adding truncated digest length support.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Icdac94dd8938fc3d109759b1953275b6f8b4f5f2
+---
+ .../crypto/cnxk/cnxk_cryptodev_capabilities.c | 48 +++++++++----------
+ drivers/crypto/cnxk/cnxk_se.h                 | 19 ++++----
+ 2 files changed, 35 insertions(+), 32 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index 6c28f8942ed69..9dfbf875ec07a 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -108,9 +108,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 20,
++					.min = 1,
+ 					.max = 20,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -128,9 +128,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 12,
++					.min = 1,
+ 					.max = 20,
+-					.increment = 8
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -148,9 +148,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 28,
++					.min = 1,
+ 					.max = 28,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -168,9 +168,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 28,
++					.min = 1,
+ 					.max = 28,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -188,9 +188,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 32,
++					.min = 1,
+ 					.max = 32,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -208,9 +208,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 16,
++					.min = 1,
+ 					.max = 32,
+-					.increment = 16
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -228,9 +228,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 48,
++					.min = 1,
+ 					.max = 48,
+-					.increment = 0
++					.increment = 1
+ 					},
+ 			}, }
+ 		}, }
+@@ -248,9 +248,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 24,
++					.min = 1,
+ 					.max = 48,
+-					.increment = 24
++					.increment = 1
+ 					},
+ 			}, }
+ 		}, }
+@@ -268,9 +268,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 64,
++					.min = 1,
+ 					.max = 64,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -288,9 +288,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 32,
++					.min = 1,
+ 					.max = 64,
+-					.increment = 32
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -308,9 +308,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 16,
++					.min = 1,
+ 					.max = 16,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -328,9 +328,9 @@ static const struct rte_cryptodev_capabilities caps_sha1_sha2[] = {
+ 					.increment = 8
+ 				},
+ 				.digest_size = {
+-					.min = 12,
++					.min = 1,
+ 					.max = 16,
+-					.increment = 4
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index b07fc228589d5..ce4c2bb5850bd 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -148,30 +148,33 @@ cpt_mac_len_verify(struct rte_crypto_auth_xform *auth)
+ 	uint16_t mac_len = auth->digest_length;
+ 	int ret;
+ 
++	if ((auth->algo != RTE_CRYPTO_AUTH_NULL) && (mac_len == 0))
++		return -1;
++
+ 	switch (auth->algo) {
+ 	case RTE_CRYPTO_AUTH_MD5:
+ 	case RTE_CRYPTO_AUTH_MD5_HMAC:
+-		ret = (mac_len == 16) ? 0 : -1;
++		ret = (mac_len <= 16) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA1:
+ 	case RTE_CRYPTO_AUTH_SHA1_HMAC:
+-		ret = (mac_len == 20) ? 0 : -1;
++		ret = (mac_len <= 20) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA224:
+ 	case RTE_CRYPTO_AUTH_SHA224_HMAC:
+-		ret = (mac_len == 28) ? 0 : -1;
++		ret = (mac_len <= 28) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA256:
+ 	case RTE_CRYPTO_AUTH_SHA256_HMAC:
+-		ret = (mac_len == 32) ? 0 : -1;
++		ret = (mac_len <= 32) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA384:
+ 	case RTE_CRYPTO_AUTH_SHA384_HMAC:
+-		ret = (mac_len == 48) ? 0 : -1;
++		ret = (mac_len <= 48) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA512:
+ 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
+-		ret = (mac_len == 64) ? 0 : -1;
++		ret = (mac_len <= 64) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_NULL:
+ 		ret = 0;
+@@ -838,7 +841,7 @@ cpt_digest_gen_sg_ver1_prep(uint32_t flags, uint64_t d_lens, struct roc_se_fc_pa
+ 
+ 	/*GP op header */
+ 	cpt_inst_w4.s.opcode_minor = 0;
+-	cpt_inst_w4.s.param2 = ((uint16_t)hash_type << 8);
++	cpt_inst_w4.s.param2 = ((uint16_t)hash_type << 8) | mac_len;
+ 	if (ctx->hmac) {
+ 		cpt_inst_w4.s.opcode_major =
+ 			ROC_SE_MAJOR_OP_HMAC | ROC_SE_DMA_MODE;
+@@ -969,7 +972,7 @@ cpt_digest_gen_sg_ver2_prep(uint32_t flags, uint64_t d_lens, struct roc_se_fc_pa
+ 
+ 	/*GP op header */
+ 	cpt_inst_w4.s.opcode_minor = 0;
+-	cpt_inst_w4.s.param2 = ((uint16_t)hash_type << 8);
++	cpt_inst_w4.s.param2 = ((uint16_t)hash_type << 8) | mac_len;
+ 	if (ctx->hmac) {
+ 		cpt_inst_w4.s.opcode_major = ROC_SE_MAJOR_OP_HMAC;
+ 		cpt_inst_w4.s.param1 = key_len;
+-- 
+2.25.1
+

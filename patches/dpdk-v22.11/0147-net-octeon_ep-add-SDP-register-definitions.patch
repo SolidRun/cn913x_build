@@ -1,0 +1,659 @@
+From c3feea4758aa40e227b1ecf0810cbb9744ee6cbd Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Wed, 4 Jan 2023 08:01:09 -0800
+Subject: [PATCH 147/955] net/octeon_ep: add SDP register definitions
+
+This patch removes dependencies on common/cnxk and
+adds SDP register definitions to the respective
+header files.
+
+ci: skip_klocwork
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I47feee8bfb259f1583cd16268d37c9c2585382e9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93826
+Tested-by: Satananda Burla <sburla@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_vf.c    |   5 +-
+ drivers/net/octeon_ep/cnxk_ep_vf.h    |  15 ++
+ drivers/net/octeon_ep/meson.build     |   1 -
+ drivers/net/octeon_ep/otx2_ep_vf.c    | 191 +++++++++++++-------------
+ drivers/net/octeon_ep/otx2_ep_vf.h    |  12 ++
+ drivers/net/octeon_ep/otx_ep_ethdev.c |   1 -
+ drivers/net/octeon_ep/otx_ep_mbox.c   |   5 +-
+ drivers/net/octeon_ep/otx_ep_rxtx.c   |   1 -
+ 8 files changed, 127 insertions(+), 104 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.c b/drivers/net/octeon_ep/cnxk_ep_vf.c
+index 3f05cd3b9d9be..28584416c9db2 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.c
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.c
+@@ -12,7 +12,6 @@
+ 
+ #include "otx_ep_common.h"
+ #include "cnxk_ep_vf.h"
+-#include "common/cnxk/hw/sdp.h"
+ 
+ static void
+ cnxk_ep_vf_setup_global_iq_reg(struct otx_ep_device *otx_ep, int q_no)
+@@ -147,7 +146,7 @@ cnxk_ep_vf_setup_iq_regs(struct otx_ep_device *otx_ep, uint32_t iq_no)
+ 		    | CNXK_EP_ISM_MSIX_DIS)
+ 		    + CNXK_EP_IQ_ISM_OFFSET(iq_no);
+ 	rte_write64(ism_addr, (uint8_t *)otx_ep->hw_addr +
+-		    SDP_VF_R_IN_CNTS_ISM(iq_no));
++		    CNXK_EP_R_IN_CNTS_ISM(iq_no));
+ 	iq->inst_cnt_ism =
+ 		(uint32_t *)((uint8_t *)otx_ep->ism_buffer_mz->addr
+ 			     + CNXK_EP_IQ_ISM_OFFSET(iq_no));
+@@ -239,7 +238,7 @@ cnxk_ep_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 			| CNXK_EP_ISM_MSIX_DIS)
+ 			+ CNXK_EP_OQ_ISM_OFFSET(oq_no);
+ 	rte_write64(ism_addr, (uint8_t *)otx_ep->hw_addr +
+-			SDP_VF_R_OUT_CNTS_ISM(oq_no));
++			CNXK_EP_R_OUT_CNTS_ISM(oq_no));
+ 	droq->pkts_sent_ism =
+ 			(uint32_t *)((uint8_t *)otx_ep->ism_buffer_mz->addr
+ 			+ CNXK_EP_OQ_ISM_OFFSET(oq_no));
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.h b/drivers/net/octeon_ep/cnxk_ep_vf.h
+index 7d92a34f1469a..1a74511f51e42 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.h
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.h
+@@ -27,6 +27,7 @@
+ #define CNXK_EP_R_IN_INT_LEVELS_START       0x10060
+ #define CNXK_EP_R_IN_PKT_CNT_START          0x10080
+ #define CNXK_EP_R_IN_BYTE_CNT_START         0x10090
++#define CNXK_EP_R_IN_CNTS_ISM_START         0x10520
+ 
+ #define CNXK_EP_R_IN_CONTROL(ring)             \
+ 	(CNXK_EP_R_IN_CONTROL_START + ((ring) * CNXK_EP_RING_OFFSET))
+@@ -55,6 +56,9 @@
+ #define CNXK_EP_R_IN_BYTE_CNT(ring)            \
+ 	(CNXK_EP_R_IN_BYTE_CNT_START +  ((ring) * CNXK_EP_RING_OFFSET))
+ 
++#define CNXK_EP_R_IN_CNTS_ISM(ring)               \
++	(CNXK_EP_R_IN_CNTS_ISM_START + ((ring) * CNXK_EP_RING_OFFSET))
++
+ 
+ /** Rings per Virtual Function **/
+ #define CNXK_EP_R_IN_CTL_RPVF_MASK	(0xF)
+@@ -87,6 +91,7 @@
+ #define CNXK_EP_R_OUT_ENABLE_START         0x10170
+ #define CNXK_EP_R_OUT_PKT_CNT_START        0x10180
+ #define CNXK_EP_R_OUT_BYTE_CNT_START       0x10190
++#define CNXK_EP_R_OUT_CNTS_ISM_START       0x10510
+ 
+ #define CNXK_EP_R_OUT_CNTS(ring)                \
+ 	(CNXK_EP_R_OUT_CNTS_START + ((ring) * CNXK_EP_RING_OFFSET))
+@@ -118,6 +123,15 @@
+ #define CNXK_EP_R_OUT_BYTE_CNT(ring)             \
+ 	(CNXK_EP_R_OUT_BYTE_CNT_START + ((ring) * CNXK_EP_RING_OFFSET))
+ 
++#define CNXK_EP_R_OUT_CNTS_ISM(ring)              \
++	(CNXK_EP_R_OUT_CNTS_ISM_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_MBOX_PF_VF_DATA_START      0x10210
++#define CNXK_EP_R_MBOX_VF_PF_DATA_START      0x10230
++
++#define CNXK_EP_R_MBOX_VF_PF_DATA(ring)           \
++	(CNXK_EP_R_MBOX_VF_PF_DATA_START + ((ring) * CNXK_EP_RING_OFFSET))
++
+ /*------------------ R_OUT Masks ----------------*/
+ #define CNXK_EP_R_OUT_INT_LEVELS_BMODE       (1ULL << 63)
+ #define CNXK_EP_R_OUT_INT_LEVELS_TIMET       (32)
+@@ -133,6 +147,7 @@
+ #define CNXK_EP_R_OUT_CTL_NSR_P              (1ULL << 25)
+ #define CNXK_EP_R_OUT_CTL_ROR_P              (1ULL << 24)
+ #define CNXK_EP_R_OUT_CTL_IMODE              (1ULL << 23)
++#define CNXK_EP_R_IN_CNTS_OUT_INT            (1ULL << 62)
+ 
+ #define PCI_DEVID_CN10KA_EP_NET_VF		0xB903
+ #define PCI_DEVID_CNF10KA_EP_NET_VF		0xBA03
+diff --git a/drivers/net/octeon_ep/meson.build b/drivers/net/octeon_ep/meson.build
+index de50b90bf4909..23c95fd9ebb26 100644
+--- a/drivers/net/octeon_ep/meson.build
++++ b/drivers/net/octeon_ep/meson.build
+@@ -2,7 +2,6 @@
+ # Copyright(C) 2021 Marvell.
+ #
+ 
+-deps += ['common_cnxk']
+ 
+ sources = files(
+         'otx_ep_ethdev.c',
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.c b/drivers/net/octeon_ep/otx2_ep_vf.c
+index 0f01ade6a999d..2b9790595dcc0 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.c
++++ b/drivers/net/octeon_ep/otx2_ep_vf.c
+@@ -9,8 +9,9 @@
+ #include <rte_spinlock.h>
+ #include <rte_interrupts.h>
+ 
++#include <rte_memzone.h>
+ #include "otx_ep_common.h"
+-#include "common/cnxk/roc_api.h"
++#include "cnxk_ep_vf.h"
+ #include "otx2_ep_vf.h"
+ 
+ #define MAX_INTR_VEC_ID RTE_MAX_RXTX_INTR_VEC_ID
+@@ -23,46 +24,46 @@ static int otx2_vf_enable_rxq_intr(struct otx_ep_device *otx_epvf,
+ static int
+ otx2_vf_reset_iq(struct otx_ep_device *otx_ep, int q_no)
+ {
+-	int loop = SDP_VF_BUSY_LOOP_COUNT;
++	int loop = OTX2_EP_BUSY_LOOP_COUNT;
+ 	volatile uint64_t d64 = 0ull;
+ 
+ 	/* There is no RST for a ring.
+ 	 * Clear all registers one by one after disabling the ring
+ 	 */
+ 
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_IN_ENABLE(q_no));
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_IN_INSTR_BADDR(q_no));
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_IN_INSTR_RSIZE(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_IN_ENABLE(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_IN_INSTR_BADDR(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_IN_INSTR_RSIZE(q_no));
+ 
+ 	d64 = 0xFFFFFFFF; /* ~0ull */
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_IN_INSTR_DBELL(q_no));
+-	d64 = otx2_read64(otx_ep->hw_addr + SDP_VF_R_IN_INSTR_DBELL(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_IN_INSTR_DBELL(q_no));
++	d64 = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_IN_INSTR_DBELL(q_no));
+ 
+ 	while ((d64 != 0) && loop--) {
+ 		rte_delay_ms(1);
+ 		d64 = otx2_read64(otx_ep->hw_addr +
+-				  SDP_VF_R_IN_INSTR_DBELL(q_no));
++				  CNXK_EP_R_IN_INSTR_DBELL(q_no));
+ 	}
+ 	if (loop < 0) {
+ 		otx_ep_err("%s: doorbell init retry limit exceeded.\n", __func__);
+ 		return -EIO;
+ 	}
+ 
+-	loop = SDP_VF_BUSY_LOOP_COUNT;
++	loop = OTX2_EP_BUSY_LOOP_COUNT;
+ 	do {
+-		d64 = otx2_read64(otx_ep->hw_addr + SDP_VF_R_IN_CNTS(q_no));
+-		otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_IN_CNTS(q_no));
++		d64 = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_IN_CNTS(q_no));
++		otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_IN_CNTS(q_no));
+ 		rte_delay_ms(1);
+-	} while ((d64 & ~SDP_VF_R_IN_CNTS_OUT_INT) != 0 && loop--);
++	} while ((d64 & ~CNXK_EP_R_IN_CNTS_OUT_INT) != 0 && loop--);
+ 	if (loop < 0) {
+ 		otx_ep_err("%s: in_cnts init retry limit exceeded.\n", __func__);
+ 		return -EIO;
+ 	}
+ 
+ 	d64 = 0ull;
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_IN_INT_LEVELS(q_no));
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_IN_PKT_CNT(q_no));
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_IN_BYTE_CNT(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_IN_INT_LEVELS(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_IN_PKT_CNT(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_IN_BYTE_CNT(q_no));
+ 
+ 	return 0;
+ }
+@@ -71,30 +72,30 @@ otx2_vf_reset_iq(struct otx_ep_device *otx_ep, int q_no)
+ static int
+ otx2_vf_reset_oq(struct otx_ep_device *otx_ep, int q_no)
+ {
+-	int loop = SDP_VF_BUSY_LOOP_COUNT;
++	int loop = OTX2_EP_BUSY_LOOP_COUNT;
+ 	volatile uint64_t d64 = 0ull;
+ 
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_OUT_ENABLE(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + OTX2_EP_R_OUT_ENABLE(q_no));
+ 
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_OUT_SLIST_BADDR(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_OUT_SLIST_BADDR(q_no));
+ 
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_OUT_SLIST_RSIZE(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_OUT_SLIST_RSIZE(q_no));
+ 
+ 	d64 = 0xFFFFFFFF;
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_OUT_SLIST_DBELL(q_no));
+-	d64 = otx2_read64(otx_ep->hw_addr + SDP_VF_R_OUT_SLIST_DBELL(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_OUT_SLIST_DBELL(q_no));
++	d64 = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_OUT_SLIST_DBELL(q_no));
+ 	while ((d64 != 0) && loop--) {
+ 		rte_delay_ms(1);
+ 		d64 = otx2_read64(otx_ep->hw_addr +
+-				  SDP_VF_R_OUT_SLIST_DBELL(q_no));
++				  CNXK_EP_R_OUT_SLIST_DBELL(q_no));
+ 	}
+ 	if (loop < 0) {
+ 		otx_ep_err("%s: doorbell init retry limit exceeded.\n", __func__);
+ 		return -EIO;
+ 	}
+ 
+-	if (otx2_read64(otx_ep->hw_addr + SDP_VF_R_OUT_CNTS(q_no))
+-	    & SDP_VF_R_OUT_CNTS_OUT_INT) {
++	if (otx2_read64(otx_ep->hw_addr + CNXK_EP_R_OUT_CNTS(q_no))
++	    & OTX2_EP_R_OUT_CNTS_OUT_INT) {
+ 		/*
+ 		 * The OUT_INT bit is set.  This interrupt must be enabled in
+ 		 * order to clear the interrupt.  Interrupts are disabled
+@@ -103,28 +104,28 @@ otx2_vf_reset_oq(struct otx_ep_device *otx_ep, int q_no)
+ 		union out_int_lvl_t out_int_lvl;
+ 
+ 		out_int_lvl.d64 = otx2_read64(otx_ep->hw_addr +
+-					SDP_VF_R_OUT_INT_LEVELS(q_no));
++					CNXK_EP_R_OUT_INT_LEVELS(q_no));
+ 		out_int_lvl.s.time_cnt_en = 1;
+ 		out_int_lvl.s.cnt = 0;
+ 		otx2_write64(out_int_lvl.d64, otx_ep->hw_addr +
+-				SDP_VF_R_OUT_INT_LEVELS(q_no));
++				CNXK_EP_R_OUT_INT_LEVELS(q_no));
+ 	}
+ 
+-	loop = SDP_VF_BUSY_LOOP_COUNT;
++	loop = OTX2_EP_BUSY_LOOP_COUNT;
+ 	do {
+-		d64 = otx2_read64(otx_ep->hw_addr + SDP_VF_R_OUT_CNTS(q_no));
+-		otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_OUT_CNTS(q_no));
++		d64 = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_OUT_CNTS(q_no));
++		otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_OUT_CNTS(q_no));
+ 		rte_delay_ms(1);
+-	} while ((d64 & ~SDP_VF_R_OUT_CNTS_IN_INT) != 0 && loop--);
++	} while ((d64 & ~OTX2_EP_R_OUT_CNTS_IN_INT) != 0 && loop--);
+ 	if (loop < 0) {
+ 		otx_ep_err("%s: out_cnts init retry limit exceeded.\n", __func__);
+ 		return -EIO;
+ 	}
+ 
+ 	d64 = 0ull;
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_OUT_INT_LEVELS(q_no));
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_OUT_PKT_CNT(q_no));
+-	otx2_write64(d64, otx_ep->hw_addr + SDP_VF_R_OUT_BYTE_CNT(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_OUT_INT_LEVELS(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_OUT_PKT_CNT(q_no));
++	otx2_write64(d64, otx_ep->hw_addr + CNXK_EP_R_OUT_BYTE_CNT(q_no));
+ 
+ 	return 0;
+ }
+@@ -137,13 +138,13 @@ otx2_vf_setup_global_iq_reg(struct otx_ep_device *otx_ep, int q_no)
+ 	/* Select ES, RO, NS, RDSIZE,DPTR Format#0 for IQs
+ 	 * IS_64B is by default enabled.
+ 	 */
+-	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_IN_CONTROL(q_no));
++	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_IN_CONTROL(q_no));
+ 
+-	reg_val |= SDP_VF_R_IN_CTL_RDSIZE;
+-	reg_val |= SDP_VF_R_IN_CTL_IS_64B;
+-	reg_val |= SDP_VF_R_IN_CTL_ESR;
++	reg_val |= CNXK_EP_R_IN_CTL_RDSIZE;
++	reg_val |= CNXK_EP_R_IN_CTL_IS_64B;
++	reg_val |= CNXK_EP_R_IN_CTL_ESR;
+ 
+-	oct_ep_write64(reg_val, otx_ep->hw_addr + SDP_VF_R_IN_CONTROL(q_no));
++	oct_ep_write64(reg_val, otx_ep->hw_addr + CNXK_EP_R_IN_CONTROL(q_no));
+ }
+ 
+ static void
+@@ -151,22 +152,22 @@ otx2_vf_setup_global_oq_reg(struct otx_ep_device *otx_ep, int q_no)
+ {
+ 	volatile uint64_t reg_val = 0ull;
+ 
+-	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_OUT_CONTROL(q_no));
++	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_OUT_CONTROL(q_no));
+ 
+-	reg_val &= ~(SDP_VF_R_OUT_CTL_IMODE);
+-	reg_val &= ~(SDP_VF_R_OUT_CTL_ROR_P);
+-	reg_val &= ~(SDP_VF_R_OUT_CTL_NSR_P);
+-	reg_val &= ~(SDP_VF_R_OUT_CTL_ROR_I);
+-	reg_val &= ~(SDP_VF_R_OUT_CTL_NSR_I);
+-	reg_val &= ~(SDP_VF_R_OUT_CTL_ES_I);
+-	reg_val &= ~(SDP_VF_R_OUT_CTL_ROR_D);
+-	reg_val &= ~(SDP_VF_R_OUT_CTL_NSR_D);
+-	reg_val &= ~(SDP_VF_R_OUT_CTL_ES_D);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_IMODE);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_ROR_P);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_NSR_P);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_ROR_I);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_NSR_I);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_ES_I);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_ROR_D);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_NSR_D);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_ES_D);
+ 
+ 	/* INFO/DATA ptr swap is required  */
+-	reg_val |= (SDP_VF_R_OUT_CTL_ES_P);
++	reg_val |= (CNXK_EP_R_OUT_CTL_ES_P);
+ 
+-	oct_ep_write64(reg_val, otx_ep->hw_addr + SDP_VF_R_OUT_CONTROL(q_no));
++	oct_ep_write64(reg_val, otx_ep->hw_addr + CNXK_EP_R_OUT_CONTROL(q_no));
+ }
+ 
+ static int
+@@ -249,36 +250,36 @@ otx2_vf_setup_iq_regs(struct otx_ep_device *otx_ep, uint32_t iq_no)
+ 	struct otx_ep_instr_queue *iq = otx_ep->instr_queue[iq_no];
+ 	volatile uint64_t reg_val = 0ull;
+ 	uint64_t ism_addr;
+-	int loop = SDP_VF_BUSY_LOOP_COUNT;
++	int loop = OTX2_EP_BUSY_LOOP_COUNT;
+ 
+-	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_IN_CONTROL(iq_no));
++	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_IN_CONTROL(iq_no));
+ 
+ 	/* Wait till IDLE to set to 1, not supposed to configure BADDR
+ 	 * as long as IDLE is 0
+ 	 */
+-	if (!(reg_val & SDP_VF_R_IN_CTL_IDLE)) {
++	if (!(reg_val & CNXK_EP_R_IN_CTL_IDLE)) {
+ 		do {
+-			reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_IN_CONTROL(iq_no));
+-		} while ((!(reg_val & SDP_VF_R_IN_CTL_IDLE)) && loop--);
++			reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_IN_CONTROL(iq_no));
++		} while ((!(reg_val & CNXK_EP_R_IN_CTL_IDLE)) && loop--);
+ 		if (loop < 0)
+ 			return -EIO;
+ 	}
+ 
+ 	/* Write the start of the input queue's ring and its size  */
+ 	oct_ep_write64(iq->base_addr_dma, otx_ep->hw_addr +
+-		       SDP_VF_R_IN_INSTR_BADDR(iq_no));
++		       CNXK_EP_R_IN_INSTR_BADDR(iq_no));
+ 	oct_ep_write64(iq->nb_desc, otx_ep->hw_addr +
+-		       SDP_VF_R_IN_INSTR_RSIZE(iq_no));
++		       CNXK_EP_R_IN_INSTR_RSIZE(iq_no));
+ 
+ 	/* Remember the doorbell & instruction count register addr
+ 	 * for this queue
+ 	 */
+-	iq->doorbell_reg = (uint8_t *)otx_ep->hw_addr + SDP_VF_R_IN_INSTR_DBELL(iq_no);
+-	iq->inst_cnt_reg = (uint8_t *)otx_ep->hw_addr + SDP_VF_R_IN_CNTS(iq_no);
++	iq->doorbell_reg = (uint8_t *)otx_ep->hw_addr + CNXK_EP_R_IN_INSTR_DBELL(iq_no);
++	iq->inst_cnt_reg = (uint8_t *)otx_ep->hw_addr + CNXK_EP_R_IN_CNTS(iq_no);
+ 
+ 	otx_ep_dbg("InstQ[%d]:dbell reg @ 0x%p inst_cnt_reg @ 0x%p",
+ 		   iq_no, iq->doorbell_reg, iq->inst_cnt_reg);
+-	loop = SDP_VF_BUSY_LOOP_COUNT;
++	loop = OTX2_EP_BUSY_LOOP_COUNT;
+ 	do {
+ 		reg_val = rte_read32(iq->inst_cnt_reg);
+ 		rte_write32(reg_val, iq->inst_cnt_reg);
+@@ -291,14 +292,14 @@ otx2_vf_setup_iq_regs(struct otx_ep_device *otx_ep, uint32_t iq_no)
+ 	 * to raise
+ 	 */
+ 	oct_ep_write64(OTX_EP_CLEAR_SDP_IN_INT_LVLS,
+-		       otx_ep->hw_addr + SDP_VF_R_IN_INT_LEVELS(iq_no));
++		       otx_ep->hw_addr + CNXK_EP_R_IN_INT_LEVELS(iq_no));
+ 
+ 	/* Set up IQ ISM registers and structures */
+ 	ism_addr = (otx_ep->ism_buffer_mz->iova | OTX2_EP_ISM_EN
+ 		    | OTX2_EP_ISM_MSIX_DIS)
+ 		    + OTX2_EP_IQ_ISM_OFFSET(iq_no);
+ 	oct_ep_write64(ism_addr, (uint8_t *)otx_ep->hw_addr +
+-		       SDP_VF_R_IN_CNTS_ISM(iq_no));
++		       CNXK_EP_R_IN_CNTS_ISM(iq_no));
+ 	iq->inst_cnt_ism =
+ 		(uint32_t *)((uint8_t *)otx_ep->ism_buffer_mz->addr
+ 			     + OTX2_EP_IQ_ISM_OFFSET(iq_no));
+@@ -318,25 +319,25 @@ otx2_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 	uint64_t oq_ctl = 0ull;
+ 	struct otx_ep_droq *droq = otx_ep->droq[oq_no];
+ 	uint64_t ism_addr;
+-	int loop = SDP_VF_BUSY_LOOP_COUNT;
++	int loop = OTX2_EP_BUSY_LOOP_COUNT;
+ 
+ 	/* Wait on IDLE to set to 1, supposed to configure BADDR
+ 	 * as long as IDLE is 0
+ 	 */
+-	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_OUT_CONTROL(oq_no));
++	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_OUT_CONTROL(oq_no));
+ 
+-	while ((!(reg_val & SDP_VF_R_OUT_CTL_IDLE)) && loop--) {
++	while ((!(reg_val & CNXK_EP_R_OUT_CTL_IDLE)) && loop--) {
+ 		reg_val = oct_ep_read64(otx_ep->hw_addr +
+-				      SDP_VF_R_OUT_CONTROL(oq_no));
++				      CNXK_EP_R_OUT_CONTROL(oq_no));
+ 	}
+ 	if (loop < 0)
+ 		return -EIO;
+ 
+ 	oct_ep_write64(droq->desc_ring_dma, otx_ep->hw_addr +
+-		     SDP_VF_R_OUT_SLIST_BADDR(oq_no));
+-	oct_ep_write64(droq->nb_desc, otx_ep->hw_addr + SDP_VF_R_OUT_SLIST_RSIZE(oq_no));
++		     CNXK_EP_R_OUT_SLIST_BADDR(oq_no));
++	oct_ep_write64(droq->nb_desc, otx_ep->hw_addr + CNXK_EP_R_OUT_SLIST_RSIZE(oq_no));
+ 
+-	oq_ctl = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_OUT_CONTROL(oq_no));
++	oq_ctl = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_OUT_CONTROL(oq_no));
+ 
+ 	/* Clear the ISIZE and BSIZE (22-0) */
+ 	oq_ctl &= ~(OTX_EP_CLEAR_ISIZE_BSIZE);
+@@ -344,21 +345,21 @@ otx2_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 	/* Populate the BSIZE (15-0) */
+ 	oq_ctl |= (droq->buffer_size & OTX_EP_DROQ_BUFSZ_MASK);
+ 
+-	otx2_write64(oq_ctl, otx_ep->hw_addr + SDP_VF_R_OUT_CONTROL(oq_no));
++	otx2_write64(oq_ctl, otx_ep->hw_addr + CNXK_EP_R_OUT_CONTROL(oq_no));
+ 
+ 	/* Mapped address of the pkt_sent and pkts_credit regs */
+-	droq->pkts_sent_reg = (uint8_t *)otx_ep->hw_addr + SDP_VF_R_OUT_CNTS(oq_no);
+-	droq->pkts_credit_reg = (uint8_t *)otx_ep->hw_addr + SDP_VF_R_OUT_SLIST_DBELL(oq_no);
++	droq->pkts_sent_reg = (uint8_t *)otx_ep->hw_addr + CNXK_EP_R_OUT_CNTS(oq_no);
++	droq->pkts_credit_reg = (uint8_t *)otx_ep->hw_addr + CNXK_EP_R_OUT_SLIST_DBELL(oq_no);
+ 
+-	rte_write64(OTX_EP_CLEAR_OUT_INT_LVLS, otx_ep->hw_addr + SDP_VF_R_OUT_INT_LEVELS(oq_no));
++	rte_write64(OTX_EP_CLEAR_OUT_INT_LVLS, otx_ep->hw_addr + CNXK_EP_R_OUT_INT_LEVELS(oq_no));
+ 
+ 	/* Clear PKT_CNT register */
+ 	rte_write64(OTX_EP_CLEAR_SDP_OUT_PKT_CNT, (uint8_t *)otx_ep->hw_addr +
+-		    SDP_VF_R_OUT_PKT_CNT(oq_no));
++		    CNXK_EP_R_OUT_PKT_CNT(oq_no));
+ 
+ 	loop = OTX_EP_BUSY_LOOP_COUNT;
+ 	/* Clear the OQ doorbell  */
+-	loop = SDP_VF_BUSY_LOOP_COUNT;
++	loop = OTX2_EP_BUSY_LOOP_COUNT;
+ 	rte_write32(OTX_EP_CLEAR_SLIST_DBELL, droq->pkts_credit_reg);
+ 	while ((rte_read32(droq->pkts_credit_reg) != 0ull) && loop--) {
+ 		rte_write32(OTX_EP_CLEAR_SLIST_DBELL, droq->pkts_credit_reg);
+@@ -382,7 +383,7 @@ otx2_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 		    | OTX2_EP_ISM_MSIX_DIS)
+ 		    + OTX2_EP_OQ_ISM_OFFSET(oq_no);
+ 	oct_ep_write64(ism_addr, (uint8_t *)otx_ep->hw_addr +
+-		    SDP_VF_R_OUT_CNTS_ISM(oq_no));
++		    CNXK_EP_R_OUT_CNTS_ISM(oq_no));
+ 	droq->pkts_sent_ism =
+ 		(uint32_t *)((uint8_t *)otx_ep->ism_buffer_mz->addr
+ 			     + OTX2_EP_OQ_ISM_OFFSET(oq_no));
+@@ -411,15 +412,15 @@ static int
+ otx2_vf_enable_iq(struct otx_ep_device *otx_ep, uint32_t q_no)
+ {
+ 	volatile uint64_t reg_val = 0ull;
+-	int loop = SDP_VF_BUSY_LOOP_COUNT;
++	int loop = OTX2_EP_BUSY_LOOP_COUNT;
+ 
+ 	/* Resetting doorbells during IQ enabling also to handle abrupt
+ 	 * guest reboot. IQ reset does not clear the doorbells.
+ 	 */
+-	oct_ep_write64(0xFFFFFFFF, otx_ep->hw_addr + SDP_VF_R_IN_INSTR_DBELL(q_no));
++	oct_ep_write64(0xFFFFFFFF, otx_ep->hw_addr + CNXK_EP_R_IN_INSTR_DBELL(q_no));
+ 
+ 	while (((oct_ep_read64(otx_ep->hw_addr +
+-		 SDP_VF_R_IN_INSTR_DBELL(q_no))) != 0ull) && loop--) {
++		 CNXK_EP_R_IN_INSTR_DBELL(q_no))) != 0ull) && loop--) {
+ 		rte_delay_ms(1);
+ 	}
+ 
+@@ -428,10 +429,10 @@ otx2_vf_enable_iq(struct otx_ep_device *otx_ep, uint32_t q_no)
+ 		return -EIO;
+ 	}
+ 
+-	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_IN_ENABLE(q_no));
++	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_IN_ENABLE(q_no));
+ 	reg_val |= 0x1ull;
+ 
+-	oct_ep_write64(reg_val, otx_ep->hw_addr + SDP_VF_R_IN_ENABLE(q_no));
++	oct_ep_write64(reg_val, otx_ep->hw_addr + CNXK_EP_R_IN_ENABLE(q_no));
+ 
+ 	otx_ep_info("IQ[%d] enable done", q_no);
+ 
+@@ -443,9 +444,9 @@ otx2_vf_enable_oq(struct otx_ep_device *otx_ep, uint32_t q_no)
+ {
+ 	uint64_t reg_val = 0ull;
+ 
+-	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_OUT_ENABLE(q_no));
++	reg_val = oct_ep_read64(otx_ep->hw_addr + OTX2_EP_R_OUT_ENABLE(q_no));
+ 	reg_val |= 0x1ull;
+-	oct_ep_write64(reg_val, otx_ep->hw_addr + SDP_VF_R_OUT_ENABLE(q_no));
++	oct_ep_write64(reg_val, otx_ep->hw_addr + OTX2_EP_R_OUT_ENABLE(q_no));
+ 
+ 	otx_ep_info("OQ[%d] enable done", q_no);
+ 
+@@ -476,10 +477,10 @@ otx2_vf_disable_iq(struct otx_ep_device *otx_ep, uint32_t q_no)
+ 	uint64_t reg_val = 0ull;
+ 
+ 	/* Reset the doorbell register for this Input Queue. */
+-	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_IN_ENABLE(q_no));
++	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_IN_ENABLE(q_no));
+ 	reg_val &= ~0x1ull;
+ 
+-	oct_ep_write64(reg_val, otx_ep->hw_addr + SDP_VF_R_IN_ENABLE(q_no));
++	oct_ep_write64(reg_val, otx_ep->hw_addr + CNXK_EP_R_IN_ENABLE(q_no));
+ }
+ 
+ static void
+@@ -487,10 +488,10 @@ otx2_vf_disable_oq(struct otx_ep_device *otx_ep, uint32_t q_no)
+ {
+ 	volatile uint64_t reg_val = 0ull;
+ 
+-	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_OUT_ENABLE(q_no));
++	reg_val = oct_ep_read64(otx_ep->hw_addr + OTX2_EP_R_OUT_ENABLE(q_no));
+ 	reg_val &= ~0x1ull;
+ 
+-	oct_ep_write64(reg_val, otx_ep->hw_addr + SDP_VF_R_OUT_ENABLE(q_no));
++	oct_ep_write64(reg_val, otx_ep->hw_addr + OTX2_EP_R_OUT_ENABLE(q_no));
+ }
+ 
+ static void
+@@ -542,14 +543,14 @@ static int otx2_vf_enable_rxq_intr(struct otx_ep_device *otx_epvf,
+ 	union out_cnts_t out_cnts;
+ 
+ 	out_int_lvl.d64 = otx2_read64(otx_epvf->hw_addr +
+-				SDP_VF_R_OUT_INT_LEVELS(q_no));
++				CNXK_EP_R_OUT_INT_LEVELS(q_no));
+ 	out_int_lvl.s.time_cnt_en = 1;
+ 	out_int_lvl.s.cnt = 0;
+ 	otx2_write64(out_int_lvl.d64, otx_epvf->hw_addr +
+-			SDP_VF_R_OUT_INT_LEVELS(q_no));
++			CNXK_EP_R_OUT_INT_LEVELS(q_no));
+ 	out_cnts.d64 = 0;
+ 	out_cnts.s.resend = 1;
+-	otx2_write64(out_cnts.d64, otx_epvf->hw_addr + SDP_VF_R_OUT_CNTS(q_no));
++	otx2_write64(out_cnts.d64, otx_epvf->hw_addr + CNXK_EP_R_OUT_CNTS(q_no));
+ 	return 0;
+ }
+ 
+@@ -560,11 +561,11 @@ static int otx2_vf_disable_rxq_intr(struct otx_ep_device *otx_epvf,
+ 
+ 	/* Disable the interrupt for this queue */
+ 	out_int_lvl.d64 = otx2_read64(otx_epvf->hw_addr +
+-				SDP_VF_R_OUT_INT_LEVELS(q_no));
++				CNXK_EP_R_OUT_INT_LEVELS(q_no));
+ 	out_int_lvl.s.time_cnt_en = 0;
+ 	out_int_lvl.s.cnt = 0;
+ 	otx2_write64(out_int_lvl.d64, otx_epvf->hw_addr +
+-			SDP_VF_R_OUT_INT_LEVELS(q_no));
++			CNXK_EP_R_OUT_INT_LEVELS(q_no));
+ 
+ 	return 0;
+ }
+@@ -585,10 +586,10 @@ otx2_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 	}
+ 
+ 	/* Get IOQs (RPVF] count */
+-	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_IN_CONTROL(0));
++	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_IN_CONTROL(0));
+ 
+-	otx_ep->sriov_info.rings_per_vf = ((reg_val >> SDP_VF_R_IN_CTL_RPVF_POS)
+-					  & SDP_VF_R_IN_CTL_RPVF_MASK);
++	otx_ep->sriov_info.rings_per_vf = ((reg_val >> CNXK_EP_R_IN_CTL_RPVF_POS)
++					  & CNXK_EP_R_IN_CTL_RPVF_MASK);
+ 
+ 	otx_ep_info("SDP RPVF: %d", otx_ep->sriov_info.rings_per_vf);
+ 
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.h b/drivers/net/octeon_ep/otx2_ep_vf.h
+index f4fde214310df..f5142c1f3ac66 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.h
++++ b/drivers/net/octeon_ep/otx2_ep_vf.h
+@@ -14,9 +14,21 @@
+ #define PCI_DEVID_CN98XX_EP_NET_VF		0xB103
+ #define PCI_DEVID_CNF95N_EP_NET_VF		0xB403
+ #define PCI_DEVID_CNF95O_EP_NET_VF		0xB603
++#define PCI_DEVID_LIO3_EP_NET_VF		0x3383
++#define PCI_DEVID_CNF95XXN_EP_NET_VF		0xB403
++#define PCI_DEVID_CNF95XXO_EP_NET_VF		0xB603
+ 
+ #define OTX2_EP_MAX_RX_PKT_LEN			(16384)
+ 
++#define OTX2_EP_BUSY_LOOP_COUNT                 (10000)
++#define OTX2_EP_RING_OFFSET                     (1ULL << 17)
++#define OTX2_EP_R_OUT_CNTS_IN_INT               (1ULL << 61)
++#define OTX2_EP_R_OUT_CNTS_OUT_INT               (1ULL << 62)
++
++#define OTX2_EP_R_OUT_ENABLE_START               (0x10160)
++
++#define OTX2_EP_R_OUT_ENABLE(ring) \
++	(OTX2_EP_R_OUT_ENABLE_START + (OTX2_EP_RING_OFFSET * (ring)))
+ int
+ otx2_ep_vf_setup_device(struct otx_ep_device *sdpvf);
+ 
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 014bb1fc55a0e..2a9beb105b58c 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -8,7 +8,6 @@
+ #include <rte_spinlock.h>
+ #include <eal_interrupts.h>
+ 
+-#include "common/cnxk/roc_api.h"
+ #include "otx_ep_common.h"
+ #include "otx_ep_vf.h"
+ #include "otx2_ep_vf.h"
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index 1c63e82c5529d..04cc91270e25f 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -7,7 +7,6 @@
+ #include <rte_kvargs.h>
+ #include <rte_spinlock.h>
+ 
+-#include "common/cnxk/roc_api.h"
+ #include "otx_ep_common.h"
+ #include "otx_ep_vf.h"
+ #include "otx2_ep_vf.h"
+@@ -23,10 +22,10 @@ __otx_ep_send_mbox_cmd(struct otx_ep_device *otx_ep,
+ 	int count = 0;
+ 
+ 	cmd.s.type = OTX_EP_MBOX_TYPE_CMD;
+-	otx2_write64(cmd.u64, otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++	otx2_write64(cmd.u64, otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
+ 	for (count = 0; count < OTX_EP_MBOX_TIMEOUT_MS; count++) {
+ 		rte_delay_ms(1);
+-		reg_val = otx2_read64(otx_ep->hw_addr + SDP_VF_R_MBOX_VF_PF_DATA(0));
++		reg_val = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
+ 		if (reg_val != cmd.u64) {
+ 			rsp->u64 = reg_val;
+ 			break;
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 700452a096519..8ac339e636cf7 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -11,7 +11,6 @@
+ #include <rte_net.h>
+ #include <rte_cycles.h>
+ #include <ethdev_pci.h>
+-#include "common/cnxk/roc_api.h"
+ 
+ #include "otx_ep_common.h"
+ #include "otx_ep_vf.h"
+-- 
+2.25.1
+

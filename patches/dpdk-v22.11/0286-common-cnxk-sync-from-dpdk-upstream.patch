@@ -1,0 +1,160 @@
+From 0dd68a80ab0febf332f13d4c8ce7546786743b4b Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 3 Mar 2023 15:47:24 +0530
+Subject: [PATCH 286/955] common/cnxk: sync from dpdk upstream
+
+Sync from DPDK upstream.
+
+Change-Id: Ia1cb47559ddd7ddf3f2fae72d23f4e5b0f72da24
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98443
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_constants.h | 10 +++++-----
+ drivers/common/cnxk/roc_cpt.h       |  5 +++--
+ drivers/common/cnxk/roc_nix_irq.c   |  5 ++---
+ drivers/common/cnxk/roc_nix_tm.c    |  1 -
+ drivers/net/cnxk/cn9k_ethdev_sec.c  |  1 +
+ drivers/net/cnxk/cn9k_tx.h          | 20 ++++++++++----------
+ drivers/net/cnxk/cnxk_ethdev.c      |  1 -
+ 7 files changed, 21 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_constants.h b/drivers/common/cnxk/roc_constants.h
+index 0c4fcdc2ba0b6..2491b4458365c 100644
+--- a/drivers/common/cnxk/roc_constants.h
++++ b/drivers/common/cnxk/roc_constants.h
+@@ -61,11 +61,11 @@
+ #define PCI_SUBSYSTEM_DEVID_CN10KB  0xBD00
+ #define PCI_SUBSYSTEM_DEVID_CNF10KB 0xBC00
+ 
+-#define PCI_SUBSYSTEM_DEVID_CN9KA  0x0000
+-#define PCI_SUBSYSTEM_DEVID_CN9KB  0xb400
+-#define PCI_SUBSYSTEM_DEVID_CN9KC  0x0200
+-#define PCI_SUBSYSTEM_DEVID_CN9KD  0xB200
+-#define PCI_SUBSYSTEM_DEVID_CN9KE  0xB100
++#define PCI_SUBSYSTEM_DEVID_CN9KA 0x0000
++#define PCI_SUBSYSTEM_DEVID_CN9KB 0xb400
++#define PCI_SUBSYSTEM_DEVID_CN9KC 0x0200
++#define PCI_SUBSYSTEM_DEVID_CN9KD 0xB200
++#define PCI_SUBSYSTEM_DEVID_CN9KE 0xB100
+ #define PCI_SUBSYSTEM_DEVID_CNF9KA 0xB600
+ 
+ #endif /* _ROC_CONSTANTS_H_ */
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index c8b8d01f2b395..934183ab4d2c3 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -147,6 +147,9 @@ struct roc_cpt_rxc_time_cfg {
+ 	uint16_t zombie_thres;
+ };
+ 
++/* CPT MISC interrupt callback */
++typedef void (*roc_cpt_int_misc_cb_t)(struct roc_cpt_lf *lf, void *args);
++
+ struct roc_cpt_inline_ipsec_inb_cfg {
+ 	uint32_t cpt_credit;
+ 	uint16_t opcode;
+@@ -157,8 +160,6 @@ struct roc_cpt_inline_ipsec_inb_cfg {
+ 	uint8_t egrp;
+ };
+ 
+-/* CPT MISC interrupt callback */
+-typedef void (*roc_cpt_int_misc_cb_t)(struct roc_cpt_lf *lf, void *args);
+ 
+ int __roc_api roc_cpt_rxc_time_cfg(struct roc_cpt *roc_cpt,
+ 				   struct roc_cpt_rxc_time_cfg *cfg);
+diff --git a/drivers/common/cnxk/roc_nix_irq.c b/drivers/common/cnxk/roc_nix_irq.c
+index 2e4bccb713b63..2b731302cd230 100644
+--- a/drivers/common/cnxk/roc_nix_irq.c
++++ b/drivers/common/cnxk/roc_nix_irq.c
+@@ -328,9 +328,8 @@ nix_lf_q_irq(void *param)
+ 	roc_nix_queues_ctx_dump(nix_priv_to_roc_nix(nix), NULL);
+ 
+ 	/* Call reset callback */
+-	if (intr_cb)
+-		if (dev->ops->q_err_cb)
+-			dev->ops->q_err_cb(nix_priv_to_roc_nix(nix), NULL);
++	if (intr_cb && dev->ops->q_err_cb)
++		dev->ops->q_err_cb(nix_priv_to_roc_nix(nix), NULL);
+ }
+ 
+ int
+diff --git a/drivers/common/cnxk/roc_nix_tm.c b/drivers/common/cnxk/roc_nix_tm.c
+index 0949df0b067a9..c1046113550a6 100644
+--- a/drivers/common/cnxk/roc_nix_tm.c
++++ b/drivers/common/cnxk/roc_nix_tm.c
+@@ -1068,7 +1068,6 @@ nix_tm_release_resources(struct nix *nix, uint8_t hw_lvl, bool contig,
+ 			return rc;
+ 		}
+ 		mbox_put(mbox);
+-
+ 		plt_tm_dbg("Released hwres %s(%u)", nix_tm_hwlvl2str(hw_lvl),
+ 			   schq);
+ 		plt_bitmap_clear(bmp, schq);
+diff --git a/drivers/net/cnxk/cn9k_ethdev_sec.c b/drivers/net/cnxk/cn9k_ethdev_sec.c
+index 67966a4e49540..327f221e385de 100644
+--- a/drivers/net/cnxk/cn9k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn9k_ethdev_sec.c
+@@ -556,6 +556,7 @@ cn9k_eth_sec_session_create(void *device,
+ 
+ 	if (!dev->outb.lf_base) {
+ 		plt_err("Could not allocate security session private data");
++		rte_spinlock_unlock(lock);
+ 		return -ENOMEM;
+ 	}
+ 
+diff --git a/drivers/net/cnxk/cn9k_tx.h b/drivers/net/cnxk/cn9k_tx.h
+index f096a9d69796e..e956c1ad2a449 100644
+--- a/drivers/net/cnxk/cn9k_tx.h
++++ b/drivers/net/cnxk/cn9k_tx.h
+@@ -81,16 +81,6 @@ cn9k_nix_tx_skeleton(struct cn9k_eth_txq *txq, uint64_t *cmd,
+ 	}
+ }
+ 
+-static __rte_always_inline void
+-cn9k_nix_sec_fc_wait_one(const struct cn9k_eth_txq *txq)
+-{
+-	uint64_t nb_desc = txq->cpt_desc;
+-	uint64_t *fc = txq->cpt_fc;
+-
+-	while (nb_desc <= __atomic_load_n(fc, __ATOMIC_RELAXED))
+-		;
+-}
+-
+ static __rte_always_inline uint64_t
+ cn9k_nix_prefree_seg(struct rte_mbuf *m, struct cn9k_eth_txq *txq,
+ 		struct nix_send_hdr_s *send_hdr)
+@@ -425,6 +415,16 @@ cn9k_nix_xmit_prep_lmt(uint64_t *cmd, void *lmt_addr, const uint32_t flags)
+ 	roc_lmt_mov(lmt_addr, cmd, cn9k_nix_tx_ext_subs(flags));
+ }
+ 
++static __rte_always_inline void
++cn9k_nix_sec_fc_wait_one(const struct cn9k_eth_txq *txq)
++{
++	uint64_t nb_desc = txq->cpt_desc;
++	uint64_t *fc = txq->cpt_fc;
++
++	while (nb_desc <= __atomic_load_n(fc, __ATOMIC_RELAXED))
++		;
++}
++
+ static __rte_always_inline uint64_t
+ cn9k_nix_xmit_submit_lmt(const rte_iova_t io_addr)
+ {
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 6d9341142dcc4..1cae3084e1846 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -487,7 +487,6 @@ cnxk_nix_tx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	sq->qid = qid;
+ 	sq->nb_desc = nb_desc;
+ 	sq->max_sqe_sz = nix_sq_max_sqe_sz(dev);
+-	sq->fc_hyst_bits = 0x1;
+ 
+ 	if (nix->tx_compl_ena) {
+ 		sq->cqid = sq->qid + dev->nb_rxq;
+-- 
+2.25.1
+

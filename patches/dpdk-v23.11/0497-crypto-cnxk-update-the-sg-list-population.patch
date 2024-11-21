@@ -1,0 +1,64 @@
+From decf35729f0e84f9fa6319644bef1da2dd4813a9 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Tue, 10 Sep 2024 23:49:51 -0700
+Subject: [PATCH 497/513] crypto/cnxk: update the sg list population
+
+update the last seg with length before populating the scatter list
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: If88d23ab53292b97f6834d82165b250e6ca7c65a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/135407
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 568fd70c1f3c6fe158a0d78aeeded24c872b2d31)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/135559
+---
+ drivers/crypto/cnxk/cn10k_tls_ops.h | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_tls_ops.h b/drivers/crypto/cnxk/cn10k_tls_ops.h
+index 2393c621c51f1..e7138fe8a346b 100644
+--- a/drivers/crypto/cnxk/cn10k_tls_ops.h
++++ b/drivers/crypto/cnxk/cn10k_tls_ops.h
+@@ -136,6 +136,8 @@ process_tls_write(struct roc_cpt_lf *lf, struct rte_crypto_op *cop, struct cn10k
+ 
+ 		g_size_bytes = ((i + 3) / 4) * sizeof(struct roc_sglist_comp);
+ 
++		/* Output Scatter List */
++		last_seg->data_len += sess->max_extended_len + pad_bytes;
+ 		i = 0;
+ 		scatter_comp = (struct roc_sglist_comp *)((uint8_t *)gather_comp + g_size_bytes);
+ 
+@@ -156,8 +158,6 @@ process_tls_write(struct roc_cpt_lf *lf, struct rte_crypto_op *cop, struct cn10k
+ 		w4.s.opcode_major |= (uint64_t)ROC_DMA_MODE_SG;
+ 		w4.s.opcode_minor = pad_len;
+ 
+-		/* Output Scatter List */
+-		last_seg->data_len += sess->max_extended_len + pad_bytes;
+ 		inst->w4.u64 = w4.u64;
+ 	} else {
+ 		struct roc_sg2list_comp *scatter_comp, *gather_comp;
+@@ -189,6 +189,8 @@ process_tls_write(struct roc_cpt_lf *lf, struct rte_crypto_op *cop, struct cn10k
+ 		cpt_inst_w5.s.gather_sz = ((i + 2) / 3);
+ 		g_size_bytes = ((i + 2) / 3) * sizeof(struct roc_sg2list_comp);
+ 
++		/* Output Scatter List */
++		last_seg->data_len += sess->max_extended_len + pad_bytes;
+ 		i = 0;
+ 		scatter_comp = (struct roc_sg2list_comp *)((uint8_t *)gather_comp + g_size_bytes);
+ 
+@@ -209,8 +211,6 @@ process_tls_write(struct roc_cpt_lf *lf, struct rte_crypto_op *cop, struct cn10k
+ 		w4.s.opcode_minor = pad_len;
+ 		w4.s.param1 = w4.s.dlen;
+ 		w4.s.param2 = cop->param1.tls_record.content_type;
+-		/* Output Scatter List */
+-		last_seg->data_len += sess->max_extended_len + pad_bytes;
+ 		inst->w4.u64 = w4.u64;
+ 	}
+ 
+-- 
+2.25.1
+

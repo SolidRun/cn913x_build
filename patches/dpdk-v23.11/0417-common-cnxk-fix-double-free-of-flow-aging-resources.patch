@@ -1,0 +1,39 @@
+From fdf2730f1c010715905e2e25b3fb4fca6f634e66 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Wed, 31 Jul 2024 15:15:24 +0530
+Subject: [PATCH 417/513] common/cnxk: fix double free of flow aging resources
+
+As part of npc tear down sequence flow aging resources are
+cleaned up while they were already cleaned up when last flow
+with aging action was removed. This leads to double free of
+some resources.
+
+Fixes: d43d47c36b8b ("common/cnxk: fix flow aging cleanup")
+
+Change-Id: I6b221a80237e7d131d1758f5a4d53198910a48cc
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132446
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Reviewed-by: Ankur Dwivedi <adwivedi@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 37e1a6a7ef18e..bbe71cd666f02 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -389,7 +389,8 @@ roc_npc_fini(struct roc_npc *roc_npc)
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	int rc;
+ 
+-	npc_aging_ctrl_thread_destroy(roc_npc);
++	if (!roc_npc->flow_age.aged_flows_get_thread_exit)
++		npc_aging_ctrl_thread_destroy(roc_npc);
+ 
+ 	rc = npc_flow_free_all_resources(npc);
+ 	if (rc) {
+-- 
+2.25.1
+

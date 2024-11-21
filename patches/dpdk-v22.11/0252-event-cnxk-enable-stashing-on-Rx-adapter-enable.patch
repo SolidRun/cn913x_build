@@ -1,0 +1,81 @@
+From 03b58cabb4e9308dbbcb52ecfd1452a0e1edd86c Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 21 Feb 2023 14:24:41 +0530
+Subject: [PATCH 252/955] event/cnxk: enable stashing on Rx adapter enable
+
+Enable stashing on queues which have been connected to
+Rx adapter. Stashing improves performance by upto 6% based
+on the workload. Both MBUF and NIX_RX_WQE_HDR + NIX_RX_PARSE_S
+are stashed.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Iba0ad7890792bb2d33cd15d60470043010d3d6d6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97314
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_features.h  |  2 +-
+ drivers/event/cnxk/cn10k_eventdev.c | 10 ++++++++++
+ drivers/event/cnxk/cn10k_eventdev.h |  3 +++
+ 3 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index b984cf2b8df15..252f306a86251 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -7,7 +7,7 @@
+ static inline bool
+ roc_feature_sso_has_stash(void)
+ {
+-	return roc_model_is_cn103xx() ? true : false;
++	return (roc_model_is_cn103xx() | roc_model_is_cn10ka_b0()) ? true : false;
+ }
+ 
+ static inline bool
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index 9fe2650cf9d1b..071ea5a212502 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -884,6 +884,8 @@ cn10k_sso_rx_adapter_queue_add(
+ 	int32_t rx_queue_id,
+ 	const struct rte_event_eth_rx_adapter_queue_conf *queue_conf)
+ {
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	struct roc_sso_hwgrp_stash stash;
+ 	struct cn10k_eth_rxq *rxq;
+ 	void *lookup_mem;
+ 	int rc;
+@@ -900,6 +902,14 @@ cn10k_sso_rx_adapter_queue_add(
+ 	lookup_mem = rxq->lookup_mem;
+ 	cn10k_sso_set_priv_mem(event_dev, lookup_mem);
+ 	cn10k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
++	if (roc_feature_sso_has_stash()) {
++		stash.hwgrp = queue_conf->ev.queue_id;
++		stash.stash_offset = CN10K_SSO_DEFAULT_STASH_OFFSET;
++		stash.stash_count = CN10K_SSO_DEFAULT_STASH_LENGTH;
++		rc = roc_sso_hwgrp_stash_config(&dev->sso, &stash, 1);
++		if (rc < 0)
++			plt_warn("failed to configure HWGRP WQE stashing rc = %d", rc);
++	}
+ 
+ 	return 0;
+ }
+diff --git a/drivers/event/cnxk/cn10k_eventdev.h b/drivers/event/cnxk/cn10k_eventdev.h
+index 5fb6f0a6f281b..aaa01d1ec1162 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.h
++++ b/drivers/event/cnxk/cn10k_eventdev.h
+@@ -5,6 +5,9 @@
+ #ifndef __CN10K_EVENTDEV_H__
+ #define __CN10K_EVENTDEV_H__
+ 
++#define CN10K_SSO_DEFAULT_STASH_OFFSET -1
++#define CN10K_SSO_DEFAULT_STASH_LENGTH 2
++
+ struct cn10k_sso_hws {
+ 	uint64_t base;
+ 	uint64_t gw_rdata;
+-- 
+2.25.1
+

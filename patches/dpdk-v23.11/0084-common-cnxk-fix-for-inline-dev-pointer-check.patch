@@ -1,0 +1,33 @@
+From 0ab1480ebbe1932c037db76da294ba65fdd709a6 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 23 Nov 2023 14:09:03 +0530
+Subject: [PATCH 084/513] common/cnxk: fix for inline dev pointer check
+
+Add missing check of Inline device pointer before accessing
+is_multi_channel variable.
+
+Fixes: 7ea187184a51 ("common/cnxk: support 1-N pool-aura per NIX LF")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I095bf6a084c34debcd86e0c69b0f0149146614ca
+---
+ drivers/common/cnxk/roc_nix_inl.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index de8fd2a6054e8..a205c658e9205 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -933,7 +933,8 @@ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ 	inl_dev = idev->nix_inl_dev;
+ 
+ 	roc_nix->custom_meta_aura_ena = (roc_nix->local_meta_aura_ena &&
+-					 (inl_dev->is_multi_channel || roc_nix->custom_sa_action));
++					 ((inl_dev && inl_dev->is_multi_channel) ||
++					  roc_nix->custom_sa_action));
+ 	if (!roc_model_is_cn9k() && !roc_errata_nix_no_meta_aura()) {
+ 		nix->need_meta_aura = true;
+ 		if (!roc_nix->local_meta_aura_ena || roc_nix->custom_meta_aura_ena)
+-- 
+2.25.1
+

@@ -1,0 +1,88 @@
+From d026e923d0dad75c33c0ce9fc65fad2d32b3668a Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Thu, 9 Feb 2023 08:39:00 -0800
+Subject: [PATCH 205/955] net/octeon_ep: send notification message to PF
+
+SDP PMD driver sends notification message to PF
+driver via mailbox,when quit command executed at
+dpdk-testpmd.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: Ieb41240e6d5aaf90bc9e2a6afbf2d714c295e7cc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96541
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_ethdev.c |  1 +
+ drivers/net/octeon_ep/otx_ep_mbox.c   | 18 ++++++++++++++++++
+ drivers/net/octeon_ep/otx_ep_mbox.h   |  2 ++
+ 3 files changed, 21 insertions(+)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index b8553fd44c318..4e1715ee82302 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -210,6 +210,7 @@ otx_ep_dev_close(struct rte_eth_dev *eth_dev)
+ 	uint32_t num_queues, q;
+ 
+ 	otx_epvf = OTX_EP_DEV(eth_dev);
++	otx_ep_mbox_send_dev_exit(eth_dev);
+ 	otx_ep_mbox_disable_interrupt(otx_epvf);
+ 	otx_epvf->fn_list.disable_io_queues(otx_epvf);
+ 	num_queues = otx_epvf->nb_rx_queues;
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index 8e53445e9acbf..80c34174e6b4f 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -23,6 +23,11 @@ __otx_ep_send_mbox_cmd(struct otx_ep_device *otx_ep,
+ 
+ 	cmd.s.type = OTX_EP_MBOX_TYPE_CMD;
+ 	otx2_write64(cmd.u64, otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
++
++	/* No response for notification messages */
++	if (!rsp)
++		return 0;
++
+ 	for (count = 0; count < OTX_EP_MBOX_TIMEOUT_MS; count++) {
+ 		rte_delay_ms(1);
+ 		reg_val = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
+@@ -290,3 +295,16 @@ int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev)
+ 	}
+ 	return ret;
+ }
++
++int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_ep =
++		(struct otx_ep_device *)(eth_dev)->data->dev_private;
++	union otx_ep_mbox_word cmd;
++	int ret;
++
++	cmd.u64 = 0;
++	cmd.s_version.opcode = OTX_EP_MBOX_CMD_DEV_REMOVE;
++	ret = otx_ep_send_mbox_cmd(otx_ep, cmd, NULL);
++	return ret;
++}
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.h b/drivers/net/octeon_ep/otx_ep_mbox.h
+index c7a0a546350d8..9df3c53edd9d5 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.h
++++ b/drivers/net/octeon_ep/otx_ep_mbox.h
+@@ -19,6 +19,7 @@ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_SET_LINK_STATUS,
+ 	OTX_EP_MBOX_CMD_GET_LINK_STATUS,
+ 	OTX_EP_MBOX_CMD_GET_MTU,
++	OTX_EP_MBOX_CMD_DEV_REMOVE,
+ 	OTX_EP_MBOX_CMD_LAST,
+ };
+ 
+@@ -158,4 +159,5 @@ void otx_ep_mbox_enable_interrupt(struct otx_ep_device *otx_ep);
+ void otx_ep_mbox_disable_interrupt(struct otx_ep_device *otx_ep);
+ int otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev);
+ int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev);
++int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev);
+ #endif
+-- 
+2.25.1
+

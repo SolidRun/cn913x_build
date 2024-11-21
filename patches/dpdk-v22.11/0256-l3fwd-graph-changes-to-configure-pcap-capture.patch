@@ -1,0 +1,34 @@
+From c0610fa50671916847baa0f2aa718423240cfd1f Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Tue, 28 Feb 2023 16:52:43 +0530
+Subject: [PATCH 256/955] l3fwd-graph: changes to configure pcap capture
+
+sync from upstream.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I6eeded888728ae629a4939ebe4bf98f4ba08eefe
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98160
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ doc/guides/sample_app_ug/l3_forward_graph.rst | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/doc/guides/sample_app_ug/l3_forward_graph.rst b/doc/guides/sample_app_ug/l3_forward_graph.rst
+index 3043dba8e2740..585ac8c898f5d 100644
+--- a/doc/guides/sample_app_ug/l3_forward_graph.rst
++++ b/doc/guides/sample_app_ug/l3_forward_graph.rst
+@@ -112,7 +112,7 @@ To enable pcap trace on each graph, use following command:
+ 
+ .. code-block:: console
+ 
+-    ./<build_dir>/examples/dpdk-l3fwd-graph -l 1,2 -n 4 -- -p 0x3 --config="(0,0,1),(1,0,2)" --pcap-enable --pcap-num-cap=<number of packets> --pcap-file-name "</filepath/filename>"
++    ./<build_dir>/examples/dpdk-l3fwd-graph -l 1,2 -n 4 -- -p 0x3 --config="(0,0,1),(1,0,2)" --pcap-enable --pcap-num-cap=<number of packets> --pcap-file-name "</path/to/file>"
+ 
+ In this command:
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,30 @@
+From c21f868660f7a6c385c51a82b20d313664c2fa5d Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Wed, 30 Nov 2022 14:51:04 +0530
+Subject: [PATCH 008/955] ci: avoid -s argument in git format-patch
+
+Avoid -s argument in git format-patch when running checkpatch
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I19a76f7dda5850e6acbdd07a0955a129a15e2189
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91541
+---
+ marvell-ci/checkpatch/run_checkpatch.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/checkpatch/run_checkpatch.sh b/marvell-ci/checkpatch/run_checkpatch.sh
+index 28d29d7fe20ad..d0e30dda6796c 100755
+--- a/marvell-ci/checkpatch/run_checkpatch.sh
++++ b/marvell-ci/checkpatch/run_checkpatch.sh
+@@ -10,7 +10,7 @@ cd $PROJECT_ROOT
+ export DPDK_CHECKPATCH_CODESPELL=$PROJECT_ROOT/marvell-ci/checkpatch/dictionary.txt
+ export DPDK_CHECKPATCH_PATH=$PROJECT_ROOT/marvell-ci/checkpatch/checkpatch.pl
+ ./devtools/check-git-log.sh -n1 || ERR=1
+-git format-patch -n1 -s -q -o patches
++git format-patch -n1 -q -o patches
+ ./devtools/checkpatches.sh patches/* || ERR=1
+ 
+ if [[ -n $ERR ]]; then
+-- 
+2.25.1
+

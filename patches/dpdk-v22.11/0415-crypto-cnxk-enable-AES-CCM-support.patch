@@ -1,0 +1,46 @@
+From f7da4f3011d05aa124237a0b4ce753108243858c Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Wed, 10 May 2023 10:38:16 +0530
+Subject: [PATCH 415/955] crypto/cnxk: enable AES CCM support
+
+Enabling 96XX and CN10K AES CCM support for
+lookaside crypto PMD.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I776d99b14b4dafa7da8aa340d1052ef813c9f6cb
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103159
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_se.h | 6 ------
+ 1 file changed, 6 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index cc12ab2c045f6..4f1b86278d04d 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -8,8 +8,6 @@
+ 
+ #include <rte_cryptodev.h>
+ 
+-#include "roc_model.h"
+-
+ #include "cnxk_cryptodev.h"
+ #include "cnxk_cryptodev_ops.h"
+ #include "cnxk_sg.h"
+@@ -1829,10 +1827,6 @@ fill_sess_aead(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 		aes_gcm = 1;
+ 		break;
+ 	case RTE_CRYPTO_AEAD_AES_CCM:
+-		if (!roc_model_is_cn98xx()) {
+-			plt_dp_err("AES CCM is not supported\n");
+-			return -1;
+-		}
+ 		enc_type = ROC_SE_AES_CCM;
+ 		cipher_key_len = 16;
+ 		aes_ccm = 1;
+-- 
+2.25.1
+

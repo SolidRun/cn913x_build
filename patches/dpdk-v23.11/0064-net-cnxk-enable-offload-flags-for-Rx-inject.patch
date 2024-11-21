@@ -1,0 +1,32 @@
+From a7e8f3afdec8d2ae481041845fcd846a05778264 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Tue, 17 Oct 2023 11:02:21 +0530
+Subject: [PATCH 064/513] net/cnxk: enable offload flags for Rx inject
+
+Enables Rx offload recurity and reassembly flags if Rx
+inject feature is enabled.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ied1395f2636286b84cc1d85ea8d69fefe3f49257
+---
+ drivers/net/cnxk/cn10k_ethdev.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index 4a4e97287c852..c6ded57ebb707 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -593,6 +593,10 @@ cn10k_nix_dev_start(struct rte_eth_dev *eth_dev)
+ 	if (dev->rx_offload_flags & NIX_RX_OFFLOAD_SECURITY_F)
+ 		cn10k_nix_rx_queue_meta_aura_update(eth_dev);
+ 
++	/* Set flags for Rx Inject feature */
++	if (roc_idev_nix_rx_inject_get(nix->port_id))
++		dev->rx_offload_flags |= NIX_RX_SEC_REASSEMBLY_F;
++
+ 	cn10k_eth_set_tx_function(eth_dev);
+ 	cn10k_eth_set_rx_function(eth_dev);
+ 	return 0;
+-- 
+2.25.1
+

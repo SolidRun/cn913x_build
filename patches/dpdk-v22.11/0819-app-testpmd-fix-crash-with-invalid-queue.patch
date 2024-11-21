@@ -1,0 +1,81 @@
+From 15014d4254a49bf8559c38830822d3ada453b47d Mon Sep 17 00:00:00 2001
+From: Dengdui Huang <huangdengdui@huawei.com>
+Date: Mon, 5 Jun 2023 10:27:41 +0800
+Subject: [PATCH 819/955] app/testpmd: fix crash with invalid queue
+
+When input queue ID is invalid, it will lead to
+Segmentation fault, like:
+
+dpdk-testpmd -a 0000:01:00.0 -- -i
+testpmd> show port 0 txq/rxq 99 desc 0 status
+Segmentation fault
+
+dpdk-testpmd -a 0000:01:00.0 -- -i
+testpmd> show port 0 rxq 99 desc used count
+Segmentation fault
+
+This patch fixes it.
+
+Fixes: fae9aa717d6c ("app/testpmd: support checking descriptor status")
+Fixes: 3f9acb5c83bb ("ethdev: avoid non-dataplane checks in Rx queue count")
+Cc: stable@dpdk.org
+
+Change-Id: I3ecbb559cdb81b67256ec9c672846611f9b6da59
+Signed-off-by: Dengdui Huang <huangdengdui@huawei.com>
+Acked-by: Ferruh Yigit <ferruh.yigit@amd.com>
+---
+ app/test-pmd/cmdline.c | 23 ++++++++++++++++-------
+ 1 file changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/app/test-pmd/cmdline.c b/app/test-pmd/cmdline.c
+index cb8c174020b05..8a34572532840 100644
+--- a/app/test-pmd/cmdline.c
++++ b/app/test-pmd/cmdline.c
+@@ -12266,12 +12266,13 @@ cmd_show_rx_tx_desc_status_parsed(void *parsed_result,
+ 	struct cmd_show_rx_tx_desc_status_result *res = parsed_result;
+ 	int rc;
+ 
+-	if (!rte_eth_dev_is_valid_port(res->cmd_pid)) {
+-		fprintf(stderr, "invalid port id %u\n", res->cmd_pid);
+-		return;
+-	}
+-
+ 	if (!strcmp(res->cmd_keyword, "rxq")) {
++		if (rte_eth_dev_is_valid_rxq(res->cmd_pid, res->cmd_qid) != 0) {
++			fprintf(stderr,
++				"Invalid input: port id = %d, queue id = %d\n",
++				res->cmd_pid, res->cmd_qid);
++			return;
++		}
+ 		rc = rte_eth_rx_descriptor_status(res->cmd_pid, res->cmd_qid,
+ 					     res->cmd_did);
+ 		if (rc < 0) {
+@@ -12287,6 +12288,12 @@ cmd_show_rx_tx_desc_status_parsed(void *parsed_result,
+ 		else
+ 			printf("Desc status = UNAVAILABLE\n");
+ 	} else if (!strcmp(res->cmd_keyword, "txq")) {
++		if (rte_eth_dev_is_valid_txq(res->cmd_pid, res->cmd_qid) != 0) {
++			fprintf(stderr,
++				"Invalid input: port id = %d, queue id = %d\n",
++				res->cmd_pid, res->cmd_qid);
++			return;
++		}
+ 		rc = rte_eth_tx_descriptor_status(res->cmd_pid, res->cmd_qid,
+ 					     res->cmd_did);
+ 		if (rc < 0) {
+@@ -12366,8 +12373,10 @@ cmd_show_rx_queue_desc_used_count_parsed(void *parsed_result,
+ 	struct cmd_show_rx_queue_desc_used_count_result *res = parsed_result;
+ 	int rc;
+ 
+-	if (!rte_eth_dev_is_valid_port(res->cmd_pid)) {
+-		fprintf(stderr, "invalid port id %u\n", res->cmd_pid);
++	if (rte_eth_dev_is_valid_rxq(res->cmd_pid, res->cmd_qid) != 0) {
++		fprintf(stderr,
++			"Invalid input: port id = %d, queue id = %d\n",
++			res->cmd_pid, res->cmd_qid);
+ 		return;
+ 	}
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,67 @@
+From c7dc2dd36413dc9f01e10e64bd67650d0915bb9b Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Tue, 28 Feb 2023 12:24:38 +0530
+Subject: [PATCH 310/955] common/cnxk: add recevive error mask
+
+Adding support to configure receive error mask
+for 106B0
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I8fffe1891606b2e286d0a1516c1e36acce24c82
+Change-Id: I8fffe1891606b2e286d0a1516c1e36acce24c82a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95212
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_features.h |  6 ++++++
+ drivers/common/cnxk/roc_nix.h      | 16 ++++++++++++++++
+ 2 files changed, 22 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index 37cd607a5134e..36ef315f5a080 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -16,6 +16,12 @@ roc_feature_nix_has_inl_ipsec_mseg(void)
+ 	return (roc_model_is_cn10kb() || roc_model_is_cn10ka_b0());
+ }
+ 
++static inline bool
++roc_feature_nix_has_drop_re_mask(void)
++{
++	return (roc_model_is_cn10kb() || roc_model_is_cn10ka_b0());
++}
++
+ static inline bool
+ roc_feature_nix_has_inl_rq_mask(void)
+ {
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index f84e473db66b5..37d0ed5ebe4fd 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -242,6 +242,22 @@ struct roc_nix_eeprom_info {
+ #define ROC_NIX_LF_RX_CFG_LEN_OL4     BIT_ULL(40)
+ #define ROC_NIX_LF_RX_CFG_LEN_OL3     BIT_ULL(41)
+ 
++#define ROC_NIX_LF_RX_CFG_RX_ERROR_MASK 0xFFFFFFFFFFF80000
++#define ROC_NIX_RE_PARTIAL		BIT_ULL(1)
++#define ROC_NIX_RE_JABBER		BIT_ULL(2)
++#define ROC_NIX_RE_CRC8_PCH		BIT_ULL(5)
++#define ROC_NIX_RE_CNC_INV		BIT_ULL(6)
++#define ROC_NIX_RE_FCS			BIT_ULL(7)
++#define ROC_NIX_RE_FCS_RCV		BIT_ULL(8)
++#define ROC_NIX_RE_TERMINATE		BIT_ULL(9)
++#define ROC_NIX_RE_MACSEC		BIT_ULL(10)
++#define ROC_NIX_RE_RX_CTL		BIT_ULL(11)
++#define ROC_NIX_RE_SKIP			BIT_ULL(12)
++#define ROC_NIX_RE_DMAPKT		BIT_ULL(15)
++#define ROC_NIX_RE_UNDERSIZE		BIT_ULL(16)
++#define ROC_NIX_RE_OVERSIZE		BIT_ULL(17)
++#define ROC_NIX_RE_OL2_LENMISM		BIT_ULL(18)
++
+ /* Group 0 will be used for RSS, 1 -7 will be used for npc_flow RSS action*/
+ #define ROC_NIX_RSS_GROUP_DEFAULT    0
+ #define ROC_NIX_RSS_GRPS	     8
+-- 
+2.25.1
+

@@ -1,0 +1,102 @@
+From 31faa55e0f8ac7a5958de8e9d5949ec6905940ea Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Mon, 3 Jun 2024 12:03:46 +0530
+Subject: [PATCH 382/513] net/cnxk: handle timestamp correctly for VF
+
+When timestamp is enabled on PF in kernel and respective
+VF is attached to application in DPDK mbuf_addr is getting
+corrupted in cnxk_nix_timestamp_dynfield() as
+"tstamp_dynfield_offset" is zero for PTP enabled PF
+This patch fixes the same
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Id2212a853b9c0f29a788c9c6db6536a142e19280
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128891
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev.c | 12 +++++++++++-
+ drivers/net/cnxk/cn9k_ethdev.c  | 12 +++++++++++-
+ drivers/net/cnxk/cnxk_ethdev.c  |  2 +-
+ 3 files changed, 23 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index 55ed54bb0fcfc..099890e959b90 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -473,7 +473,7 @@ cn10k_nix_ptp_info_update_cb(struct roc_nix *nix, bool ptp_en)
+ 	struct cnxk_eth_dev *dev = (struct cnxk_eth_dev *)nix;
+ 	struct rte_eth_dev *eth_dev;
+ 	struct cn10k_eth_rxq *rxq;
+-	int i;
++	int i, rc;
+ 
+ 	if (!dev)
+ 		return -EINVAL;
+@@ -496,7 +496,17 @@ cn10k_nix_ptp_info_update_cb(struct roc_nix *nix, bool ptp_en)
+ 		 * and MTU setting also requires MBOX message to be
+ 		 * sent(VF->PF)
+ 		 */
++		if (dev->ptp_en) {
++			rc = rte_mbuf_dyn_rx_timestamp_register
++				(&dev->tstamp.tstamp_dynfield_offset,
++				 &dev->tstamp.rx_tstamp_dynflag);
++			if (rc != 0) {
++				plt_err("Failed to register Rx timestamp field/flag");
++				return -EINVAL;
++			}
++		}
+ 		eth_dev->rx_pkt_burst = nix_ptp_vf_burst;
++		rte_eth_fp_ops[eth_dev->data->port_id].rx_pkt_burst = eth_dev->rx_pkt_burst;
+ 		rte_mb();
+ 	}
+ 
+diff --git a/drivers/net/cnxk/cn9k_ethdev.c b/drivers/net/cnxk/cn9k_ethdev.c
+index ea92b1dcb6493..4851e60f161da 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.c
++++ b/drivers/net/cnxk/cn9k_ethdev.c
+@@ -432,7 +432,7 @@ cn9k_nix_ptp_info_update_cb(struct roc_nix *nix, bool ptp_en)
+ 	struct cnxk_eth_dev *dev = (struct cnxk_eth_dev *)nix;
+ 	struct rte_eth_dev *eth_dev;
+ 	struct cn9k_eth_rxq *rxq;
+-	int i;
++	int i, rc;
+ 
+ 	if (!dev)
+ 		return -EINVAL;
+@@ -455,7 +455,17 @@ cn9k_nix_ptp_info_update_cb(struct roc_nix *nix, bool ptp_en)
+ 		 * and MTU setting also requires MBOX message to be
+ 		 * sent(VF->PF)
+ 		 */
++		if (dev->ptp_en) {
++			rc = rte_mbuf_dyn_rx_timestamp_register
++				(&dev->tstamp.tstamp_dynfield_offset,
++				 &dev->tstamp.rx_tstamp_dynflag);
++			if (rc != 0) {
++				plt_err("Failed to register Rx timestamp field/flag");
++				return -EINVAL;
++			}
++		}
+ 		eth_dev->rx_pkt_burst = nix_ptp_vf_burst;
++		rte_eth_fp_ops[eth_dev->data->port_id].rx_pkt_burst = eth_dev->rx_pkt_burst;
+ 		rte_mb();
+ 	}
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 38746c81c57c5..dd065c826954a 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1751,7 +1751,7 @@ cnxk_nix_dev_start(struct rte_eth_dev *eth_dev)
+ 	else
+ 		cnxk_eth_dev_ops.timesync_disable(eth_dev);
+ 
+-	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP) {
++	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP || dev->ptp_en) {
+ 		rc = rte_mbuf_dyn_rx_timestamp_register
+ 			(&dev->tstamp.tstamp_dynfield_offset,
+ 			 &dev->tstamp.rx_tstamp_dynflag);
+-- 
+2.25.1
+

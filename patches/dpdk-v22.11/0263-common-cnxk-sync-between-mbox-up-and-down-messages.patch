@@ -1,0 +1,228 @@
+From 124970403074cfe2c133de4568a483197de246e5 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 14 Mar 2023 10:22:37 +0530
+Subject: [PATCH 263/955] common/cnxk: sync between mbox up and down messages
+
+An issue is observed where if PF is with DPDK and VF as kernel
+netdev doesn't responds to link events. It was due to recent
+design change in kernel where sender checks whether previous
+interrupt is received before triggering current interrupt by
+waiting for mailbox data register to become zero.
+
+Change-Id: Ib315c0d12fd144bb706caccc7bb074c1a2a05308
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99322
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Devapraba Muthumani <dmuthumani@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c       | 20 ++++++++-
+ drivers/common/cnxk/roc_mbox.c      | 64 +++++++++++++++++++++--------
+ drivers/common/cnxk/roc_mbox.h      | 15 +++++++
+ drivers/common/cnxk/roc_mbox_priv.h |  6 ++-
+ 4 files changed, 84 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 2388237186268..4bae638563ec3 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -195,7 +195,8 @@ af_pf_wait_msg(struct dev *dev, uint16_t vf, int num_msg)
+ 				vf_msg->rc = msg->rc;
+ 				vf_msg->pcifunc = msg->pcifunc;
+ 				/* Send to VF */
+-				mbox_msg_send(&dev->mbox_vfpf_up, vf);
++				mbox_msg_send_up(&dev->mbox_vfpf_up, vf);
++				mbox_wait_for_zero(&dev->mbox_vfpf_up, vf);
+ 			}
+ 		}
+ 
+@@ -497,6 +498,7 @@ pf_vf_mbox_send_up_msg(struct dev *dev, void *rec_msg)
+ 
+ 		/* Send to VF */
+ 		mbox_msg_send(vf_mbox, vf);
++		mbox_wait_for_zero(&dev->mbox_vfpf_up, vf);
+ 	}
+ }
+ 
+@@ -630,6 +632,7 @@ static void
+ roc_pf_vf_mbox_irq(void *param)
+ {
+ 	struct dev *dev = param;
++	uint64_t mbox_data;
+ 	uint64_t intr;
+ 
+ 	intr = plt_read64(dev->bar2 + RVU_VF_INT);
+@@ -639,6 +642,13 @@ roc_pf_vf_mbox_irq(void *param)
+ 	plt_write64(intr, dev->bar2 + RVU_VF_INT);
+ 	plt_base_dbg("Irq 0x%" PRIx64 "(pf:%d,vf:%d)", intr, dev->pf, dev->vf);
+ 
++	/* Reading for UP/DOWN message, next message sending will be delayed
++	 * by 1ms until this region is zeroed mbox_wait_for_zero()
++	 */
++	mbox_data = plt_read64(dev->bar2 + RVU_VF_VFPF_MBOX0);
++	if (mbox_data)
++		plt_write64(!mbox_data, dev->bar2 + RVU_VF_VFPF_MBOX0);
++
+ 	/* First process all configuration messages */
+ 	process_msgs(dev, dev->mbox);
+ 
+@@ -650,6 +660,7 @@ static void
+ roc_af_pf_mbox_irq(void *param)
+ {
+ 	struct dev *dev = param;
++	uint64_t mbox_data;
+ 	uint64_t intr;
+ 
+ 	intr = plt_read64(dev->bar2 + RVU_PF_INT);
+@@ -659,6 +670,13 @@ roc_af_pf_mbox_irq(void *param)
+ 	plt_write64(intr, dev->bar2 + RVU_PF_INT);
+ 	plt_base_dbg("Irq 0x%" PRIx64 "(pf:%d,vf:%d)", intr, dev->pf, dev->vf);
+ 
++	/* Reading for UP/DOWN message, next message sending will be delayed
++	 * by 1ms until this region is zeroed mbox_wait_for_zero()
++	 */
++	mbox_data = plt_read64(dev->bar2 + RVU_PF_PFAF_MBOX0);
++	if (mbox_data)
++		plt_write64(!mbox_data, dev->bar2 + RVU_PF_PFAF_MBOX0);
++
+ 	/* First process all configuration messages */
+ 	process_msgs(dev, dev->mbox);
+ 
+diff --git a/drivers/common/cnxk/roc_mbox.c b/drivers/common/cnxk/roc_mbox.c
+index 7dcd188ca7e96..5338a960d95f3 100644
+--- a/drivers/common/cnxk/roc_mbox.c
++++ b/drivers/common/cnxk/roc_mbox.c
+@@ -10,18 +10,6 @@
+ #include "roc_api.h"
+ #include "roc_priv.h"
+ 
+-#define RVU_AF_AFPF_MBOX0 (0x02000)
+-#define RVU_AF_AFPF_MBOX1 (0x02008)
+-
+-#define RVU_PF_PFAF_MBOX0 (0xC00)
+-#define RVU_PF_PFAF_MBOX1 (0xC08)
+-
+-#define RVU_PF_VFX_PFVF_MBOX0 (0x0000)
+-#define RVU_PF_VFX_PFVF_MBOX1 (0x0008)
+-
+-#define RVU_VF_VFPF_MBOX0 (0x0000)
+-#define RVU_VF_VFPF_MBOX1 (0x0008)
+-
+ /* RCLK, SCLK in MHz */
+ uint16_t dev_rclk_freq;
+ uint16_t dev_sclk_freq;
+@@ -194,10 +182,31 @@ mbox_alloc_msg_rsp(struct mbox *mbox, int devid, int size, int size_rsp)
+ 
+ /**
+  * @internal
+- * Send a mailbox message
++ * Synchronization between UP and DOWN messages
+  */
+-void
+-mbox_msg_send(struct mbox *mbox, int devid)
++bool
++mbox_wait_for_zero(struct mbox *mbox, int devid)
++{
++	uint64_t data;
++
++	data = plt_read64((volatile void *)(mbox->reg_base +
++				(mbox->trigger | (devid << mbox->tr_shift))));
++
++	/* If data is non-zero wait for ~1ms and return to caller
++	 * whether data has changed to zero or not after the wait.
++	 */
++	if (data)
++		usleep(1000);
++	else
++		return true;
++
++	data = plt_read64((volatile void *)(mbox->reg_base +
++				(mbox->trigger | (devid << mbox->tr_shift))));
++	return data == 0;
++}
++
++static void
++mbox_msg_send_data(struct mbox *mbox, int devid, uint8_t data)
+ {
+ 	struct mbox_dev *mdev = &mbox->dev[devid];
+ 	struct mbox_hdr *tx_hdr =
+@@ -223,9 +232,28 @@ mbox_msg_send(struct mbox *mbox, int devid)
+ 	/* The interrupt should be fired after num_msgs is written
+ 	 * to the shared memory
+ 	 */
+-	plt_write64(1, (volatile void *)(mbox->reg_base +
+-					 (mbox->trigger |
+-					  (devid << mbox->tr_shift))));
++	plt_write64(data, (volatile void *)(mbox->reg_base +
++				(mbox->trigger | (devid << mbox->tr_shift))));
++}
++
++/**
++ * @internal
++ * Send a mailbox message
++ */
++void
++mbox_msg_send(struct mbox *mbox, int devid)
++{
++	mbox_msg_send_data(mbox, devid, MBOX_DOWN_MSG);
++}
++
++/**
++ * @internal
++ * Send an UP mailbox message
++ */
++void
++mbox_msg_send_up(struct mbox *mbox, int devid)
++{
++	mbox_msg_send_data(mbox, devid, MBOX_UP_MSG);
+ }
+ 
+ /**
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index af3c10b0b0749..bbfc0e274166e 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -35,6 +35,21 @@ struct mbox_msghdr {
+ 	int __io rc; /* Msg processed response code */
+ };
+ 
++#define RVU_AF_AFPF_MBOX0 (0x02000)
++#define RVU_AF_AFPF_MBOX1 (0x02008)
++
++#define RVU_PF_PFAF_MBOX0 (0xC00)
++#define RVU_PF_PFAF_MBOX1 (0xC08)
++
++#define RVU_PF_VFX_PFVF_MBOX0 (0x0000)
++#define RVU_PF_VFX_PFVF_MBOX1 (0x0008)
++
++#define RVU_VF_VFPF_MBOX0 (0x0000)
++#define RVU_VF_VFPF_MBOX1 (0x0008)
++
++#define MBOX_DOWN_MSG 1
++#define MBOX_UP_MSG   2
++
+ /* Mailbox message types */
+ #define MBOX_MSG_MASK	 0xFFFF
+ #define MBOX_MSG_INVALID 0xFFFE
+diff --git a/drivers/common/cnxk/roc_mbox_priv.h b/drivers/common/cnxk/roc_mbox_priv.h
+index 4fafca6f72cad..354c8fa52afaa 100644
+--- a/drivers/common/cnxk/roc_mbox_priv.h
++++ b/drivers/common/cnxk/roc_mbox_priv.h
+@@ -71,10 +71,12 @@ struct mbox {
+ const char *mbox_id2name(uint16_t id);
+ int mbox_id2size(uint16_t id);
+ void mbox_reset(struct mbox *mbox, int devid);
+-int mbox_init(struct mbox *mbox, uintptr_t hwbase, uintptr_t reg_base,
+-	      int direction, int ndevsi, uint64_t intr_offset);
++int mbox_init(struct mbox *mbox, uintptr_t hwbase, uintptr_t reg_base, int direction, int ndevsi,
++	      uint64_t intr_offset);
+ void mbox_fini(struct mbox *mbox);
+ void mbox_msg_send(struct mbox *mbox, int devid);
++void mbox_msg_send_up(struct mbox *mbox, int devid);
++bool mbox_wait_for_zero(struct mbox *mbox, int devid);
+ int mbox_wait_for_rsp(struct mbox *mbox, int devid);
+ int mbox_wait_for_rsp_tmo(struct mbox *mbox, int devid, uint32_t tmo);
+ int mbox_get_rsp(struct mbox *mbox, int devid, void **msg);
+-- 
+2.25.1
+

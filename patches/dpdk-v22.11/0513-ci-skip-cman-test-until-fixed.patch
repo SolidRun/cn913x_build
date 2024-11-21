@@ -1,0 +1,29 @@
+From a2d272e0ee764d3248b2615ec304459623845fa6 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 26 Jun 2023 11:07:44 +0530
+Subject: [PATCH 513/955] ci: skip cman test until fixed
+
+Change-Id: Icff7ef5a8ea2a6ff621a00f4ee49bf8da872c30f
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106302
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn10k.env | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 98d217443dda5..78f1d4b6bafc9 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -74,6 +74,7 @@ TM_SETUP=${TM_SETUP:-}
+ FIXME_SKIP_TESTS="
+ 	cnxk_mtr_test_config
+ 	cnxk_fc_test_config
++	cnxk_cman_test_config
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+-- 
+2.25.1
+

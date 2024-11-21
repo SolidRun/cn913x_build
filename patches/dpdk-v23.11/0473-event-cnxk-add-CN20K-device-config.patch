@@ -1,0 +1,77 @@
+From 8ef8ad82df00b3522f8c4b8b38760f6ded27c30a Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 26 Aug 2024 12:53:44 +0530
+Subject: [PATCH 473/513] event/cnxk: add CN20K device config
+
+Add CN20K event device configuration that attaches the requested
+number of SSO HWS(event ports) and HWGRP(event queues) LFs to
+the RVU PF/VF.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ia4f35dc60a2b20939caca2afcea123556765cff7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134410
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn20k_eventdev.c | 36 +++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/drivers/event/cnxk/cn20k_eventdev.c b/drivers/event/cnxk/cn20k_eventdev.c
+index c4b80f64f3897..753a976cd324a 100644
+--- a/drivers/event/cnxk/cn20k_eventdev.c
++++ b/drivers/event/cnxk/cn20k_eventdev.c
+@@ -17,6 +17,17 @@ cn20k_sso_set_rsrc(void *arg)
+ 					dev->sso.max_hwgrp;
+ }
+ 
++static int
++cn20k_sso_rsrc_init(void *arg, uint8_t hws, uint8_t hwgrp)
++{
++	struct cnxk_tim_evdev *tim_dev = cnxk_tim_priv_get();
++	struct cnxk_sso_evdev *dev = arg;
++	uint16_t nb_tim_lfs;
++
++	nb_tim_lfs = tim_dev ? tim_dev->nb_rings : 0;
++	return roc_sso_rsrc_init(&dev->sso, hws, hwgrp, nb_tim_lfs);
++}
++
+ static void
+ cn20k_sso_info_get(struct rte_eventdev *event_dev, struct rte_event_dev_info *dev_info)
+ {
+@@ -27,8 +38,33 @@ cn20k_sso_info_get(struct rte_eventdev *event_dev, struct rte_event_dev_info *de
+ 	dev_info->max_event_port_enqueue_depth = UINT32_MAX;
+ }
+ 
++static int
++cn20k_sso_dev_configure(const struct rte_eventdev *event_dev)
++{
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	int rc;
++
++	rc = cnxk_sso_dev_validate(event_dev, 1, UINT32_MAX);
++	if (rc < 0) {
++		plt_err("Invalid event device configuration");
++		return -EINVAL;
++	}
++
++	rc = cn20k_sso_rsrc_init(dev, dev->nb_event_ports, dev->nb_event_queues);
++	if (rc < 0) {
++		plt_err("Failed to initialize SSO resources");
++		return -ENODEV;
++	}
++
++	return rc;
++}
++
+ static struct eventdev_ops cn20k_sso_dev_ops = {
+ 	.dev_infos_get = cn20k_sso_info_get,
++	.dev_configure = cn20k_sso_dev_configure,
++
++	.queue_def_conf = cnxk_sso_queue_def_conf,
++	.port_def_conf = cnxk_sso_port_def_conf,
+ };
+ 
+ static int
+-- 
+2.25.1
+

@@ -1,0 +1,45 @@
+From 3db6d96a8dea47e63eb2d2918f9650b25d0821eb Mon Sep 17 00:00:00 2001
+From: Sibaranjan Pattnayak <spattnayak@marvell.com>
+Date: Thu, 27 Oct 2022 01:50:43 -0700
+Subject: [PATCH 262/955] mempool/cnxk: add initialization NPA PF/VF for
+ CNF10KA
+
+Added entries in npa_pci_map for initialization of NPA PF/VF for CNF10KA.
+
+Change-Id: I8e5bfb418375ce0a62394eacd7ff8bd825380180
+Signed-off-by: Sibaranjan Pattnayak <spattnayak@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/88944
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 2936551d4bc5b902e6f619962c6dd29b8ffea62d)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99195
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/mempool/cnxk/cnxk_mempool.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/mempool/cnxk/cnxk_mempool.c b/drivers/mempool/cnxk/cnxk_mempool.c
+index 78caf987d078b..1181b6f2650a9 100644
+--- a/drivers/mempool/cnxk/cnxk_mempool.c
++++ b/drivers/mempool/cnxk/cnxk_mempool.c
+@@ -164,6 +164,7 @@ static const struct rte_pci_id npa_pci_map[] = {
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KA, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KAS, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KB, PCI_DEVID_CNXK_RVU_NPA_PF),
++	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CNF10KA, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CNF10KB, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN9KA, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN9KB, PCI_DEVID_CNXK_RVU_NPA_PF),
+@@ -174,6 +175,7 @@ static const struct rte_pci_id npa_pci_map[] = {
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KA, PCI_DEVID_CNXK_RVU_NPA_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KAS, PCI_DEVID_CNXK_RVU_NPA_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KB, PCI_DEVID_CNXK_RVU_NPA_VF),
++	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CNF10KA, PCI_DEVID_CNXK_RVU_NPA_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CNF10KB, PCI_DEVID_CNXK_RVU_NPA_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN9KA, PCI_DEVID_CNXK_RVU_NPA_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN9KB, PCI_DEVID_CNXK_RVU_NPA_VF),
+-- 
+2.25.1
+

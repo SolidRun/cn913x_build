@@ -1,0 +1,101 @@
+From b24fed1707d9ec49d39c59eecd560798ffcb837e Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 8 May 2023 11:32:50 +0530
+Subject: [PATCH 485/955] net/cnxk: flush SQ before configuring MTU
+
+When try to configure MTU for lower value causes run time failure
+due to old bigger packets enqueued. To avoid error interrupts better
+to flush the all SQs of this port before configuring new MTU.
+
+Change-Id: Ie31f7fdb5dc46ddfc97c75f3070bd784e38c7e03
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104266
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.h     |  1 +
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 47 ++++++++++++++++++++++++++++++
+ 2 files changed, 48 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index d8b4dccd06db0..2b9ff11a6a717 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -474,6 +474,7 @@ int cnxk_nix_probe(struct rte_pci_driver *pci_drv,
+ 		   struct rte_pci_device *pci_dev);
+ int cnxk_nix_remove(struct rte_pci_device *pci_dev);
+ int cnxk_nix_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu);
++int cnxk_nix_sq_flush(struct rte_eth_dev *eth_dev);
+ int cnxk_nix_mc_addr_list_configure(struct rte_eth_dev *eth_dev,
+ 				    struct rte_ether_addr *mc_addr_set,
+ 				    uint32_t nb_mc_addr);
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index bce6d59bbce7f..da5ee19c850de 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -495,6 +495,44 @@ cnxk_nix_mac_addr_del(struct rte_eth_dev *eth_dev, uint32_t index)
+ 	dev->dmac_filter_count--;
+ }
+ 
++int
++cnxk_nix_sq_flush(struct rte_eth_dev *eth_dev)
++{
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct rte_eth_dev_data *data = eth_dev->data;
++	int i, rc = 0;
++
++	/* Flush all tx queues */
++	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
++		struct roc_nix_sq *sq = &dev->sqs[i];
++
++		if (eth_dev->data->tx_queues[i] == NULL)
++			continue;
++
++		rc = roc_nix_tm_sq_aura_fc(sq, false);
++		if (rc) {
++			plt_err("Failed to disable sqb aura fc, rc=%d", rc);
++			goto exit;
++		}
++
++		/* Wait for sq entries to be flushed */
++		rc = roc_nix_tm_sq_flush_spin(sq);
++		if (rc) {
++			plt_err("Failed to drain sq, rc=%d\n", rc);
++			goto exit;
++		}
++		if (data->tx_queue_state[i] == RTE_ETH_QUEUE_STATE_STARTED) {
++			rc = roc_nix_tm_sq_aura_fc(sq, true);
++			if (rc) {
++				plt_err("Failed to enable sq aura fc, txq=%u, rc=%d", i, rc);
++				goto exit;
++			}
++		}
++	}
++exit:
++	return rc;
++}
++
+ int
+ cnxk_nix_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ {
+@@ -538,6 +576,15 @@ cnxk_nix_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ 		goto exit;
+ 	}
+ 
++	/* if new MTU was smaller than old one, then flush all SQs before MTU change */
++	if (old_frame_size > frame_size) {
++		if (data->dev_started) {
++			plt_err("Reducing MTU is not supported when device started");
++			goto exit;
++		}
++		cnxk_nix_sq_flush(eth_dev);
++	}
++
+ 	frame_size -= RTE_ETHER_CRC_LEN;
+ 
+ 	/* Update mtu on Tx */
+-- 
+2.25.1
+

@@ -1,0 +1,177 @@
+From 8c0bf29f80c99de4b54a658633e1eb49142bacbd Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 27 Feb 2024 21:33:15 +0530
+Subject: [PATCH 241/513] common/cnxk: single representee notification callback
+
+Implementing a single callback handling different types of
+notifications from representees.
+
+Change-Id: Ia78c388b8e88a73cf1b9bac33e4f878c351c59f9
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122675
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c      | 52 ++++++++++++++++++++++++++++--
+ drivers/common/cnxk/roc_dev_priv.h |  2 +-
+ drivers/common/cnxk/roc_eswitch.h  | 27 +++++++++++++++-
+ drivers/common/cnxk/roc_mbox.h     | 10 +++++-
+ 4 files changed, 85 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index fd5036894afb2..daf7684d8e6cc 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -542,6 +542,7 @@ pf_vf_mbox_send_up_msg(struct dev *dev, void *rec_msg)
+ static int
+ mbox_up_handler_rep_repte_notify(struct dev *dev, struct rep_repte_req *req, struct msg_rsp *rsp)
+ {
++	struct roc_eswitch_repte_notify_msg *notify_msg;
+ 	int rc = 0;
+ 
+ 	plt_base_dbg("pf:%d/vf:%d msg id 0x%x (%s) from: pf:%d/vf:%d", dev_get_pf(dev->pf_func),
+@@ -549,15 +550,60 @@ mbox_up_handler_rep_repte_notify(struct dev *dev, struct rep_repte_req *req, str
+ 		     dev_get_pf(req->hdr.pcifunc), dev_get_vf(req->hdr.pcifunc));
+ 
+ 	plt_base_dbg("repte pcifunc %x, enable %d", req->repte_pcifunc, req->enable);
+-
+ 	if (dev->ops && dev->ops->repte_notify) {
+-		rc = dev->ops->repte_notify(dev->roc_nix, req->repte_pcifunc,
+-					    req->enable);
++		notify_msg = plt_zmalloc(sizeof(struct roc_eswitch_repte_notify_msg), 0);
++		if (!notify_msg) {
++			plt_err("Failed to allocate memory");
++			rc = -ENOMEM;
++			goto fail;
++		}
++		notify_msg->type = ROC_ESWITCH_REPTE_STATE;
++		notify_msg->state.hw_func = req->repte_pcifunc;
++		notify_msg->state.enable = req->enable;
++
++		rc = dev->ops->repte_notify(dev->roc_nix, (void *)notify_msg);
+ 		if (rc < 0)
+ 			plt_err("Failed to sent new representee %x notification to %s",
+ 				req->repte_pcifunc, (req->enable == true) ? "enable" : "disable");
++
++		plt_free(notify_msg);
+ 	}
++fail:
++	rsp->hdr.rc = rc;
++	return rc;
++}
++
++static int
++mbox_up_handler_rep_set_mtu(struct dev *dev, struct rep_mtu *req, struct msg_rsp *rsp)
++{
++	struct roc_eswitch_repte_notify_msg *notify_msg;
++	int rc = 0;
+ 
++	plt_base_dbg("pf:%d/vf:%d msg id 0x%x (%s) from: pf:%d/vf:%d", dev_get_pf(dev->pf_func),
++		     dev_get_vf(dev->pf_func), req->hdr.id, mbox_id2name(req->hdr.id),
++		     dev_get_pf(req->hdr.pcifunc), dev_get_vf(req->hdr.pcifunc));
++
++	plt_base_dbg("rep pcifunc %x, rep id %d mtu %d", req->rep_pcifunc, req->rep_id, req->mtu);
++	if (dev->ops && dev->ops->repte_notify) {
++		notify_msg = plt_zmalloc(sizeof(struct roc_eswitch_repte_notify_msg), 0);
++		if (!notify_msg) {
++			plt_err("Failed to allocate memory");
++			rc = -ENOMEM;
++			goto fail;
++		}
++		notify_msg->type = ROC_ESWITCH_REPTE_MTU;
++		notify_msg->mtu.hw_func = req->rep_pcifunc;
++		notify_msg->mtu.rep_id = req->rep_id;
++		notify_msg->mtu.mtu = req->mtu;
++
++		rc = dev->ops->repte_notify(dev->roc_nix, (void *)notify_msg);
++		if (rc < 0)
++			plt_err("Failed to send new mtu notification for representee %x ",
++				req->rep_pcifunc);
++
++		plt_free(notify_msg);
++	}
++fail:
+ 	rsp->hdr.rc = rc;
+ 	return rc;
+ }
+diff --git a/drivers/common/cnxk/roc_dev_priv.h b/drivers/common/cnxk/roc_dev_priv.h
+index dd694b8572e01..50e12cbf17ac8 100644
+--- a/drivers/common/cnxk/roc_dev_priv.h
++++ b/drivers/common/cnxk/roc_dev_priv.h
+@@ -37,7 +37,7 @@ typedef void (*q_err_cb_t)(void *roc_nix, void *data);
+ typedef void (*link_status_get_t)(void *roc_nix,
+ 				  struct cgx_link_user_info *link);
+ /* Representee notification callback */
+-typedef int (*repte_notify_t)(void *roc_nix, uint16_t pf_func, bool enable);
++typedef int (*repte_notify_t)(void *roc_nix, void *notify_msg);
+ 
+ struct dev_ops {
+ 	link_info_t link_status_update;
+diff --git a/drivers/common/cnxk/roc_eswitch.h b/drivers/common/cnxk/roc_eswitch.h
+index 5a0b7419c8c37..b701ea69ee863 100644
+--- a/drivers/common/cnxk/roc_eswitch.h
++++ b/drivers/common/cnxk/roc_eswitch.h
+@@ -8,8 +8,33 @@
+ #define ROC_ESWITCH_VLAN_TPID 0x8100
+ #define ROC_ESWITCH_LBK_CHAN  63
+ 
++typedef enum roc_eswitch_repte_notify_msg_type {
++	ROC_ESWITCH_REPTE_STATE = 0,
++	ROC_ESWITCH_REPTE_MTU,
++} roc_eswitch_repte_notify_msg_type_t;
++
++struct roc_eswitch_repte_state {
++	bool enable;
++	uint16_t hw_func;
++};
++
++struct roc_eswitch_repte_mtu {
++	uint16_t mtu;
++	uint16_t rep_id;
++	uint16_t hw_func;
++};
++
++struct roc_eswitch_repte_notify_msg {
++	roc_eswitch_repte_notify_msg_type_t type;
++	union {
++		struct roc_eswitch_repte_state state;
++		struct roc_eswitch_repte_mtu mtu;
++	};
++};
++
+ /* Process representee notification callback */
+-typedef int (*process_repte_notify_t)(void *roc_nix, uint16_t pf_func, bool enable);
++typedef int (*process_repte_notify_t)(void *roc_nix,
++				      struct roc_eswitch_repte_notify_msg *notify_msg);
+ 
+ /* NPC */
+ int __roc_api roc_eswitch_npc_mcam_rx_rule(struct roc_npc *roc_npc, struct roc_npc_flow *flow,
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 8711148f88a1b..f1a3371ef92cd 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -359,7 +359,8 @@ struct mbox_msghdr {
+ #define MBOX_UP_MCS_MESSAGES M(MCS_INTR_NOTIFY, 0xE00, mcs_intr_notify, mcs_intr_info, msg_rsp)
+ 
+ #define MBOX_UP_REP_MESSAGES						       \
+-M(REP_REPTE_NOTIFY, 0xEF1, rep_repte_notify, rep_repte_req, msg_rsp)
++M(REP_REPTE_NOTIFY, 0xEF1, rep_repte_notify, rep_repte_req, msg_rsp)           \
++M(REP_SET_MTU, 0xEF2, rep_set_mtu, rep_mtu, msg_rsp)
+ 
+ enum {
+ #define M(_name, _id, _1, _2, _3) MBOX_MSG_##_name = _id,
+@@ -2839,4 +2840,11 @@ struct rep_repte_req {
+ 	uint16_t __io repte_pcifunc;
+ 	bool __io enable;
+ };
++
++struct rep_mtu {
++	struct mbox_msghdr hdr;
++	uint16_t __io rep_pcifunc;
++	uint16_t __io rep_id;
++	uint16_t __io mtu;
++};
+ #endif /* __ROC_MBOX_H__ */
+-- 
+2.25.1
+

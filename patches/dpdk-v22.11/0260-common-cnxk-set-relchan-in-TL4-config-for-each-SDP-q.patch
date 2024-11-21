@@ -1,0 +1,40 @@
+From 9aafe22059f1716aa4752d4a293022a51397fedc Mon Sep 17 00:00:00 2001
+From: Veerasenareddy Burru <vburru@marvell.com>
+Date: Fri, 3 Mar 2023 00:01:21 -0800
+Subject: [PATCH 260/955] common/cnxk: set relchan in TL4 config for each SDP
+ queue
+
+set distinct relchan in each TL4 queue connected to SDP.
+
+currently rechan in TL4 SDP config is getting set to 0 for all
+SDP-NIX queues.
+Each TL4 queues for SDP need to be configured with distinct channel
+for SDP to provide per channel backpressure to NIX.
+
+Signed-off-by: Veerasenareddy Burru <vburru@marvell.com>
+Change-Id: Icf70e2427bbccd16f73b8479f1b95ad4abaab07f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98429
+Tested-by: Satananda Burla <sburla@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+(cherry picked from commit e91e230f13fc24995f800c6a88ed1edbde55e7c9)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98493
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_tm_utils.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/common/cnxk/roc_nix_tm_utils.c b/drivers/common/cnxk/roc_nix_tm_utils.c
+index 58648331093ee..9ede1bebe7df5 100644
+--- a/drivers/common/cnxk/roc_nix_tm_utils.c
++++ b/drivers/common/cnxk/roc_nix_tm_utils.c
+@@ -582,6 +582,7 @@ nix_tm_topology_reg_prep(struct nix *nix, struct nix_tm_node *node,
+ 
+ 		/* Configure TL4 to send to SDP channel instead of CGX/LBK */
+ 		if (nix->sdp_link) {
++			relchan = nix->tx_chan_base & 0xff;
+ 			plt_tm_dbg("relchan=%u schq=%u tx_chan_cnt=%u\n", relchan, schq,
+ 				   nix->tx_chan_cnt);
+ 			reg[k] = NIX_AF_TL4X_SDP_LINK_CFG(schq);
+-- 
+2.25.1
+

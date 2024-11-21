@@ -1,0 +1,44 @@
+From f4c9795b49e95f7e262fa7b1a9e264e33b8247a0 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 4 Oct 2023 05:02:47 +0000
+Subject: [PATCH 654/955] crypto/cnxk: return microcode completion code
+
+Return microcode completion code in case of errors. This allows
+applications to check the failure reasons in more granularity.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I86aa401221c7b7c210ea195a8fea25d9b368e10a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113121
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 2c7d6d9665f750ab10f2b41996a3c9c07fb720ef)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113440
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 5f181e8839f8b..47b9135bf2358 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -823,6 +823,7 @@ cn10k_cpt_sec_post_process(struct rte_crypto_op *cop, struct cpt_cn10k_res_s *re
+ 		break;
+ 	default:
+ 		cop->status = RTE_CRYPTO_OP_STATUS_ERROR;
++		cop->aux_flags = res->uc_compcode;
+ 		return;
+ 	}
+ 
+@@ -872,6 +873,7 @@ cn10k_cpt_dequeue_post_process(struct cnxk_cpt_qp *qp,
+ 			plt_dp_info("Request failed with microcode error");
+ 			plt_dp_info("MC completion code 0x%x",
+ 				    res->uc_compcode);
++			cop->aux_flags = uc_compcode;
+ 			goto temp_sess_free;
+ 		}
+ 
+-- 
+2.25.1
+

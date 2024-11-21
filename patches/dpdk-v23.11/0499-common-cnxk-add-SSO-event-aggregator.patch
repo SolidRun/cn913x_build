@@ -1,0 +1,513 @@
+From f4aebeb70391434fe24170ff6c8936fec9e65eb0 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 11 Sep 2024 18:29:12 +0530
+Subject: [PATCH 499/513] common/cnxk: add SSO event aggregator
+
+Add configuration APIs for CN20K SSO event
+aggregator which allows SSO to generate event
+vectors.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I626b828c1d993ac0c8386f8901174b122f783907
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/135696
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/hw/sso.h        |  33 ++++
+ drivers/common/cnxk/roc_mbox.h      |  21 +++
+ drivers/common/cnxk/roc_model.h     |  13 ++
+ drivers/common/cnxk/roc_nix_queue.c |   5 -
+ drivers/common/cnxk/roc_sso.c       | 230 +++++++++++++++++++++++++++-
+ drivers/common/cnxk/roc_sso.h       |  19 ++-
+ drivers/common/cnxk/roc_sso_priv.h  |   4 +
+ drivers/common/cnxk/version.map     |   4 +
+ 8 files changed, 321 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/sso.h b/drivers/common/cnxk/hw/sso.h
+index 09b8d4955fbc1..79337a8a3b40d 100644
+--- a/drivers/common/cnxk/hw/sso.h
++++ b/drivers/common/cnxk/hw/sso.h
+@@ -146,6 +146,7 @@
+ #define SSO_LF_GGRP_OP_ADD_WORK0 (0x0ull)
+ #define SSO_LF_GGRP_OP_ADD_WORK1 (0x8ull)
+ #define SSO_LF_GGRP_QCTL	 (0x20ull)
++#define SSO_LF_GGRP_TAG_CFG	 (0x40ull)
+ #define SSO_LF_GGRP_EXE_DIS	 (0x80ull)
+ #define SSO_LF_GGRP_INT		 (0x100ull)
+ #define SSO_LF_GGRP_INT_W1S	 (0x108ull)
+@@ -159,6 +160,10 @@
+ #define SSO_LF_GGRP_MISC_CNT	 (0x200ull)
+ #define SSO_LF_GGRP_OP_AW_LMTST	 (0x400ull)
+ 
++#define SSO_LF_GGRP_AGGR_CFG	    (0x300ull)
++#define SSO_LF_GGRP_AGGR_CTX_BASE   (0x308ull)
++#define SSO_LF_GGRP_AGGR_CTX_INSTOP (0x310ull)
++
+ #define SSO_AF_IAQ_FREE_CNT_MASK      0x3FFFull
+ #define SSO_AF_IAQ_RSVD_FREE_MASK     0x3FFFull
+ #define SSO_AF_IAQ_RSVD_FREE_SHIFT    16
+@@ -230,5 +235,33 @@
+ #define SSO_TT_ATOMIC	(0x1ull)
+ #define SSO_TT_UNTAGGED (0x2ull)
+ #define SSO_TT_EMPTY	(0x3ull)
++#define SSO_TT_AGG	(0x3ull)
++
++#define SSO_LF_AGGR_INSTOP_FLUSH	(0x0ull)
++#define SSO_LF_AGGR_INSTOP_EVICT	(0x1ull)
++#define SSO_LF_AGGR_INSTOP_GLOBAL_FLUSH (0x2ull)
++#define SSO_LF_AGGR_INSTOP_GLOBAL_EVICT (0x3ull)
++
++#define SSO_AGGR_CTX_SZ	    16
++#define SSO_AGGR_NUM_CTX(a) (1 << (a + 6))
++#define SSO_AGGR_MIN_CTX    SSO_AGGR_NUM_CTX(0)
++#define SSO_AGGR_MAX_CTX    SSO_AGGR_NUM_CTX(10)
++#define SSO_AGGR_DEF_TMO    0x3Full
++
++struct sso_agq_ctx {
++	uint64_t ena : 1;
++	uint64_t rsvd_1_3 : 3;
++	uint64_t vwqe_aura : 17;
++	uint64_t rsvd_21_31 : 11;
++	uint64_t tag : 32;
++	uint64_t tt : 2;
++	uint64_t rsvd_66_67 : 2;
++	uint64_t swqe_tag : 12;
++	uint64_t max_vsize_exp : 4;
++	uint64_t vtimewait : 12;
++	uint64_t xqe_type : 4;
++	uint64_t cnt_ena : 1;
++	uint64_t rsvd_101_127 : 27;
++};
+ 
+ #endif /* __SSO_HW_H__ */
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 645da563c2026..960535eca0111 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -147,6 +147,10 @@ struct mbox_msghdr {
+ 	  msg_rsp)                                                             \
+ 	M(SSO_GRP_STASH_CONFIG, 0x614, sso_grp_stash_config,                   \
+ 	  sso_grp_stash_cfg, msg_rsp)                                          \
++	M(SSO_AGGR_SET_CONFIG, 0x615, sso_aggr_setconfig, sso_aggr_setconfig,  \
++	  msg_rsp)                                                             \
++	M(SSO_AGGR_GET_STATS, 0x616, sso_aggr_get_stats, sso_info_req,         \
++	  sso_aggr_stats)                                                      \
+ 	M(SSO_GET_HW_INFO, 0x617, sso_get_hw_info, msg_req, sso_hw_info)       \
+ 	/* TIM mbox IDs (range 0x800 - 0x9FF) */                               \
+ 	M(TIM_LF_ALLOC, 0x800, tim_lf_alloc, tim_lf_alloc_req,                 \
+@@ -2189,6 +2193,13 @@ struct sso_grp_stash_cfg {
+ 	uint8_t __io num_linesm1 : 4;
+ };
+ 
++struct sso_aggr_setconfig {
++	struct mbox_msghdr hdr;
++	uint16_t __io npa_pf_func;
++	uint16_t __io hwgrp;
++	uint64_t __io rsvd[2];
++};
++
+ struct sso_grp_stats {
+ 	struct mbox_msghdr hdr;
+ 	uint16_t __io grp;
+@@ -2208,6 +2219,16 @@ struct sso_hws_stats {
+ 	uint64_t __io arbitration;
+ };
+ 
++struct sso_aggr_stats {
++	struct mbox_msghdr hdr;
++	uint16_t __io grp;
++	uint64_t __io flushed;
++	uint64_t __io completed;
++	uint64_t __io npa_fail;
++	uint64_t __io timeout;
++	uint64_t __io rsvd[4];
++};
++
+ /* CPT mailbox error codes
+  * Range 901 - 1000.
+  */
+diff --git a/drivers/common/cnxk/roc_model.h b/drivers/common/cnxk/roc_model.h
+index cd70e837e097b..4e053dc355403 100644
+--- a/drivers/common/cnxk/roc_model.h
++++ b/drivers/common/cnxk/roc_model.h
+@@ -8,6 +8,7 @@
+ #include <stdbool.h>
+ 
+ #include "roc_bits.h"
++#include "roc_constants.h"
+ 
+ extern struct roc_model *roc_model;
+ 
+@@ -158,6 +159,18 @@ roc_model_is_cn20k(void)
+ 	return roc_model_runtime_is_cn20k();
+ }
+ 
++static inline uint16_t
++roc_model_optimal_align_sz(void)
++{
++	if (roc_model_is_cn9k())
++		return ROC_ALIGN;
++	if (roc_model_is_cn10k())
++		return ROC_ALIGN;
++	if (roc_model_is_cn20k())
++		return ROC_ALIGN << 1;
++	return 128;
++}
++
+ static inline uint64_t
+ roc_model_is_cn98xx(void)
+ {
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index e566efafad428..1c8b237a8afe3 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -794,9 +794,6 @@ nix_rq_cfg(struct dev *dev, struct roc_nix_rq *rq, uint16_t qints, bool cfg, boo
+ 		aq->rq.good_utag = rq->tag_mask >> 24;
+ 		aq->rq.bad_utag = rq->tag_mask >> 24;
+ 		aq->rq.ltag = rq->tag_mask & BITMASK_ULL(24, 0);
+-
+-		if (rq->vwqe_ena)
+-			aq->rq.wqe_aura = roc_npa_aura_handle_to_aura(rq->vwqe_aura_handle);
+ 	} else {
+ 		/* CQ mode */
+ 		aq->rq.sso_ena = 0;
+@@ -881,8 +878,6 @@ nix_rq_cfg(struct dev *dev, struct roc_nix_rq *rq, uint16_t qints, bool cfg, boo
+ 			aq->rq_mask.good_utag = ~aq->rq_mask.good_utag;
+ 			aq->rq_mask.bad_utag = ~aq->rq_mask.bad_utag;
+ 			aq->rq_mask.ltag = ~aq->rq_mask.ltag;
+-			if (rq->vwqe_ena)
+-				aq->rq_mask.wqe_aura = ~aq->rq_mask.wqe_aura;
+ 		} else {
+ 			/* CQ mode */
+ 			aq->rq_mask.sso_ena = ~aq->rq_mask.sso_ena;
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index 01a0c0a921446..19501916df50a 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -500,9 +500,231 @@ roc_sso_hws_gwc_invalidate(struct roc_sso *roc_sso, uint8_t *hws,
+ 	mbox_put(mbox);
+ }
+ 
++static void
++sso_agq_op_wait(struct roc_sso *roc_sso, uint16_t hwgrp)
++{
++	uint64_t reg;
++
++	reg = plt_read64(roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CTX_INSTOP);
++	while (reg & BIT_ULL(2)) {
++		plt_delay_us(100);
++		reg = plt_read64(roc_sso_hwgrp_base_get(roc_sso, hwgrp) +
++				 SSO_LF_GGRP_AGGR_CTX_INSTOP);
++	}
++}
++
++int
++roc_sso_hwgrp_agq_alloc(struct roc_sso *roc_sso, uint16_t hwgrp, struct roc_sso_agq_data *data)
++{
++	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
++	struct sso_aggr_setconfig *req;
++	struct sso_agq_ctx *ctx;
++	uint32_t cnt, off;
++	struct mbox *mbox;
++	uintptr_t ptr;
++	uint64_t reg;
++	int rc;
++
++	if (sso->agg_mem[hwgrp] == 0) {
++		mbox = mbox_get(sso->dev.mbox);
++		req = mbox_alloc_msg_sso_aggr_setconfig(mbox);
++		if (req == NULL) {
++			mbox_process(mbox);
++			req = mbox_alloc_msg_sso_aggr_setconfig(mbox);
++			if (req == NULL) {
++				plt_err("Failed to allocate AGQ config mbox.\n");
++				mbox_put(mbox);
++				return -EIO;
++			}
++		}
++
++		req->hwgrp = hwgrp;
++		req->npa_pf_func = idev_npa_pffunc_get();
++		rc = mbox_process(mbox);
++		if (rc < 0) {
++			plt_err("Failed to set HWGRP AGQ config rc=%d\n", rc);
++			mbox_put(mbox);
++			return rc;
++		}
++
++		mbox_put(mbox);
++
++		sso->agg_mem[hwgrp] =
++			(uintptr_t)plt_zmalloc(SSO_AGGR_MIN_CTX * sizeof(struct sso_agq_ctx),
++					       roc_model_optimal_align_sz());
++		if (sso->agg_mem[hwgrp] == 0)
++			return -ENOMEM;
++		sso->agg_cnt[hwgrp] = SSO_AGGR_MIN_CTX;
++		sso->agg_used[hwgrp] = 0;
++		plt_wmb();
++		plt_write64(sso->agg_mem[hwgrp],
++			    roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CTX_BASE);
++		reg = (plt_log2_u32(SSO_AGGR_MIN_CTX) - 6) << 16;
++		reg |= (SSO_AGGR_DEF_TMO << 4) | 1;
++		plt_write64(reg, roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CFG);
++	}
++
++	if (sso->agg_cnt[hwgrp] >= SSO_AGGR_MAX_CTX)
++		return -ENOSPC;
++
++	if (sso->agg_cnt[hwgrp] == sso->agg_used[hwgrp]) {
++		ptr = sso->agg_mem[hwgrp];
++		cnt = sso->agg_cnt[hwgrp] << 1;
++		sso->agg_mem[hwgrp] = (uintptr_t)plt_zmalloc(cnt * sizeof(struct sso_agq_ctx),
++							     roc_model_optimal_align_sz());
++		if (sso->agg_mem[hwgrp] == 0) {
++			sso->agg_mem[hwgrp] = ptr;
++			return -ENOMEM;
++		}
++
++		memcpy((void *)sso->agg_mem[hwgrp], (void *)ptr,
++		       sso->agg_cnt[hwgrp] * sizeof(struct sso_agq_ctx));
++		plt_wmb();
++		sso_agq_op_wait(roc_sso, hwgrp);
++		/* Base address has changed, evict old entries. */
++		plt_write64(sso->agg_mem[hwgrp],
++			    roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CTX_BASE);
++		reg = plt_read64(roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CFG);
++		reg &= ~GENMASK_ULL(19, 16);
++		reg |= (uint64_t)(plt_log2_u32(cnt) - 6) << 16;
++		plt_write64(reg, roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CFG);
++		reg = SSO_LF_AGGR_INSTOP_GLOBAL_EVICT << 4;
++		plt_write64(reg,
++			    roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CTX_INSTOP);
++		sso_agq_op_wait(roc_sso, hwgrp);
++		plt_free((void *)ptr);
++
++		sso->agg_cnt[hwgrp] = cnt;
++		off = sso->agg_used[hwgrp];
++	} else {
++		ctx = (struct sso_agq_ctx *)sso->agg_mem[hwgrp];
++		for (cnt = 0; cnt < sso->agg_cnt[hwgrp]; cnt++) {
++			if (!ctx[cnt].ena)
++				break;
++		}
++		if (cnt == sso->agg_cnt[hwgrp])
++			return -EINVAL;
++		off = cnt;
++	}
++
++	ctx = (struct sso_agq_ctx *)sso->agg_mem[hwgrp];
++	ctx += off;
++	ctx->ena = 1;
++	ctx->tt = data->tt;
++	ctx->tag = data->tag;
++	ctx->swqe_tag = data->stag;
++	ctx->cnt_ena = data->cnt_ena;
++	ctx->xqe_type = data->xqe_type;
++	ctx->vtimewait = data->vwqe_wait_tmo;
++	ctx->vwqe_aura = data->vwqe_aura;
++	ctx->max_vsize_exp = data->vwqe_max_sz_exp - 2;
++
++	plt_wmb();
++	sso->agg_used[hwgrp]++;
++
++	return 0;
++}
++
++void
++roc_sso_hwgrp_agq_free(struct roc_sso *roc_sso, uint16_t hwgrp, uint32_t agq_id)
++{
++	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
++	struct sso_agq_ctx *ctx;
++	uint64_t reg;
++
++	ctx = (struct sso_agq_ctx *)sso->agg_mem[hwgrp];
++	ctx += agq_id;
++
++	if (!ctx->ena)
++		return;
++
++	reg = SSO_LF_AGGR_INSTOP_FLUSH << 4;
++	reg |= (uint64_t)(agq_id << 8);
++
++	plt_write64(reg, roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CTX_INSTOP);
++	sso_agq_op_wait(roc_sso, hwgrp);
++
++	memset(ctx, 0, sizeof(struct sso_agq_ctx));
++	plt_wmb();
++	sso->agg_used[hwgrp]--;
++
++	/* Flush the context from CTX Cache */
++	reg = SSO_LF_AGGR_INSTOP_EVICT << 4;
++	reg |= (uint64_t)(agq_id << 8);
++
++	plt_write64(reg, roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CTX_INSTOP);
++	sso_agq_op_wait(roc_sso, hwgrp);
++}
++
++void
++roc_sso_hwgrp_agq_release(struct roc_sso *roc_sso, uint16_t hwgrp)
++{
++	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
++	struct sso_aggr_setconfig *req;
++	struct sso_agq_ctx *ctx;
++	struct mbox *mbox;
++	uint32_t cnt;
++	int rc;
++
++	if (!roc_sso->feat.eva_present)
++		return;
++
++	plt_write64(0, roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CFG);
++	ctx = (struct sso_agq_ctx *)sso->agg_mem[hwgrp];
++	for (cnt = 0; cnt < sso->agg_cnt[hwgrp]; cnt++) {
++		if (!ctx[cnt].ena)
++			continue;
++		roc_sso_hwgrp_agq_free(roc_sso, hwgrp, cnt);
++	}
++
++	plt_write64(0, roc_sso_hwgrp_base_get(roc_sso, hwgrp) + SSO_LF_GGRP_AGGR_CTX_BASE);
++	plt_free((void *)sso->agg_mem[hwgrp]);
++	sso->agg_mem[hwgrp] = 0;
++	sso->agg_cnt[hwgrp] = 0;
++	sso->agg_used[hwgrp] = 0;
++
++	mbox = mbox_get(sso->dev.mbox);
++	req = mbox_alloc_msg_sso_aggr_setconfig(mbox);
++	if (req == NULL) {
++		mbox_process(mbox);
++		req = mbox_alloc_msg_sso_aggr_setconfig(mbox);
++		if (req == NULL) {
++			plt_err("Failed to allocate AGQ config mbox.\n");
++			mbox_put(mbox);
++			return;
++		}
++	}
++
++	req->hwgrp = hwgrp;
++	req->npa_pf_func = 0;
++	rc = mbox_process(mbox);
++	if (rc < 0)
++		plt_err("Failed to set HWGRP AGQ config rc=%d\n", rc);
++	mbox_put(mbox);
++}
++
++uint32_t
++roc_sso_hwgrp_agq_from_tag(struct roc_sso *roc_sso, uint16_t hwgrp, uint32_t tag_mask,
++			   uint8_t xqe_type)
++{
++	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
++	struct sso_agq_ctx *ctx;
++	uint32_t i;
++
++	plt_rmb();
++	ctx = (struct sso_agq_ctx *)sso->agg_mem[hwgrp];
++	for (i = 0; i < sso->agg_used[hwgrp]; i++) {
++		if (!ctx[i].ena)
++			continue;
++		if (ctx[i].tag == tag_mask && ctx[i].xqe_type == xqe_type)
++			return i;
++	}
++
++	return UINT32_MAX;
++}
++
+ int
+-roc_sso_hwgrp_stats_get(struct roc_sso *roc_sso, uint8_t hwgrp,
+-			struct roc_sso_hwgrp_stats *stats)
++roc_sso_hwgrp_stats_get(struct roc_sso *roc_sso, uint16_t hwgrp, struct roc_sso_hwgrp_stats *stats)
+ {
+ 	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
+ 	struct sso_grp_stats *req_rsp;
+@@ -1058,10 +1280,14 @@ void
+ roc_sso_rsrc_fini(struct roc_sso *roc_sso)
+ {
+ 	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
++	uint32_t cnt;
+ 
+ 	if (!roc_sso->nb_hws && !roc_sso->nb_hwgrp)
+ 		return;
+ 
++	for (cnt = 0; cnt < roc_sso->nb_hwgrp; cnt++)
++		roc_sso_hwgrp_agq_release(roc_sso, cnt);
++
+ 	sso_unregister_irqs_priv(roc_sso, sso->pci_dev->intr_handle,
+ 				 roc_sso->nb_hws, roc_sso->nb_hwgrp);
+ 	sso_lf_free(&sso->dev, SSO_LF_TYPE_HWS, roc_sso->nb_hws);
+diff --git a/drivers/common/cnxk/roc_sso.h b/drivers/common/cnxk/roc_sso.h
+index 021db22c86311..f73128087a53f 100644
+--- a/drivers/common/cnxk/roc_sso.h
++++ b/drivers/common/cnxk/roc_sso.h
+@@ -47,6 +47,17 @@ struct roc_sso_xaq_data {
+ 	void *mem;
+ };
+ 
++struct roc_sso_agq_data {
++	uint8_t tt;
++	uint8_t cnt_ena;
++	uint8_t xqe_type;
++	uint16_t stag;
++	uint32_t tag;
++	uint32_t vwqe_max_sz_exp;
++	uint64_t vwqe_wait_tmo;
++	uint64_t vwqe_aura;
++};
++
+ struct roc_sso {
+ 	struct plt_pci_device *pci_dev;
+ 	/* Public data. */
+@@ -100,6 +111,12 @@ int __roc_api roc_sso_hwgrp_stash_config(struct roc_sso *roc_sso,
+ 					 uint16_t nb_stash);
+ void __roc_api roc_sso_hws_gwc_invalidate(struct roc_sso *roc_sso, uint8_t *hws,
+ 					  uint8_t nb_hws);
++int __roc_api roc_sso_hwgrp_agq_alloc(struct roc_sso *roc_sso, uint16_t hwgrp,
++				      struct roc_sso_agq_data *data);
++void __roc_api roc_sso_hwgrp_agq_free(struct roc_sso *roc_sso, uint16_t hwgrp, uint32_t agq_id);
++void __roc_api roc_sso_hwgrp_agq_release(struct roc_sso *roc_sso, uint16_t hwgrp);
++uint32_t __roc_api roc_sso_hwgrp_agq_from_tag(struct roc_sso *roc_sso, uint16_t hwgrp, uint32_t tag,
++					      uint8_t xqe_type);
+ 
+ /* Utility function */
+ uint16_t __roc_api roc_sso_pf_func_get(void);
+@@ -107,7 +124,7 @@ uint16_t __roc_api roc_sso_pf_func_get(void);
+ /* Debug */
+ void __roc_api roc_sso_dump(struct roc_sso *roc_sso, uint8_t nb_hws,
+ 			    uint16_t hwgrp, FILE *f);
+-int __roc_api roc_sso_hwgrp_stats_get(struct roc_sso *roc_sso, uint8_t hwgrp,
++int __roc_api roc_sso_hwgrp_stats_get(struct roc_sso *roc_sso, uint16_t hwgrp,
+ 				      struct roc_sso_hwgrp_stats *stats);
+ int __roc_api roc_sso_hws_stats_get(struct roc_sso *roc_sso, uint8_t hws,
+ 				    struct roc_sso_hws_stats *stats);
+diff --git a/drivers/common/cnxk/roc_sso_priv.h b/drivers/common/cnxk/roc_sso_priv.h
+index 21c59c57e65d6..d6dc6dedd391e 100644
+--- a/drivers/common/cnxk/roc_sso_priv.h
++++ b/drivers/common/cnxk/roc_sso_priv.h
+@@ -13,6 +13,10 @@ struct sso_rsrc {
+ struct sso {
+ 	struct plt_pci_device *pci_dev;
+ 	struct dev dev;
++	/* EVA memory area */
++	uintptr_t agg_mem[MAX_RVU_BLKLF_CNT];
++	uint32_t agg_used[MAX_RVU_BLKLF_CNT];
++	uint32_t agg_cnt[MAX_RVU_BLKLF_CNT];
+ 	/* Interrupt handler args. */
+ 	struct sso_rsrc hws_rsrc[MAX_RVU_BLKLF_CNT];
+ 	struct sso_rsrc hwgrp_rsrc[MAX_RVU_BLKLF_CNT];
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index ebf07bd9ad17e..7d2b0ee8bf622 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -501,6 +501,10 @@ INTERNAL {
+ 	roc_sso_dev_fini;
+ 	roc_sso_dev_init;
+ 	roc_sso_dump;
++	roc_sso_hwgrp_agq_alloc;
++	roc_sso_hwgrp_agq_free;
++	roc_sso_hwgrp_agq_from_tag;
++	roc_sso_hwgrp_agq_release;
+ 	roc_sso_hwgrp_alloc_xaq;
+ 	roc_sso_hwgrp_base_get;
+ 	roc_sso_hwgrp_free_xaq_aura;
+-- 
+2.25.1
+

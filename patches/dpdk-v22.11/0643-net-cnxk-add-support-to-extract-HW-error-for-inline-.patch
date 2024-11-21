@@ -1,0 +1,99 @@
+From 7403336b284005598c7e4d66f70ff3feb6ceb953 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 28 Sep 2023 16:50:24 +0530
+Subject: [PATCH 643/955] net/cnxk: add support to extract HW error for inline
+ IPsec
+
+Add PMD API support to extract HW error code from mbuf's processed
+by inline IPsec inbound.
+
+Change-Id: I268fb24dc0d4bde1273ded788d767c64800e88bb
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/112798
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev_sec.c | 18 ++++++++++++++++++
+ drivers/net/cnxk/rte_pmd_cnxk.h     | 17 +++++++++++++++++
+ drivers/net/cnxk/version.map        |  6 +++++-
+ 3 files changed, 40 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index 9a831634dab48..b54795565d486 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -1184,6 +1184,24 @@ rte_pmd_cnxk_hw_sa_write(void *device, struct rte_security_session *sess,
+ 	return 0;
+ }
+ 
++void *
++rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf)
++{
++	const union nix_rx_parse_u *rx;
++	uint16_t desc_size;
++	uintptr_t wqe;
++
++	if (!mbuf || !(mbuf->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD))
++		return NULL;
++
++	wqe = (uintptr_t)(mbuf + 1);
++	rx = (const union nix_rx_parse_u *)(wqe + 8);
++	desc_size = (rx->desc_sizem1 + 1) * 16;
++
++	/* cpt_res_s sits after SG list at 16B aligned address */
++	return (void *)(wqe + 64 + desc_size);
++}
++
+ static int
+ cn10k_eth_sec_session_stats_get(void *device, struct rte_security_session *sess,
+ 			    struct rte_security_stats *stats)
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index d7eadd582d107..7827c33ac935d 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -96,4 +96,21 @@ int rte_pmd_cnxk_hw_sa_read(void *device, struct rte_security_session *sess,
+ __rte_experimental
+ int rte_pmd_cnxk_hw_sa_write(void *device, struct rte_security_session *sess,
+ 			     void *data, uint32_t len);
++
++/**
++ * Get pointer to CPT result info for inline inbound processed pkt.
++ *
++ * It is recommended to use this API only when mbuf indicates packet
++ * was processed with inline IPsec and there was a failure with the same i.e
++ * mbuf->ol_flags indicates (RTE_MBUF_F_RX_SEC_OFFLOAD | RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED).
++ *
++ * @param mbuf
++ *   Pointer to packet that was just received and was processed with Inline IPsec.
++ *
++ * @return
++ *   - Pointer to mbuf location where CPT result info is stored on success.
++ *   - NULL on failure.
++ */
++__rte_experimental
++void *rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf);
+ #endif /* _PMD_CNXK_H_ */
+diff --git a/drivers/net/cnxk/version.map b/drivers/net/cnxk/version.map
+index 3ef3e76bb008a..acb7339d33a97 100644
+--- a/drivers/net/cnxk/version.map
++++ b/drivers/net/cnxk/version.map
+@@ -3,10 +3,14 @@ DPDK_23 {
+ };
+ 
+ EXPERIMENTAL {
+-	# added in 22.07
+ 	global:
++
++	# added in 22.07
+ 	rte_pmd_cnxk_hw_sa_read;
+ 	rte_pmd_cnxk_hw_sa_write;
++
++	# added in 23.11
++	rte_pmd_cnxk_inl_ipsec_res;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

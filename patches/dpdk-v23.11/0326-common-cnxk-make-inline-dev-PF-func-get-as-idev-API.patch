@@ -1,0 +1,133 @@
+From b942ff9c079c7ae36647e43f4d7fb33958a5b5d6 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 10 May 2024 04:35:08 +0000
+Subject: [PATCH 326/513] common/cnxk: make inline dev PF func get as idev API
+
+Inline PF FUNC would be required to set SSO_PF_FUNC in the instruction
+for cryptodev Rx inject. Move the API to idev to allow usage of the
+same.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I0b43484960f4319dbe231f475d4087f411ae6123
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/127560
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 946f586da550429861f8ed0ab9378d5b511ae906)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/127638
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_idev.c           | 6 ++++++
+ drivers/common/cnxk/roc_idev.h           | 2 ++
+ drivers/common/cnxk/roc_nix_inl.h        | 1 -
+ drivers/common/cnxk/roc_nix_inl_dev.c    | 6 ------
+ drivers/common/cnxk/version.map          | 2 +-
+ drivers/net/cnxk/cn10k_ethdev_sec.c      | 2 +-
+ drivers/net/cnxk/cnxk_ethdev_telemetry.c | 3 +--
+ 7 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_idev.c b/drivers/common/cnxk/roc_idev.c
+index d0307c666cf0b..0778d51d1ecfc 100644
+--- a/drivers/common/cnxk/roc_idev.c
++++ b/drivers/common/cnxk/roc_idev.c
+@@ -374,3 +374,9 @@ roc_idev_nix_rx_chan_set(uint16_t port, uint16_t chan)
+ 	if (idev != NULL && port < PLT_MAX_ETHPORTS)
+ 		__atomic_store_n(&idev->inl_rx_inj_cfg.chan[port], chan, __ATOMIC_RELEASE);
+ }
++
++uint16_t
++roc_idev_nix_inl_dev_pffunc_get(void)
++{
++	return nix_inl_dev_pffunc_get();
++}
+diff --git a/drivers/common/cnxk/roc_idev.h b/drivers/common/cnxk/roc_idev.h
+index 00664eaed613f..fc0f7db54e2d1 100644
+--- a/drivers/common/cnxk/roc_idev.h
++++ b/drivers/common/cnxk/roc_idev.h
+@@ -27,4 +27,6 @@ uint8_t __roc_api roc_idev_nix_rx_inject_get(uint16_t port);
+ void __roc_api roc_idev_nix_rx_inject_set(uint16_t port, uint8_t enable);
+ uint16_t *__roc_api roc_idev_nix_rx_chan_base_get(void);
+ void __roc_api roc_idev_nix_rx_chan_set(uint16_t port, uint16_t chan);
++
++uint16_t __roc_api roc_idev_nix_inl_dev_pffunc_get(void);
+ #endif /* _ROC_IDEV_H_ */
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index ab0965e512b85..1a4bf8808ce66 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -112,7 +112,6 @@ void __roc_api roc_nix_inl_dev_lock(void);
+ void __roc_api roc_nix_inl_dev_unlock(void);
+ int __roc_api roc_nix_inl_dev_xaq_realloc(uint64_t aura_handle);
+ int __roc_api roc_nix_inl_dev_stats_get(struct roc_nix_stats *stats);
+-uint16_t __roc_api roc_nix_inl_dev_pffunc_get(void);
+ int __roc_api roc_nix_inl_dev_cpt_setup(bool use_inl_dev_sso);
+ int __roc_api roc_nix_inl_dev_cpt_release(void);
+ bool __roc_api roc_nix_inl_dev_is_multi_channel(void);
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index 60e6a43033293..e2bbe3a67bbb6 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -34,12 +34,6 @@ nix_inl_dev_pffunc_get(void)
+ 	return 0;
+ }
+ 
+-uint16_t
+-roc_nix_inl_dev_pffunc_get(void)
+-{
+-	return nix_inl_dev_pffunc_get();
+-}
+-
+ static void
+ nix_inl_selftest_work_cb(uint64_t *gw, void *args, uint32_t soft_exp_event)
+ {
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 9d6b75886ca1e..6f9415a5efb1f 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -112,6 +112,7 @@ INTERNAL {
+ 	roc_idev_npa_nix_get;
+ 	roc_idev_num_lmtlines_get;
+ 	roc_idev_nix_inl_meta_aura_get;
++	roc_idev_nix_inl_dev_pffunc_get;
+ 	roc_idev_nix_list_get;
+ 	roc_idev_nix_rx_chan_base_get;
+ 	roc_idev_nix_rx_chan_set;
+@@ -244,7 +245,6 @@ INTERNAL {
+ 	roc_nix_inl_dev_is_probed;
+ 	roc_nix_inl_dev_stats_get;
+ 	roc_nix_inl_dev_lock;
+-	roc_nix_inl_dev_pffunc_get;
+ 	roc_nix_inl_dev_rq;
+ 	roc_nix_inl_dev_rq_get;
+ 	roc_nix_inl_dev_rq_put;
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index b8b0da5ea91cd..5e509e97d4532 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -1360,7 +1360,7 @@ cn10k_eth_sec_rx_inject_config(void *device, uint16_t port_id, bool enable)
+ 	inj_cfg->io_addr = inl_lf->io_addr;
+ 	inj_cfg->lmt_base = nix->lmt_base;
+ 	channel = roc_nix_get_base_chan(nix);
+-	pf_func = roc_nix_inl_dev_pffunc_get();
++	pf_func = roc_idev_nix_inl_dev_pffunc_get();
+ 	inj_cfg->cmd_w0 = pf_func << 48 | inj_match_id << 32 | channel << 4;
+ 
+ 	return 0;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_telemetry.c b/drivers/net/cnxk/cnxk_ethdev_telemetry.c
+index 3027ca473581f..a1958185f2aea 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_telemetry.c
++++ b/drivers/net/cnxk/cnxk_ethdev_telemetry.c
+@@ -65,8 +65,7 @@ ethdev_tel_handle_info(const char *cmd __rte_unused,
+ 			info = &eth_info.info;
+ 			dev = cnxk_eth_pmd_priv(eth_dev);
+ 			if (dev) {
+-				info->inl_dev_pf_func =
+-					roc_nix_inl_dev_pffunc_get();
++				info->inl_dev_pf_func = roc_idev_nix_inl_dev_pffunc_get();
+ 				info->pf_func = roc_nix_get_pf_func(&dev->nix);
+ 				info->max_mac_entries = dev->max_mac_entries;
+ 				info->dmac_filter_ena = dev->dmac_filter_enable;
+-- 
+2.25.1
+

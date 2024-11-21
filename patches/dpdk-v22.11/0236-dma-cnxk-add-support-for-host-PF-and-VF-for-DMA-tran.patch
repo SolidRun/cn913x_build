@@ -1,0 +1,93 @@
+From c39ac3b7c2637bbfe9e94016d56bb91bcbcfe20c Mon Sep 17 00:00:00 2001
+From: Radha Mohan Chintakuntla <radhac@marvell.com>
+Date: Wed, 1 Feb 2023 11:36:35 -0800
+Subject: [PATCH 236/955] dma/cnxk: add support for host PF and VF for DMA
+ transfers
+
+Add support for including host's PF and VF in the DMA transfer for
+inbound and outbound.
+
+Signed-off-by: Radha Mohan Chintakuntla <radhac@marvell.com>
+Change-Id: I7145a5198912e2b1e7b225779570850af77e941f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97633
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.c | 24 ++++++++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index 62d1088ff8603..36837783e09d6 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -74,13 +74,11 @@ cnxk_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 		header->cn9k.xtype = DPI_XTYPE_INBOUND;
+ 		header->cn9k.lport = conf->src_port.pcie.coreid;
+ 		header->cn9k.fport = 0;
+-		header->cn9k.pvfe = 1;
+ 		break;
+ 	case RTE_DMA_DIR_MEM_TO_DEV:
+ 		header->cn9k.xtype = DPI_XTYPE_OUTBOUND;
+ 		header->cn9k.lport = 0;
+ 		header->cn9k.fport = conf->dst_port.pcie.coreid;
+-		header->cn9k.pvfe = 1;
+ 		break;
+ 	case RTE_DMA_DIR_MEM_TO_MEM:
+ 		header->cn9k.xtype = DPI_XTYPE_INTERNAL_ONLY;
+@@ -92,8 +90,18 @@ cnxk_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 		header->cn9k.xtype = DPI_XTYPE_EXTERNAL_ONLY;
+ 		header->cn9k.lport = conf->src_port.pcie.coreid;
+ 		header->cn9k.fport = conf->dst_port.pcie.coreid;
++		header->cn9k.pvfe = 0;
+ 	};
+ 
++	if ((conf->direction == RTE_DMA_DIR_DEV_TO_MEM) ||
++	    (conf->direction == RTE_DMA_DIR_MEM_TO_DEV)) {
++		header->cn9k.pvfe = conf->src_port.pcie.vfen;
++		if (header->cn9k.pvfe) {
++			header->cn9k.func = conf->src_port.pcie.pfid << 12;
++			header->cn9k.func |= conf->src_port.pcie.vfid;
++		}
++	}
++
+ 	for (i = 0; i < conf->nb_desc; i++) {
+ 		comp_data = rte_zmalloc(NULL, sizeof(*comp_data), 0);
+ 		if (comp_data == NULL) {
+@@ -129,13 +137,11 @@ cn10k_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 		header->cn10k.xtype = DPI_XTYPE_INBOUND;
+ 		header->cn10k.lport = conf->src_port.pcie.coreid;
+ 		header->cn10k.fport = 0;
+-		header->cn10k.pvfe = 1;
+ 		break;
+ 	case RTE_DMA_DIR_MEM_TO_DEV:
+ 		header->cn10k.xtype = DPI_XTYPE_OUTBOUND;
+ 		header->cn10k.lport = 0;
+ 		header->cn10k.fport = conf->dst_port.pcie.coreid;
+-		header->cn10k.pvfe = 1;
+ 		break;
+ 	case RTE_DMA_DIR_MEM_TO_MEM:
+ 		header->cn10k.xtype = DPI_XTYPE_INTERNAL_ONLY;
+@@ -147,8 +153,18 @@ cn10k_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 		header->cn10k.xtype = DPI_XTYPE_EXTERNAL_ONLY;
+ 		header->cn10k.lport = conf->src_port.pcie.coreid;
+ 		header->cn10k.fport = conf->dst_port.pcie.coreid;
++		header->cn10k.pvfe = 0;
+ 	};
+ 
++	if ((conf->direction == RTE_DMA_DIR_DEV_TO_MEM) ||
++	    (conf->direction == RTE_DMA_DIR_MEM_TO_DEV)) {
++		header->cn10k.pvfe = conf->src_port.pcie.vfen;
++		if (header->cn10k.pvfe) {
++			header->cn10k.func = conf->src_port.pcie.pfid << 12;
++			header->cn10k.func |= conf->src_port.pcie.vfid;
++		}
++	}
++
+ 	for (i = 0; i < conf->nb_desc; i++) {
+ 		comp_data = rte_zmalloc(NULL, sizeof(*comp_data), 0);
+ 		if (comp_data == NULL) {
+-- 
+2.25.1
+

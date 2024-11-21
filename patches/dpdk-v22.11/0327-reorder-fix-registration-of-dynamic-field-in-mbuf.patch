@@ -1,0 +1,191 @@
+From 466b4c9726606c1663dd676b53e9be64018c90d2 Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Fri, 10 Mar 2023 15:15:18 +0100
+Subject: [PATCH 327/955] reorder: fix registration of dynamic field in mbuf
+
+It's possible to initialize reorder buffer with user allocated memory via
+rte_reorder_init() function. In such case rte_reorder_create() is not
+required and reorder dynamic field in rte_mbuf will not be registered.
+
+Both reorder lib and mbuf dynamic field are using `rte_mcfg_tailq`
+read/write lock for synchronization, to avoid deadlocking move reorder
+buffer initialization before queue insertion.
+
+Fixes: 01f3496695b5 ("reorder: switch sequence number to dynamic mbuf field")
+Cc: stable@dpdk.org
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: I0ccae6fa9eca0d2241c9ecac1219d28963f6fbf1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98918
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ lib/reorder/rte_reorder.c | 94 +++++++++++++++++++++++++--------------
+ lib/reorder/rte_reorder.h |  1 +
+ 2 files changed, 61 insertions(+), 34 deletions(-)
+
+diff --git a/lib/reorder/rte_reorder.c b/lib/reorder/rte_reorder.c
+index 6e029c9e02fd7..66d2cc07b7202 100644
+--- a/lib/reorder/rte_reorder.c
++++ b/lib/reorder/rte_reorder.c
+@@ -60,6 +60,11 @@ rte_reorder_init(struct rte_reorder_buffer *b, unsigned int bufsize,
+ {
+ 	const unsigned int min_bufsize = sizeof(*b) +
+ 					(2 * size * sizeof(struct rte_mbuf *));
++	static const struct rte_mbuf_dynfield reorder_seqn_dynfield_desc = {
++		.name = RTE_REORDER_SEQN_DYNFIELD_NAME,
++		.size = sizeof(rte_reorder_seqn_t),
++		.align = __alignof__(rte_reorder_seqn_t),
++	};
+ 
+ 	if (b == NULL) {
+ 		RTE_LOG(ERR, REORDER, "Invalid reorder buffer parameter:"
+@@ -86,6 +91,14 @@ rte_reorder_init(struct rte_reorder_buffer *b, unsigned int bufsize,
+ 		return NULL;
+ 	}
+ 
++	rte_reorder_seqn_dynfield_offset = rte_mbuf_dynfield_register(&reorder_seqn_dynfield_desc);
++	if (rte_reorder_seqn_dynfield_offset < 0) {
++		RTE_LOG(ERR, REORDER, "Failed to register mbuf field for reorder sequence"
++				      " number, rte_errno: %i\n", rte_errno);
++		rte_errno = ENOMEM;
++		return NULL;
++	}
++
+ 	memset(b, 0, bufsize);
+ 	strlcpy(b->name, name, sizeof(b->name));
+ 	b->memsize = bufsize;
+@@ -98,21 +111,45 @@ rte_reorder_init(struct rte_reorder_buffer *b, unsigned int bufsize,
+ 	return b;
+ }
+ 
++/*
++ * Insert new entry into global list.
++ * Returns pointer to already inserted entry if such exists, or to newly inserted one.
++ */
++static struct rte_tailq_entry*
++rte_reorder_entry_insert(struct rte_tailq_entry *new_te)
++{
++	struct rte_reorder_list *reorder_list;
++	struct rte_reorder_buffer *b, *nb;
++	struct rte_tailq_entry *te;
++
++	rte_mcfg_tailq_write_lock();
++
++	reorder_list = RTE_TAILQ_CAST(rte_reorder_tailq.head, rte_reorder_list);
++	/* guarantee there's no existing */
++	TAILQ_FOREACH(te, reorder_list, next) {
++		b = (struct rte_reorder_buffer *) te->data;
++		nb = (struct rte_reorder_buffer *) new_te->data;
++		if (strncmp(nb->name, b->name, RTE_REORDER_NAMESIZE) == 0)
++			break;
++	}
++
++	if (te == NULL) {
++		TAILQ_INSERT_TAIL(reorder_list, new_te, next);
++		te = new_te;
++	}
++
++	rte_mcfg_tailq_write_unlock();
++
++	return te;
++}
++
+ struct rte_reorder_buffer*
+ rte_reorder_create(const char *name, unsigned socket_id, unsigned int size)
+ {
+ 	struct rte_reorder_buffer *b = NULL;
+-	struct rte_tailq_entry *te;
+-	struct rte_reorder_list *reorder_list;
++	struct rte_tailq_entry *te, *te_inserted;
+ 	const unsigned int bufsize = sizeof(struct rte_reorder_buffer) +
+ 					(2 * size * sizeof(struct rte_mbuf *));
+-	static const struct rte_mbuf_dynfield reorder_seqn_dynfield_desc = {
+-		.name = RTE_REORDER_SEQN_DYNFIELD_NAME,
+-		.size = sizeof(rte_reorder_seqn_t),
+-		.align = __alignof__(rte_reorder_seqn_t),
+-	};
+-
+-	reorder_list = RTE_TAILQ_CAST(rte_reorder_tailq.head, rte_reorder_list);
+ 
+ 	/* Check user arguments. */
+ 	if (!rte_is_power_of_2(size)) {
+@@ -128,32 +165,12 @@ rte_reorder_create(const char *name, unsigned socket_id, unsigned int size)
+ 		return NULL;
+ 	}
+ 
+-	rte_reorder_seqn_dynfield_offset =
+-		rte_mbuf_dynfield_register(&reorder_seqn_dynfield_desc);
+-	if (rte_reorder_seqn_dynfield_offset < 0) {
+-		RTE_LOG(ERR, REORDER, "Failed to register mbuf field for reorder sequence number\n");
+-		rte_errno = ENOMEM;
+-		return NULL;
+-	}
+-
+-	rte_mcfg_tailq_write_lock();
+-
+-	/* guarantee there's no existing */
+-	TAILQ_FOREACH(te, reorder_list, next) {
+-		b = (struct rte_reorder_buffer *) te->data;
+-		if (strncmp(name, b->name, RTE_REORDER_NAMESIZE) == 0)
+-			break;
+-	}
+-	if (te != NULL)
+-		goto exit;
+-
+ 	/* allocate tailq entry */
+ 	te = rte_zmalloc("REORDER_TAILQ_ENTRY", sizeof(*te), 0);
+ 	if (te == NULL) {
+ 		RTE_LOG(ERR, REORDER, "Failed to allocate tailq entry\n");
+ 		rte_errno = ENOMEM;
+-		b = NULL;
+-		goto exit;
++		return NULL;
+ 	}
+ 
+ 	/* Allocate memory to store the reorder buffer structure. */
+@@ -162,14 +179,23 @@ rte_reorder_create(const char *name, unsigned socket_id, unsigned int size)
+ 		RTE_LOG(ERR, REORDER, "Memzone allocation failed\n");
+ 		rte_errno = ENOMEM;
+ 		rte_free(te);
++		return NULL;
+ 	} else {
+-		rte_reorder_init(b, bufsize, name, size);
++		if (rte_reorder_init(b, bufsize, name, size) == NULL) {
++			rte_free(b);
++			rte_free(te);
++			return NULL;
++		}
+ 		te->data = (void *)b;
+-		TAILQ_INSERT_TAIL(reorder_list, te, next);
+ 	}
+ 
+-exit:
+-	rte_mcfg_tailq_write_unlock();
++	te_inserted = rte_reorder_entry_insert(te);
++	if (te_inserted != te) {
++		rte_free(b);
++		rte_free(te);
++		return te_inserted->data;
++	}
++
+ 	return b;
+ }
+ 
+diff --git a/lib/reorder/rte_reorder.h b/lib/reorder/rte_reorder.h
+index cc95015fa60d0..9a5998f2f69a9 100644
+--- a/lib/reorder/rte_reorder.h
++++ b/lib/reorder/rte_reorder.h
+@@ -82,6 +82,7 @@ rte_reorder_create(const char *name, unsigned socket_id, unsigned int size);
+  *   The initialized reorder buffer instance, or NULL on error
+  *   On error case, rte_errno will be set appropriately:
+  *    - EINVAL - invalid parameters
++ *    - ENOMEM - not enough memory to register dynamic field
+  */
+ struct rte_reorder_buffer *
+ rte_reorder_init(struct rte_reorder_buffer *b, unsigned int bufsize,
+-- 
+2.25.1
+

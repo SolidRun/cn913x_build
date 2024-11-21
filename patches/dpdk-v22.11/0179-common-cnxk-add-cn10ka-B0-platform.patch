@@ -1,0 +1,68 @@
+From e54edb55892d542a39bd23973e82a859787e4609 Mon Sep 17 00:00:00 2001
+From: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Date: Sun, 22 Jan 2023 21:07:41 -0800
+Subject: [PATCH 179/955] common/cnxk: add cn10ka B0 platform
+
+Adding support for cn10ka B0 pass
+
+ci: skip_checkformat
+
+Signed-off-by: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Change-Id: I30ddcecb00955736de529d1f395c78b78ed4d401
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94985
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_model.c | 1 +
+ drivers/common/cnxk/roc_model.h | 9 ++++++++-
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_model.c b/drivers/common/cnxk/roc_model.c
+index 9d3ce242319e0..e4767ed91f7a3 100644
+--- a/drivers/common/cnxk/roc_model.c
++++ b/drivers/common/cnxk/roc_model.c
+@@ -61,6 +61,7 @@ static const struct model_db {
+ } model_db[] = {
+ 	{VENDOR_ARM, PART_106xx, 0, 0, ROC_MODEL_CN106xx_A0, "cn10ka_a0"},
+ 	{VENDOR_ARM, PART_106xx, 0, 1, ROC_MODEL_CN106xx_A1, "cn10ka_a1"},
++	{VENDOR_ARM, PART_106xx, 1, 0, ROC_MODEL_CN106xx_B0, "cn10ka_b0"},
+ 	{VENDOR_ARM, PART_105xx, 0, 0, ROC_MODEL_CNF105xx_A0, "cnf10ka_a0"},
+ 	{VENDOR_ARM, PART_105xx, 0, 1, ROC_MODEL_CNF105xx_A1, "cnf10ka_a1"},
+ 	{VENDOR_ARM, PART_103xx, 0, 0, ROC_MODEL_CN103xx_A0, "cn10kb_a0"},
+diff --git a/drivers/common/cnxk/roc_model.h b/drivers/common/cnxk/roc_model.h
+index 0ef2e1364ce7e..f010cc4a44115 100644
+--- a/drivers/common/cnxk/roc_model.h
++++ b/drivers/common/cnxk/roc_model.h
+@@ -30,6 +30,7 @@ struct roc_model {
+ #define ROC_MODEL_CN103xx_A0   BIT_ULL(23)
+ #define ROC_MODEL_CN106xx_A1   BIT_ULL(24)
+ #define ROC_MODEL_CNF105xx_A1  BIT_ULL(25)
++#define ROC_MODEL_CN106xx_B0   BIT_ULL(26)
+ /* Following flags describe platform code is running on */
+ #define ROC_ENV_HW   BIT_ULL(61)
+ #define ROC_ENV_EMUL BIT_ULL(62)
+@@ -54,7 +55,7 @@ struct roc_model {
+ 	 ROC_MODEL_CNF95xxN_A0 | ROC_MODEL_CNF95xxN_A1 |                       \
+ 	 ROC_MODEL_CNF95xxN_B0)
+ 
+-#define ROC_MODEL_CN106xx   (ROC_MODEL_CN106xx_A0 | ROC_MODEL_CN106xx_A1)
++#define ROC_MODEL_CN106xx   (ROC_MODEL_CN106xx_A0 | ROC_MODEL_CN106xx_A1 | ROC_MODEL_CN106xx_B0)
+ #define ROC_MODEL_CNF105xx  (ROC_MODEL_CNF105xx_A0 | ROC_MODEL_CNF105xx_A1)
+ #define ROC_MODEL_CNF105xxN (ROC_MODEL_CNF105xxN_A0)
+ #define ROC_MODEL_CN103xx   (ROC_MODEL_CN103xx_A0)
+@@ -227,6 +228,12 @@ roc_model_is_cn10ka_a1(void)
+ 	return roc_model->flag & ROC_MODEL_CN106xx_A1;
+ }
+ 
++static inline uint64_t
++roc_model_is_cn10ka_b0(void)
++{
++	return roc_model->flag & ROC_MODEL_CN106xx_B0;
++}
++
+ static inline uint64_t
+ roc_model_is_cnf10ka_a0(void)
+ {
+-- 
+2.25.1
+

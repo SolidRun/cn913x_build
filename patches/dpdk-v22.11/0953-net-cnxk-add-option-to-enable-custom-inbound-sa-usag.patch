@@ -1,0 +1,451 @@
+From a4911268af514c47885cd489f0cc4e1d7a3b6be2 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Fri, 2 Aug 2024 16:50:26 +0530
+Subject: [PATCH 953/955] net/cnxk: add option to enable custom inbound sa
+ usage
+
+Introduces a device argument (custom_inb_sa) to activate the usage of
+custom inbound SA. If inline device is used then this device argument
+will be required for both inline device and eth device. With
+custom_inb_sa configuration, application can do the post processing
+of inline IPsec inbound packet directly.
+This patch also adds a RTE PMD API for inline inbound param1 and
+param2 configuration.
+
+Change-Id: I5c1df8e754efcb84ea76875b3f04abd0bc9c767d
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+---
+ doc/guides/nics/cnxk.rst               | 25 +++++++++++++++++++++
+ drivers/common/cnxk/roc_nix.h          |  3 +++
+ drivers/common/cnxk/roc_nix_inl.c      | 19 +++++++++++++---
+ drivers/common/cnxk/roc_nix_inl.h      |  2 ++
+ drivers/common/cnxk/roc_nix_inl_dev.c  |  3 +++
+ drivers/common/cnxk/roc_nix_inl_priv.h |  1 +
+ drivers/net/cnxk/cn10k_ethdev.c        |  2 +-
+ drivers/net/cnxk/cn10k_ethdev_sec.c    |  5 +++++
+ drivers/net/cnxk/cnxk_ethdev.c         |  3 +++
+ drivers/net/cnxk/cnxk_ethdev_devargs.c |  4 ++++
+ drivers/net/cnxk/cnxk_ethdev_sec.c     | 21 +++++++++++++++---
+ drivers/net/cnxk/rte_pmd_cnxk.h        | 30 +++++++++++++++++++++++---
+ drivers/net/cnxk/version.map           |  1 +
+ 13 files changed, 109 insertions(+), 10 deletions(-)
+
+diff --git a/doc/guides/nics/cnxk.rst b/doc/guides/nics/cnxk.rst
+index 3aea4cb229527..865b6ce6914bb 100644
+--- a/doc/guides/nics/cnxk.rst
++++ b/doc/guides/nics/cnxk.rst
+@@ -456,6 +456,19 @@ Runtime Config Options
+    With the above configuration, driver would disable custom meta aura feature for
+    ``0002:02:00.0`` ethdev.
+ 
++- ``Enable custom sa for inbound inline IPsec`` (default ``0``)
++
++   Custom SA for inbound inline IPsec can be enabled by specifying ``custom_inb_sa``
++   ``devargs`` parameter. This option needs to be given to both ethdev and inline
++   device.
++
++   For example::
++
++      -a 0002:02:00.0,custom_inb_sa=1
++
++   With the above configuration, inline inbound IPsec post processing should be done
++   by the application.
++
+ .. note::
+ 
+    Above devarg parameters are configurable per device, user needs to pass the
+@@ -653,6 +666,18 @@ Runtime Config Options for inline device
+    With the above configuration, driver would enable packet inject from ARM cores
+    to crypto to process and send back in Rx path.
+ 
++- ``Enable custom sa for inbound inline IPsec`` (default ``0``)
++
++   Custom SA for inbound inline IPsec can be enabled by specifying ``custom_inb_sa``
++   ``devargs`` parameter with both inline device and ethdev.
++
++   For example::
++
++      -a 0002:1d:00.0,custom_inb_sa=1
++
++   With the above configuration, inline inbound IPsec post processing should be done
++   by the application.
++
+ Port Representors
+ -----------------
+ 
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 25cf261348867..f213823b9b4bf 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -473,7 +473,10 @@ struct roc_nix {
+ 	bool force_rx_aura_bp;
+ 	bool custom_meta_aura_ena;
+ 	bool rx_inj_ena;
++	bool custom_inb_sa;
+ 	uint32_t root_sched_weight;
++	uint16_t inb_cfg_param1;
++	uint16_t inb_cfg_param2;
+ 	/* End of input parameters */
+ 	/* LMT line base for "Per Core Tx LMT line" mode*/
+ 	uintptr_t lmt_base;
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 4d6d0cab5ffcd..ea199b763d82d 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -406,6 +406,8 @@ nix_inl_inb_sa_tbl_setup(struct roc_nix *roc_nix)
+ 	/* CN9K SA size is different */
+ 	if (roc_model_is_cn9k())
+ 		inb_sa_sz = ROC_NIX_INL_ON_IPSEC_INB_SA_SZ;
++	else if (roc_nix->custom_inb_sa)
++		inb_sa_sz = ROC_NIX_INL_INB_CUSTOM_SA_SZ;
+ 	else
+ 		inb_sa_sz = ROC_NIX_INL_OT_IPSEC_INB_SA_SZ;
+ 
+@@ -910,6 +912,11 @@ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ 		cfg.param1 = u.u16;
+ 		cfg.param2 = 0;
+ 		cfg.opcode = (ROC_IE_OT_MAJOR_OP_PROCESS_INBOUND_IPSEC | (1 << 6));
++
++		if (roc_nix->custom_inb_sa) {
++			cfg.param1 = roc_nix->inb_cfg_param1;
++			cfg.param2 = roc_nix->inb_cfg_param2;
++		}
+ 		rc = roc_nix_bpids_alloc(roc_nix, ROC_NIX_INTF_TYPE_CPT_NIX, 1, bpids);
+ 		if (rc > 0) {
+ 			nix->cpt_nixbpid = bpids[0];
+@@ -1769,7 +1776,6 @@ roc_nix_inl_ctx_write(struct roc_nix *roc_nix, void *sa_dptr, void *sa_cptr,
+ 	if (roc_model_is_cn9k()) {
+ 		return 0;
+ 	}
+-
+ 	if (idev)
+ 		inl_dev = idev->nix_inl_dev;
+ 
+@@ -1777,6 +1783,11 @@ roc_nix_inl_ctx_write(struct roc_nix *roc_nix, void *sa_dptr, void *sa_cptr,
+ 		return -EINVAL;
+ 
+ 	if (roc_nix) {
++		if (inb && roc_nix->custom_inb_sa && sa_len > ROC_NIX_INL_INB_CUSTOM_SA_SZ) {
++			plt_nix_dbg("SA length: %u is more than allocated length: %u\n", sa_len,
++				    ROC_NIX_INL_INB_CUSTOM_SA_SZ);
++			return -EINVAL;
++		}
+ 		nix = roc_nix_to_nix_priv(roc_nix);
+ 		outb_lf = nix->cpt_lf_base;
+ 
+@@ -1891,6 +1902,7 @@ roc_nix_inl_ts_pkind_set(struct roc_nix *roc_nix, bool ts_ena, bool inb_inl_dev)
+ 	uint16_t max_spi = 0;
+ 	uint32_t rq_refs = 0;
+ 	uint8_t pkind = 0;
++	size_t inb_sa_sz;
+ 	int i;
+ 
+ 	if (roc_model_is_cn9k())
+@@ -1908,6 +1920,7 @@ roc_nix_inl_ts_pkind_set(struct roc_nix *roc_nix, bool ts_ena, bool inb_inl_dev)
+ 		if (!nix->inl_inb_ena)
+ 			return 0;
+ 		sa_base = nix->inb_sa_base;
++		inb_sa_sz = nix->inb_sa_sz;
+ 		max_spi = roc_nix->ipsec_in_max_spi;
+ 	}
+ 
+@@ -1919,6 +1932,7 @@ roc_nix_inl_ts_pkind_set(struct roc_nix *roc_nix, bool ts_ena, bool inb_inl_dev)
+ 			inl_dev->ts_ena = ts_ena;
+ 			max_spi = inl_dev->ipsec_in_max_spi;
+ 			sa_base = inl_dev->inb_sa_base;
++			inb_sa_sz = inl_dev->inb_sa_sz;
+ 		} else if (inl_dev->ts_ena != ts_ena) {
+ 			if (inl_dev->ts_ena)
+ 				plt_err("Inline device is already configured with TS enable");
+@@ -1937,8 +1951,7 @@ roc_nix_inl_ts_pkind_set(struct roc_nix *roc_nix, bool ts_ena, bool inb_inl_dev)
+ 		return 0;
+ 
+ 	for (i = 0; i < max_spi; i++) {
+-		sa = ((uint8_t *)sa_base) +
+-		     (i * ROC_NIX_INL_OT_IPSEC_INB_SA_SZ);
++		sa = ((uint8_t *)sa_base) + (i * inb_sa_sz);
+ 		((struct roc_ot_ipsec_inb_sa *)sa)->w0.s.pkind = pkind;
+ 	}
+ 	return 0;
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index 16cead7fa42a2..e26e3fe38c984 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -33,6 +33,7 @@
+ 
+ #define ROC_NIX_INL_MAX_SOFT_EXP_RNGS                                          \
+ 	(PLT_MAX_ETHPORTS * ROC_NIX_SOFT_EXP_PER_PORT_MAX_RINGS)
++#define ROC_NIX_INL_INB_CUSTOM_SA_SZ 512
+ 
+ /* Reassembly configuration */
+ #define ROC_NIX_INL_REAS_ACTIVE_LIMIT	  0xFFF
+@@ -97,6 +98,7 @@ struct roc_nix_inl_dev {
+ 	uint32_t meta_buf_sz;
+ 	uint32_t max_ipsec_rules;
+ 	uint8_t rx_inj_ena; /* Rx Inject Enable */
++	uint8_t custom_inb_sa;
+ 	/* End of input parameters */
+ 
+ #define ROC_NIX_INL_MEM_SZ (2048)
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index 13126c23d14f3..650b568994812 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -420,6 +420,8 @@ nix_inl_nix_setup(struct nix_inl_dev *inl_dev)
+ 	/* CN9K SA is different */
+ 	if (roc_model_is_cn9k())
+ 		inb_sa_sz = ROC_NIX_INL_ON_IPSEC_INB_SA_SZ;
++	else if (inl_dev->custom_inb_sa)
++		inb_sa_sz = ROC_NIX_INL_INB_CUSTOM_SA_SZ;
+ 	else
+ 		inb_sa_sz = ROC_NIX_INL_OT_IPSEC_INB_SA_SZ;
+ 
+@@ -942,6 +944,7 @@ roc_nix_inl_dev_init(struct roc_nix_inl_dev *roc_inl_dev)
+ 	inl_dev->nb_meta_bufs = roc_inl_dev->nb_meta_bufs;
+ 	inl_dev->meta_buf_sz = roc_inl_dev->meta_buf_sz;
+ 	inl_dev->soft_exp_poll_freq = roc_inl_dev->soft_exp_poll_freq;
++	inl_dev->custom_inb_sa = roc_inl_dev->custom_inb_sa;
+ 
+ 	if (roc_inl_dev->rx_inj_ena) {
+ 		inl_dev->rx_inj_ena = 1;
+diff --git a/drivers/common/cnxk/roc_nix_inl_priv.h b/drivers/common/cnxk/roc_nix_inl_priv.h
+index 64b8b3977d8bc..e5494fd71a96a 100644
+--- a/drivers/common/cnxk/roc_nix_inl_priv.h
++++ b/drivers/common/cnxk/roc_nix_inl_priv.h
+@@ -94,6 +94,7 @@ struct nix_inl_dev {
+ 	uint32_t nb_meta_bufs;
+ 	uint32_t meta_buf_sz;
+ 	uint8_t rx_inj_ena; /* Rx Inject Enable */
++	uint8_t custom_inb_sa;
+ 
+ 	/* NPC */
+ 	int *ipsec_index;
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index 9689937b3a182..67dbbd56e7ff0 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -36,7 +36,7 @@ nix_rx_offload_flags(struct rte_eth_dev *eth_dev)
+ 	if (!dev->ptype_disable)
+ 		flags |= NIX_RX_OFFLOAD_PTYPE_F;
+ 
+-	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY)
++	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY && !dev->nix.custom_inb_sa)
+ 		flags |= NIX_RX_OFFLOAD_SECURITY_F;
+ 
+ 	return flags;
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index 8fe692f7c6e9f..c9cb540e85153 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -754,6 +754,9 @@ cn10k_eth_sec_session_create(void *device,
+ 	else if (conf->protocol != RTE_SECURITY_PROTOCOL_IPSEC)
+ 		return -ENOTSUP;
+ 
++	if (nix->custom_inb_sa)
++		return -ENOTSUP;
++
+ 	if (rte_security_dynfield_register() < 0)
+ 		return -ENOTSUP;
+ 
+@@ -1038,6 +1041,8 @@ cn10k_eth_sec_session_destroy(void *device, struct rte_security_session *sess)
+ 			return cnxk_eth_macsec_session_destroy(dev, sess);
+ 		return -ENOENT;
+ 	}
++	if (dev->nix.custom_inb_sa)
++		return -ENOTSUP;
+ 
+ 	lock = eth_sec->inb ? &dev->inb.lock : &dev->outb.lock;
+ 	rte_spinlock_lock(lock);
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 13b7e8a38c1c1..c7723800ef664 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1269,6 +1269,9 @@ cnxk_nix_configure(struct rte_eth_dev *eth_dev)
+ 	dev->rx_offloads = rxmode->offloads;
+ 	dev->tx_offloads = txmode->offloads;
+ 
++	if (nix->custom_inb_sa)
++		dev->rx_offloads |= RTE_ETH_RX_OFFLOAD_SECURITY;
++
+ 	/* Prepare rx cfg */
+ 	rx_cfg = ROC_NIX_LF_RX_CFG_DIS_APAD;
+ 	if (dev->rx_offloads &
+diff --git a/drivers/net/cnxk/cnxk_ethdev_devargs.c b/drivers/net/cnxk/cnxk_ethdev_devargs.c
+index 3454295d7d42f..5bd50bb9a14eb 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_devargs.c
++++ b/drivers/net/cnxk/cnxk_ethdev_devargs.c
+@@ -281,6 +281,7 @@ parse_val_u16(const char *key, const char *value, void *extra_args)
+ #define CNXK_FLOW_AGING_POLL_FREQ	"aging_poll_freq"
+ #define CNXK_NIX_RX_INJ_ENABLE	"rx_inj_ena"
+ #define CNXK_CUSTOM_META_AURA_DIS "custom_meta_aura_dis"
++#define CNXK_CUSTOM_INB_SA	  "custom_inb_sa"
+ 
+ int
+ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+@@ -304,6 +305,7 @@ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+ 	uint16_t scalar_enable = 0;
+ 	uint16_t tx_compl_ena = 0;
+ 	uint16_t custom_sa_act = 0;
++	uint8_t custom_inb_sa = 0;
+ 	struct rte_kvargs *kvlist;
+ 	uint32_t meta_buf_sz = 0;
+ 	uint16_t no_inl_dev = 0;
+@@ -362,6 +364,7 @@ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+ 	rte_kvargs_process(kvlist, CNXK_NIX_RX_INJ_ENABLE, &parse_flag, &rx_inj_ena);
+ 	rte_kvargs_process(kvlist, CNXK_CUSTOM_META_AURA_DIS, &parse_flag,
+ 			   &custom_meta_aura_dis);
++	rte_kvargs_process(kvlist, CNXK_CUSTOM_INB_SA, &parse_flag, &custom_inb_sa);
+ 	rte_kvargs_free(kvlist);
+ 
+ null_devargs:
+@@ -381,6 +384,7 @@ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+ 	dev->nix.lock_rx_ctx = lock_rx_ctx;
+ 	dev->nix.custom_sa_action = custom_sa_act;
+ 	dev->nix.sqb_slack = sqb_slack;
++	dev->nix.custom_inb_sa = custom_inb_sa;
+ 
+ 	if (roc_feature_nix_has_own_meta_aura())
+ 		dev->nix.meta_buf_sz = meta_buf_sz;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index 32b6946ac15a9..051588e65ee4c 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -19,6 +19,7 @@
+ #define CNXK_NIX_SOFT_EXP_POLL_FREQ   "soft_exp_poll_freq"
+ #define CNXK_MAX_IPSEC_RULES	"max_ipsec_rules"
+ #define CNXK_NIX_INL_RX_INJ_ENABLE	"rx_inj_ena"
++#define CNXK_NIX_CUSTOM_INB_SA	      "custom_inb_sa"
+ 
+ /* Default soft expiry poll freq in usec */
+ #define CNXK_NIX_SOFT_EXP_POLL_FREQ_DFLT 100
+@@ -198,7 +199,7 @@ parse_max_ipsec_rules(const char *key, const char *value, void *extra_args)
+ }
+ 
+ static int
+-parse_inl_rx_inj_ena(const char *key, const char *value, void *extra_args)
++parse_val_u8(const char *key, const char *value, void *extra_args)
+ {
+ 	RTE_SET_USED(key);
+ 	uint32_t val;
+@@ -412,6 +413,16 @@ rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf)
+ 	return (void *)(wqe + 64 + desc_size);
+ }
+ 
++void
++rte_pmd_cnxk_hw_inline_inb_cfg_set(uint16_t portid, struct rte_pmd_cnxk_ipsec_inb_cfg *cfg)
++{
++	struct rte_eth_dev *eth_dev = &rte_eth_devices[portid];
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	dev->nix.inb_cfg_param1 = cfg->param1;
++	dev->nix.inb_cfg_param2 = cfg->param2;
++}
++
+ static unsigned int
+ cnxk_eth_sec_session_get_size(void *device __rte_unused)
+ {
+@@ -481,6 +492,7 @@ nix_inl_parse_devargs(struct rte_devargs *devargs,
+ 	struct inl_cpt_channel cpt_channel;
+ 	uint32_t max_ipsec_rules = 0;
+ 	struct rte_kvargs *kvlist;
++	uint8_t custom_inb_sa = 0;
+ 	uint32_t nb_meta_bufs = 0;
+ 	uint32_t meta_buf_sz = 0;
+ 	uint8_t rx_inj_ena = 0;
+@@ -510,7 +522,8 @@ nix_inl_parse_devargs(struct rte_devargs *devargs,
+ 	rte_kvargs_process(kvlist, CNXK_NIX_SOFT_EXP_POLL_FREQ,
+ 			   &parse_val_u32, &soft_exp_poll_freq);
+ 	rte_kvargs_process(kvlist, CNXK_MAX_IPSEC_RULES, &parse_max_ipsec_rules, &max_ipsec_rules);
+-	rte_kvargs_process(kvlist, CNXK_NIX_INL_RX_INJ_ENABLE, &parse_inl_rx_inj_ena, &rx_inj_ena);
++	rte_kvargs_process(kvlist, CNXK_NIX_INL_RX_INJ_ENABLE, &parse_val_u8, &rx_inj_ena);
++	rte_kvargs_process(kvlist, CNXK_NIX_CUSTOM_INB_SA, &parse_val_u8, &custom_inb_sa);
+ 	rte_kvargs_free(kvlist);
+ 
+ null_devargs:
+@@ -526,6 +539,7 @@ nix_inl_parse_devargs(struct rte_devargs *devargs,
+ 	inl_dev->max_ipsec_rules = max_ipsec_rules;
+ 	if (roc_feature_nix_has_rx_inject())
+ 		inl_dev->rx_inj_ena = rx_inj_ena;
++	inl_dev->custom_inb_sa = custom_inb_sa;
+ 	return 0;
+ exit:
+ 	return -EINVAL;
+@@ -654,4 +668,5 @@ RTE_PMD_REGISTER_PARAM_STRING(cnxk_nix_inl,
+ 			      CNXK_NIX_INL_META_BUF_SZ "=<1-U32_MAX>"
+ 			      CNXK_NIX_SOFT_EXP_POLL_FREQ "=<0-U32_MAX>"
+ 			      CNXK_MAX_IPSEC_RULES "=<1-4095>"
+-			      CNXK_NIX_INL_RX_INJ_ENABLE "=1");
++			      CNXK_NIX_INL_RX_INJ_ENABLE "=1"
++			      CNXK_NIX_CUSTOM_INB_SA "=1");
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index 8c57977e4342b..8c0b5ede68295 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -49,13 +49,13 @@ enum rte_pmd_cnxk_sec_action_alg {
+ 
+ /** CPT queue type for obtaining queue hardware statistics. */
+ enum rte_pmd_cnxk_cpt_q_stats_type {
+-	/** Type to get Inline Device LF(s) statistics */
++	/** Type to get Inline Device queue(s) statistics */
+ 	RTE_PMD_CNXK_CPT_Q_STATS_INL_DEV,
+-	/** Type to get Inline Inbound LF which is attached to kernel device
++	/** Type to get Inline Inbound queue which is attached to kernel device
+ 	 * statistics.
+ 	 */
+ 	RTE_PMD_CNXK_CPT_Q_STATS_KERNEL,
+-	/** Type to get CPT LF which is attached to ethdev statistics */
++	/** Type to get CPT queue which is attached to ethdev statistics */
+ 	RTE_PMD_CNXK_CPT_Q_STATS_ETHDEV = 2,
+ };
+ 
+@@ -501,6 +501,18 @@ union rte_pmd_cnxk_cpt_res_s {
+ 	uint64_t u64[2];
+ };
+ 
++/** Inline IPsec inbound queue configuration */
++struct rte_pmd_cnxk_ipsec_inb_cfg {
++	/** Param1 of PROCESS_INBOUND_IPSEC_PACKET as mentioned in the CPT
++	 * microcode document.
++	 */
++	uint16_t param1;
++	/** Param2 of PROCESS_INBOUND_IPSEC_PACKET as mentioned in the CPT
++	 * microcode document.
++	 */
++	uint16_t param2;
++};
++
+ /** Forward structure declaration for inline device queue. Applications obtain a pointer
+  * to this structure using the ``rte_pmd_cnxk_inl_dev_qptr_get`` API and use it to submit
+  * CPT instructions (cpt_inst_s) to the inline device via the
+@@ -644,4 +656,16 @@ uint16_t rte_pmd_cnxk_inl_dev_submit(struct rte_pmd_cnxk_inl_dev_q *qptr, void *
+ __rte_experimental
+ int rte_pmd_cnxk_cpt_q_stats_get(uint16_t portid, enum rte_pmd_cnxk_cpt_q_stats_type type,
+ 				 struct rte_pmd_cnxk_cpt_q_stats *stats, uint16_t idx);
++
++/**
++ * Set the configuration for hardware inline inbound IPsec processing. This API must be
++ * called before calling the ``rte_eth_dev_configure`` API.
++ *
++ * @param portid
++ *   Port identifier of Ethernet device.
++ * @param cfg
++ *   Pointer to the IPsec inbound configuration structure.
++ */
++__rte_experimental
++void rte_pmd_cnxk_hw_inline_inb_cfg_set(uint16_t portid, struct rte_pmd_cnxk_ipsec_inb_cfg *cfg);
+ #endif /* _PMD_CNXK_H_ */
+diff --git a/drivers/net/cnxk/version.map b/drivers/net/cnxk/version.map
+index 6360294df56e3..4380bd4ea588f 100644
+--- a/drivers/net/cnxk/version.map
++++ b/drivers/net/cnxk/version.map
+@@ -11,6 +11,7 @@ EXPERIMENTAL {
+ 
+ 	# added in 23.11
+ 	rte_pmd_cnxk_cpt_q_stats_get;
++	rte_pmd_cnxk_hw_inline_inb_cfg_set;
+ 	rte_pmd_cnxk_hw_session_base_get;
+ 	rte_pmd_cnxk_inl_dev_qptr_get;
+ 	rte_pmd_cnxk_inl_dev_submit;
+-- 
+2.25.1
+

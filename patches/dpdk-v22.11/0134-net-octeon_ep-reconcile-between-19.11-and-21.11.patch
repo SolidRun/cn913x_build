@@ -1,0 +1,136 @@
+From 274887c99d5566a9419a1f9eb93e8304b9c0802f Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Mon, 2 Jan 2023 03:37:27 -0800
+Subject: [PATCH 134/955] net/octeon_ep: reconcile between 19.11 and 21.11
+
+This commit reconcile differences between
+dpdk-19.11 and dpdk-21.11 changes
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I084a5b36b0d6b2924bafe82d7a2632027c674e72
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93500
+Tested-by: Satananda Burla <sburla@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_common.h |  8 ++++++++
+ drivers/net/octeon_ep/otx_ep_ethdev.c |  4 +++-
+ drivers/net/octeon_ep/otx_ep_rxtx.c   | 23 +++++++++++------------
+ 3 files changed, 22 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 9abde270ecf3f..bf855e48c8f20 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -361,6 +361,14 @@ struct otx_ep_droq {
+ 	 */
+ 	void *pkts_sent_reg;
+ 
++	/** Fix for DMA incompletion during pkt reads.
++	 *  This variable is used to initiate a sent_reg_read
++	 *  that completes pending dma
++	 *  this variable is used as lvalue so compiler cannot optimize
++	 *  the reads
++	 */
++	uint32_t sent_reg_val;
++
+ 	/* Statistics for this DROQ. */
+ 	struct otx_ep_droq_stats stats;
+ 
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 39703d2b5fb5a..2fd2ebf45c87c 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -447,9 +447,10 @@ otx_ep_dev_link_update(struct rte_eth_dev *eth_dev, int wait_to_complete)
+ 	struct rte_eth_link link;
+ 
+ 	memset(&link, 0, sizeof(link));
+-	link.link_status = RTE_ETH_LINK_UP;
+ 	link.link_speed  = RTE_ETH_SPEED_NUM_10G;
+ 	link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
++	link.link_autoneg = RTE_ETH_LINK_AUTONEG;
++	link.link_status = RTE_ETH_LINK_UP;
+ 	return rte_eth_linkstatus_set(eth_dev, &link);
+ }
+ 
+@@ -574,6 +575,7 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		return 0;
+ 
+ 	otx_ep_parse_parameters(eth_dev);
++	rte_eth_copy_pci_info(eth_dev, pdev);
+ 
+ 	otx_epvf->eth_dev = eth_dev;
+ 	otx_epvf->port_id = eth_dev->data->port_id;
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 5e569be9da002..8370ad8b92cd4 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -3,12 +3,13 @@
+  */
+ 
+ #include <unistd.h>
+-
++#include <assert.h>
+ #include <rte_eal.h>
+ #include <rte_mempool.h>
+ #include <rte_mbuf.h>
+ #include <rte_io.h>
+ #include <rte_net.h>
++#include <rte_cycles.h>
+ #include <ethdev_pci.h>
+ #include "common/cnxk/roc_api.h"
+ 
+@@ -884,19 +885,14 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 		 * droq->pkts_pending);
+ 		 */
+ 		droq->stats.pkts_delayed_data++;
+-		while (retry && !info->length)
++		while (retry && !info->length) {
+ 			retry--;
++			rte_delay_us_block(50);
++		}
+ 		if (!retry && !info->length) {
+ 			otx_ep_err("OCTEON DROQ[%d]: read_idx: %d; Retry failed !!\n",
+ 				   droq->q_no, droq->read_idx);
+-			/* May be zero length packet; drop it */
+-			rte_pktmbuf_free(droq_pkt);
+-			droq->recv_buf_list[droq->read_idx] = NULL;
+-			droq->read_idx = otx_ep_incr_index(droq->read_idx, 1,
+-							   droq->nb_desc);
+-			droq->stats.dropped_zlp++;
+-			droq->refill_count++;
+-			goto oq_read_fail;
++			assert(0);
+ 		}
+ 	}
+ 	if (next_fetch) {
+@@ -930,6 +926,9 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 		struct rte_mbuf *first_buf = NULL;
+ 		struct rte_mbuf *last_buf = NULL;
+ 
++		/* initiating a csr read helps to flush pending dma */
++		droq->sent_reg_val = rte_read32(droq->pkts_sent_reg);
++		rte_rmb();
+ 		while (pkt_len < total_pkt_len) {
+ 			int cpy_len = 0;
+ 
+@@ -970,7 +969,8 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 
+ 				last_buf = droq_pkt;
+ 			} else {
+-				otx_ep_err("no buf\n");
++				otx_ep_err("no recvbuf in jumbo processing\n");
++				assert(0);
+ 			}
+ 
+ 			pkt_len += cpy_len;
+@@ -1082,7 +1082,6 @@ otx_ep_recv_pkts(void *rx_queue,
+ 				    "last_pkt_count %" PRIu64 "new_pkts %d.\n",
+ 				   droq->pkts_pending, droq->last_pkt_count,
+ 				   new_pkts);
+-			droq->pkts_pending -= pkts;
+ 			droq->stats.rx_err++;
+ 			continue;
+ 		} else {
+-- 
+2.25.1
+

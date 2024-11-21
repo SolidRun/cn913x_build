@@ -1,0 +1,53 @@
+From 87db2300e74125cf94d3b1f6db8cf87b7718375a Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Sat, 11 Feb 2023 00:54:24 +0530
+Subject: [PATCH 277/955] app/test: handle error packets from inline IPsec
+
+In inline IPsec path, when the ol_flags indicate error, pkt might
+be incomplete. Hence don't trust the m->pkt_len to determine the
+size of packet, rather consider even data length's per segment.
+
+Change-Id: Ia3de856486cb400da685531a6c7a16232e732068
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96699
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_cryptodev_security_ipsec.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_cryptodev_security_ipsec.c b/app/test/test_cryptodev_security_ipsec.c
+index 71b19f657aac9..9d33c9df3fc2f 100644
+--- a/app/test/test_cryptodev_security_ipsec.c
++++ b/app/test/test_cryptodev_security_ipsec.c
+@@ -1042,11 +1042,24 @@ test_ipsec_post_process(const struct rte_mbuf *m, const struct ipsec_test_data *
+ 			struct ipsec_test_data *res_d, bool silent,
+ 			const struct ipsec_test_flags *flags)
+ {
+-	uint32_t len = rte_pktmbuf_pkt_len(m);
++	uint32_t len = rte_pktmbuf_pkt_len(m), data_len;
+ 	uint8_t output_text[IPSEC_TEXT_MAX_LEN];
++	const struct rte_mbuf *seg;
+ 	const uint8_t *output;
+ 	int ret;
+ 
++	memset(output_text, 0, IPSEC_TEXT_MAX_LEN);
++	/* Actual data in packet might be less in error cases,
++	 * hence take minimum of pkt_len and sum of data_len.
++	 * This is done to run through negative test cases.
++	 */
++	data_len = 0;
++	seg = m;
++	while (seg) {
++		data_len += seg->data_len;
++		seg = seg->next;
++	}
++	len = RTE_MIN(len, data_len);
+ 	/* Copy mbuf payload to continuous buffer */
+ 	output = rte_pktmbuf_read(m, 0, len, output_text);
+ 	if (output != output_text)
+-- 
+2.25.1
+

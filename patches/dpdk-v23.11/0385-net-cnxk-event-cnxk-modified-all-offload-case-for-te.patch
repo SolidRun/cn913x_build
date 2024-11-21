@@ -1,0 +1,331 @@
+From 65e8c7b8e5e373c906ca42743cb915898282f63a Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 27 May 2024 15:18:39 +0530
+Subject: [PATCH 385/513] net/cnxk: event/cnxk: modified all offload case for
+ template disable
+
+By default enable all offloads will have issues at run time when
+we select few offloads flags in driver.
+
+Change-Id: I73de09de134ccbd5866079aef356030fc1a05eda
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128483
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/event/cnxk/cn10k_eventdev.c          |  5 +++
+ drivers/event/cnxk/cn10k_tx_worker.h         |  2 ++
+ drivers/event/cnxk/cn9k_eventdev.c           |  9 ++++++
+ drivers/event/cnxk/cn9k_worker.h             |  7 +++++
+ drivers/event/cnxk/tx/cn10k/tx_all_offload.c | 13 ++++++++
+ drivers/event/cnxk/tx/cn9k/tx_all_offload.c  | 32 +++++++++++++++++++-
+ drivers/net/cnxk/cn10k_rxtx.h                |  1 +
+ drivers/net/cnxk/cn10k_tx_select.c           |  7 +++++
+ drivers/net/cnxk/cn9k_ethdev.h               |  1 +
+ drivers/net/cnxk/cn9k_tx_select.c            |  7 +++++
+ drivers/net/cnxk/rx/cn10k/rx_all_offload.c   |  4 +--
+ drivers/net/cnxk/tx/cn10k/tx_all_offload.c   | 13 +++-----
+ drivers/net/cnxk/tx/cn9k/tx_all_offload.c    | 15 +++------
+ 13 files changed, 93 insertions(+), 23 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index c53bf23727d60..c2d2a8bd4c0e5 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -493,6 +493,11 @@ cn10k_sso_fp_blk_fns_set(struct rte_eventdev *event_dev)
+ 	}
+ 	event_dev->txa_enqueue = cn10k_sso_hws_tx_adptr_enq_seg_all_offload;
+ 	event_dev->txa_enqueue_same_dest = cn10k_sso_hws_tx_adptr_enq_seg_all_offload;
++	if (dev->tx_offloads & (NIX_TX_OFFLOAD_OL3_OL4_CSUM_F | NIX_TX_OFFLOAD_VLAN_QINQ_F |
++				NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F)) {
++		event_dev->txa_enqueue = cn10k_sso_hws_tx_adptr_enq_seg_all_offload_tst;
++		event_dev->txa_enqueue_same_dest = cn10k_sso_hws_tx_adptr_enq_seg_all_offload_tst;
++	}
+ #else
+ 	RTE_SET_USED(event_dev);
+ #endif
+diff --git a/drivers/event/cnxk/cn10k_tx_worker.h b/drivers/event/cnxk/cn10k_tx_worker.h
+index a997f036c0e71..0695ea23e1a2c 100644
+--- a/drivers/event/cnxk/cn10k_tx_worker.h
++++ b/drivers/event/cnxk/cn10k_tx_worker.h
+@@ -282,5 +282,7 @@ NIX_TX_FASTPATH_MODES
+ 
+ uint16_t __rte_hot cn10k_sso_hws_tx_adptr_enq_seg_all_offload(void *port, struct rte_event ev[],
+ 							      uint16_t nb_events);
++uint16_t __rte_hot cn10k_sso_hws_tx_adptr_enq_seg_all_offload_tst(void *port, struct rte_event ev[],
++								  uint16_t nb_events);
+ 
+ #endif
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 3290a7fff23af..0769d86d9a866 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -536,6 +536,10 @@ cn9k_sso_fp_blk_fns_set(struct rte_eventdev *event_dev)
+ 	}
+ 	event_dev->txa_enqueue = cn9k_sso_hws_tx_adptr_enq_seg_all_offload;
+ 	event_dev->txa_enqueue_same_dest = cn9k_sso_hws_tx_adptr_enq_seg_all_offload;
++	if (dev->tx_offloads & NIX_TX_OFFLOAD_TSTAMP_F) {
++		event_dev->txa_enqueue = cn9k_sso_hws_tx_adptr_enq_seg_all_offload_tst;
++		event_dev->txa_enqueue_same_dest = cn9k_sso_hws_tx_adptr_enq_seg_all_offload_tst;
++	}
+ 	if (dev->dual_ws) {
+ 		event_dev->dequeue = cn9k_sso_hws_deq_dual_all_offload;
+ 		event_dev->dequeue_burst = cn9k_sso_hws_deq_dual_burst_all_offload;
+@@ -545,6 +549,11 @@ cn9k_sso_fp_blk_fns_set(struct rte_eventdev *event_dev)
+ 		}
+ 		event_dev->txa_enqueue = cn9k_sso_hws_tx_adptr_enq_dual_seg_all_offload;
+ 		event_dev->txa_enqueue_same_dest = cn9k_sso_hws_tx_adptr_enq_dual_seg_all_offload;
++		if (dev->tx_offloads & NIX_TX_OFFLOAD_TSTAMP_F) {
++			event_dev->txa_enqueue = cn9k_sso_hws_tx_adptr_enq_dual_seg_all_offload_tst;
++			event_dev->txa_enqueue_same_dest =
++				cn9k_sso_hws_tx_adptr_enq_dual_seg_all_offload_tst;
++		}
+ 	}
+ #else
+ 	RTE_SET_USED(event_dev);
+diff --git a/drivers/event/cnxk/cn9k_worker.h b/drivers/event/cnxk/cn9k_worker.h
+index c38c31b1b3ccf..c92fa72f11170 100644
+--- a/drivers/event/cnxk/cn9k_worker.h
++++ b/drivers/event/cnxk/cn9k_worker.h
+@@ -922,4 +922,11 @@ uint16_t __rte_hot cn9k_sso_hws_tx_adptr_enq_seg_all_offload(void *port, struct
+ uint16_t __rte_hot cn9k_sso_hws_tx_adptr_enq_dual_seg_all_offload(void *port, struct rte_event ev[],
+ 								  uint16_t nb_events);
+ 
++uint16_t __rte_hot cn9k_sso_hws_tx_adptr_enq_seg_all_offload_tst(void *port, struct rte_event ev[],
++								 uint16_t nb_events);
++
++uint16_t __rte_hot cn9k_sso_hws_tx_adptr_enq_dual_seg_all_offload_tst(void *port,
++								      struct rte_event ev[],
++								      uint16_t nb_events);
++
+ #endif
+diff --git a/drivers/event/cnxk/tx/cn10k/tx_all_offload.c b/drivers/event/cnxk/tx/cn10k/tx_all_offload.c
+index 77a98c00d1bab..ae9be6d2a1496 100644
+--- a/drivers/event/cnxk/tx/cn10k/tx_all_offload.c
++++ b/drivers/event/cnxk/tx/cn10k/tx_all_offload.c
+@@ -12,6 +12,19 @@
+ 
+ uint16_t __rte_hot
+ cn10k_sso_hws_tx_adptr_enq_seg_all_offload(void *port, struct rte_event ev[], uint16_t nb_events)
++{
++	const uint32_t flags = (NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
++				NIX_TX_MULTI_SEG_F | NIX_TX_OFFLOAD_SECURITY_F);
++	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
++
++	struct cn10k_sso_hws *ws = port;
++	RTE_SET_USED(nb_events);
++	return cn10k_sso_hws_event_tx(ws, &ev[0], cmd, (const uint64_t *)ws->tx_adptr_data, flags);
++}
++
++uint16_t __rte_hot
++cn10k_sso_hws_tx_adptr_enq_seg_all_offload_tst(void *port, struct rte_event ev[],
++					       uint16_t nb_events)
+ {
+ 	const uint32_t flags =
+ 		(NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+diff --git a/drivers/event/cnxk/tx/cn9k/tx_all_offload.c b/drivers/event/cnxk/tx/cn9k/tx_all_offload.c
+index d715dccd86acf..3fd2e4939b716 100644
+--- a/drivers/event/cnxk/tx/cn9k/tx_all_offload.c
++++ b/drivers/event/cnxk/tx/cn9k/tx_all_offload.c
+@@ -12,7 +12,7 @@ cn9k_sso_hws_tx_adptr_enq_seg_all_offload(void *port, struct rte_event ev[], uin
+ 	const uint32_t flags =
+ 		(NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+ 		 NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F | NIX_TX_OFFLOAD_TSO_F |
+-		 NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F | NIX_TX_MULTI_SEG_F);
++		 NIX_TX_OFFLOAD_SECURITY_F | NIX_TX_MULTI_SEG_F);
+ 	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
+ 	struct cn9k_sso_hws *ws = port;
+ 
+@@ -23,6 +23,36 @@ cn9k_sso_hws_tx_adptr_enq_seg_all_offload(void *port, struct rte_event ev[], uin
+ uint16_t __rte_hot
+ cn9k_sso_hws_tx_adptr_enq_dual_seg_all_offload(void *port, struct rte_event ev[],
+ 					       uint16_t nb_events)
++{
++	const uint32_t flags =
++		(NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
++		 NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F | NIX_TX_OFFLOAD_TSO_F |
++		 NIX_TX_OFFLOAD_SECURITY_F | NIX_TX_MULTI_SEG_F);
++	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
++	struct cn9k_sso_hws_dual *ws = port;
++
++	RTE_SET_USED(nb_events);
++	return cn9k_sso_hws_event_tx(ws->base[!ws->vws], &ev[0], cmd, (uint64_t *)ws->tx_adptr_data,
++				     flags);
++}
++
++uint16_t __rte_hot
++cn9k_sso_hws_tx_adptr_enq_seg_all_offload_tst(void *port, struct rte_event ev[], uint16_t nb_events)
++{
++	const uint32_t flags =
++		(NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
++		 NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F | NIX_TX_OFFLOAD_TSO_F |
++		 NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F | NIX_TX_MULTI_SEG_F);
++	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
++	struct cn9k_sso_hws *ws = port;
++
++	RTE_SET_USED(nb_events);
++	return cn9k_sso_hws_event_tx(ws->base, &ev[0], cmd, (uint64_t *)ws->tx_adptr_data, flags);
++}
++
++uint16_t __rte_hot
++cn9k_sso_hws_tx_adptr_enq_dual_seg_all_offload_tst(void *port, struct rte_event ev[],
++						   uint16_t nb_events)
+ {
+ 	const uint32_t flags =
+ 		(NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+diff --git a/drivers/net/cnxk/cn10k_rxtx.h b/drivers/net/cnxk/cn10k_rxtx.h
+index 492a07a2f7acc..ed54e5f920b5e 100644
+--- a/drivers/net/cnxk/cn10k_rxtx.h
++++ b/drivers/net/cnxk/cn10k_rxtx.h
+@@ -62,6 +62,7 @@ struct cn10k_eth_txq {
+ 	uint64_t mark_flag : 8;
+ 	uint64_t mark_fmt : 48;
+ 	struct cnxk_eth_txq_comp tx_compl;
++	uint16_t tx_offload_flags;
+ } __plt_cache_aligned;
+ 
+ struct cn10k_eth_rxq {
+diff --git a/drivers/net/cnxk/cn10k_tx_select.c b/drivers/net/cnxk/cn10k_tx_select.c
+index 62bcd895e1958..56fddac5a0f51 100644
+--- a/drivers/net/cnxk/cn10k_tx_select.c
++++ b/drivers/net/cnxk/cn10k_tx_select.c
+@@ -90,6 +90,13 @@ cn10k_eth_set_tx_blk_func(struct rte_eth_dev *eth_dev)
+ {
+ #if defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct cn10k_eth_txq *txq;
++	int i;
++
++	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
++		txq = (struct cn10k_eth_txq *)eth_dev->data->tx_queues[i];
++		txq->tx_offload_flags = dev->tx_offload_flags;
++	}
+ 
+ 	if (dev->scalar_ena || dev->tx_mark)
+ 		eth_dev->tx_pkt_burst = cn10k_nix_xmit_pkts_all_offload;
+diff --git a/drivers/net/cnxk/cn9k_ethdev.h b/drivers/net/cnxk/cn9k_ethdev.h
+index 6ae0db62caea9..4933954c33019 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.h
++++ b/drivers/net/cnxk/cn9k_ethdev.h
+@@ -25,6 +25,7 @@ struct cn9k_eth_txq {
+ 	uint64_t mark_flag : 8;
+ 	uint64_t mark_fmt : 48;
+ 	struct cnxk_eth_txq_comp tx_compl;
++	uint16_t tx_offload_flags;
+ } __plt_cache_aligned;
+ 
+ struct cn9k_eth_rxq {
+diff --git a/drivers/net/cnxk/cn9k_tx_select.c b/drivers/net/cnxk/cn9k_tx_select.c
+index 3256988f70fe0..497449b1c490d 100644
+--- a/drivers/net/cnxk/cn9k_tx_select.c
++++ b/drivers/net/cnxk/cn9k_tx_select.c
+@@ -86,6 +86,13 @@ cn9k_eth_set_tx_blk_func(struct rte_eth_dev *eth_dev)
+ {
+ #if defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct cn9k_eth_txq *txq;
++	int i;
++
++	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
++		txq = (struct cn9k_eth_txq *)eth_dev->data->tx_queues[i];
++		txq->tx_offload_flags = dev->tx_offload_flags;
++	}
+ 
+ 	if (dev->scalar_ena || dev->tx_mark)
+ 		eth_dev->tx_pkt_burst = cn9k_nix_xmit_pkts_all_offload;
+diff --git a/drivers/net/cnxk/rx/cn10k/rx_all_offload.c b/drivers/net/cnxk/rx/cn10k/rx_all_offload.c
+index 13819173401be..dc46ae27e1398 100644
+--- a/drivers/net/cnxk/rx/cn10k/rx_all_offload.c
++++ b/drivers/net/cnxk/rx/cn10k/rx_all_offload.c
+@@ -16,7 +16,7 @@ cn10k_nix_recv_pkts_all_offload(void *rx_queue, struct rte_mbuf **rx_pkts, uint1
+ 	return cn10k_nix_recv_pkts(rx_queue, rx_pkts, pkts,
+ 				   NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F |
+ 					   NIX_RX_OFFLOAD_CHECKSUM_F |
+-					   NIX_RX_OFFLOAD_MARK_UPDATE_F | NIX_RX_OFFLOAD_TSTAMP_F |
++					   NIX_RX_OFFLOAD_MARK_UPDATE_F |
+ 					   NIX_RX_OFFLOAD_VLAN_STRIP_F | NIX_RX_OFFLOAD_SECURITY_F |
+ 					   NIX_RX_MULTI_SEG_F | NIX_RX_REAS_F);
+ }
+@@ -26,7 +26,7 @@ cn10k_nix_recv_pkts_vec_all_offload(void *rx_queue, struct rte_mbuf **rx_pkts, u
+ {
+ 	return cn10k_nix_recv_pkts_vector(rx_queue, rx_pkts, pkts,
+ 		NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F | NIX_RX_OFFLOAD_CHECKSUM_F |
+-			NIX_RX_OFFLOAD_MARK_UPDATE_F | NIX_RX_OFFLOAD_TSTAMP_F |
++			NIX_RX_OFFLOAD_MARK_UPDATE_F |
+ 			NIX_RX_OFFLOAD_VLAN_STRIP_F | NIX_RX_OFFLOAD_SECURITY_F |
+ 			NIX_RX_MULTI_SEG_F | NIX_RX_REAS_F,
+ 		NULL, NULL, 0, 0);
+diff --git a/drivers/net/cnxk/tx/cn10k/tx_all_offload.c b/drivers/net/cnxk/tx/cn10k/tx_all_offload.c
+index b929fb636dad8..7957a18948896 100644
+--- a/drivers/net/cnxk/tx/cn10k/tx_all_offload.c
++++ b/drivers/net/cnxk/tx/cn10k/tx_all_offload.c
+@@ -13,25 +13,20 @@
+ uint16_t __rte_noinline __rte_hot
+ cn10k_nix_xmit_pkts_all_offload(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts)
+ {
++	struct cn10k_eth_txq *txq = (struct cn10k_eth_txq *)tx_queue;
+ 	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
+ 
+-	return cn10k_nix_xmit_pkts_mseg(tx_queue, NULL, tx_pkts, pkts, cmd,
+-		NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+-			NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
+-			NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F |
+-			NIX_TX_MULTI_SEG_F);
++	return cn10k_nix_xmit_pkts_mseg(tx_queue, NULL, tx_pkts, pkts, cmd, txq->tx_offload_flags);
+ }
+ 
+ uint16_t __rte_noinline __rte_hot
+ cn10k_nix_xmit_pkts_vec_all_offload(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts)
+ {
++	struct cn10k_eth_txq *txq = (struct cn10k_eth_txq *)tx_queue;
+ 	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
+ 
+ 	return cn10k_nix_xmit_pkts_vector(tx_queue, NULL, tx_pkts, pkts, cmd,
+-		NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+-			NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
+-			NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F |
+-			NIX_TX_MULTI_SEG_F);
++					  txq->tx_offload_flags);
+ }
+ 
+ #endif
+diff --git a/drivers/net/cnxk/tx/cn9k/tx_all_offload.c b/drivers/net/cnxk/tx/cn9k/tx_all_offload.c
+index f76365a7175ef..4367681e5fcb3 100644
+--- a/drivers/net/cnxk/tx/cn9k/tx_all_offload.c
++++ b/drivers/net/cnxk/tx/cn9k/tx_all_offload.c
+@@ -10,26 +10,19 @@
+ uint16_t __rte_noinline __rte_hot
+ cn9k_nix_xmit_pkts_all_offload(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts)
+ {
++	struct cn9k_eth_txq *txq = (struct cn9k_eth_txq *)tx_queue;
+ 	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
+ 
+-	return cn9k_nix_xmit_pkts_mseg(tx_queue, tx_pkts, pkts, cmd,
+-				       NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+-					       NIX_TX_OFFLOAD_VLAN_QINQ_F |
+-					       NIX_TX_OFFLOAD_MBUF_NOFF_F | NIX_TX_OFFLOAD_TSO_F |
+-					       NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F |
+-					       NIX_TX_MULTI_SEG_F);
++	return cn9k_nix_xmit_pkts_mseg(tx_queue, tx_pkts, pkts, cmd, txq->tx_offload_flags);
+ }
+ 
+ uint16_t __rte_noinline __rte_hot
+ cn9k_nix_xmit_pkts_vec_all_offload(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts)
+ {
++	struct cn9k_eth_txq *txq = (struct cn9k_eth_txq *)tx_queue;
+ 	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
+ 
+-	return cn9k_nix_xmit_pkts_vector(tx_queue, tx_pkts, pkts, cmd,
+-		NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+-			NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
+-			NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F |
+-			NIX_TX_MULTI_SEG_F);
++	return cn9k_nix_xmit_pkts_vector(tx_queue, tx_pkts, pkts, cmd, txq->tx_offload_flags);
+ }
+ 
+ #endif
+-- 
+2.25.1
+

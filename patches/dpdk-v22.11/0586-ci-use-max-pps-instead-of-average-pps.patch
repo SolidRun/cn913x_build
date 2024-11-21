@@ -1,0 +1,36 @@
+From d39ca3fdfb8e51a32343bd988ebebd460bfb033b Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Sun, 30 Jul 2023 19:59:45 +0530
+Subject: [PATCH 586/955] ci: use max pps instead of average pps
+
+Use max pps instead of average pps for test eventdev.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I2f245af0659264fd1690e7dc424b3d8623d1d880
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108664
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+index 5f6a03aeb534f..7a5f5f66b3ee9 100755
+--- a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
++++ b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+@@ -151,9 +151,9 @@ record_pps()
+ 			printf "$(exec_testpmd_cmd rx_pps)\n" >> $out_file
+ 			;;
+ 		dpdk-test-eventdev)
+-			sleep 20 # avg need more time to stabilize
+-			pps=$(sed -n "0,/.\+ mpps avg \([0-9\.]\+\) mpps/s//\1/p" $test_log \
+-				| sed "s/[^[:print:]].*//")
++			sleep 8 # avg need more time to stabilize
++			pps=$(sed -nE "s/.*[^0-9]([0-9]+\.[0-9]+ mpps avg)/\1/p" $test_log \
++				| awk -F' ' '{print $1}')
+ 			printf "$pps\n" >> $out_file
+ 			;;
+ 	esac
+-- 
+2.25.1
+

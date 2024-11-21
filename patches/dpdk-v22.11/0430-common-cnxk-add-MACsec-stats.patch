@@ -1,0 +1,477 @@
+From 3831fe26b1a8c689f0cc3c04b44a5b8f334c30bd Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 19 May 2023 00:36:34 +0530
+Subject: [PATCH 430/955] common/cnxk: add MACsec stats
+
+Added ROC APIs for MACsec stats for SC/SECY/FLOW/PORT
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Iaac24be86adf235753b6ad2dce0a88ecde1536fe
+---
+ drivers/common/cnxk/meson.build     |   1 +
+ drivers/common/cnxk/roc_mbox.h      |  93 ++++++++++++++
+ drivers/common/cnxk/roc_mcs.h       |  85 ++++++++++++
+ drivers/common/cnxk/roc_mcs_stats.c | 193 ++++++++++++++++++++++++++++
+ drivers/common/cnxk/version.map     |   5 +
+ 5 files changed, 377 insertions(+)
+ create mode 100644 drivers/common/cnxk/roc_mcs_stats.c
+
+diff --git a/drivers/common/cnxk/meson.build b/drivers/common/cnxk/meson.build
+index e035ae629345f..c2604efdeecb1 100644
+--- a/drivers/common/cnxk/meson.build
++++ b/drivers/common/cnxk/meson.build
+@@ -28,6 +28,7 @@ sources = files(
+         'roc_mbox.c',
+         'roc_mcs.c',
+         'roc_mcs_sec_cfg.c',
++        'roc_mcs_stats.c',
+         'roc_model.c',
+         'roc_nix.c',
+         'roc_nix_bpf.c',
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 6f7eaae909094..2a1952b179737 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -311,6 +311,11 @@ struct mbox_msghdr {
+ 	M(MCS_PN_TABLE_WRITE, 0xa009, mcs_pn_table_write, mcs_pn_table_write_req, msg_rsp)         \
+ 	M(MCS_SET_ACTIVE_LMAC, 0xa00a, mcs_set_active_lmac, mcs_set_active_lmac, msg_rsp)          \
+ 	M(MCS_GET_HW_INFO, 0xa00b, mcs_get_hw_info, msg_req, mcs_hw_info)                          \
++	M(MCS_GET_FLOWID_STATS, 0xa00c, mcs_get_flowid_stats, mcs_stats_req, mcs_flowid_stats)     \
++	M(MCS_GET_SECY_STATS, 0xa00d, mcs_get_secy_stats, mcs_stats_req, mcs_secy_stats)           \
++	M(MCS_GET_SC_STATS, 0xa00e, mcs_get_sc_stats, mcs_stats_req, mcs_sc_stats)                 \
++	M(MCS_GET_PORT_STATS, 0xa010, mcs_get_port_stats, mcs_stats_req, mcs_port_stats)           \
++	M(MCS_CLEAR_STATS, 0xa011, mcs_clear_stats, mcs_clear_stats, msg_rsp)                      \
+ 	M(MCS_SET_LMAC_MODE, 0xa013, mcs_set_lmac_mode, mcs_set_lmac_mode, msg_rsp)                \
+ 	M(MCS_SET_PN_THRESHOLD, 0xa014, mcs_set_pn_threshold, mcs_set_pn_threshold, msg_rsp)       \
+ 
+@@ -879,6 +884,94 @@ struct mcs_set_pn_threshold {
+ 	uint64_t __io rsvd;
+ };
+ 
++struct mcs_stats_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io id;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint64_t __io rsvd;
++};
++
++struct mcs_flowid_stats {
++	struct mbox_msghdr hdr;
++	uint64_t __io tcam_hit_cnt;
++	uint64_t __io rsvd;
++};
++
++struct mcs_secy_stats {
++	struct mbox_msghdr hdr;
++	uint64_t __io ctl_pkt_bcast_cnt;
++	uint64_t __io ctl_pkt_mcast_cnt;
++	uint64_t __io ctl_pkt_ucast_cnt;
++	uint64_t __io ctl_octet_cnt;
++	uint64_t __io unctl_pkt_bcast_cnt;
++	uint64_t __io unctl_pkt_mcast_cnt;
++	uint64_t __io unctl_pkt_ucast_cnt;
++	uint64_t __io unctl_octet_cnt;
++	/* Valid only for RX */
++	uint64_t __io octet_decrypted_cnt;
++	uint64_t __io octet_validated_cnt;
++	uint64_t __io pkt_port_disabled_cnt;
++	uint64_t __io pkt_badtag_cnt;
++	uint64_t __io pkt_nosa_cnt;
++	uint64_t __io pkt_nosaerror_cnt;
++	uint64_t __io pkt_tagged_ctl_cnt;
++	uint64_t __io pkt_untaged_cnt;
++	uint64_t __io pkt_ctl_cnt;   /* CN10K-B */
++	uint64_t __io pkt_notag_cnt; /* CNF10K-B */
++	/* Valid only for TX */
++	uint64_t __io octet_encrypted_cnt;
++	uint64_t __io octet_protected_cnt;
++	uint64_t __io pkt_noactivesa_cnt;
++	uint64_t __io pkt_toolong_cnt;
++	uint64_t __io pkt_untagged_cnt;
++	uint64_t __io rsvd[4];
++};
++
++struct mcs_port_stats {
++	struct mbox_msghdr hdr;
++	uint64_t __io tcam_miss_cnt;
++	uint64_t __io parser_err_cnt;
++	uint64_t __io preempt_err_cnt; /* CNF10K-B */
++	uint64_t __io sectag_insert_err_cnt;
++	uint64_t __io rsvd[4];
++};
++
++struct mcs_sc_stats {
++	struct mbox_msghdr hdr;
++	/* RX */
++	uint64_t __io hit_cnt;
++	uint64_t __io pkt_invalid_cnt;
++	uint64_t __io pkt_late_cnt;
++	uint64_t __io pkt_notvalid_cnt;
++	uint64_t __io pkt_unchecked_cnt;
++	uint64_t __io pkt_delay_cnt;	  /* CNF10K-B */
++	uint64_t __io pkt_ok_cnt;	  /* CNF10K-B */
++	uint64_t __io octet_decrypt_cnt;  /* CN10K-B */
++	uint64_t __io octet_validate_cnt; /* CN10K-B */
++	/* TX */
++	uint64_t __io pkt_encrypt_cnt;
++	uint64_t __io pkt_protected_cnt;
++	uint64_t __io octet_encrypt_cnt;   /* CN10K-B */
++	uint64_t __io octet_protected_cnt; /* CN10K-B */
++	uint64_t __io rsvd[4];
++};
++
++struct mcs_clear_stats {
++	struct mbox_msghdr hdr;
++#define MCS_FLOWID_STATS 0
++#define MCS_SECY_STATS	 1
++#define MCS_SC_STATS	 2
++#define MCS_SA_STATS	 3
++#define MCS_PORT_STATS	 4
++	uint8_t __io type; /* FLOWID, SECY, SC, SA, PORT */
++	/* type = PORT, If id = FF(invalid) port no is derived from pcifunc */
++	uint8_t __io id;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint8_t __io all; /* All resources stats mapped to PF are cleared */
++};
++
+ /* NPA mbox message formats */
+ 
+ /* NPA mailbox error codes
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+index a51ee21278b30..0157a7b26a62b 100644
+--- a/drivers/common/cnxk/roc_mcs.h
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -135,6 +135,76 @@ struct roc_mcs_set_pn_threshold {
+ 	uint64_t rsvd;
+ };
+ 
++struct roc_mcs_stats_req {
++	uint8_t id;
++	uint8_t dir;
++};
++
++struct roc_mcs_flowid_stats {
++	uint64_t tcam_hit_cnt;
++};
++
++struct roc_mcs_secy_stats {
++	uint64_t ctl_pkt_bcast_cnt;
++	uint64_t ctl_pkt_mcast_cnt;
++	uint64_t ctl_pkt_ucast_cnt;
++	uint64_t ctl_octet_cnt;
++	uint64_t unctl_pkt_bcast_cnt;
++	uint64_t unctl_pkt_mcast_cnt;
++	uint64_t unctl_pkt_ucast_cnt;
++	uint64_t unctl_octet_cnt;
++	/* Valid only for RX */
++	uint64_t octet_decrypted_cnt;
++	uint64_t octet_validated_cnt;
++	uint64_t pkt_port_disabled_cnt;
++	uint64_t pkt_badtag_cnt;
++	uint64_t pkt_nosa_cnt;
++	uint64_t pkt_nosaerror_cnt;
++	uint64_t pkt_tagged_ctl_cnt;
++	uint64_t pkt_untaged_cnt;
++	uint64_t pkt_ctl_cnt;	/* CN10K-B */
++	uint64_t pkt_notag_cnt; /* CNF10K-B */
++	/* Valid only for TX */
++	uint64_t octet_encrypted_cnt;
++	uint64_t octet_protected_cnt;
++	uint64_t pkt_noactivesa_cnt;
++	uint64_t pkt_toolong_cnt;
++	uint64_t pkt_untagged_cnt;
++};
++
++struct roc_mcs_sc_stats {
++	/* RX */
++	uint64_t hit_cnt;
++	uint64_t pkt_invalid_cnt;
++	uint64_t pkt_late_cnt;
++	uint64_t pkt_notvalid_cnt;
++	uint64_t pkt_unchecked_cnt;
++	uint64_t pkt_delay_cnt;	     /* CNF10K-B */
++	uint64_t pkt_ok_cnt;	     /* CNF10K-B */
++	uint64_t octet_decrypt_cnt;  /* CN10K-B */
++	uint64_t octet_validate_cnt; /* CN10K-B */
++	/* TX */
++	uint64_t pkt_encrypt_cnt;
++	uint64_t pkt_protected_cnt;
++	uint64_t octet_encrypt_cnt;   /* CN10K-B */
++	uint64_t octet_protected_cnt; /* CN10K-B */
++};
++
++struct roc_mcs_port_stats {
++	uint64_t tcam_miss_cnt;
++	uint64_t parser_err_cnt;
++	uint64_t preempt_err_cnt; /* CNF10K-B */
++	uint64_t sectag_insert_err_cnt;
++};
++
++struct roc_mcs_clear_stats {
++	uint8_t type; /* FLOWID, SECY, SC, SA, PORT */
++	/* type = PORT, If id = FF(invalid) port no is derived from pcifunc */
++	uint8_t id;
++	uint8_t dir;
++	uint8_t all; /* All resources stats mapped to PF are cleared */
++};
++
+ struct roc_mcs {
+ 	TAILQ_ENTRY(roc_mcs) next;
+ 	struct plt_pci_device *pci_dev;
+@@ -205,4 +275,19 @@ __roc_api int roc_mcs_flowid_entry_read(struct roc_mcs *mcs,
+ __roc_api int roc_mcs_flowid_entry_enable(struct roc_mcs *mcs,
+ 					  struct roc_mcs_flowid_ena_dis_entry *entry);
+ 
++/* Flow id stats get */
++__roc_api int roc_mcs_flowid_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
++				       struct roc_mcs_flowid_stats *stats);
++/* Secy stats get */
++__roc_api int roc_mcs_secy_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
++				     struct roc_mcs_secy_stats *stats);
++/* SC stats get */
++__roc_api int roc_mcs_sc_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
++				   struct roc_mcs_sc_stats *stats);
++/* Port stats get */
++__roc_api int roc_mcs_port_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
++				     struct roc_mcs_port_stats *stats);
++/* Clear stats */
++__roc_api int roc_mcs_stats_clear(struct roc_mcs *mcs, struct roc_mcs_clear_stats *mcs_req);
++
+ #endif /* _ROC_MCS_H_ */
+diff --git a/drivers/common/cnxk/roc_mcs_stats.c b/drivers/common/cnxk/roc_mcs_stats.c
+new file mode 100644
+index 0000000000000..24ac8a31cd0e5
+--- /dev/null
++++ b/drivers/common/cnxk/roc_mcs_stats.c
+@@ -0,0 +1,193 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "roc_api.h"
++#include "roc_priv.h"
++
++int
++roc_mcs_flowid_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
++			 struct roc_mcs_flowid_stats *stats)
++{
++	struct mcs_flowid_stats *rsp;
++	struct mcs_stats_req *req;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	req = mbox_alloc_msg_mcs_get_flowid_stats(mcs->mbox);
++	if (req == NULL)
++		return -ENOSPC;
++
++	req->id = mcs_req->id;
++	req->mcs_id = mcs->idx;
++	req->dir = mcs_req->dir;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&rsp);
++	if (rc)
++		return rc;
++
++	stats->tcam_hit_cnt = rsp->tcam_hit_cnt;
++
++	return rc;
++}
++
++int
++roc_mcs_secy_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
++		       struct roc_mcs_secy_stats *stats)
++{
++	struct mcs_secy_stats *rsp;
++	struct mcs_stats_req *req;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	req = mbox_alloc_msg_mcs_get_secy_stats(mcs->mbox);
++	if (req == NULL)
++		return -ENOSPC;
++
++	req->id = mcs_req->id;
++	req->mcs_id = mcs->idx;
++	req->dir = mcs_req->dir;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&rsp);
++	if (rc)
++		return rc;
++
++	stats->ctl_pkt_bcast_cnt = rsp->ctl_pkt_bcast_cnt;
++	stats->ctl_pkt_mcast_cnt = rsp->ctl_pkt_mcast_cnt;
++	stats->ctl_pkt_ucast_cnt = rsp->ctl_pkt_ucast_cnt;
++	stats->ctl_octet_cnt = rsp->ctl_octet_cnt;
++	stats->unctl_pkt_bcast_cnt = rsp->unctl_pkt_bcast_cnt;
++	stats->unctl_pkt_mcast_cnt = rsp->unctl_pkt_mcast_cnt;
++	stats->unctl_pkt_ucast_cnt = rsp->unctl_pkt_ucast_cnt;
++	stats->unctl_octet_cnt = rsp->unctl_octet_cnt;
++
++	if (mcs_req->dir == MCS_RX) {
++		stats->octet_decrypted_cnt = rsp->octet_decrypted_cnt;
++		stats->octet_validated_cnt = rsp->octet_validated_cnt;
++		stats->pkt_port_disabled_cnt = rsp->pkt_port_disabled_cnt;
++		stats->pkt_badtag_cnt = rsp->pkt_badtag_cnt;
++		stats->pkt_nosa_cnt = rsp->pkt_nosa_cnt;
++		stats->pkt_nosaerror_cnt = rsp->pkt_nosaerror_cnt;
++		stats->pkt_tagged_ctl_cnt = rsp->pkt_tagged_ctl_cnt;
++		stats->pkt_untaged_cnt = rsp->pkt_untaged_cnt;
++		if (roc_model_is_cn10kb_a0())
++			/* CN10K-B */
++			stats->pkt_ctl_cnt = rsp->pkt_ctl_cnt;
++		else
++			/* CNF10K-B */
++			stats->pkt_notag_cnt = rsp->pkt_notag_cnt;
++	} else {
++		stats->octet_encrypted_cnt = rsp->octet_encrypted_cnt;
++		stats->octet_protected_cnt = rsp->octet_protected_cnt;
++		stats->pkt_noactivesa_cnt = rsp->pkt_noactivesa_cnt;
++		stats->pkt_toolong_cnt = rsp->pkt_toolong_cnt;
++		stats->pkt_untagged_cnt = rsp->pkt_untagged_cnt;
++	}
++
++	return rc;
++}
++
++int
++roc_mcs_sc_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
++		     struct roc_mcs_sc_stats *stats)
++{
++	struct mcs_stats_req *req;
++	struct mcs_sc_stats *rsp;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	req = mbox_alloc_msg_mcs_get_sc_stats(mcs->mbox);
++	if (req == NULL)
++		return -ENOSPC;
++
++	req->id = mcs_req->id;
++	req->mcs_id = mcs->idx;
++	req->dir = mcs_req->dir;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&rsp);
++	if (rc)
++		return rc;
++
++	if (mcs_req->dir == MCS_RX) {
++		stats->hit_cnt = rsp->hit_cnt;
++		stats->pkt_invalid_cnt = rsp->pkt_invalid_cnt;
++		stats->pkt_late_cnt = rsp->pkt_late_cnt;
++		stats->pkt_notvalid_cnt = rsp->pkt_notvalid_cnt;
++		stats->pkt_unchecked_cnt = rsp->pkt_unchecked_cnt;
++		if (roc_model_is_cn10kb_a0()) {
++			stats->octet_decrypt_cnt = rsp->octet_decrypt_cnt;
++			stats->octet_validate_cnt = rsp->octet_validate_cnt;
++		} else {
++			stats->pkt_delay_cnt = rsp->pkt_delay_cnt;
++			stats->pkt_ok_cnt = rsp->pkt_ok_cnt;
++		}
++	} else {
++		stats->pkt_encrypt_cnt = rsp->pkt_encrypt_cnt;
++		stats->pkt_protected_cnt = rsp->pkt_protected_cnt;
++		if (roc_model_is_cn10kb_a0()) {
++			stats->octet_encrypt_cnt = rsp->octet_encrypt_cnt;
++			stats->octet_protected_cnt = rsp->octet_protected_cnt;
++		}
++	}
++
++	return rc;
++}
++
++int
++roc_mcs_port_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
++		       struct roc_mcs_port_stats *stats)
++{
++	struct mcs_port_stats *rsp;
++	struct mcs_stats_req *req;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	req = mbox_alloc_msg_mcs_get_port_stats(mcs->mbox);
++	if (req == NULL)
++		return -ENOSPC;
++
++	req->id = mcs_req->id;
++	req->mcs_id = mcs->idx;
++	req->dir = mcs_req->dir;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&rsp);
++	if (rc)
++		return rc;
++
++	stats->tcam_miss_cnt = rsp->tcam_miss_cnt;
++	stats->parser_err_cnt = rsp->parser_err_cnt;
++	if (roc_model_is_cnf10kb())
++		stats->preempt_err_cnt = rsp->preempt_err_cnt;
++
++	stats->sectag_insert_err_cnt = rsp->sectag_insert_err_cnt;
++
++	return rc;
++}
++
++int
++roc_mcs_stats_clear(struct roc_mcs *mcs, struct roc_mcs_clear_stats *mcs_req)
++{
++	struct mcs_clear_stats *req;
++	struct msg_rsp *rsp;
++
++	MCS_SUPPORT_CHECK;
++
++	if (!roc_model_is_cn10kb_a0() && mcs_req->type == MCS_SA_STATS)
++		return MCS_ERR_HW_NOTSUP;
++
++	req = mbox_alloc_msg_mcs_clear_stats(mcs->mbox);
++	if (req == NULL)
++		return -ENOSPC;
++
++	req->type = mcs_req->type;
++	req->id = mcs_req->id;
++	req->mcs_id = mcs->idx;
++	req->dir = mcs_req->dir;
++	req->all = mcs_req->all;
++
++	return mbox_process_msg(mcs->mbox, (void *)&rsp);
++}
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index f7414059fd284..b45bf9d18313e 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -113,12 +113,14 @@ INTERNAL {
+ 	roc_mcs_flowid_entry_enable;
+ 	roc_mcs_flowid_entry_read;
+ 	roc_mcs_flowid_entry_write;
++	roc_mcs_flowid_stats_get;
+ 	roc_mcs_free_rsrc;
+ 	roc_mcs_hw_info_get;
+ 	roc_mcs_lmac_mode_set;
+ 	roc_mcs_pn_table_write;
+ 	roc_mcs_pn_table_read;
+ 	roc_mcs_pn_threshold_set;
++	roc_mcs_port_stats_get;
+ 	roc_mcs_rx_sc_cam_enable;
+ 	roc_mcs_rx_sc_cam_read;
+ 	roc_mcs_rx_sc_cam_write;
+@@ -126,8 +128,11 @@ INTERNAL {
+ 	roc_mcs_rx_sc_sa_map_write;
+ 	roc_mcs_sa_policy_read;
+ 	roc_mcs_sa_policy_write;
++	roc_mcs_sc_stats_get;
+ 	roc_mcs_secy_policy_read;
+ 	roc_mcs_secy_policy_write;
++	roc_mcs_secy_stats_get;
++	roc_mcs_stats_clear;
+ 	roc_mcs_tx_sc_sa_map_read;
+ 	roc_mcs_tx_sc_sa_map_write;
+ 	roc_nix_bpf_alloc;
+-- 
+2.25.1
+

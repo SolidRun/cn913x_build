@@ -1,0 +1,34 @@
+From 4a54e7919b0a7c3ff6328129ec46a6ccb40887d2 Mon Sep 17 00:00:00 2001
+From: Radha Mohan Chintakuntla <radhac@marvell.com>
+Date: Mon, 26 Sep 2022 18:02:19 -0700
+Subject: [PATCH 139/955] dma/cnxk: add DMA devops for all models of cn10xxx
+
+Valid function pointers are set for DMA device operations
+i.e. cn10k_dmadev_ops are used for all cn10k devices.
+
+Signed-off-by: Radha Mohan Chintakuntla <radhac@marvell.com>
+Change-Id: Idb51d36f73ba6507d8a448818b6fb29687466ed7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92531
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index ce090e4e9a5b1..62d1088ff8603 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -653,7 +653,9 @@ cnxk_dmadev_probe(struct rte_pci_driver *pci_drv __rte_unused,
+ 	dmadev->fp_obj->completed_status = cnxk_dmadev_completed_status;
+ 
+ 	if (pci_dev->id.subsystem_device_id == PCI_SUBSYSTEM_DEVID_CN10KA ||
++	    pci_dev->id.subsystem_device_id == PCI_SUBSYSTEM_DEVID_CN10KAS ||
+ 	    pci_dev->id.subsystem_device_id == PCI_SUBSYSTEM_DEVID_CNF10KA ||
++	    pci_dev->id.subsystem_device_id == PCI_SUBSYSTEM_DEVID_CNF10KB ||
+ 	    pci_dev->id.subsystem_device_id == PCI_SUBSYSTEM_DEVID_CN10KB) {
+ 		dmadev->dev_ops = &cn10k_dmadev_ops;
+ 		dmadev->fp_obj->copy = cn10k_dmadev_copy;
+-- 
+2.25.1
+

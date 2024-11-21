@@ -1,0 +1,51 @@
+From 798a54f9ac9579dbdf906c9465b8c9fadc4ba85f Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 19 Jul 2023 04:23:45 +0530
+Subject: [PATCH 552/955] event/cnxk: fix incorrect getwork devargs parsing
+
+CN10K can support up to three types of getwork, use parse value
+function to parse the device arguments.
+
+Fixes: 5fb651552c79 ("event/cnxk: fix SSO and TIM argument parsing")
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I0964afc3d304a1f950ebc322126d225a5e7ec4dc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108137
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cnxk_eventdev.c | 2 +-
+ drivers/event/cnxk/cnxk_eventdev.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index 02cdd99e31852..7e23425055091 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -610,7 +610,7 @@ cnxk_sso_parse_devargs(struct cnxk_sso_evdev *dev, struct rte_devargs *devargs)
+ 			   &dev->force_ena_bp);
+ 	rte_kvargs_process(kvlist, CN9K_SSO_SINGLE_WS, &parse_kvargs_flag,
+ 			   &single_ws);
+-	rte_kvargs_process(kvlist, CN10K_SSO_GW_MODE, &parse_kvargs_flag,
++	rte_kvargs_process(kvlist, CN10K_SSO_GW_MODE, &parse_kvargs_value,
+ 			   &dev->gw_mode);
+ 	rte_kvargs_process(kvlist, CN10K_SSO_STASH,
+ 			   &parse_sso_kvargs_stash_dict, dev);
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index f6d0ddafa8da6..898c6c05d8dc8 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -118,7 +118,7 @@ struct cnxk_sso_evdev {
+ 	/* CN9K */
+ 	uint8_t dual_ws;
+ 	/* CN10K */
+-	uint8_t gw_mode;
++	uint32_t gw_mode;
+ 	uint16_t stash_cnt;
+ 	struct cnxk_sso_stash *stash_parse_data;
+ } __rte_cache_aligned;
+-- 
+2.25.1
+

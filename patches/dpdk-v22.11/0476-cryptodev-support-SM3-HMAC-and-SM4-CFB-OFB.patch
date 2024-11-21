@@ -1,0 +1,96 @@
+From c81540fdfaf5b559dd08f510c951348e369fcdbd Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Sat, 3 Jun 2023 07:30:47 -0700
+Subject: [PATCH 476/955] cryptodev: support SM3-HMAC and SM4-CFB/OFB
+
+Add SM3_HMAC/SM4_CFB/SM4_OFB support in DPDK.
+
+Signed-off-by: Sunyang Wu <sunyang.wu@jaguarmicro.com>
+Acked-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I893923e3721a693071524f183adf95d7c5a65bc5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104753
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104827
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ doc/guides/cryptodevs/features/default.ini | 3 +++
+ lib/cryptodev/rte_crypto_sym.h             | 8 +++++++-
+ lib/cryptodev/rte_cryptodev.c              | 5 ++++-
+ 3 files changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/doc/guides/cryptodevs/features/default.ini b/doc/guides/cryptodevs/features/default.ini
+index 523da0cfa8137..8f54d4a2a5998 100644
+--- a/doc/guides/cryptodevs/features/default.ini
++++ b/doc/guides/cryptodevs/features/default.ini
+@@ -64,6 +64,8 @@ ZUC EEA3       =
+ SM4 ECB        =
+ SM4 CBC        =
+ SM4 CTR        =
++SM4 CFB        =
++SM4 OFB        =
+ 
+ ;
+ ; Supported authentication algorithms of a default crypto driver.
+@@ -99,6 +101,7 @@ SHA3_384 HMAC   =
+ SHA3_512        =
+ SHA3_512 HMAC   =
+ SM3             =
++SM3 HMAC        =
+ SHAKE_128       =
+ SHAKE_256       =
+ 
+diff --git a/lib/cryptodev/rte_crypto_sym.h b/lib/cryptodev/rte_crypto_sym.h
+index 2cfe66530c729..9a9e35eeea89a 100644
+--- a/lib/cryptodev/rte_crypto_sym.h
++++ b/lib/cryptodev/rte_crypto_sym.h
+@@ -172,8 +172,12 @@ enum rte_crypto_cipher_algorithm {
+ 	/**< ShangMi 4 (SM4) algorithm in ECB mode */
+ 	RTE_CRYPTO_CIPHER_SM4_CBC,
+ 	/**< ShangMi 4 (SM4) algorithm in CBC mode */
+-	RTE_CRYPTO_CIPHER_SM4_CTR
++	RTE_CRYPTO_CIPHER_SM4_CTR,
+ 	/**< ShangMi 4 (SM4) algorithm in CTR mode */
++	RTE_CRYPTO_CIPHER_SM4_OFB,
++	/**< ShangMi 4 (SM4) algorithm in OFB mode */
++	RTE_CRYPTO_CIPHER_SM4_CFB
++	/**< ShangMi 4 (SM4) algorithm in CFB mode */
+ };
+ 
+ /** Cipher algorithm name strings */
+@@ -381,6 +385,8 @@ enum rte_crypto_auth_algorithm {
+ 	/**< 128 bit SHAKE algorithm. */
+ 	RTE_CRYPTO_AUTH_SHAKE_256,
+ 	/**< 256 bit SHAKE algorithm. */
++	RTE_CRYPTO_AUTH_SM3_HMAC,
++	/** < HMAC using ShangMi 3 (SM3) algorithm */
+ };
+ 
+ /** Authentication algorithm name strings */
+diff --git a/lib/cryptodev/rte_cryptodev.c b/lib/cryptodev/rte_cryptodev.c
+index d5ecea9bc69ba..6bb49ca67c831 100644
+--- a/lib/cryptodev/rte_cryptodev.c
++++ b/lib/cryptodev/rte_cryptodev.c
+@@ -127,7 +127,9 @@ crypto_cipher_algorithm_strings[] = {
+ 	[RTE_CRYPTO_CIPHER_ZUC_EEA3]	= "zuc-eea3",
+ 	[RTE_CRYPTO_CIPHER_SM4_ECB]	= "sm4-ecb",
+ 	[RTE_CRYPTO_CIPHER_SM4_CBC]	= "sm4-cbc",
+-	[RTE_CRYPTO_CIPHER_SM4_CTR]	= "sm4-ctr"
++	[RTE_CRYPTO_CIPHER_SM4_CTR]	= "sm4-ctr",
++	[RTE_CRYPTO_CIPHER_SM4_CFB]	= "sm4-cfb",
++	[RTE_CRYPTO_CIPHER_SM4_OFB]	= "sm4-ofb"
+ };
+ 
+ /**
+@@ -184,6 +186,7 @@ rte_crypto_auth_algorithm_strings[] = {
+ 	[RTE_CRYPTO_AUTH_ZUC_EIA3]	= "zuc-eia3",
+ 
+ 	[RTE_CRYPTO_AUTH_SM3]		= "sm3",
++	[RTE_CRYPTO_AUTH_SM3_HMAC]	= "sm3-hmac",
+ 
+ 	[RTE_CRYPTO_AUTH_SHAKE_128]	 = "shake-128",
+ 	[RTE_CRYPTO_AUTH_SHAKE_256]	 = "shake-256",
+-- 
+2.25.1
+

@@ -1,0 +1,61 @@
+From 39cf79f5053491adbddbb62c4b14a2a99d59f738 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Wed, 19 Jul 2023 16:50:32 +0530
+Subject: [PATCH 556/955] net/cnxk: move MAC address set from init to configure
+
+Channel(rx_chan_base) is not available in the kernel at
+the time of nix probe. Hence, move the mac address set
+call from nix_device_init() to nix_device_configure().
+This fixes the issue on cn10kb, where traffic was not
+getting received when promisc is disabled.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I8421e09dec97462a1d8f7b726c92a9089c5ba977
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107832
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index bd161ad3758ae..3b2ad5ff7d14d 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1301,6 +1301,15 @@ cnxk_nix_configure(struct rte_eth_dev *eth_dev)
+ 		goto fail_configure;
+ 	}
+ 
++	if (!roc_nix_is_vf_or_sdp(nix)) {
++		/* Sync same MAC address to CGX/RPM table */
++		rc = roc_nix_mac_addr_set(nix, dev->mac_addr);
++		if (rc) {
++			plt_err("Failed to set mac addr, rc=%d", rc);
++			goto fail_configure;
++		}
++	}
++
+ 	/* Check if ptp is enable in PF owning this VF*/
+ 	if (!roc_nix_is_pf(nix) && (!roc_nix_is_sdp(nix)))
+ 		dev->ptp_en = roc_nix_ptp_is_enable(nix);
+@@ -1941,15 +1950,6 @@ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	/* Update the mac address */
+ 	memcpy(eth_dev->data->mac_addrs, dev->mac_addr, RTE_ETHER_ADDR_LEN);
+ 
+-	if (!roc_nix_is_vf_or_sdp(nix)) {
+-		/* Sync same MAC address to CGX/RPM table */
+-		rc = roc_nix_mac_addr_set(nix, dev->mac_addr);
+-		if (rc) {
+-			plt_err("Failed to set mac addr, rc=%d", rc);
+-			goto free_mac_addrs;
+-		}
+-	}
+-
+ 	/* Union of all capabilities supported by CNXK.
+ 	 * Platform specific capabilities will be
+ 	 * updated later.
+-- 
+2.25.1
+

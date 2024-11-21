@@ -1,0 +1,777 @@
+From 95256aa06e36d49110d2da49b0a86eeac98653cf Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 22 Feb 2024 16:58:06 +0530
+Subject: [PATCH 253/513] marvell-ci: extbuf: enhance to test all pkt types
+
+Enhance to test multiple combinations of pkt types
+such as INDIRECT, DIRECT, EXTBUF etc.
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Ie2d85d35dd82e7c4accb2202caf738d85764de2a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122414
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ .../cnxk-tests/extbuf/cnxk_indirectbuf.sh     |   2 +-
+ marvell-ci/test/cnxk-tests/extbuf/extbuf.c    | 701 +++++++++++++++++-
+ 2 files changed, 696 insertions(+), 7 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/extbuf/cnxk_indirectbuf.sh b/marvell-ci/test/cnxk-tests/extbuf/cnxk_indirectbuf.sh
+index 2fb38757d8bc9..c71b881219b97 100755
+--- a/marvell-ci/test/cnxk-tests/extbuf/cnxk_indirectbuf.sh
++++ b/marvell-ci/test/cnxk-tests/extbuf/cnxk_indirectbuf.sh
+@@ -45,7 +45,7 @@ echo "================================"
+ 	--file-prefix $TX_PREFIX \
+ 	-c 0x5 \
+ 	-a 0002:01:00.1,tx_compl_ena=1 \
+-	-- --pkt-type 0xff\
++	-- --pkt-type 0xfffff\
+ 	--max-pkts 100 2>&1) > $TX_LOG
+ 
+ echo "================================"
+diff --git a/marvell-ci/test/cnxk-tests/extbuf/extbuf.c b/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
+index e321a45e39009..ad3e78a28e087 100644
+--- a/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
++++ b/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
+@@ -111,11 +111,23 @@ enum pkt_type {
+ 	P_DIR = 0,
+ 	P_INDIR = 1,
+ 	P_EXTBUF = 2,
+-	P_DIR_INDIR = 3,
+-	P_INDIR_DIR = 4,
+-	P_INDIR_INDIR = 5,
+-	P_DIR_INDIR_SG2 = 6,
+-	P_DIR_DIR_SG2 = 7,
++	P_EXTBUF_DIR_INDIR = 3,
++	P_DIR_EXTBUF_INDIR = 4,
++	P_DIR_INDIR_EXTBUF = 5,
++	P_INDIR_DIR_EXTBUF = 6,
++	P_EXTBUF_INDIR_DIR = 7,
++	P_DIR_INDIR = 8,
++	P_INDIR_DIR = 9,
++	P_DIR_DIR = 10,
++	P_EXTBUF_DIR_DIR = 11,
++	P_DIR_EXTBUF_DIR = 12,
++	P_DIR_DIR_EXTBUF = 13,
++	P_INDIR_INDIR = 14,
++	P_INDIR_INDIR_EXTBUF = 15,
++	P_EXTBUF_INDIR_INDIR = 16,
++	P_INDIR_EXTBUF_INDIR = 17,
++	P_DIR_INDIR_SG2 = 18,
++	P_DIR_DIR_SG2 = 19,
+ 	P_MAX,
+ };
+ 
+@@ -845,8 +857,9 @@ static inline struct rte_mbuf *
+ prepare_pkt_with_type(uint32_t portid, enum pkt_type type,
+ 		      struct rte_mempool *mp1, struct rte_mempool *mp2)
+ {
+-	struct rte_mbuf_ext_shared_info *s = NULL;
++	struct rte_mbuf *extbuf_head = NULL, *extbuf;
+ 	struct rte_mbuf *head = NULL, *next, *next2;
++	struct rte_mbuf_ext_shared_info *s = NULL;
+ 
+ 	switch (type) {
+ 	default:
+@@ -906,6 +919,308 @@ prepare_pkt_with_type(uint32_t portid, enum pkt_type type,
+ 		/* Update MAGIC */
+ 		*rte_pktmbuf_mtod_offset(head, uint64_t *, SEG_LEN) = MAGIC_PATTERN;
+ 		break;
++	case P_EXTBUF_DIR_INDIR:
++		/* EXT BUF(mp1->mp2) -> Direct(mp1) -> Indirect(mp2->mp1) */
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++					  extbuf->buf_len, s);
++		extbuf_head->data_off = 0;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++
++		/* Direct(mp1) */
++		head = rte_pktmbuf_alloc(mp1);
++		if (!head)
++			goto error;
++		head->data_off = 64;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		/* Indirect(mp1) */
++		next = rte_pktmbuf_alloc(mp2);
++		if (!next)
++			goto error;
++
++		/* Indirect data(mp2) */
++		next2 = rte_pktmbuf_alloc(mp1);
++		if (!next2) {
++			rte_pktmbuf_free(next);
++			goto error;
++		}
++		rte_pktmbuf_attach(next, next2);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next2);
++		next->data_off = 128;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++
++		head->next = next;
++
++		extbuf_head->next = head;
++		extbuf_head->nb_segs = 3;
++		extbuf_head->pkt_len += head->pkt_len + next->pkt_len;
++		head = extbuf_head;
++		break;
++	case P_DIR_EXTBUF_INDIR:
++		/* Direct(mp1) -> EXT BUF(mp1->mp2) -> Indirect(mp2->mp1) */
++		/* Direct(mp1) */
++		head = rte_pktmbuf_alloc(mp1);
++		if (!head)
++			goto error;
++		head->data_off = 0;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++
++		/*EXT BUF (mp1->mp2) */
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++					  extbuf->buf_len, s);
++		extbuf_head->data_off = 64;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(extbuf_head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		/* Indirect(mp2) */
++		next = rte_pktmbuf_alloc(mp2);
++		if (!next)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next2 = rte_pktmbuf_alloc(mp1);
++		if (!next2) {
++			rte_pktmbuf_free(next);
++			goto error;
++		}
++		rte_pktmbuf_attach(next, next2);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next2);
++		next->data_off = 128;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++
++		extbuf_head->next = next;
++
++		head->next = extbuf_head;
++		head->nb_segs = 3;
++		head->pkt_len += extbuf_head->pkt_len + next->pkt_len;
++		break;
++	case P_DIR_INDIR_EXTBUF:
++		/* Direct(mp1)->Indirect(mp2->mp1)->EXT BUF (mp1->mp2) */
++		/* Direct(mp1) */
++		head = rte_pktmbuf_alloc(mp1);
++		if (!head)
++			goto error;
++		head->data_off = 0;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++
++		/* Indirect(mp2) */
++		next = rte_pktmbuf_alloc(mp2);
++		if (!next)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next2 = rte_pktmbuf_alloc(mp1);
++		if (!next2) {
++			rte_pktmbuf_free(next);
++			goto error;
++		}
++		rte_pktmbuf_attach(next, next2);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next2);
++		next->data_off = 64;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++
++		/*EXT BUF (mp1->mp2) */
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++					  extbuf->buf_len, s);
++		extbuf_head->data_off = 128;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++		*rte_pktmbuf_mtod_offset(extbuf_head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		next->next = extbuf_head;
++
++		head->next = next;
++		head->nb_segs = 3;
++		head->pkt_len += next->pkt_len + extbuf_head->pkt_len;
++		break;
++	case P_INDIR_DIR_EXTBUF:
++		/* Indirect(mp2->mp1)->Direct(mp1)->EXT BUF (mp1->mp2) */
++		/* Indirect(mp2->mp1) */
++		next = rte_pktmbuf_alloc(mp2);
++		if (!next)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next2 = rte_pktmbuf_alloc(mp1);
++		if (!next2) {
++			rte_pktmbuf_free(next);
++			goto error;
++		}
++		rte_pktmbuf_attach(next, next2);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next2);
++		next->data_off = 0;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++
++		/* Direct(mp1) */
++		head = rte_pktmbuf_alloc(mp1);
++		if (!head)
++			goto error;
++		head->data_off = 64;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++		*rte_pktmbuf_mtod_offset(head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		/*EXT BUF (mp1->mp2) */
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++					  extbuf->buf_len, s);
++		extbuf_head->data_off = 128;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(extbuf_head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		head->next = extbuf_head;
++
++		next->next = head;
++		next->nb_segs = 3;
++		next->pkt_len += head->pkt_len + extbuf_head->data_len;
++		head = next;
++		break;
++	case P_EXTBUF_INDIR_DIR:
++		/*EXT BUF (mp1->mp2) */
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++					  extbuf->buf_len, s);
++		extbuf_head->data_off = 0;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++
++		/* Indirect(mp2->mp1) */
++		next = rte_pktmbuf_alloc(mp2);
++		if (!next)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next2 = rte_pktmbuf_alloc(mp1);
++		if (!next2) {
++			rte_pktmbuf_free(next);
++			goto error;
++		}
++		rte_pktmbuf_attach(next, next2);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next2);
++		next->data_off = 64;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++		/* Direct(mp1) */
++		head = rte_pktmbuf_alloc(mp1);
++		if (!head)
++			goto error;
++		head->data_off = 128;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++		*rte_pktmbuf_mtod_offset(head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		next->next = head;
++
++		extbuf_head->next = next;
++		extbuf_head->nb_segs = 3;
++		extbuf_head->pkt_len += head->pkt_len + next->pkt_len;
++
++		head = extbuf_head;
++		break;
+ 	case P_DIR_INDIR:
+ 		/* Direct(mp1)->Indirect(mp2->mp1) */
+ 
+@@ -940,6 +1255,179 @@ prepare_pkt_with_type(uint32_t portid, enum pkt_type type,
+ 		head->nb_segs = 2;
+ 		head->pkt_len += next->data_len;
+ 		break;
++	case P_EXTBUF_DIR_DIR:
++		/*EXT BUF (mp1->mp2)->Direct(mp1)->Direct(mp1) */
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++					  extbuf->buf_len, s);
++		extbuf_head->data_off = 0;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++
++		/* Direct(mp1) */
++		head = rte_pktmbuf_alloc(mp1);
++		if (!head)
++			goto error;
++
++		head->data_off = 64;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++		*rte_pktmbuf_mtod_offset(head, uint64_t *, 0) = MAGIC_PATTERN;
++		/* Direct data(mp1) */
++		next = rte_pktmbuf_alloc(mp1);
++		if (!next)
++			goto error;
++		next->data_off = 128;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++
++		head->next = next;
++
++		extbuf_head->next = head;
++		extbuf_head->nb_segs = 3;
++		extbuf_head->pkt_len += head->pkt_len + next->pkt_len;
++		head = extbuf_head;
++		break;
++	case P_DIR_EXTBUF_DIR:
++		/*Direct(mp1)->EXT BUF (mp1->mp2)->Direct(mp1)*/
++		/* Direct(mp1) */
++		head = rte_pktmbuf_alloc(mp1);
++		if (!head)
++			goto error;
++
++		head->data_off = 0;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++					  extbuf->buf_len, s);
++		extbuf_head->data_off = 64;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(extbuf_head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		next = rte_pktmbuf_alloc(mp1);
++		if (!next)
++			goto error;
++		next->data_off = 128;
++		next->data_len = SEG_LEN;
++		next->pkt_len =  next->data_len;
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++
++		extbuf_head->next = next;
++
++		head->next = extbuf_head;
++		head->nb_segs = 3;
++		head->pkt_len += extbuf_head->pkt_len + next->pkt_len;
++		break;
++	case P_DIR_DIR_EXTBUF:
++		/*Direct(mp1)->Direct(mp1)->EXT BUF (mp1->mp2) */
++		/* Direct(mp1) */
++		head = rte_pktmbuf_alloc(mp1);
++		if (!head)
++			goto error;
++
++		head->data_off = 0;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++		/* Direct data(mp1) */
++		next = rte_pktmbuf_alloc(mp1);
++		if (!next)
++			goto error;
++		next->data_off = 64;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++					  extbuf->buf_len, s);
++		extbuf_head->data_off = 128;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(extbuf_head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		next->next = extbuf_head;
++
++		head->next = next;
++		head->nb_segs = 3;
++		head->pkt_len += next->pkt_len + extbuf_head->pkt_len;
++		break;
++	case P_DIR_DIR:
++		/* Direct(mp1)->Direct(mp1) */
++
++		/* Direct(mp1) */
++		head = rte_pktmbuf_alloc(mp1);
++		if (!head)
++			goto error;
++
++		head->data_off = 0;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++		/* Direct data(mp1) */
++		next = rte_pktmbuf_alloc(mp1);
++		if (!next)
++			goto error;
++		next->data_off = 0;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++
++		head->next = next;
++		head->nb_segs = 2;
++		head->pkt_len += next->pkt_len;
++		break;
+ 	case P_INDIR_DIR:
+ 		/* Indirect(mp2->mp1)->Direct(mp1) */
+ 
+@@ -1015,6 +1503,207 @@ prepare_pkt_with_type(uint32_t portid, enum pkt_type type,
+ 		head->nb_segs = 2;
+ 		head->pkt_len += next->data_len;
+ 		break;
++	case P_INDIR_INDIR_EXTBUF:
++		/* Indirect(mp2->mp1)->Indirect(mp2->mp1)->EXTBUF(mp1->mp2) */
++		/* Indirect(mp2) */
++		head = rte_pktmbuf_alloc(mp2);
++		if (!head)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next = rte_pktmbuf_alloc(mp1);
++		if (!next)
++			goto error;
++		rte_pktmbuf_attach(head, next);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next);
++		head->data_off = 0;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++
++		/* Indirect(mp2) */
++		next = rte_pktmbuf_alloc(mp2);
++		if (!next)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next2 = rte_pktmbuf_alloc(mp1);
++		if (!next2) {
++			rte_pktmbuf_free(next);
++			goto error;
++		}
++		rte_pktmbuf_attach(next, next2);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next2);
++		next->data_off = 64;
++		next->data_len = SEG_LEN;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++				extbuf->buf_len, s);
++		extbuf_head->data_off = 128;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(extbuf_head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		next->next = extbuf_head;
++
++		head->next = next;
++		head->nb_segs = 3;
++		head->pkt_len += next->data_len + extbuf_head->pkt_len;
++		break;
++	case P_EXTBUF_INDIR_INDIR:
++		/* EXTBUF(mp1->mp2)->Indirect(mp2->mp1)->Indirect(mp2->mp1)*/
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++					  extbuf->buf_len, s);
++		extbuf_head->data_off = 0;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++		/* Update MAGIC */
++		/* Indirect(mp2) */
++		head = rte_pktmbuf_alloc(mp2);
++		if (!head)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next = rte_pktmbuf_alloc(mp1);
++		if (!next)
++			goto error;
++		rte_pktmbuf_attach(head, next);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next);
++		head->data_off = 64;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++		*rte_pktmbuf_mtod_offset(head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		/* Indirect(mp2) */
++		next = rte_pktmbuf_alloc(mp2);
++		if (!next)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next2 = rte_pktmbuf_alloc(mp1);
++		if (!next2) {
++			rte_pktmbuf_free(next);
++			goto error;
++		}
++		rte_pktmbuf_attach(next, next2);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next2);
++		next->data_off = 128;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++
++		head->next = next;
++
++		extbuf_head->next = head;
++		extbuf_head->nb_segs = 3;
++		extbuf_head->pkt_len += head->pkt_len + next->pkt_len;
++		head = extbuf_head;
++		break;
++	case P_INDIR_EXTBUF_INDIR:
++		/* Indirect(mp2->mp1)->EXTBUF(mp1->mp2)->Indirect(mp2->mp1)*/
++		/* Indirect(mp2) */
++		head = rte_pktmbuf_alloc(mp2);
++		if (!head)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next = rte_pktmbuf_alloc(mp1);
++		if (!next)
++			goto error;
++		rte_pktmbuf_attach(head, next);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next);
++		head->data_off = 0;
++		head->data_len = SEG_LEN;
++		head->pkt_len = head->data_len;
++
++		extbuf_head = rte_pktmbuf_alloc(mp1);
++		if (!extbuf_head)
++			goto error;
++
++		if (rte_mempool_get(shinfo_pool, (void **)&s)) {
++			ERROR("Failed to allocate shinfo\n");
++			goto error;
++		}
++
++		extbuf = rte_pktmbuf_alloc(mp2);
++		if (!extbuf) {
++			rte_mempool_put(shinfo_pool, s);
++			goto error;
++		}
++		/* Attach the user memory to the segments */
++		init_shinfo_compl(s);
++		rte_pktmbuf_attach_extbuf(extbuf_head, extbuf->buf_addr, (uint64_t)extbuf->buf_addr,
++				extbuf->buf_len, s);
++		extbuf_head->data_off = 64;
++		extbuf_head->data_len = SEG_LEN;
++		extbuf_head->pkt_len = extbuf_head->data_len;
++		/* Update MAGIC */
++		*rte_pktmbuf_mtod_offset(extbuf_head, uint64_t *, 0) = MAGIC_PATTERN;
++
++		/* Indirect(mp2) */
++		next = rte_pktmbuf_alloc(mp2);
++		if (!next)
++			goto error;
++
++		/* Indirect data(mp1) */
++		next2 = rte_pktmbuf_alloc(mp1);
++		if (!next2) {
++			rte_pktmbuf_free(next);
++			goto error;
++		}
++		rte_pktmbuf_attach(next, next2);
++		/* Release the attached mbuf reference */
++		rte_pktmbuf_free(next2);
++		next->data_off = 128;
++		next->data_len = SEG_LEN;
++		next->pkt_len = next->data_len;
++		*rte_pktmbuf_mtod_offset(next, uint64_t *, 0) = MAGIC_PATTERN;
++
++		extbuf_head->next = next;
++
++		head->next = extbuf_head;
++		head->nb_segs = 3;
++		head->pkt_len += extbuf_head->pkt_len + next->pkt_len;
++		break;
+ 	case P_DIR_INDIR_SG2:
+ 		/* Direct(mp1)->Indirect(mp1->mp2) */
+ 
+-- 
+2.25.1
+

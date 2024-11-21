@@ -1,0 +1,671 @@
+From 27e86956466169a48f40305c6367f128dd920a82 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Fri, 11 Nov 2022 11:28:09 +0530
+Subject: [PATCH 164/955] ci/ipsec_perf: update reference numbers for CN10K
+
+Updates reference numbers for CN10K new perf setup with CORECLK
+2500 Mhz and SCLK 1100 Mhz.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I4b3a4a0a087afdcb6d3093f5ebfac2679c96dfca
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94135
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh  |  9 ++++++
+ .../ipsec_perf/cnxk_ipsec_perf_gen.sh         |  4 +--
+ .../test/cnxk-tests/ipsec_perf/meson.build    | 32 +++++++++++--------
+ .../cn10k/rclk2500_sclk1000.106xx.ip.inb      | 10 ------
+ .../cn10k/rclk2500_sclk1000.106xx.ip.outb     | 10 ------
+ .../cn10k/rclk2500_sclk1000.106xx.ip_ev.outb  | 10 ------
+ .../rclk2500_sclk1000.106xx.ip_ev_ss.inb      | 10 ------
+ .../rclk2500_sclk1000.106xx.ip_ev_ss.outb     | 10 ------
+ .../cn10k/rclk2500_sclk1000.106xx.ip_p.inb    | 10 ------
+ .../cn10k/rclk2500_sclk1000.106xx.ip_p.outb   | 10 ------
+ .../cn10k/rclk2500_sclk1000.106xx.ip_p_ss.inb | 10 ------
+ .../rclk2500_sclk1000.106xx.ip_p_ss.outb      | 10 ------
+ .../cn10k/rclk2500_sclk1000.106xx.lc.inb      | 10 ------
+ .../cn10k/rclk2500_sclk1000.106xx.lc.outb     | 10 ------
+ .../cn10k/rclk2500_sclk1000.106xx.lp.inb      | 10 ------
+ .../cn10k/rclk2500_sclk1000.106xx.lp.outb     | 10 ------
+ .../cn10k/rclk2500_sclk1100.106xx.ip.inb      | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.ip.outb     | 10 ++++++
+ ....inb => rclk2500_sclk1100.106xx.ip_ev.inb} |  8 ++---
+ .../cn10k/rclk2500_sclk1100.106xx.ip_ev.outb  | 10 ++++++
+ .../rclk2500_sclk1100.106xx.ip_ev_ss.inb      | 10 ++++++
+ .../rclk2500_sclk1100.106xx.ip_ev_ss.outb     | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.ip_p.inb    | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.ip_p.outb   | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb | 10 ++++++
+ .../rclk2500_sclk1100.106xx.ip_p_ss.outb      | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.lc.inb      | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.lc.outb     | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.lp.inb      | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.lp.outb     | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.lp_e.inb    | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.lp_e.outb   | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.lp_ev.inb   | 10 ++++++
+ .../cn10k/rclk2500_sclk1100.106xx.lp_ev.outb  | 10 ++++++
+ 34 files changed, 203 insertions(+), 150 deletions(-)
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.inb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.outb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev.outb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.inb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.outb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.inb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.outb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.inb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.outb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.inb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.outb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.inb
+ delete mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.outb
+ rename marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/{rclk2500_sclk1000.106xx.ip_ev.inb => rclk2500_sclk1100.106xx.ip_ev.inb} (53%)
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+index 6ef64d96f60e3..c77250038f6fc 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+@@ -500,6 +500,14 @@ find_exec()
+ 	$TARGET_SSH_CMD $dut find $REMOTE_DIR -type f -executable -iname $test_name
+ }
+ 
++function exec_genboard_cleanup()
++{
++	if [[ $WITH_GEN_BOARD -eq 1 ]]; then
++		$TARGET_SSH_CMD $GENERATOR_BOARD "sudo pkill -f dpdk*;"
++		echo "Gen board previous test processes cleanup up"
++	fi
++}
++
+ exec_testpmd_cmd_gen()
+ {
+ 	$TARGET_SSH_CMD $GENERATOR_BOARD "cd $REMOTE_DIR;" \
+@@ -944,6 +952,7 @@ SSO_DEV=${SSO_DEV:-$(lspci -d :a0f9 | tail -1 | awk -e '{ print $1 }')}
+ EVENT_VF=$SSO_DEV
+ 
+ setup_interfaces
++exec_genboard_cleanup
+ 
+ Y=0
+ 
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh
+index 494e0298a0a7b..9c1e24f133aaa 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh
+@@ -58,8 +58,8 @@ launch_testpmd_tx_outb()
+ launch_testpmd_tx_inb()
+ {
+ 	testpmd_launch $1 \
+-		"-c 0x1F800 --vdev net_pcap0,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,infinite_rx=1 -a $PORT0" \
+-		"--nb-cores=4 --txq=4 --rxq=4 --no-flush-rx" \
++		"-c 0x3F800 --vdev net_pcap0,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,infinite_rx=1 -a $PORT0" \
++		"--nb-cores=5 --txq=5 --rxq=5 --no-flush-rx" \
+ 		</dev/null 2>/dev/null &
+ 	sleep 1
+ 	testpmd_cmd $1 "set flow_ctrl rx off 0"
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build b/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
+index a130a00e0c3b6..3c573884ad104 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
+@@ -45,20 +45,24 @@ run_command(copy_data, 'ref_numbers/cn10k/rclk2000_sclk1000.106xx.ip_p.outb')
+ run_command(copy_data, 'ref_numbers/cn10k/rclk2000_sclk1000.106xx.ip_p.inb')
+ run_command(copy_data, 'ref_numbers/cn10k/rclk2000_sclk1000.106xx.ip_p_ss.outb')
+ run_command(copy_data, 'ref_numbers/cn10k/rclk2000_sclk1000.106xx.ip_p_ss.inb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.outb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.inb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.outb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.inb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.outb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.inb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev.outb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev.inb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.outb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.inb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.outb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.inb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.outb')
+-run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb')
+ run_command(copy_data, 'pcap/enc_aes-cbc_sha1-hmac_64.pcap')
+ run_command(copy_data, 'pcap/enc_aes-cbc_sha1-hmac_380.pcap')
+ run_command(copy_data, 'pcap/enc_aes-cbc_sha1-hmac_1410.pcap')
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.inb
+deleted file mode 100644
+index 2f8074bf22e9b..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.inb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 3528697
+-380: 3542973
+-1410: 3477735
+-<end>
+-aes-gcm
+-64: 3532948
+-380: 3508710
+-1410: 3496159
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.outb
+deleted file mode 100644
+index 1e723e8287e8e..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip.outb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 3806308
+-380: 3798450
+-1410: 3767063
+-<end>
+-aes-gcm
+-64: 3808939
+-380: 3833210
+-1410: 3793579
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev.outb
+deleted file mode 100644
+index 6ac1ec7b9bd00..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev.outb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 17415721
+-380: 15277077
+-1410: 4121134
+-<end>
+-aes-gcm
+-64: 17263665
+-380: 15261916
+-1410: 4036863
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.inb
+deleted file mode 100644
+index 224ec10bd692e..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.inb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 32749939
+-380: 12377124
+-1410: 4089398
+-<end>
+-aes-gcm
+-64: 32819976
+-380: 12339350
+-1410: 4092798
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.outb
+deleted file mode 100644
+index 1d1f8e2ee50a8..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev_ss.outb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 21696849
+-380: 15987500
+-1410: 4163306
+-<end>
+-aes-gcm
+-64: 30327331
+-380: 15904821
+-1410: 4087085
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.inb
+deleted file mode 100644
+index bcbc8f023595c..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.inb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 13830713
+-380: 12684553
+-1410: 3982280
+-<end>
+-aes-gcm
+-64: 13885434
+-380: 12609898
+-1410: 3967196
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.outb
+deleted file mode 100644
+index 4fd794874a1c2..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p.outb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 15068858
+-380: 14833380
+-1410: 4081083
+-<end>
+-aes-gcm
+-64: 15125675
+-380: 15620973
+-1410: 4087230
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.inb
+deleted file mode 100644
+index 0420cd96795ab..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.inb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 30676918
+-380: 8673358
+-1410: 4088559
+-<end>
+-aes-gcm
+-64: 30921848
+-380: 8619125
+-1410: 4087670
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.outb
+deleted file mode 100644
+index b0c506bd28521..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_p_ss.outb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 21749440
+-380: 15993505
+-1410: 4208224
+-<end>
+-aes-gcm
+-64: 25714471
+-380: 16000511
+-1410: 4198139
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.inb
+deleted file mode 100644
+index 1f76a00b2dd9a..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.inb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 4059379
+-380: 4547394
+-1410: 4006868
+-<end>
+-aes-gcm
+-64: 4168754
+-380: 4534864
+-1410: 3988371
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.outb
+deleted file mode 100644
+index 8f5fe3c17a5ca..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lc.outb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 5116062
+-380: 5214307
+-1410: 3877284
+-<end>
+-aes-gcm
+-64: 4453299
+-380: 4511672
+-1410: 3896279
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.inb
+deleted file mode 100644
+index 0acb26a9e3605..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.inb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 6939313
+-380: 6921165
+-1410: 3966598
+-<end>
+-aes-gcm
+-64: 6904766
+-380: 6928644
+-1410: 3965880
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.outb
+deleted file mode 100644
+index 2c8af1b58cd11..0000000000000
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.lp.outb
++++ /dev/null
+@@ -1,10 +0,0 @@
+-aes-cbc_sha1-hmac
+-64: 7055780
+-380: 7097088
+-1410: 3855371
+-<end>
+-aes-gcm
+-64: 7045859
+-380: 7118215
+-1410: 3874981
+-<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb
+new file mode 100644
+index 0000000000000..32ff9f2651c46
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 4838603
++380: 4859899
++1410: 4881571
++<end>
++aes-gcm
++64: 4853454
++380: 4863456
++1410: 4892131
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.outb
+new file mode 100644
+index 0000000000000..c1dcddadf7e70
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 4940079
++380: 4977171
++1410: 4906426
++<end>
++aes-gcm
++64: 4958174
++380: 4975905
++1410: 4906474
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.inb
+similarity index 53%
+rename from marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev.inb
+rename to marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.inb
+index 5c6b12b143fcf..a5a6f8ee7884a 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1000.106xx.ip_ev.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.inb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+ 64: 16476941
+-380: 12666362
+-1410: 3984185
++380: 16764544
++1410: 8322760
+ <end>
+ aes-gcm
+ 64: 16515628
+-380: 12543282
+-1410: 3948816
++380: 16795463
++1410: 8389790
+ <end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.outb
+new file mode 100644
+index 0000000000000..66a80a02c229a
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 17505083
++380: 18010160
++1410: 8322766
++<end>
++aes-gcm
++64: 17493391
++380: 18038522
++1410: 8389795
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb
+new file mode 100644
+index 0000000000000..1f6a60d42bb85
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 35050042
++380: 22001375
++1410: 8322761
++<end>
++aes-gcm
++64: 35655824
++380: 22001373
++1410: 8389790
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.outb
+new file mode 100644
+index 0000000000000..bf7de088de775
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 32310207
++380: 25133541
++1410: 8322508
++<end>
++aes-gcm
++64: 32352851
++380: 27280327
++1410: 8389725
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb
+new file mode 100644
+index 0000000000000..e7e76fbd221df
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 15330283
++380: 15408993
++1410: 8322760
++<end>
++aes-gcm
++64: 15408693
++380: 15561454
++1410: 8389789
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.outb
+new file mode 100644
+index 0000000000000..461678589d3af
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 17220625
++380: 17195630
++1410: 8322766
++<end>
++aes-gcm
++64: 17198880
++380: 17336361
++1410: 8389794
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb
+new file mode 100644
+index 0000000000000..630a21adf8a6a
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 35141598
++380: 21987863
++1410: 8322761
++<end>
++aes-gcm
++64: 34249470
++380: 21987866
++1410: 8389790
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb
+new file mode 100644
+index 0000000000000..30fdfc86e58d8
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 32324430
++380: 25390368
++1410: 8322766
++<end>
++aes-gcm
++64: 32375952
++380: 27294253
++1410: 8389795
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb
+new file mode 100644
+index 0000000000000..742277cba8d59
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 5507987
++380: 6071796
++1410: 4154324
++<end>
++aes-gcm
++64: 5578492
++380: 5544307
++1410: 4188487
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.outb
+new file mode 100644
+index 0000000000000..5d346a031f0fc
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 6709466
++380: 6839623
++1410: 4399821
++<end>
++aes-gcm
++64: 5606873
++380: 5740155
++1410: 4400563
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb
+new file mode 100644
+index 0000000000000..f3171ed9a73c2
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 8704792
++380: 8688009
++1410: 4154536
++<end>
++aes-gcm
++64: 8595605
++380: 8670141
++1410: 4188897
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb
+new file mode 100644
+index 0000000000000..3bbeda6396506
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 8923569
++380: 9100614
++1410: 4400563
++<end>
++aes-gcm
++64: 8939536
++380: 9057976
++1410: 4400562
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.inb
+new file mode 100644
+index 0000000000000..2019124ef9e68
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 2749184
++380: 2720732
++1410: 2672697
++<end>
++aes-gcm
++64: 2761239
++380: 2730357
++1410: 2730357
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.outb
+new file mode 100644
+index 0000000000000..469241341200c
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_e.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 2586505
++380: 2596494
++1410: 2579479
++<end>
++aes-gcm
++64: 2588555
++380: 2591836
++1410: 2582841
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb
+new file mode 100644
+index 0000000000000..78c3fca63036a
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 9569861
++380: 9545686
++1410: 4153811
++<end>
++aes-gcm
++64: 9552379
++380: 9549989
++1410: 4188490
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb
+new file mode 100644
+index 0000000000000..b8d8e506a0641
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 8891194
++380: 8996228
++1410: 4400564
++<end>
++aes-gcm
++64: 8908631
++380: 8960973
++1410: 4400563
++<end>
+-- 
+2.25.1
+

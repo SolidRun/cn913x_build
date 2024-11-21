@@ -1,0 +1,246 @@
+From ca401f0750b56daaa9f8c796da4bddbf876a9e36 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 5 Feb 2024 20:20:05 +0530
+Subject: [PATCH 817/955] ethdev: support Tx queue used count
+
+Introduce a new API to retrieve the number of used descriptors
+in a Tx queue. Applications can leverage this API in the fast path to
+inspect the Tx queue occupancy and take appropriate actions based on the
+available free descriptors.
+
+A notable use case could be implementing Random Early Discard (RED)
+in software based on Tx queue occupancy.
+
+Change-Id: I2a4af81e390524b9692b20a642b0f14ebafee4cf
+Signed-off-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120903
+---
+ doc/guides/nics/features.rst         | 10 ++++
+ doc/guides/nics/features/default.ini |  1 +
+ lib/ethdev/ethdev_driver.h           |  2 +
+ lib/ethdev/ethdev_private.c          |  1 +
+ lib/ethdev/ethdev_trace_points.c     |  3 ++
+ lib/ethdev/rte_ethdev.h              | 74 ++++++++++++++++++++++++++++
+ lib/ethdev/rte_ethdev_core.h         |  7 ++-
+ lib/ethdev/rte_ethdev_trace_fp.h     |  8 +++
+ lib/ethdev/version.map               |  3 ++
+ 9 files changed, 108 insertions(+), 1 deletion(-)
+
+diff --git a/doc/guides/nics/features.rst b/doc/guides/nics/features.rst
+index 1a1dc16c1e290..679c59b0e8f20 100644
+--- a/doc/guides/nics/features.rst
++++ b/doc/guides/nics/features.rst
+@@ -951,6 +951,16 @@ management (see :doc:`../prog_guide/power_man` for more details).
+ 
+ * **[implements] eth_dev_ops**: ``get_monitor_addr``
+ 
++.. _nic_features_tx_queue_used_count:
++
++Tx queue count
++--------------
++
++Supports to get the number of used descriptors of a Tx queue.
++
++* **[implements] eth_dev_ops**: ``tx_queue_count``.
++* **[related] API**: ``rte_eth_tx_queue_count()``.
++
+ .. _nic_features_other:
+ 
+ Other dev ops not represented by a Feature
+diff --git a/doc/guides/nics/features/default.ini b/doc/guides/nics/features/default.ini
+index 9aec40ba3f513..7ac7774e73989 100644
+--- a/doc/guides/nics/features/default.ini
++++ b/doc/guides/nics/features/default.ini
+@@ -59,6 +59,7 @@ Packet type parsing  =
+ Timesync             =
+ Rx descriptor status =
+ Tx descriptor status =
++Tx queue count       =
+ Basic stats          =
+ Extended stats       =
+ Stats per queue      =
+diff --git a/lib/ethdev/ethdev_driver.h b/lib/ethdev/ethdev_driver.h
+index 358fce4a43a71..d030a7d17fc28 100644
+--- a/lib/ethdev/ethdev_driver.h
++++ b/lib/ethdev/ethdev_driver.h
+@@ -57,6 +57,8 @@ struct rte_eth_dev {
+ 	eth_rx_queue_count_t rx_queue_count;
+ 	/** Check the status of a Rx descriptor */
+ 	eth_rx_descriptor_status_t rx_descriptor_status;
++	/** Get the number of used Tx descriptors */
++	eth_tx_queue_count_t tx_queue_count;
+ 	/** Check the status of a Tx descriptor */
+ 	eth_tx_descriptor_status_t tx_descriptor_status;
+ 
+diff --git a/lib/ethdev/ethdev_private.c b/lib/ethdev/ethdev_private.c
+index 14ec8c6ccf3fa..5cba22cba7838 100644
+--- a/lib/ethdev/ethdev_private.c
++++ b/lib/ethdev/ethdev_private.c
+@@ -276,6 +276,7 @@ eth_dev_fp_ops_setup(struct rte_eth_fp_ops *fpo,
+ 	fpo->tx_pkt_prepare = dev->tx_pkt_prepare;
+ 	fpo->rx_queue_count = dev->rx_queue_count;
+ 	fpo->rx_descriptor_status = dev->rx_descriptor_status;
++	fpo->tx_queue_count = dev->tx_queue_count;
+ 	fpo->tx_descriptor_status = dev->tx_descriptor_status;
+ 
+ 	fpo->rxq.data = dev->data->rx_queues;
+diff --git a/lib/ethdev/ethdev_trace_points.c b/lib/ethdev/ethdev_trace_points.c
+index 34d12e2859ed5..9ac0043dba005 100644
+--- a/lib/ethdev/ethdev_trace_points.c
++++ b/lib/ethdev/ethdev_trace_points.c
+@@ -475,6 +475,9 @@ RTE_TRACE_POINT_REGISTER(rte_eth_trace_cman_config_set,
+ RTE_TRACE_POINT_REGISTER(rte_eth_trace_cman_config_get,
+ 	lib.ethdev.cman_config_get)
+ 
++RTE_TRACE_POINT_REGISTER(rte_eth_trace_tx_queue_count,
++	lib.ethdev.tx_queue_count)
++
+ RTE_TRACE_POINT_REGISTER(rte_flow_trace_copy,
+ 	lib.ethdev.flow.copy)
+ 
+diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
+index cb4295e4f1c53..858654da8f438 100644
+--- a/lib/ethdev/rte_ethdev.h
++++ b/lib/ethdev/rte_ethdev.h
+@@ -6495,6 +6495,80 @@ rte_eth_tx_buffer(uint16_t port_id, uint16_t queue_id,
+ __rte_experimental
+ int rte_eth_buffer_split_get_supported_hdr_ptypes(uint16_t port_id, uint32_t *ptypes, int num);
+ 
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
++ *
++ * Get the number of used descriptors of a Tx queue
++ *
++ * This function retrieves the number of used descriptors of a transmit queue.
++ * Applications can use this API in the fast path to inspect Tx queue occupancy and take
++ * appropriate actions based on the available free descriptors.
++ * An example action could be implementing the Random Early Discard (RED).
++ *
++ * Since it's a fast-path function, no check is performed on port_id and
++ * tx_queue_id. The caller must therefore ensure that the port is enabled
++ * and the queue is configured and running.
++ *
++ * @param port_id
++ *   The port identifier of the device.
++ * @param tx_queue_id
++ *   The index of the transmit queue.
++ *   The value must be in the range [0, nb_tx_queue - 1] previously supplied
++ *   to rte_eth_dev_configure().
++ * @return
++ *  The number of used descriptors in the specific queue, or:
++ *   - (-ENODEV) if *port_id* is invalid. Enabled only when RTE_ETHDEV_DEBUG_TX is enabled
++ *   - (-EINVAL) if *queue_id* is invalid. Enabled only when RTE_ETHDEV_DEBUG_TX is enabled
++ *   - (-ENOTSUP) if the device does not support this function.
++ *
++ * @note This function is designed for fast-path use.
++ */
++__rte_experimental
++static inline int
++rte_eth_tx_queue_count(uint16_t port_id, uint16_t tx_queue_id)
++{
++	struct rte_eth_fp_ops *fops;
++	void *qd;
++	int rc;
++
++#ifdef RTE_ETHDEV_DEBUG_TX
++	if (port_id >= RTE_MAX_ETHPORTS || !rte_eth_dev_is_valid_port(port_id)) {
++		RTE_ETHDEV_LOG_LINE(ERR, "Invalid port_id=%u", port_id);
++		rc = -ENODEV;
++		rte_eth_trace_tx_queue_count(port_id, tx_queue_id, rc);
++		return rc;
++	}
++
++	rc = -EINVAL;
++	if (tx_queue_id >= RTE_MAX_QUEUES_PER_PORT) {
++		RTE_ETHDEV_LOG_LINE(ERR, "Invalid Tx queue_id=%u for port_id=%u",
++				    tx_queue_id, port_id);
++		rte_eth_trace_tx_queue_count(port_id, tx_queue_id, rc);
++		return rc;
++	}
++#endif
++
++	/* Fetch pointer to Tx queue data */
++	fops = &rte_eth_fp_ops[port_id];
++	qd = fops->txq.data[tx_queue_id];
++
++#ifdef RTE_ETHDEV_DEBUG_TX
++	if (qd == NULL) {
++		RTE_ETHDEV_LOG_LINE(ERR, "Invalid Tx queue_id=%u for port_id=%u",
++				    tx_queue_id, port_id);
++		rte_eth_trace_tx_queue_count(port_id, tx_queue_id, rc);
++		return rc;
++	}
++#endif
++	if (fops->tx_queue_count == NULL)
++		return -ENOTSUP;
++
++	rc = fops->tx_queue_count(qd);
++	rte_eth_trace_tx_queue_count(port_id, tx_queue_id, rc);
++
++	return rc;
++}
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/ethdev/rte_ethdev_core.h b/lib/ethdev/rte_ethdev_core.h
+index dcf8adab92a62..2e512b0db3b2a 100644
+--- a/lib/ethdev/rte_ethdev_core.h
++++ b/lib/ethdev/rte_ethdev_core.h
+@@ -56,6 +56,9 @@ typedef int (*eth_rx_descriptor_status_t)(void *rxq, uint16_t offset);
+ /** @internal Check the status of a Tx descriptor */
+ typedef int (*eth_tx_descriptor_status_t)(void *txq, uint16_t offset);
+ 
++/** @internal Get number of used descriptors on a transmit queue. */
++typedef int (*eth_tx_queue_count_t)(void *txq);
++
+ /**
+  * @internal
+  * Structure used to hold opaque pointers to internal ethdev Rx/Tx
+@@ -108,7 +111,9 @@ struct rte_eth_fp_ops {
+ 	eth_tx_descriptor_status_t tx_descriptor_status;
+ 	/** Tx queues data. */
+ 	struct rte_ethdev_qdata txq;
+-	uintptr_t reserved2[3];
++	/** Get the number of used Tx descriptors. */
++	eth_tx_queue_count_t tx_queue_count;
++	uintptr_t reserved2[2];
+ 	/**@}*/
+ 
+ } __rte_cache_aligned;
+diff --git a/lib/ethdev/rte_ethdev_trace_fp.h b/lib/ethdev/rte_ethdev_trace_fp.h
+index 186271c9ff4e4..c98c488433fc9 100644
+--- a/lib/ethdev/rte_ethdev_trace_fp.h
++++ b/lib/ethdev/rte_ethdev_trace_fp.h
+@@ -73,6 +73,14 @@ RTE_TRACE_POINT_FP(
+ 	rte_trace_point_emit_u64(count);
+ )
+ 
++RTE_TRACE_POINT_FP(
++	rte_eth_trace_tx_queue_count,
++	RTE_TRACE_POINT_ARGS(uint16_t port_id, uint16_t tx_queue_id, int rc),
++	rte_trace_point_emit_u16(port_id);
++	rte_trace_point_emit_u16(tx_queue_id);
++	rte_trace_point_emit_int(rc);
++)
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
+index d8e9941356e2f..5de2836c1136f 100644
+--- a/lib/ethdev/version.map
++++ b/lib/ethdev/version.map
+@@ -292,6 +292,9 @@ EXPERIMENTAL {
+ 	rte_flow_get_q_aged_flows;
+ 	rte_mtr_meter_policy_get;
+ 	rte_mtr_meter_profile_get;
++
++	# added in 24.03
++	rte_eth_tx_queue_count;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

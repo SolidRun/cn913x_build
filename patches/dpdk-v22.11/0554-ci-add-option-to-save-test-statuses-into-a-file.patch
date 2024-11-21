@@ -1,0 +1,94 @@
+From f21c0b5ce9d721db8045ee101fe277f41f8970fe Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Fri, 21 Jul 2023 11:01:05 +0530
+Subject: [PATCH 554/955] ci: add option to save test statuses into a file
+
+Add option to save test statuses into a file.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I0dd3158f98cfed25d0573fa35ad49386a9710852
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108047
+---
+ marvell-ci/test/board/board_test_run.sh | 13 +++++++++++--
+ marvell-ci/test/env/cn10k.env           |  3 +++
+ marvell-ci/test/env/cn9k.env            |  3 +++
+ 3 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/board/board_test_run.sh b/marvell-ci/test/board/board_test_run.sh
+index 25f9cb180b45b..4706f57b25746 100755
+--- a/marvell-ci/test/board/board_test_run.sh
++++ b/marvell-ci/test/board/board_test_run.sh
+@@ -126,6 +126,8 @@ function run_all_tests()
+ 	local tst
+ 	local res
+ 	local failed_tests=""
++	local passed_tests=""
++	local skipped_tests=""
+ 	local test_num=0
+ 
+ 	# Errors will be handled inline. No need for sig handler
+@@ -137,15 +139,15 @@ function run_all_tests()
+ 		test_num=$((test_num + 1))
+ 		test_enabled $test_num
+ 		res=$?
++		tst=$(get_test_name $test_num)
+ 		if [[ $res == 77 ]]; then
++			skipped_tests="$skipped_tests $tst"
+ 			continue
+ 		fi
+ 		if [[ $res -ne 0 ]]; then
+ 			break
+ 		fi
+ 
+-		tst=$(get_test_name $test_num)
+-
+ 		# Run the tests
+ 		run_test $tst
+ 		res=$?
+@@ -156,8 +158,15 @@ function run_all_tests()
+ 			else
+ 				test_exit -1 "FAILURE: Test $tst failed"
+ 			fi
++		else
++			passed_tests="$passed_tests $tst"
+ 		fi
+ 	done
++	if [[ -n $STATUS_OUTFILE ]] ; then
++		echo "FAILED: $failed_tests" > $STATUS_OUTFILE
++		echo "PASSED: $passed_tests" >> $STATUS_OUTFILE
++		echo "SKIPPED: $skipped_tests" >> $STATUS_OUTFILE
++	fi
+ 	if [[ -n $failed_tests ]]; then
+ 		test_exit -1 "FAILURE: Test(s) [$failed_tests] failed"
+ 	fi
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index fa11655e2293d..acf643ce90775 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -68,6 +68,9 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Continue testing regardless of failure
+ CONTINUE_ON_FAILURE=${CONTINUE_ON_FAILURE:-}
+ 
++# File to save status into
++STATUS_OUTFILE=${STATUS_OUTFILE:-}
++
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-}
+ 
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index 40b64e2e3d91f..49382dee64a2b 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -67,6 +67,9 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Continue testing regardless of failure
+ CONTINUE_ON_FAILURE=${CONTINUE_ON_FAILURE:-}
+ 
++# File to save status into
++STATUS_OUTFILE=${STATUS_OUTFILE:-}
++
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-1}
+ 
+-- 
+2.25.1
+

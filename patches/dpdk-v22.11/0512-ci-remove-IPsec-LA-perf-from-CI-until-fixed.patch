@@ -1,0 +1,35 @@
+From db90e755682017d00c78ae56459ea09a45b37888 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 22 Jun 2023 00:50:00 +0530
+Subject: [PATCH 512/955] ci: remove IPsec LA perf from CI until fixed
+
+Will add back in perf list once pass on CI 106B0.
+
+Change-Id: I077f436ca7b01d52671b652ed0dfa8e29b32aeca
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106073
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn106-perf.env | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/env/cn106-perf.env b/marvell-ci/test/env/cn106-perf.env
+index 9bd4fc6648a23..031657193b0c5 100644
+--- a/marvell-ci/test/env/cn106-perf.env
++++ b/marvell-ci/test/env/cn106-perf.env
+@@ -10,10 +10,9 @@ RUN_TESTS="
+ 	cnxk_ptp_test
+ 	cnxk_event_perf
+ 	cnxk_crypto_perf
+-	cnxk_ipsec_la_perf
+ 	cnxk_ipsec_inline_perf
+-	cnxk_mempool_perf
+ 	cnxk_ipsec_reassembly_perf
++	cnxk_mempool_perf
+ 	cnxk_fwd_perf
+ "
+ 
+-- 
+2.25.1
+

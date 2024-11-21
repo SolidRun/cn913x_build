@@ -1,0 +1,40 @@
+From be8624f08998891d7e525e94b1fd7744d6548421 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 23 Jul 2024 16:46:33 +0530
+Subject: [PATCH 411/513] net/cnxk: support single flow dump
+
+Adding support for single flow dump, as the user may want to
+dump details for a single flow.
+
+Change-Id: I2f14a0906c6b2d90f441f930ead449e426570934
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131857
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satheesh Paul Antonysamy <psatheesh@marvell.com>
+---
+ drivers/net/cnxk/cnxk_flow.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index 940d7b437b2a2..d5603fe1f2ba8 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -1093,11 +1093,8 @@ cnxk_flow_dev_dump_common(struct rte_eth_dev *eth_dev, struct rte_flow *flow, FI
+ 	}
+ 
+ 	if (flow != NULL) {
+-		rte_flow_error_set(error, EINVAL,
+-				   RTE_FLOW_ERROR_TYPE_HANDLE,
+-				   NULL,
+-				   "Invalid argument");
+-		return -EINVAL;
++		roc_npc_flow_mcam_dump(file, npc, (struct roc_npc_flow *)flow);
++		return 0;
+ 	}
+ 
+ 	roc_npc_flow_dump(file, npc, -1);
+-- 
+2.25.1
+

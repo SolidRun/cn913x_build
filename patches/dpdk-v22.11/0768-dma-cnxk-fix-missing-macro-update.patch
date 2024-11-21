@@ -1,0 +1,39 @@
+From ef8d5715c95561c67105059edb592da8688f78bf Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Fri, 12 Jan 2024 23:55:42 -0800
+Subject: [PATCH 768/955] dma/cnxk: fix missing macro update
+
+Fixes missing macro change related to pending count rework.
+
+Fixes: c8f818ce79fe ("dma/cnxk: support pending count per HW DMA channel")
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: I220316a2dc87fab280ebb23a4af8f32bd41181b9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119688
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 340c3be17c86a1646c141ea61c5bf6cf69a75040)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119825
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.h b/drivers/dma/cnxk/cnxk_dmadev.h
+index 3e59050bae476..8a362b3a37d28 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.h
++++ b/drivers/dma/cnxk/cnxk_dmadev.h
+@@ -27,7 +27,7 @@
+ 										((s).var - 1))
+ #define CNXK_DPI_MAX_DESC		    32768
+ #define CNXK_DPI_MIN_DESC		    2
+-#define CNXK_DPI_MAX_VCHANS_PER_QUEUE	    4
++#define CNXK_DPI_MAX_VCHANS_PER_QUEUE	    128
+ #define CNXK_DPI_QUEUE_BUF_SIZE		    16256
+ #define CNXK_DPI_QUEUE_BUF_SIZE_V2	    130944
+ #define CNXK_DPI_POOL_MAX_CACHE_SZ	    (16)
+-- 
+2.25.1
+

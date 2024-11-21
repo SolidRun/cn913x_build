@@ -1,0 +1,442 @@
+From 349780abfd62cebef91f074f5ed730178d3b7c38 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 27 Nov 2023 23:04:18 +0530
+Subject: [PATCH 693/955] event/cnxk: update base code
+
+Update base code.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ia297f54580f835e244864f68f7f219cf334e97d9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116774
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116832
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_mbox.h      |  11 +++
+ drivers/common/cnxk/roc_sso.c       | 123 ++++++++++++++++++++++------
+ drivers/common/cnxk/roc_sso.h       |   6 +-
+ drivers/common/cnxk/roc_tim.c       |  27 +++++-
+ drivers/common/cnxk/roc_tim.h       |   3 +
+ drivers/event/cnxk/cn10k_eventdev.c |   6 +-
+ drivers/event/cnxk/cn9k_eventdev.c  |  18 ++--
+ 7 files changed, 155 insertions(+), 39 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 3257a370bcdaa..f8c03a22446e6 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -154,6 +154,8 @@ struct mbox_msghdr {
+ 	M(TIM_DISABLE_RING, 0x804, tim_disable_ring, tim_ring_req, msg_rsp)    \
+ 	M(TIM_GET_MIN_INTVL, 0x805, tim_get_min_intvl, tim_intvl_req,          \
+ 	  tim_intvl_rsp)                                                       \
++	M(TIM_CAPTURE_COUNTERS, 0x806, tim_capture_counters, msg_req,          \
++	  tim_capture_rsp)                                                     \
+ 	/* CPT mbox IDs (range 0xA00 - 0xBFF) */                               \
+ 	M(CPT_LF_ALLOC, 0xA00, cpt_lf_alloc, cpt_lf_alloc_req_msg, msg_rsp)    \
+ 	M(CPT_LF_FREE, 0xA01, cpt_lf_free, msg_req, msg_rsp)                   \
+@@ -2597,6 +2599,10 @@ enum tim_clk_srcs {
+ 	TIM_CLK_SRCS_GPIO = 1,
+ 	TIM_CLK_SRCS_GTI = 2,
+ 	TIM_CLK_SRCS_PTP = 3,
++	TIM_CLK_SRCS_SYNCE = 4,
++	TIM_CLK_SRCS_BTS = 5,
++	TIM_CLK_SRCS_EXT_MIO = 6,
++	TIM_CLK_SRCS_EXT_GTI = 7,
+ 	TIM_CLK_SRSC_INVALID,
+ };
+ 
+@@ -2708,6 +2714,11 @@ struct tim_intvl_rsp {
+ 	uint64_t __io intvl_ns;
+ };
+ 
++struct tim_capture_rsp {
++	struct mbox_msghdr hdr;
++	uint64_t __io counters[TIM_CLK_SRSC_INVALID];
++};
++
+ struct sdp_node_info {
+ 	/* Node to which this PF belons to */
+ 	uint8_t __io node_id;
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index 258708eee460a..6a9c6c671a870 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -17,6 +17,11 @@ sso_lf_alloc(struct dev *dev, enum sso_lf_type lf_type, uint16_t nb_lf,
+ 	struct mbox *mbox = mbox_get(dev->mbox);
+ 	int rc = -ENOSPC;
+ 
++	if (!nb_lf) {
++		mbox_put(mbox);
++		return 0;
++	}
++
+ 	switch (lf_type) {
+ 	case SSO_LF_TYPE_HWS: {
+ 		struct ssow_lf_alloc_req *req;
+@@ -56,6 +61,11 @@ sso_lf_free(struct dev *dev, enum sso_lf_type lf_type, uint16_t nb_lf)
+ 	struct mbox *mbox = mbox_get(dev->mbox);
+ 	int rc = -ENOSPC;
+ 
++	if (!nb_lf) {
++		mbox_put(mbox);
++		return 0;
++	}
++
+ 	switch (lf_type) {
+ 	case SSO_LF_TYPE_HWS: {
+ 		struct ssow_lf_free_req *req;
+@@ -98,6 +108,11 @@ sso_rsrc_attach(struct roc_sso *roc_sso, enum sso_lf_type lf_type,
+ 	struct rsrc_attach_req *req;
+ 	int rc = -ENOSPC;
+ 
++	if (!nb_lf) {
++		mbox_put(mbox);
++		return 0;
++	}
++
+ 	req = mbox_alloc_msg_attach_resources(mbox);
+ 	if (req == NULL)
+ 		goto exit;
+@@ -220,6 +235,47 @@ sso_hws_link_modify(uint8_t hws, uintptr_t base, struct plt_bitmap *bmp, uint16_
+ 	}
+ }
+ 
++static int
++sso_hws_link_modify_af(struct dev *dev, uint8_t hws, struct plt_bitmap *bmp, uint16_t hwgrp[],
++		       uint16_t n, uint8_t set, uint16_t enable)
++{
++	struct mbox *mbox = mbox_get(dev->mbox);
++	struct ssow_chng_mship *req;
++	int rc, i;
++
++	req = mbox_alloc_msg_ssow_chng_mship(mbox);
++	if (req == NULL) {
++		rc = mbox_process(mbox);
++		if (rc) {
++			mbox_put(mbox);
++			return -EIO;
++		}
++		req = mbox_alloc_msg_ssow_chng_mship(mbox);
++		if (req == NULL) {
++			mbox_put(mbox);
++			return -ENOSPC;
++		}
++	}
++	req->enable = enable;
++	req->set = set;
++	req->hws = hws;
++	req->nb_hwgrps = n;
++	for (i = 0; i < n; i++)
++		req->hwgrps[i] = hwgrp[i];
++	rc = mbox_process(mbox);
++	mbox_put(mbox);
++	if (rc == MBOX_MSG_INVALID)
++		return rc;
++	if (rc)
++		return -EIO;
++
++	for (i = 0; i < n; i++)
++		enable ? plt_bitmap_set(bmp, hwgrp[i]) :
++			 plt_bitmap_clear(bmp, hwgrp[i]);
++
++	return 0;
++}
++
+ static int
+ sso_msix_fill(struct roc_sso *roc_sso, uint16_t nb_hws, uint16_t nb_hwgrp)
+ {
+@@ -264,13 +320,10 @@ roc_sso_hwgrp_base_get(struct roc_sso *roc_sso, uint16_t hwgrp)
+ }
+ 
+ uint64_t
+-roc_sso_ns_to_gw(struct roc_sso *roc_sso, uint64_t ns)
++roc_sso_ns_to_gw(uint64_t base, uint64_t ns)
+ {
+-	struct dev *dev = &roc_sso_to_sso_priv(roc_sso)->dev;
+-	uint64_t current_us, current_ns, new_ns;
+-	uintptr_t base;
++	uint64_t current_us;
+ 
+-	base = dev->bar2 + (RVU_BLOCK_ADDR_SSOW << 20);
+ 	current_us = plt_read64(base + SSOW_LF_GWS_NW_TIM);
+ 	/* From HRM, table 14-19:
+ 	 * The SSOW_LF_GWS_NW_TIM[NW_TIM] period is specified in n-1 notation.
+@@ -279,43 +332,64 @@ roc_sso_ns_to_gw(struct roc_sso *roc_sso, uint64_t ns)
+ 
+ 	/* From HRM, table 14-1:
+ 	 * SSOW_LF_GWS_NW_TIM[NW_TIM] specifies the minimum timeout. The SSO
+-	 * hardware times out a GET_WORK request within 2 usec of the minimum
++	 * hardware times out a GET_WORK request within 1 usec of the minimum
+ 	 * timeout specified by SSOW_LF_GWS_NW_TIM[NW_TIM].
+ 	 */
+-	current_us += 2;
+-	current_ns = current_us * 1E3;
+-	new_ns = (ns - PLT_MIN(ns, current_ns));
+-	new_ns = !new_ns ? 1 : new_ns;
+-	return (new_ns * plt_tsc_hz()) / 1E9;
++	current_us += 1;
++	return PLT_MAX(1UL, (uint64_t)PLT_DIV_CEIL(ns, (current_us * 1E3)));
+ }
+ 
+ int
+ roc_sso_hws_link(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[], uint16_t nb_hwgrp,
+-		 uint8_t set)
++		 uint8_t set, bool use_mbox)
+ {
+-	struct dev *dev = &roc_sso_to_sso_priv(roc_sso)->dev;
+-	struct sso *sso;
++	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
++	struct dev *dev = &sso->dev;
+ 	uintptr_t base;
++	int rc;
+ 
+-	sso = roc_sso_to_sso_priv(roc_sso);
++	if (!nb_hwgrp)
++		return 0;
++
++	if (use_mbox && roc_model_is_cn10k()) {
++		rc = sso_hws_link_modify_af(dev, hws, sso->link_map[hws], hwgrp, nb_hwgrp, set, 1);
++		if (rc == MBOX_MSG_INVALID)
++			goto lf_access;
++		if (rc < 0)
++			return 0;
++		goto done;
++	}
++lf_access:
+ 	base = dev->bar2 + (RVU_BLOCK_ADDR_SSOW << 20 | hws << 12);
+ 	sso_hws_link_modify(hws, base, sso->link_map[hws], hwgrp, nb_hwgrp, set, 1);
+-
++done:
+ 	return nb_hwgrp;
+ }
+ 
+ int
+-roc_sso_hws_unlink(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[], uint16_t nb_hwgrp,
+-		   uint8_t set)
++roc_sso_hws_unlink(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[],
++		   uint16_t nb_hwgrp, uint8_t set, bool use_mbox)
+ {
+-	struct dev *dev = &roc_sso_to_sso_priv(roc_sso)->dev;
+-	struct sso *sso;
++	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
++	struct dev *dev = &sso->dev;
+ 	uintptr_t base;
++	int rc;
+ 
+-	sso = roc_sso_to_sso_priv(roc_sso);
++	if (!nb_hwgrp)
++		return 0;
++
++	if (use_mbox && roc_model_is_cn10k()) {
++		rc = sso_hws_link_modify_af(dev, hws, sso->link_map[hws], hwgrp, nb_hwgrp, set, 0);
++		if (rc == MBOX_MSG_INVALID)
++			goto lf_access;
++		if (rc < 0)
++			return 0;
++		goto done;
++	}
++lf_access:
+ 	base = dev->bar2 + (RVU_BLOCK_ADDR_SSOW << 20 | hws << 12);
+ 	sso_hws_link_modify(hws, base, sso->link_map[hws], hwgrp, nb_hwgrp, set, 0);
+-
++done:
+ 	return nb_hwgrp;
+ }
+ 
+@@ -705,6 +779,9 @@ roc_sso_hwgrp_release_xaq(struct roc_sso *roc_sso, uint16_t hwgrps)
+ 	struct dev *dev = &sso->dev;
+ 	int rc;
+ 
++	if (!hwgrps)
++		return 0;
++
+ 	rc = sso_hwgrp_release_xaq(dev, hwgrps);
+ 	return rc;
+ }
+@@ -891,7 +968,7 @@ roc_sso_rsrc_init(struct roc_sso *roc_sso, uint8_t nb_hws, uint16_t nb_hwgrp, ui
+ 			goto sso_msix_fail;
+ 		}
+ 
+-		nb_tim_lfs = nb_tim_lfs ? PLT_MIN(nb_tim_lfs, free_tim_lfs) : free_tim_lfs;
++		nb_tim_lfs = PLT_MIN(nb_tim_lfs, free_tim_lfs);
+ 	}
+ 
+ 	/* 2 error interrupt per TIM LF */
+diff --git a/drivers/common/cnxk/roc_sso.h b/drivers/common/cnxk/roc_sso.h
+index 64f14b8119c20..4ac901762e679 100644
+--- a/drivers/common/cnxk/roc_sso.h
++++ b/drivers/common/cnxk/roc_sso.h
+@@ -83,11 +83,11 @@ int __roc_api roc_sso_hwgrp_release_xaq(struct roc_sso *roc_sso,
+ int __roc_api roc_sso_hwgrp_set_priority(struct roc_sso *roc_sso,
+ 					 uint16_t hwgrp, uint8_t weight,
+ 					 uint8_t affinity, uint8_t priority);
+-uint64_t __roc_api roc_sso_ns_to_gw(struct roc_sso *roc_sso, uint64_t ns);
++uint64_t __roc_api roc_sso_ns_to_gw(uint64_t base, uint64_t ns);
+ int __roc_api roc_sso_hws_link(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[],
+-			       uint16_t nb_hwgrp, uint8_t set);
++			       uint16_t nb_hwgrp, uint8_t set, bool use_mbox);
+ int __roc_api roc_sso_hws_unlink(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[],
+-				 uint16_t nb_hwgrp, uint8_t set);
++				 uint16_t nb_hwgrp, uint8_t set, bool use_mbox);
+ int __roc_api roc_sso_hwgrp_hws_link_status(struct roc_sso *roc_sso,
+ 					    uint8_t hws, uint16_t hwgrp);
+ uintptr_t __roc_api roc_sso_hws_base_get(struct roc_sso *roc_sso, uint8_t hws);
+diff --git a/drivers/common/cnxk/roc_tim.c b/drivers/common/cnxk/roc_tim.c
+index f8607b2852759..095afbb9e6e4b 100644
+--- a/drivers/common/cnxk/roc_tim.c
++++ b/drivers/common/cnxk/roc_tim.c
+@@ -91,6 +91,31 @@ tim_err_desc(int rc)
+ 	}
+ }
+ 
++int
++roc_tim_capture_counters(struct roc_tim *roc_tim, uint64_t *counters, uint8_t nb_cntrs)
++{
++	struct sso *sso = roc_sso_to_sso_priv(roc_tim->roc_sso);
++	struct dev *dev = &sso->dev;
++	struct mbox *mbox = mbox_get(dev->mbox);
++	struct tim_capture_rsp *rsp;
++	int rc, i;
++
++	mbox_alloc_msg_tim_capture_counters(mbox);
++	rc = mbox_process_msg(dev->mbox, (void **)&rsp);
++	if (rc) {
++		tim_err_desc(rc);
++		rc = -EIO;
++		goto fail;
++	}
++
++	for (i = 0; i < nb_cntrs; i++)
++		counters[i] = rsp->counters[i];
++
++fail:
++	mbox_put(mbox);
++	return rc;
++}
++
+ int
+ roc_tim_lf_enable(struct roc_tim *roc_tim, uint8_t ring_id, uint64_t *start_tsc,
+ 		  uint32_t *cur_bkt)
+@@ -138,7 +163,7 @@ roc_tim_lf_disable(struct roc_tim *roc_tim, uint8_t ring_id)
+ 		goto fail;
+ 	req->ring = ring_id;
+ 
+-	rc = mbox_process(dev->mbox);
++	rc = mbox_process(mbox);
+ 	if (rc) {
+ 		tim_err_desc(rc);
+ 		rc = -EIO;
+diff --git a/drivers/common/cnxk/roc_tim.h b/drivers/common/cnxk/roc_tim.h
+index 7dc9ae0a61111..f9a9ad1887f9e 100644
+--- a/drivers/common/cnxk/roc_tim.h
++++ b/drivers/common/cnxk/roc_tim.h
+@@ -14,6 +14,8 @@ enum roc_tim_clk_src {
+ 	ROC_TIM_CLK_SRC_PTP,
+ 	ROC_TIM_CLK_SRC_SYNCE,
+ 	ROC_TIM_CLK_SRC_BTS,
++	ROC_TIM_CLK_SRC_EXT_MIO,
++	ROC_TIM_CLK_SRC_EXT_GTI,
+ 	ROC_TIM_CLK_SRC_INVALID,
+ };
+ 
+@@ -48,5 +50,6 @@ int __roc_api roc_tim_lf_alloc(struct roc_tim *roc_tim, uint8_t ring_id,
+ int __roc_api roc_tim_lf_free(struct roc_tim *roc_tim, uint8_t ring_id);
+ uintptr_t __roc_api roc_tim_lf_base_get(struct roc_tim *roc_tim,
+ 					uint8_t ring_id);
++int roc_tim_capture_counters(struct roc_tim *roc_tim, uint64_t *counters, uint8_t nb_cntrs);
+ 
+ #endif
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index bb0c91055352c..221f419055f05 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -71,7 +71,7 @@ cn10k_sso_hws_link(void *arg, void *port, uint16_t *map, uint16_t nb_link, uint8
+ 	struct cnxk_sso_evdev *dev = arg;
+ 	struct cn10k_sso_hws *ws = port;
+ 
+-	return roc_sso_hws_link(&dev->sso, ws->hws_id, map, nb_link, profile);
++	return roc_sso_hws_link(&dev->sso, ws->hws_id, map, nb_link, profile, 0);
+ }
+ 
+ static int
+@@ -80,7 +80,7 @@ cn10k_sso_hws_unlink(void *arg, void *port, uint16_t *map, uint16_t nb_link, uin
+ 	struct cnxk_sso_evdev *dev = arg;
+ 	struct cn10k_sso_hws *ws = port;
+ 
+-	return roc_sso_hws_unlink(&dev->sso, ws->hws_id, map, nb_link, profile);
++	return roc_sso_hws_unlink(&dev->sso, ws->hws_id, map, nb_link, profile, 0);
+ }
+ 
+ static void
+@@ -111,7 +111,7 @@ cn10k_sso_hws_release(void *arg, void *hws)
+ 
+ 	for (i = 0; i < CNXK_SSO_MAX_PROFILES; i++)
+ 		for (j = 0; j < dev->nb_event_queues; j++)
+-			roc_sso_hws_unlink(&dev->sso, ws->hws_id, &j, 1, i);
++			roc_sso_hws_unlink(&dev->sso, ws->hws_id, &j, 1, i, 0);
+ 	memset(ws, 0, sizeof(*ws));
+ }
+ 
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 9fb9ca0d63ec8..5e6305947b350 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -25,12 +25,12 @@ cn9k_sso_hws_link(void *arg, void *port, uint16_t *map, uint16_t nb_link, uint8_
+ 	if (dev->dual_ws) {
+ 		dws = port;
+ 		rc = roc_sso_hws_link(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 0), map, nb_link,
+-				      profile);
++				      profile, 0);
+ 		rc |= roc_sso_hws_link(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 1), map,
+-				       nb_link, profile);
++				       nb_link, profile, 0);
+ 	} else {
+ 		ws = port;
+-		rc = roc_sso_hws_link(&dev->sso, ws->hws_id, map, nb_link, profile);
++		rc = roc_sso_hws_link(&dev->sso, ws->hws_id, map, nb_link, profile, 0);
+ 	}
+ 
+ 	return rc;
+@@ -47,12 +47,12 @@ cn9k_sso_hws_unlink(void *arg, void *port, uint16_t *map, uint16_t nb_link, uint
+ 	if (dev->dual_ws) {
+ 		dws = port;
+ 		rc = roc_sso_hws_unlink(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 0), map,
+-					nb_link, profile);
++					nb_link, profile, 0);
+ 		rc |= roc_sso_hws_unlink(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 1), map,
+-					 nb_link, profile);
++					 nb_link, profile, 0);
+ 	} else {
+ 		ws = port;
+-		rc = roc_sso_hws_unlink(&dev->sso, ws->hws_id, map, nb_link, profile);
++		rc = roc_sso_hws_unlink(&dev->sso, ws->hws_id, map, nb_link, profile, 0);
+ 	}
+ 
+ 	return rc;
+@@ -100,9 +100,9 @@ cn9k_sso_hws_release(void *arg, void *hws)
+ 		for (i = 0; i < dev->nb_event_queues; i++) {
+ 			for (k = 0; k < CNXK_SSO_MAX_PROFILES; k++) {
+ 				roc_sso_hws_unlink(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 0),
+-						   &i, 1, k);
++						   &i, 1, k, 0);
+ 				roc_sso_hws_unlink(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 1),
+-						   &i, 1, k);
++						   &i, 1, k, 0);
+ 			}
+ 		}
+ 		memset(dws, 0, sizeof(*dws));
+@@ -110,7 +110,7 @@ cn9k_sso_hws_release(void *arg, void *hws)
+ 		ws = hws;
+ 		for (i = 0; i < dev->nb_event_queues; i++)
+ 			for (k = 0; k < CNXK_SSO_MAX_PROFILES; k++)
+-				roc_sso_hws_unlink(&dev->sso, ws->hws_id, &i, 1, k);
++				roc_sso_hws_unlink(&dev->sso, ws->hws_id, &i, 1, k, 0);
+ 		memset(ws, 0, sizeof(*ws));
+ 	}
+ }
+-- 
+2.25.1
+

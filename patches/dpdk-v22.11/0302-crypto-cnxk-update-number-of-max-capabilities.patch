@@ -1,0 +1,103 @@
+From 49a315f8662825966fe90cdf0680b7356c057fa9 Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Mon, 13 Mar 2023 10:18:50 +0100
+Subject: [PATCH 302/955] crypto/cnxk: update number of max capabilities
+
+To ensure that the end marker can fit into the capabilities array, the
+max number of capabilities has been incremented.
+Additionally, throw an error if max length is reached. It's critical
+because `rte_cryptodev_capabilities` in dev_info relies on the end marker.
+Without it, all capabilities scans will read memory outside of the array.
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: I595391c6c9503e4d610826fbe753fe0acbf0cc6f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99024
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_platform.h             |  1 +
+ drivers/crypto/cnxk/cnxk_cryptodev.h           |  2 +-
+ .../crypto/cnxk/cnxk_cryptodev_capabilities.c  | 18 +++++-------------
+ 3 files changed, 7 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_platform.h b/drivers/common/cnxk/roc_platform.h
+index f916a5dc0883e..9c34815b519eb 100644
+--- a/drivers/common/cnxk/roc_platform.h
++++ b/drivers/common/cnxk/roc_platform.h
+@@ -41,6 +41,7 @@
+ #endif
+ 
+ #define PLT_ASSERT		 RTE_ASSERT
++#define PLT_VERIFY		 RTE_VERIFY
+ #define PLT_MEMZONE_NAMESIZE	 RTE_MEMZONE_NAMESIZE
+ #define PLT_STD_C11		 RTE_STD_C11
+ #define PLT_PTR_ADD		 RTE_PTR_ADD
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.h b/drivers/crypto/cnxk/cnxk_cryptodev.h
+index 0b5635b7083b8..32dec70264f96 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.h
+@@ -10,7 +10,7 @@
+ 
+ #include "roc_cpt.h"
+ 
+-#define CNXK_CPT_MAX_CAPS	 47
++#define CNXK_CPT_MAX_CAPS	 48
+ #define CNXK_SEC_CRYPTO_MAX_CAPS 16
+ #define CNXK_SEC_MAX_CAPS	 9
+ #define CNXK_AE_EC_ID_MAX	 8
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index d2ae4b5bff9e2..19956ffa076a0 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -1415,8 +1415,7 @@ static void
+ cpt_caps_add(struct rte_cryptodev_capabilities cnxk_caps[], int *cur_pos,
+ 	     const struct rte_cryptodev_capabilities *caps, int nb_caps)
+ {
+-	if (*cur_pos + nb_caps > CNXK_CPT_MAX_CAPS)
+-		return;
++	PLT_VERIFY(*cur_pos + nb_caps <= CNXK_CPT_MAX_CAPS);
+ 
+ 	memcpy(&cnxk_caps[*cur_pos], caps, nb_caps * sizeof(caps[0]));
+ 	*cur_pos += nb_caps;
+@@ -1491,23 +1490,17 @@ cnxk_crypto_capabilities_get(struct cnxk_cpt_vf *vf)
+ 	return vf->crypto_caps;
+ }
+ 
+-static bool
++static void
+ sec_caps_limit_check(int *cur_pos, int nb_caps)
+ {
+-	if (*cur_pos + nb_caps > CNXK_SEC_CRYPTO_MAX_CAPS) {
+-		rte_panic("Could not add sec crypto caps");
+-		return true;
+-	}
+-
+-	return false;
++	PLT_VERIFY(*cur_pos + nb_caps <= CNXK_SEC_CRYPTO_MAX_CAPS);
+ }
+ 
+ static void
+ sec_caps_add(struct rte_cryptodev_capabilities cnxk_caps[], int *cur_pos,
+ 	     const struct rte_cryptodev_capabilities *caps, int nb_caps)
+ {
+-	if (sec_caps_limit_check(cur_pos, nb_caps))
+-		return;
++	sec_caps_limit_check(cur_pos, nb_caps);
+ 
+ 	memcpy(&cnxk_caps[*cur_pos], caps, nb_caps * sizeof(caps[0]));
+ 	*cur_pos += nb_caps;
+@@ -1520,8 +1513,7 @@ cn10k_sec_crypto_caps_update(struct rte_cryptodev_capabilities cnxk_caps[],
+ 	const struct rte_cryptodev_capabilities *cap;
+ 	unsigned int i;
+ 
+-	if (sec_caps_limit_check(cur_pos, 1))
+-		return;
++	sec_caps_limit_check(cur_pos, 1);
+ 
+ 	/* NULL auth */
+ 	for (i = 0; i < RTE_DIM(caps_null); i++) {
+-- 
+2.25.1
+

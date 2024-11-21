@@ -1,0 +1,987 @@
+From c286920820a99e716eb4237e5bb54cc18e6d7b73 Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Mon, 5 Aug 2024 04:22:45 -0700
+Subject: [PATCH 904/955] net/octeon_ep: sync with 23.11-devel
+
+Sync up the octeon_ep driver with 23.11-devel branch.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: Ice909d1c53e0228ecdc65083a04342d49a604f4a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132812
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit b6a612be7413256e19a504d25a0da07a041eb0d0)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132841
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_rx.h      |  18 ++-
+ drivers/net/octeon_ep/cnxk_ep_rx_avx.c  |  28 +++--
+ drivers/net/octeon_ep/cnxk_ep_rx_neon.c | 147 ++++++++++++++++++++++++
+ drivers/net/octeon_ep/cnxk_ep_rx_sse.c  |  50 ++++----
+ drivers/net/octeon_ep/cnxk_ep_vf.c      |   2 +
+ drivers/net/octeon_ep/cnxk_ep_vf.h      |   5 +
+ drivers/net/octeon_ep/meson.build       |   5 +-
+ drivers/net/octeon_ep/otx2_ep_vf.c      |   2 +
+ drivers/net/octeon_ep/otx_ep_ethdev.c   |  76 +++++++++---
+ drivers/net/octeon_ep/otx_ep_mbox.c     |  81 ++++++++++++-
+ drivers/net/octeon_ep/otx_ep_mbox.h     |  11 +-
+ drivers/net/octeon_ep/otx_ep_rxtx.c     |  17 +--
+ drivers/net/octeon_ep/otx_ep_rxtx.h     |  16 ++-
+ drivers/net/octeon_ep/otx_ep_vf.c       |   2 +
+ 14 files changed, 381 insertions(+), 79 deletions(-)
+ create mode 100644 drivers/net/octeon_ep/cnxk_ep_rx_neon.c
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx.h b/drivers/net/octeon_ep/cnxk_ep_rx.h
+index fe41a5a168442..ecf95cd961220 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_rx.h
++++ b/drivers/net/octeon_ep/cnxk_ep_rx.h
+@@ -21,13 +21,16 @@ cnxk_ep_rx_refill_mbuf(struct otx_ep_droq *droq, uint32_t count)
+ 	uint32_t i;
+ 	int rc;
+ 
+-	rc = rte_pktmbuf_alloc_bulk(droq->mpool, &recv_buf_list[refill_idx], count);
++	rc = rte_mempool_get_bulk(droq->mpool, (void **)&recv_buf_list[refill_idx], count);
+ 	if (unlikely(rc)) {
+ 		droq->stats.rx_alloc_failure++;
+ 		return rc;
+ 	}
+ 
+ 	for (i = 0; i < count; i++) {
++		rte_prefetch_non_temporal(&desc_ring[(refill_idx + 1) & 3]);
++		if (i < count - 1)
++			rte_prefetch_non_temporal(recv_buf_list[refill_idx + 1]);
+ 		buf = recv_buf_list[refill_idx];
+ 		desc_ring[refill_idx].buffer_ptr = rte_mbuf_data_iova_default(buf);
+ 		refill_idx++;
+@@ -42,9 +45,9 @@ cnxk_ep_rx_refill_mbuf(struct otx_ep_droq *droq, uint32_t count)
+ static inline void
+ cnxk_ep_rx_refill(struct otx_ep_droq *droq)
+ {
+-	uint32_t desc_refilled = 0, count;
+-	uint32_t nb_desc = droq->nb_desc;
++	const uint32_t nb_desc = droq->nb_desc;
+ 	uint32_t refill_idx = droq->refill_idx;
++	uint32_t desc_refilled = 0, count;
+ 	int rc;
+ 
+ 	if (unlikely(droq->read_idx == refill_idx))
+@@ -156,6 +159,8 @@ cnxk_ep_rx_pkts_to_process(struct otx_ep_droq *droq, uint16_t nb_pkts)
+ 	return RTE_MIN(nb_pkts, droq->pkts_pending);
+ }
+ 
++#define cnxk_pktmbuf_mtod(m, t) ((t)(void *)((char *)(m)->buf_addr + RTE_PKTMBUF_HEADROOM))
++
+ static __rte_always_inline void
+ cnxk_ep_process_pkts_scalar(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq, uint16_t new_pkts)
+ {
+@@ -170,11 +175,12 @@ cnxk_ep_process_pkts_scalar(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq,
+ 		uint16_t pkt_len;
+ 
+ 		rte_prefetch0(recv_buf_list[otx_ep_incr_index(read_idx, 2, nb_desc)]);
+-		rte_prefetch0(rte_pktmbuf_mtod(
+-			recv_buf_list[otx_ep_incr_index(read_idx, 2, nb_desc)], void *));
++		rte_prefetch0(rte_pktmbuf_mtod(recv_buf_list[otx_ep_incr_index(read_idx,
++									       2, nb_desc)],
++			      void *));
+ 
+ 		mbuf = recv_buf_list[read_idx];
+-		info = rte_pktmbuf_mtod(mbuf, struct otx_ep_droq_info *);
++		info = cnxk_pktmbuf_mtod(mbuf, struct otx_ep_droq_info *);
+ 		read_idx = otx_ep_incr_index(read_idx, 1, nb_desc);
+ 		pkt_len = rte_bswap16(info->length >> 48);
+ 		mbuf->pkt_len = pkt_len;
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx_avx.c b/drivers/net/octeon_ep/cnxk_ep_rx_avx.c
+index 62c8a226b5dbc..47eb1d2ef7111 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_rx_avx.c
++++ b/drivers/net/octeon_ep/cnxk_ep_rx_avx.c
+@@ -26,9 +26,11 @@ cnxk_ep_process_pkts_vec_avx(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq
+ 					21, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+ 					0xFF, 0xFF, 0xFF, 7, 6, 5, 4, 3, 2, 1, 0);
+ 
++		/* Load indexes. */
+ 		for (i = 1; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+ 			idx[i] = otx_ep_incr_index(idx[i - 1], 1, nb_desc);
+ 
++		/* Prefetch next indexes. */
+ 		if (new_pkts - pkts > 8) {
+ 			pidx[0] = otx_ep_incr_index(idx[i - 1], 1, nb_desc);
+ 			for (i = 1; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+@@ -40,19 +42,23 @@ cnxk_ep_process_pkts_vec_avx(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq
+ 			}
+ 		}
+ 
++		/* Load mbuf array. */
+ 		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+ 			m[i] = recv_buf_list[idx[i]];
+ 
++		/* Load rearm data and packet length for shuffle. */
+ 		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+-			data[i] = _mm256_set_epi64x(
+-				0, rte_pktmbuf_mtod(m[i], struct otx_ep_droq_info *)->length >> 16,
++			data[i] = _mm256_set_epi64x(0,
++				cnxk_pktmbuf_mtod(m[i], struct otx_ep_droq_info *)->length >> 16,
+ 				0, rearm_data);
+ 
++		/* Shuffle data to its place and sum the packet length. */
+ 		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++) {
+ 			data[i] = _mm256_shuffle_epi8(data[i], mask);
+ 			bytes_rsvd += _mm256_extract_epi16(data[i], 10);
+ 		}
+ 
++		/* Store the 256bit data to the mbuf. */
+ 		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+ 			_mm256_storeu_si256((__m256i *)&m[i]->rearm_data, data[i]);
+ 
+@@ -75,15 +81,15 @@ cnxk_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkt
+ 	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
+ 	uint16_t new_pkts, vpkts;
+ 
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD)
++		cnxk_ep_rx_refill(droq);
++
+ 	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
+ 	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_AVX);
+ 	cnxk_ep_process_pkts_vec_avx(rx_pkts, droq, vpkts);
+ 	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
+ 
+-	/* Refill RX buffers */
+-	if (droq->refill_count >= DROQ_REFILL_THRESHOLD)
+-		cnxk_ep_rx_refill(droq);
+-
+ 	return new_pkts;
+ }
+ 
+@@ -93,11 +99,6 @@ cn9k_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkt
+ 	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
+ 	uint16_t new_pkts, vpkts;
+ 
+-	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
+-	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_AVX);
+-	cnxk_ep_process_pkts_vec_avx(rx_pkts, droq, vpkts);
+-	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
+-
+ 	/* Refill RX buffers */
+ 	if (droq->refill_count >= DROQ_REFILL_THRESHOLD) {
+ 		cnxk_ep_rx_refill(droq);
+@@ -113,5 +114,10 @@ cn9k_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkt
+ 		rte_write32(0, droq->pkts_credit_reg);
+ 	}
+ 
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_AVX);
++	cnxk_ep_process_pkts_vec_avx(rx_pkts, droq, vpkts);
++	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
++
+ 	return new_pkts;
+ }
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx_neon.c b/drivers/net/octeon_ep/cnxk_ep_rx_neon.c
+new file mode 100644
+index 0000000000000..4c46a7ea081fd
+--- /dev/null
++++ b/drivers/net/octeon_ep/cnxk_ep_rx_neon.c
+@@ -0,0 +1,147 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include "cnxk_ep_rx.h"
++
++static __rte_always_inline void
++cnxk_ep_process_pkts_vec_neon(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq,
++			      uint16_t new_pkts)
++{
++	const uint8x16_t mask0 = {0, 1, 0xff, 0xff, 0, 1, 0xff, 0xff,
++				  4, 5, 0xff, 0xff, 4, 5, 0xff, 0xff};
++	const uint8x16_t mask1 = {8,  9,  0xff, 0xff, 8,  9,  0xff, 0xff,
++				  12, 13, 0xff, 0xff, 12, 13, 0xff, 0xff};
++	struct rte_mbuf **recv_buf_list = droq->recv_buf_list;
++	uint32_t pidx0, pidx1, pidx2, pidx3;
++	struct rte_mbuf *m0, *m1, *m2, *m3;
++	uint32_t read_idx = droq->read_idx;
++	uint16_t nb_desc = droq->nb_desc;
++	uint32_t idx0, idx1, idx2, idx3;
++	uint64x2_t s01, s23;
++	uint32x4_t bytes;
++	uint16_t pkts = 0;
++
++	idx0 = read_idx;
++	s01 = vdupq_n_u64(0);
++	bytes = vdupq_n_u32(0);
++	while (pkts < new_pkts) {
++		idx1 = otx_ep_incr_index(idx0, 1, nb_desc);
++		idx2 = otx_ep_incr_index(idx1, 1, nb_desc);
++		idx3 = otx_ep_incr_index(idx2, 1, nb_desc);
++
++		if (new_pkts - pkts > 4) {
++			pidx0 = otx_ep_incr_index(idx3, 1, nb_desc);
++			pidx1 = otx_ep_incr_index(pidx0, 1, nb_desc);
++			pidx2 = otx_ep_incr_index(pidx1, 1, nb_desc);
++			pidx3 = otx_ep_incr_index(pidx2, 1, nb_desc);
++
++			rte_prefetch_non_temporal(cnxk_pktmbuf_mtod(recv_buf_list[pidx0], void *));
++			rte_prefetch_non_temporal(cnxk_pktmbuf_mtod(recv_buf_list[pidx1], void *));
++			rte_prefetch_non_temporal(cnxk_pktmbuf_mtod(recv_buf_list[pidx2], void *));
++			rte_prefetch_non_temporal(cnxk_pktmbuf_mtod(recv_buf_list[pidx3], void *));
++		}
++
++		m0 = recv_buf_list[idx0];
++		m1 = recv_buf_list[idx1];
++		m2 = recv_buf_list[idx2];
++		m3 = recv_buf_list[idx3];
++
++		/* Load packet size big-endian. */
++		s01 = vsetq_lane_u32(cnxk_pktmbuf_mtod(m0, struct otx_ep_droq_info *)->length >> 48,
++				     s01, 0);
++		s01 = vsetq_lane_u32(cnxk_pktmbuf_mtod(m1, struct otx_ep_droq_info *)->length >> 48,
++				     s01, 1);
++		s01 = vsetq_lane_u32(cnxk_pktmbuf_mtod(m2, struct otx_ep_droq_info *)->length >> 48,
++				     s01, 2);
++		s01 = vsetq_lane_u32(cnxk_pktmbuf_mtod(m3, struct otx_ep_droq_info *)->length >> 48,
++				     s01, 3);
++		/* Convert to little-endian. */
++		s01 = vrev16q_u8(s01);
++
++		/* Vertical add, consolidate outside the loop. */
++		bytes += vaddq_u32(bytes, s01);
++		/* Segregate to packet length and data length. */
++		s23 = vqtbl1q_u8(s01, mask1);
++		s01 = vqtbl1q_u8(s01, mask0);
++
++		/* Store packet length and data length to mbuf. */
++		*(uint64_t *)&m0->pkt_len = vgetq_lane_u64(s01, 0);
++		*(uint64_t *)&m1->pkt_len = vgetq_lane_u64(s01, 1);
++		*(uint64_t *)&m2->pkt_len = vgetq_lane_u64(s23, 0);
++		*(uint64_t *)&m3->pkt_len = vgetq_lane_u64(s23, 1);
++
++		/* Reset rearm data. */
++		*(uint64_t *)&m0->rearm_data = droq->rearm_data;
++		*(uint64_t *)&m1->rearm_data = droq->rearm_data;
++		*(uint64_t *)&m2->rearm_data = droq->rearm_data;
++		*(uint64_t *)&m3->rearm_data = droq->rearm_data;
++
++		rx_pkts[pkts++] = m0;
++		rx_pkts[pkts++] = m1;
++		rx_pkts[pkts++] = m2;
++		rx_pkts[pkts++] = m3;
++		idx0 = otx_ep_incr_index(idx3, 1, nb_desc);
++	}
++	droq->read_idx = idx0;
++
++	droq->refill_count += new_pkts;
++	droq->pkts_pending -= new_pkts;
++	/* Stats */
++	droq->stats.pkts_received += new_pkts;
++#if defined(RTE_ARCH_32)
++	droq->stats.bytes_received += vgetq_lane_u32(bytes, 0);
++	droq->stats.bytes_received += vgetq_lane_u32(bytes, 1);
++	droq->stats.bytes_received += vgetq_lane_u32(bytes, 2);
++	droq->stats.bytes_received += vgetq_lane_u32(bytes, 3);
++#else
++	droq->stats.bytes_received += vaddvq_u32(bytes);
++#endif
++}
++
++uint16_t __rte_noinline __rte_hot
++cnxk_ep_recv_pkts_neon(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
++	uint16_t new_pkts, vpkts;
++
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD)
++		cnxk_ep_rx_refill(droq);
++
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_SSE);
++	cnxk_ep_process_pkts_vec_neon(rx_pkts, droq, vpkts);
++	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
++
++	return new_pkts;
++}
++
++uint16_t __rte_noinline __rte_hot
++cn9k_ep_recv_pkts_neon(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
++	uint16_t new_pkts, vpkts;
++
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD) {
++		cnxk_ep_rx_refill(droq);
++	} else {
++		/* SDP output goes into DROP state when output doorbell count
++		 * goes below drop count. When door bell count is written with
++		 * a value greater than drop count SDP output should come out
++		 * of DROP state. Due to a race condition this is not happening.
++		 * Writing doorbell register with 0 again may make SDP output
++		 * come out of this state.
++		 */
++
++		rte_write32(0, droq->pkts_credit_reg);
++	}
++
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_SSE);
++	cnxk_ep_process_pkts_vec_neon(rx_pkts, droq, vpkts);
++	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
++
++	return new_pkts;
++}
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx_sse.c b/drivers/net/octeon_ep/cnxk_ep_rx_sse.c
+index 531f75a2e0510..308c8b2288c6b 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_rx_sse.c
++++ b/drivers/net/octeon_ep/cnxk_ep_rx_sse.c
+@@ -18,13 +18,15 @@ static __rte_always_inline void
+ cnxk_ep_process_pkts_vec_sse(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq, uint16_t new_pkts)
+ {
+ 	struct rte_mbuf **recv_buf_list = droq->recv_buf_list;
+-	uint32_t bytes_rsvd = 0, read_idx = droq->read_idx;
+-	uint32_t idx0, idx1, idx2, idx3;
++	uint32_t read_idx = droq->read_idx;
+ 	struct rte_mbuf *m0, *m1, *m2, *m3;
+ 	uint16_t nb_desc = droq->nb_desc;
++	uint32_t idx0, idx1, idx2, idx3;
+ 	uint16_t pkts = 0;
++	__m128i bytes;
+ 
+ 	idx0 = read_idx;
++	bytes = _mm_setzero_si128();
+ 	while (pkts < new_pkts) {
+ 		const __m128i bswap_mask = _mm_set_epi8(0xFF, 0xFF, 12, 13, 0xFF, 0xFF, 8, 9, 0xFF,
+ 							0xFF, 4, 5, 0xFF, 0xFF, 0, 1);
+@@ -41,21 +43,27 @@ cnxk_ep_process_pkts_vec_sse(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq
+ 		m2 = recv_buf_list[idx2];
+ 		m3 = recv_buf_list[idx3];
+ 
+-		s01 = _mm_set_epi32(rte_pktmbuf_mtod(m3, struct otx_ep_droq_info *)->length >> 48,
+-				    rte_pktmbuf_mtod(m1, struct otx_ep_droq_info *)->length >> 48,
+-				    rte_pktmbuf_mtod(m2, struct otx_ep_droq_info *)->length >> 48,
+-				    rte_pktmbuf_mtod(m0, struct otx_ep_droq_info *)->length >> 48);
++		/* Load packet size big-endian. */
++		s01 = _mm_set_epi32(cnxk_pktmbuf_mtod(m3, struct otx_ep_droq_info *)->length >> 48,
++				    cnxk_pktmbuf_mtod(m1, struct otx_ep_droq_info *)->length >> 48,
++				    cnxk_pktmbuf_mtod(m2, struct otx_ep_droq_info *)->length >> 48,
++				    cnxk_pktmbuf_mtod(m0, struct otx_ep_droq_info *)->length >> 48);
++		/* Convert to little-endian. */
+ 		s01 = _mm_shuffle_epi8(s01, bswap_mask);
+-		bytes_rsvd += hadd(s01);
++		/* Vertical add, consolidate outside loop */
++		bytes = _mm_add_epi32(bytes, s01);
++		/* Segregate to packet length and data length. */
+ 		s23 = _mm_shuffle_epi32(s01, _MM_SHUFFLE(3, 3, 1, 1));
+ 		s01 = _mm_shuffle_epi8(s01, cpy_mask);
+ 		s23 = _mm_shuffle_epi8(s23, cpy_mask);
+ 
+-		*(uint64_t *)&m0->pkt_len = _mm_extract_epi64(s01, 0);
+-		*(uint64_t *)&m1->pkt_len = _mm_extract_epi64(s01, 1);
+-		*(uint64_t *)&m2->pkt_len = _mm_extract_epi64(s23, 0);
+-		*(uint64_t *)&m3->pkt_len = _mm_extract_epi64(s23, 1);
++		/* Store packet length and data length to mbuf. */
++		*(uint64_t *)&m0->pkt_len = ((rte_xmm_t)s01).u64[0];
++		*(uint64_t *)&m1->pkt_len = ((rte_xmm_t)s01).u64[1];
++		*(uint64_t *)&m2->pkt_len = ((rte_xmm_t)s23).u64[0];
++		*(uint64_t *)&m3->pkt_len = ((rte_xmm_t)s23).u64[1];
+ 
++		/* Reset rearm data. */
+ 		*(uint64_t *)&m0->rearm_data = droq->rearm_data;
+ 		*(uint64_t *)&m1->rearm_data = droq->rearm_data;
+ 		*(uint64_t *)&m2->rearm_data = droq->rearm_data;
+@@ -73,7 +81,7 @@ cnxk_ep_process_pkts_vec_sse(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq
+ 	droq->pkts_pending -= new_pkts;
+ 	/* Stats */
+ 	droq->stats.pkts_received += new_pkts;
+-	droq->stats.bytes_received += bytes_rsvd;
++	droq->stats.bytes_received += hadd(bytes);
+ }
+ 
+ uint16_t __rte_noinline __rte_hot
+@@ -82,15 +90,15 @@ cnxk_ep_recv_pkts_sse(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkt
+ 	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
+ 	uint16_t new_pkts, vpkts;
+ 
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD)
++		cnxk_ep_rx_refill(droq);
++
+ 	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
+ 	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_SSE);
+ 	cnxk_ep_process_pkts_vec_sse(rx_pkts, droq, vpkts);
+ 	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
+ 
+-	/* Refill RX buffers */
+-	if (droq->refill_count >= DROQ_REFILL_THRESHOLD)
+-		cnxk_ep_rx_refill(droq);
+-
+ 	return new_pkts;
+ }
+ 
+@@ -100,11 +108,6 @@ cn9k_ep_recv_pkts_sse(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkt
+ 	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
+ 	uint16_t new_pkts, vpkts;
+ 
+-	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
+-	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_SSE);
+-	cnxk_ep_process_pkts_vec_sse(rx_pkts, droq, vpkts);
+-	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
+-
+ 	/* Refill RX buffers */
+ 	if (droq->refill_count >= DROQ_REFILL_THRESHOLD) {
+ 		cnxk_ep_rx_refill(droq);
+@@ -120,5 +123,10 @@ cn9k_ep_recv_pkts_sse(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkt
+ 		rte_write32(0, droq->pkts_credit_reg);
+ 	}
+ 
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	vpkts = RTE_ALIGN_FLOOR(new_pkts, CNXK_EP_OQ_DESC_PER_LOOP_SSE);
++	cnxk_ep_process_pkts_vec_sse(rx_pkts, droq, vpkts);
++	cnxk_ep_process_pkts_scalar(&rx_pkts[vpkts], droq, new_pkts - vpkts);
++
+ 	return new_pkts;
+ }
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.c b/drivers/net/octeon_ep/cnxk_ep_vf.c
+index 39f357ee8162b..643e7acf40f23 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.c
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.c
+@@ -408,6 +408,8 @@ cnxk_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 
+ 	/* Get IOQs (RPVF] count */
+ 	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_IN_CONTROL(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
+ 
+ 	otx_ep->sriov_info.rings_per_vf =
+ 		((reg_val >> CNXK_EP_R_IN_CTL_RPVF_POS) & CNXK_EP_R_IN_CTL_RPVF_MASK);
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.h b/drivers/net/octeon_ep/cnxk_ep_vf.h
+index 41d8fbbb3aadb..8981dd7e866c2 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.h
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.h
+@@ -134,6 +134,9 @@
+ #define CNXK_EP_R_MBOX_VF_PF_DATA(ring)          \
+ 	(CNXK_EP_R_MBOX_VF_PF_DATA_START + ((ring) * CNXK_EP_RING_OFFSET))
+ 
++#define CNXK_EP_R_MBOX_PF_VF_DATA(ring)          \
++	(CNXK_EP_R_MBOX_PF_VF_DATA_START + ((ring) * CNXK_EP_RING_OFFSET))
++
+ #define CNXK_EP_R_MBOX_PF_VF_INT(ring)           \
+ 	(CNXK_EP_R_MBOX_PF_VF_INT_START + ((ring) * CNXK_EP_RING_OFFSET))
+ 
+@@ -195,5 +198,7 @@ struct cnxk_ep_instr_32B {
+ #define CNXK_EP_OQ_ISM_OFFSET(queue)    (RTE_CACHE_LINE_SIZE * (queue))
+ #define CNXK_EP_ISM_EN                  (0x1)
+ #define CNXK_EP_ISM_MSIX_DIS            (0x2)
++#define CNXK_EP_MBOX_INTR               (0x1)
++#define CNXK_EP_MBOX_ENAB               (0x2)
+ 
+ #endif /*_CNXK_EP_VF_H_ */
+diff --git a/drivers/net/octeon_ep/meson.build b/drivers/net/octeon_ep/meson.build
+index 0cfdfc7122036..93198f5bf8a3e 100644
+--- a/drivers/net/octeon_ep/meson.build
++++ b/drivers/net/octeon_ep/meson.build
+@@ -35,7 +35,10 @@ if arch_subdir == 'x86'
+     endif
+ endif
+ 
+-extra_flags = ['-Wno-strict-aliasing', '-Wno-array-bounds']
++if arch_subdir == 'arm'
++    sources += files('cnxk_ep_rx_neon.c')
++endif
++extra_flags = ['-Wno-strict-aliasing', '-Wno-array-bounds', '-flax-vector-conversions']
+ foreach flag: extra_flags
+     if cc.has_argument(flag)
+         cflags += flag
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.c b/drivers/net/octeon_ep/otx2_ep_vf.c
+index 25e0e5a500dfc..fc79c6cbbca1b 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.c
++++ b/drivers/net/octeon_ep/otx2_ep_vf.c
+@@ -587,6 +587,8 @@ otx2_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 
+ 	/* Get IOQs (RPVF] count */
+ 	reg_val = oct_ep_read64(otx_ep->hw_addr + SDP_VF_R_IN_CONTROL(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
+ 
+ 	otx_ep->sriov_info.rings_per_vf = ((reg_val >> SDP_VF_R_IN_CTL_RPVF_POS)
+ 					  & SDP_VF_R_IN_CTL_RPVF_MASK);
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 8ab403d8997ee..f116a49a2bb98 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -96,6 +96,8 @@ otx_ep_set_rx_func(struct rte_eth_dev *eth_dev)
+ 		    rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2) == 1)
+ 			eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts_avx;
+ #endif
++#elif defined(RTE_ARCH_ARM64)
++		eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts_neon;
+ #endif
+ 		if (otx_epvf->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)
+ 			eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts_mseg;
+@@ -108,8 +110,9 @@ otx_ep_set_rx_func(struct rte_eth_dev *eth_dev)
+ 		    rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2) == 1)
+ 			eth_dev->rx_pkt_burst = &cn9k_ep_recv_pkts_avx;
+ #endif
++#elif defined(RTE_ARCH_ARM64)
++		eth_dev->rx_pkt_burst = &cn9k_ep_recv_pkts_neon;
+ #endif
+-
+ 		if (otx_epvf->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)
+ 			eth_dev->rx_pkt_burst = &cn9k_ep_recv_pkts_mseg;
+ 	} else {
+@@ -254,6 +257,11 @@ otx_ep_dev_start(struct rte_eth_dev *eth_dev)
+ 
+ 	otx_ep_info("dev started\n");
+ 
++	for (q = 0; q < eth_dev->data->nb_rx_queues; q++)
++		eth_dev->data->rx_queue_state[q] = RTE_ETH_QUEUE_STATE_STARTED;
++	for (q = 0; q < eth_dev->data->nb_tx_queues; q++)
++		eth_dev->data->tx_queue_state[q] = RTE_ETH_QUEUE_STATE_STARTED;
++
+ 	return 0;
+ }
+ 
+@@ -262,9 +270,15 @@ static int
+ otx_ep_dev_stop(struct rte_eth_dev *eth_dev)
+ {
+ 	struct otx_ep_device *otx_epvf = OTX_EP_DEV(eth_dev);
++	uint16_t i;
+ 
+ 	otx_epvf->fn_list.disable_io_queues(otx_epvf);
+ 
++	for (i = 0; i < eth_dev->data->nb_rx_queues; i++)
++		eth_dev->data->rx_queue_state[i] = RTE_ETH_QUEUE_STATE_STOPPED;
++	for (i = 0; i < eth_dev->data->nb_tx_queues; i++)
++		eth_dev->data->tx_queue_state[i] = RTE_ETH_QUEUE_STATE_STOPPED;
++
+ 	return 0;
+ }
+ 
+@@ -305,7 +319,6 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 	case PCI_DEVID_OCTEONTX_EP_VF:
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = otx_ep_vf_setup_device(otx_epvf);
+-		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+ 		break;
+ 	case PCI_DEVID_CN9K_EP_NET_VF:
+ 	case PCI_DEVID_CN98XX_EP_NET_VF:
+@@ -313,9 +326,6 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 	case PCI_DEVID_CNF95O_EP_NET_VF:
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = otx2_ep_vf_setup_device(otx_epvf);
+-		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+-		if (otx_ep_ism_setup(otx_epvf))
+-			ret = -EINVAL;
+ 		break;
+ 	case PCI_DEVID_CN10KA_EP_NET_VF:
+ 	case PCI_DEVID_CN10KB_EP_NET_VF:
+@@ -323,9 +333,6 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 	case PCI_DEVID_CNF10KB_EP_NET_VF:
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = cnxk_ep_vf_setup_device(otx_epvf);
+-		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+-		if (otx_ep_ism_setup(otx_epvf))
+-			ret = -EINVAL;
+ 		break;
+ 	default:
+ 		otx_ep_err("Unsupported device\n");
+@@ -334,6 +341,11 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 
+ 	if (!ret)
+ 		otx_ep_info("OTX_EP dev_id[%d]\n", dev_id);
++	else
++		return ret;
++
++	if (dev_id != PCI_DEVID_OCTEONTX_EP_VF)
++		ret = otx_ep_ism_setup(otx_epvf);
+ 
+ 	return ret;
+ }
+@@ -351,8 +363,6 @@ otx_epdev_init(struct otx_ep_device *otx_epvf)
+ 		goto setup_fail;
+ 	}
+ 
+-	otx_epvf->fn_list.setup_device_regs(otx_epvf);
+-
+ 	otx_epvf->eth_dev->tx_pkt_burst = &cnxk_ep_xmit_pkts;
+ 	otx_epvf->eth_dev->rx_pkt_burst = &otx_ep_recv_pkts;
+ 	if (otx_epvf->chip_id == PCI_DEVID_OCTEONTX_EP_VF) {
+@@ -402,6 +412,10 @@ otx_ep_dev_configure(struct rte_eth_dev *eth_dev)
+ 		otx_ep_err("invalid num queues\n");
+ 		return -EINVAL;
+ 	}
++
++	otx_epvf->fn_list.setup_device_regs(otx_epvf);
++	otx_epvf->fn_list.disable_io_queues(otx_epvf);
++
+ 	otx_ep_info("OTX_EP Device is configured with num_txq %d num_rxq %d\n",
+ 		    eth_dev->data->nb_rx_queues, eth_dev->data->nb_tx_queues);
+ 
+@@ -642,6 +656,7 @@ otx_ep_dev_close(struct rte_eth_dev *eth_dev)
+ 
+ 	otx_epvf = OTX_EP_DEV(eth_dev);
+ 	otx_ep_mbox_send_dev_exit(eth_dev);
++	otx_ep_mbox_uninit(eth_dev);
+ 	otx_epvf->fn_list.disable_io_queues(otx_epvf);
+ 	num_queues = otx_epvf->nb_rx_queues;
+ 	for (q_no = 0; q_no < num_queues; q_no++) {
+@@ -711,6 +726,7 @@ otx_ep_eth_dev_uninit(struct rte_eth_dev *eth_dev)
+ 		return 0;
+ 	}
+ 
++	otx_ep_mbox_uninit(eth_dev);
+ 	eth_dev->dev_ops = NULL;
+ 	eth_dev->rx_pkt_burst = NULL;
+ 	eth_dev->tx_pkt_burst = NULL;
+@@ -718,6 +734,16 @@ otx_ep_eth_dev_uninit(struct rte_eth_dev *eth_dev)
+ 	return 0;
+ }
+ 
++static void
++otx_epdev_event_callback(const char *device_name, enum rte_dev_event_type type,
++			 __rte_unused void *arg)
++{
++	if (type == RTE_DEV_EVENT_REMOVE)
++		otx_ep_info("Octeon epdev: %s has been removed!\n", device_name);
++
++	RTE_VERIFY(type != RTE_DEV_EVENT_REMOVE);
++}
++
+ static int otx_ep_eth_dev_query_set_vf_mac(struct rte_eth_dev *eth_dev,
+ 					   struct rte_ether_addr *mac_addr)
+ {
+@@ -755,6 +781,7 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(eth_dev);
+ 	struct otx_ep_device *otx_epvf = OTX_EP_DEV(eth_dev);
+ 	struct rte_ether_addr vf_mac_addr;
++	int ret = 0;
+ 
+ 	/* Single process support */
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+@@ -792,8 +819,16 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	otx_epvf->hw_addr = pdev->mem_resource[0].addr;
+ 	otx_epvf->pdev = pdev;
+ 
+-	if (otx_epdev_init(otx_epvf))
+-		return -ENOMEM;
++	if (rte_dev_event_callback_register(pdev->name, otx_epdev_event_callback, NULL)) {
++		otx_ep_err("Failed  to register a device event callback\n");
++			return -EINVAL;
++	}
++
++	if (otx_epdev_init(otx_epvf)) {
++		ret = -ENOMEM;
++		goto exit;
++	}
++
+ 	if (otx_epvf->chip_id == PCI_DEVID_CN9K_EP_NET_VF ||
+ 	    otx_epvf->chip_id == PCI_DEVID_CN98XX_EP_NET_VF ||
+ 	    otx_epvf->chip_id == PCI_DEVID_CNF95N_EP_NET_VF ||
+@@ -809,20 +844,27 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		otx_ep_info("Using pkind %d.\n", otx_epvf->pkind);
+ 	} else {
+ 		otx_ep_err("Invalid chip id\n");
+-		return -EINVAL;
++		ret = -EINVAL;
++		goto exit;
+ 	}
+ 
+-	if (otx_ep_mbox_version_check(eth_dev))
+-		return -EINVAL;
++	if (otx_ep_mbox_init(eth_dev)) {
++		ret = -EINVAL;
++		goto exit;
++	}
+ 
+ 	if (otx_ep_eth_dev_query_set_vf_mac(eth_dev,
+ 				(struct rte_ether_addr *)&vf_mac_addr)) {
+ 		otx_ep_err("set mac addr failed\n");
+-		return -ENODEV;
++		ret = -ENODEV;
++		goto exit;
+ 	}
+ 	rte_ether_addr_copy(&vf_mac_addr, eth_dev->data->mac_addrs);
+ 
+-	return 0;
++exit:
++	rte_dev_event_callback_unregister(pdev->name, otx_epdev_event_callback, NULL);
++
++	return ret;
+ }
+ 
+ static int
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index 4118645dc7f43..ad8e21c75f74e 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -17,7 +17,10 @@
+  * with new command and it's version info.
+  */
+ static uint32_t otx_ep_cmd_versions[OTX_EP_MBOX_CMD_MAX] = {
+-	[0 ... OTX_EP_MBOX_CMD_DEV_REMOVE] = OTX_EP_MBOX_VERSION_V1
++	[0 ... OTX_EP_MBOX_CMD_DEV_REMOVE] = OTX_EP_MBOX_VERSION_V1,
++	[OTX_EP_MBOX_CMD_GET_FW_INFO ... OTX_EP_MBOX_NOTIF_LINK_STATUS] = OTX_EP_MBOX_VERSION_V2,
++	[OTX_EP_MBOX_NOTIF_PF_FLR] = OTX_EP_MBOX_VERSION_V3
++
+ };
+ 
+ static int
+@@ -28,6 +31,10 @@ __otx_ep_send_mbox_cmd(struct otx_ep_device *otx_ep,
+ 	volatile uint64_t reg_val = 0ull;
+ 	int count = 0;
+ 
++	reg_val = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
++
+ 	cmd.s.type = OTX_EP_MBOX_TYPE_CMD;
+ 	otx2_write64(cmd.u64, otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
+ 
+@@ -38,6 +45,8 @@ __otx_ep_send_mbox_cmd(struct otx_ep_device *otx_ep,
+ 	for (count = 0; count < OTX_EP_MBOX_TIMEOUT_MS; count++) {
+ 		rte_delay_ms(1);
+ 		reg_val = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_VF_PF_DATA(0));
++		if (reg_val == (uint64_t)-1)
++			return -ENODEV;
+ 		if (reg_val != cmd.u64) {
+ 			rsp->u64 = reg_val;
+ 			break;
+@@ -288,10 +297,9 @@ otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev)
+ 	return rsp.s_get_mtu.mtu;
+ }
+ 
+-int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev)
++static void
++otx_ep_mbox_version_check(struct otx_ep_device *otx_ep)
+ {
+-	struct otx_ep_device *otx_ep =
+-		(struct otx_ep_device *)(eth_dev)->data->dev_private;
+ 	union otx_ep_mbox_word cmd;
+ 	union otx_ep_mbox_word rsp;
+ 	int ret;
+@@ -312,15 +320,78 @@ int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev)
+ 	if (ret == OTX_EP_MBOX_CMD_STATUS_NACK || rsp.s_version.version == 0) {
+ 		otx_ep_dbg("VF Mbox version fallback to base version from:%u\n",
+ 			(uint32_t)cmd.s_version.version);
+-		return 0;
++		return;
+ 	}
+ 	otx_ep->mbox_neg_ver = (uint32_t)rsp.s_version.version;
+ 	otx_ep_dbg("VF Mbox version:%u Negotiated VF version with PF:%u\n",
+ 		    (uint32_t)cmd.s_version.version,
+ 		    (uint32_t)rsp.s_version.version);
++}
++
++static void
++otx_ep_mbox_intr_handler(void *param)
++{
++	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)param;
++	struct otx_ep_device *otx_ep = (struct otx_ep_device *)eth_dev->data->dev_private;
++	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(eth_dev);
++	union otx_ep_mbox_word mbox_cmd;
++
++	if (otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0)) & CNXK_EP_MBOX_INTR) {
++		mbox_cmd.u64 = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_DATA(0));
++		otx2_write64(CNXK_EP_MBOX_ENAB | CNXK_EP_MBOX_INTR,
++			     otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0));
++		if (mbox_cmd.s.opcode == OTX_EP_MBOX_NOTIF_PF_FLR) {
++			rte_spinlock_lock(&otx_ep->mbox_lock);
++			mbox_cmd.s.type = OTX_EP_MBOX_TYPE_RSP_ACK;
++			otx2_write64(mbox_cmd.u64, otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_DATA(0));
++			rte_spinlock_unlock(&otx_ep->mbox_lock);
++			rte_dev_event_callback_process(pdev->name, RTE_DEV_EVENT_REMOVE);
++		} else {
++			otx_ep_err("Invalid mbox opcode");
++		}
++	}
++}
++
++int
++otx_ep_mbox_init(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_ep = (struct otx_ep_device *)eth_dev->data->dev_private;
++	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(eth_dev);
++	uint64_t reg_val;
++
++	otx_ep_mbox_version_check(otx_ep);
++
++	rte_intr_callback_register(pdev->intr_handle, otx_ep_mbox_intr_handler, (void *)eth_dev);
++
++	if (rte_intr_enable(pdev->intr_handle)) {
++		otx_ep_err("rte_intr_enable failed");
++		return -1;
++	}
++
++	reg_val = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
++
++	/* Enable pf-vf mbox interrupt & clear the status */
++	otx2_write64(CNXK_EP_MBOX_ENAB | CNXK_EP_MBOX_INTR,
++		     otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0));
++
+ 	return 0;
+ }
+ 
++void
++otx_ep_mbox_uninit(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_ep = (struct otx_ep_device *)eth_dev->data->dev_private;
++	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(eth_dev);
++
++	otx2_write64(0, otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0));
++
++	rte_intr_disable(pdev->intr_handle);
++
++	rte_intr_callback_unregister(pdev->intr_handle, otx_ep_mbox_intr_handler, (void *)eth_dev);
++}
++
+ int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev)
+ {
+ 	struct otx_ep_device *otx_ep =
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.h b/drivers/net/octeon_ep/otx_ep_mbox.h
+index a3fc15cca7dd4..ec96e4edc5ecd 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.h
++++ b/drivers/net/octeon_ep/otx_ep_mbox.h
+@@ -11,9 +11,11 @@
+ enum octep_pfvf_mbox_version {
+ 	OTX_EP_MBOX_VERSION_V0,
+ 	OTX_EP_MBOX_VERSION_V1,
++	OTX_EP_MBOX_VERSION_V2,
++	OTX_EP_MBOX_VERSION_V3,
+ };
+ 
+-#define OTX_EP_MBOX_VERSION_CURRENT OTX_EP_MBOX_VERSION_V1
++#define OTX_EP_MBOX_VERSION_CURRENT OTX_EP_MBOX_VERSION_V3
+ 
+ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_VERSION,
+@@ -27,6 +29,10 @@ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_GET_LINK_STATUS,
+ 	OTX_EP_MBOX_CMD_GET_MTU,
+ 	OTX_EP_MBOX_CMD_DEV_REMOVE,
++	OTX_EP_MBOX_CMD_GET_FW_INFO,
++	OTX_EP_MBOX_CMD_SET_OFFLOADS,
++	OTX_EP_MBOX_NOTIF_LINK_STATUS,
++	OTX_EP_MBOX_NOTIF_PF_FLR,
+ 	OTX_EP_MBOX_CMD_MAX,
+ };
+ 
+@@ -165,6 +171,7 @@ int otx_ep_mbox_get_link_info(struct rte_eth_dev *eth_dev, struct rte_eth_link *
+ void otx_ep_mbox_enable_interrupt(struct otx_ep_device *otx_ep);
+ void otx_ep_mbox_disable_interrupt(struct otx_ep_device *otx_ep);
+ int otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev);
+-int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev);
+ int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev);
++int otx_ep_mbox_init(struct rte_eth_dev *eth_dev);
++void otx_ep_mbox_uninit(struct rte_eth_dev *eth_dev);
+ #endif
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index a4c0b0c5d1377..74ecd47d3e9d9 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -521,7 +521,7 @@ otx_ep_ring_doorbell(struct otx_ep_device *otx_ep __rte_unused,
+ static inline int
+ post_iqcmd(struct otx_ep_instr_queue *iq, uint8_t *iqcmd)
+ {
+-	uint8_t *iqptr;
++	uint8_t *iqptr, cmdsize;
+ 
+ 	/* This ensures that the read index does not wrap around to
+ 	 * the same position if queue gets full before OCTEON 9 could
+@@ -531,8 +531,10 @@ post_iqcmd(struct otx_ep_instr_queue *iq, uint8_t *iqcmd)
+ 		return OTX_EP_IQ_SEND_FAILED;
+ 
+ 	/* Copy cmd into iq */
+-	iqptr = iq->base_addr + (iq->host_write_index * iq->desc_size);
+-	rte_memcpy(iqptr, iqcmd, iq->desc_size);
++	cmdsize = 64;
++	iqptr   = iq->base_addr + (iq->host_write_index << 6);
++
++	rte_memcpy(iqptr, iqcmd, cmdsize);
+ 
+ 	/* Increment the host write index */
+ 	iq->host_write_index =
+@@ -912,10 +914,11 @@ otx_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
+ 		next_fetch = (pkts == new_pkts - 1) ? 0 : 1;
+ 		oq_pkt = otx_ep_droq_read_packet(otx_ep, droq, next_fetch);
+ 		if (!oq_pkt) {
+-			otx_ep_dbg("DROQ read pkt failed pending 0x%016lx,"
+-				   " last_pkt_count 0x%016lx, new_pkts %d.\n",
+-				   (unsigned long)droq->pkts_pending,
+-				   (unsigned long)droq->last_pkt_count, new_pkts);
++			RTE_LOG_DP(ERR, PMD,
++				   "DROQ read pkt failed pending 0x%016lx,"
++				    "last_pkt_count 0x%016lx new_pkts %d.\n",
++				   droq->pkts_pending, droq->last_pkt_count,
++				   new_pkts);
+ 			droq->stats.rx_err++;
+ 			continue;
+ 		} else {
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.h b/drivers/net/octeon_ep/otx_ep_rxtx.h
+index 152d9f4599cd9..6b3abe21b1f3a 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.h
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.h
+@@ -21,7 +21,7 @@
+ 
+ /* SDP_LENGTH_S specifies packet length and is of 8-byte size */
+ #define OTX_EP_INFO_SIZE 8
+-#define DROQ_REFILL_THRESHOLD 16
++#define DROQ_REFILL_THRESHOLD  64
+ #define OTX2_SDP_REQUEST_ISM   (0x1ULL << 63)
+ 
+ typedef uint32_t (*otx_ep_check_pkt_count_t)(void *queue);
+@@ -50,15 +50,11 @@ cnxk_ep_xmit_pkts_mseg(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ uint16_t
+ cnxk_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ 
+-#ifdef RTE_ARCH_X86
+ uint16_t
+ cnxk_ep_recv_pkts_sse(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ 
+-#ifdef CC_AVX2_SUPPORT
+ uint16_t
+ cnxk_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+-#endif
+-#endif
+ 
+ uint16_t
+ cnxk_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+@@ -66,15 +62,17 @@ cnxk_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budge
+ uint16_t
+ cn9k_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ 
+-#ifdef RTE_ARCH_X86
++uint16_t
++cnxk_ep_recv_pkts_neon(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts);
++
+ uint16_t
+ cn9k_ep_recv_pkts_sse(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ 
+-#ifdef CC_AVX2_SUPPORT
+ uint16_t
+ cn9k_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+-#endif
+-#endif
++
++uint16_t
++cn9k_ep_recv_pkts_neon(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts);
+ 
+ uint16_t
+ cn9k_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+diff --git a/drivers/net/octeon_ep/otx_ep_vf.c b/drivers/net/octeon_ep/otx_ep_vf.c
+index 236b7a874c621..935f63e917103 100644
+--- a/drivers/net/octeon_ep/otx_ep_vf.c
++++ b/drivers/net/octeon_ep/otx_ep_vf.c
+@@ -410,6 +410,8 @@ otx_ep_vf_setup_device(struct otx_ep_device *otx_ep)
+ 
+ 	/* Get IOQs (RPVF] count */
+ 	reg_val = rte_read64(otx_ep->hw_addr + OTX_EP_R_IN_CONTROL(0));
++	if (reg_val == (uint64_t)-1)
++		return -ENODEV;
+ 
+ 	otx_ep->sriov_info.rings_per_vf = ((reg_val >> OTX_EP_R_IN_CTL_RPVF_POS)
+ 					  & OTX_EP_R_IN_CTL_RPVF_MASK);
+-- 
+2.25.1
+

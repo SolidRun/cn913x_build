@@ -1,0 +1,35 @@
+From 93939652b9f93e414ee7d632ff7ee6a153a15ea6 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 20 Dec 2022 13:01:11 +0530
+Subject: [PATCH 171/955] common/cnxk: skip L4 checks on inline IPsec traffic
+
+Skip L4 checks on inline IPsec traffic as even first fragment
+is set as valid ESP packet in order to send it via CPT.
+
+Change-Id: Iea55412e2c1bf175640613a08d3a96364cb1791e
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94003
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl_dev.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index b340b92e7759d..6f60961bc7ab6 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -13,9 +13,7 @@
+ #define NIX_INL_LF_RX_CFG                                                      \
+ 	(ROC_NIX_LF_RX_CFG_DROP_RE | ROC_NIX_LF_RX_CFG_L2_LEN_ERR |            \
+ 	 ROC_NIX_LF_RX_CFG_IP6_UDP_OPT | ROC_NIX_LF_RX_CFG_DIS_APAD |          \
+-	 ROC_NIX_LF_RX_CFG_CSUM_IL4 | ROC_NIX_LF_RX_CFG_CSUM_OL4 |             \
+-	 ROC_NIX_LF_RX_CFG_LEN_IL4 | ROC_NIX_LF_RX_CFG_LEN_IL3 |               \
+-	 ROC_NIX_LF_RX_CFG_LEN_OL4 | ROC_NIX_LF_RX_CFG_LEN_OL3)
++	 ROC_NIX_LF_RX_CFG_LEN_IL3 | ROC_NIX_LF_RX_CFG_LEN_OL3)
+ 
+ extern uint32_t soft_exp_consumer_cnt;
+ static bool soft_exp_poll_thread_exit = true;
+-- 
+2.25.1
+

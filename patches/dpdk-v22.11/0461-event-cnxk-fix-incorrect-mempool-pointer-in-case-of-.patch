@@ -1,0 +1,40 @@
+From cd50dac5c7f7e796153de0f83e473a9527f0e666 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Thu, 18 May 2023 11:28:19 +0530
+Subject: [PATCH 461/955] event/cnxk: fix incorrect mempool pointer in case of
+ OOP mode
+
+On cn10ka A0, Inline IPsec out of place mode test in eventmode is
+getting segfault due to incorrect mempool pointer is being set in
+mbuf in the post process. This patch fixes the same.
+
+Fixes: 'cba952f3ce25 ("net/cnxk: support inline ingress out of place
+session")'
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Ibcf1e5c99100f8bc172531b996704d0663366265
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103643
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+---
+ drivers/event/cnxk/cn10k_worker.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index c84cc83e58d80..5efcafd76ab51 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -206,7 +206,7 @@ cn10k_sso_hws_post_process(struct cn10k_sso_hws *ws, uint64_t *u64,
+ 			meta_aura = mp ? mp->pool_id : m->pool->pool_id;
+ 
+ 			/* Update mempool pointer for full mode pkt */
+-			if ((flags & NIX_RX_REAS_F) && (cq_w1 & BIT(11)) &&
++			if (mp && (flags & NIX_RX_REAS_F) && (cq_w1 & BIT(11)) &&
+ 			    !((*(uint64_t *)cpth) & BIT(15)))
+ 				((struct rte_mbuf *)mbuf)->pool = mp;
+ 
+-- 
+2.25.1
+

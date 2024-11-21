@@ -1,0 +1,62 @@
+From 0363af107fd5a7fe65fc636dc77ed6685ebbec11 Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Thu, 14 Dec 2023 11:31:03 +0530
+Subject: [PATCH 101/513] net/cnxk: fix issue with RSS configuration for cnxk
+
+While creating a RSS rule, if no RSS types are specified,
+use RSS types from dev config.
+
+Fixes: bc778a17fa4 ("net/cnxk: support flow RSS")
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Change-Id: I9f4fcf8568871cbc02419252c9156c3891bc363b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118228
+Reviewed-by: Satheesh Paul Antonysamy <psatheesh@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/cnxk/cnxk_flow.c | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index 62fdbd72625d8..bea16ed196a16 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -83,15 +83,19 @@ npc_rss_action_validate(struct rte_eth_dev *eth_dev, const struct rte_flow_attr
+ }
+ 
+ static void
+-npc_rss_flowkey_get(struct cnxk_eth_dev *eth_dev,
+-		    const struct roc_npc_action *rss_action,
+-		    uint32_t *flowkey_cfg)
++npc_rss_flowkey_get(struct cnxk_eth_dev *eth_dev, const struct roc_npc_action *rss_action,
++		    uint32_t *flowkey_cfg, uint64_t default_rss_types)
+ {
+ 	const struct roc_npc_action_rss *rss;
++	uint64_t rss_types;
+ 
+ 	rss = (const struct roc_npc_action_rss *)rss_action->conf;
++	rss_types = rss->types;
++	/* If no RSS types are specified, use default one */
++	if (rss_types == 0)
++		rss_types = default_rss_types;
+ 
+-	*flowkey_cfg = cnxk_rss_ethdev_to_nix(eth_dev, rss->types, rss->level);
++	*flowkey_cfg = cnxk_rss_ethdev_to_nix(eth_dev, rss_types, rss->level);
+ }
+ 
+ static int
+@@ -273,7 +277,8 @@ cnxk_map_actions(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 				goto err_exit;
+ 			in_actions[i].type = ROC_NPC_ACTION_TYPE_RSS;
+ 			in_actions[i].conf = actions->conf;
+-			npc_rss_flowkey_get(dev, &in_actions[i], flowkey_cfg);
++			npc_rss_flowkey_get(dev, &in_actions[i], flowkey_cfg,
++					    eth_dev->data->dev_conf.rx_adv_conf.rss_conf.rss_hf);
+ 			break;
+ 
+ 		case RTE_FLOW_ACTION_TYPE_SECURITY:
+-- 
+2.25.1
+

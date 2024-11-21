@@ -1,0 +1,433 @@
+From b3bb78d153fed4c4cd4eafd2e4cbd23143535381 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Fri, 15 Dec 2023 17:30:41 +0530
+Subject: [PATCH 134/513] test/security: add TLS 1.2 data walkthrough test
+
+Add data walkthrough test for TLS 1.2.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I2a59929570dd29aa9a5ce03b7b84025c6bc3297b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118326
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c                     | 90 +++++++++++++++++--
+ app/test/test_cryptodev.h                     | 12 ++-
+ app/test/test_cryptodev_security_tls_record.c | 25 ++++--
+ app/test/test_cryptodev_security_tls_record.h | 41 ++++++++-
+ app/test/test_security_proto.c                | 17 ++++
+ app/test/test_security_proto.h                |  6 ++
+ 6 files changed, 171 insertions(+), 20 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index d05ec9deb177c..d7da9a1a5d2f7 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -858,6 +858,8 @@ ipsec_proto_testsuite_setup(void)
+ static int
+ tls_record_proto_testsuite_setup(void)
+ {
++	test_sec_proto_pattern_generate();
++
+ 	return sec_proto_testsuite_setup(RTE_SECURITY_PROTOCOL_TLS_RECORD);
+ }
+ 
+@@ -12006,14 +12008,30 @@ test_tls_record_proto_known_vec_read(const void *test_data)
+ static int
+ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ {
++	unsigned int i, nb_pkts = 1, pass_cnt = 0, payload_len, max_payload_len;
+ 	struct tls_record_test_data td_outb[TEST_SEC_PKTS_MAX];
+ 	struct tls_record_test_data td_inb[TEST_SEC_PKTS_MAX];
+-	unsigned int i, nb_pkts = 1, pass_cnt = 0;
+ 	int ret;
+ 
++	switch (flags->tls_version) {
++	case RTE_SECURITY_VERSION_TLS_1_2:
++		max_payload_len = TLS_1_2_RECORD_PLAINTEXT_MAX_LEN;
++		break;
++	case RTE_SECURITY_VERSION_TLS_1_3:
++		max_payload_len = TLS_1_3_RECORD_PLAINTEXT_MAX_LEN;
++		break;
++	case RTE_SECURITY_VERSION_DTLS_1_2:
++		max_payload_len = DTLS_1_2_RECORD_PLAINTEXT_MAX_LEN;
++		break;
++	default:
++		max_payload_len = 0;
++	}
++
+ 	for (i = 0; i < RTE_DIM(sec_alg_list); i++) {
++		payload_len = TLS_RECORD_PLAINTEXT_MIN_LEN;
++again:
+ 		test_tls_record_td_prepare(sec_alg_list[i].param1, sec_alg_list[i].param2, flags,
+-					   td_outb, nb_pkts);
++					   td_outb, nb_pkts, payload_len);
+ 
+ 		ret = test_tls_record_proto_process(td_outb, td_inb, nb_pkts, true, flags);
+ 		if (ret == TEST_SKIPPED)
+@@ -12031,6 +12049,9 @@ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ 		if (ret == TEST_FAILED)
+ 			return TEST_FAILED;
+ 
++		if (flags->data_walkthrough && (++payload_len <= max_payload_len))
++			goto again;
++
+ 		if (flags->display_alg)
+ 			test_sec_alg_display(sec_alg_list[i].param1, sec_alg_list[i].param2);
+ 
+@@ -12044,22 +12065,69 @@ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ }
+ 
+ static int
+-test_tls_record_proto_display_list(void)
++test_tls_1_2_record_proto_data_walkthrough(void)
++{
++	struct tls_record_test_flags flags;
++
++	memset(&flags, 0, sizeof(flags));
++
++	flags.data_walkthrough = true;
++	flags.tls_version = RTE_SECURITY_VERSION_TLS_1_2;
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_tls_1_2_record_proto_display_list(void)
+ {
+ 	struct tls_record_test_flags flags;
+ 
+ 	memset(&flags, 0, sizeof(flags));
+ 
+ 	flags.display_alg = true;
++	flags.tls_version = RTE_SECURITY_VERSION_TLS_1_2;
+ 
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
+ static int
+-test_tls_record_proto_sgl(void)
++test_tls_1_2_record_proto_sgl(void)
+ {
+ 	struct tls_record_test_flags flags = {
+-		.nb_segs_in_mbuf = 5
++		.nb_segs_in_mbuf = 5,
++		.tls_version = RTE_SECURITY_VERSION_TLS_1_2
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++	if (!(dev_info.feature_flags & RTE_CRYPTODEV_FF_IN_PLACE_SGL)) {
++		printf("Device doesn't support in-place scatter-gather. Test Skipped.\n");
++		return TEST_SKIPPED;
++	}
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_dtls_1_2_record_proto_display_list(void)
++{
++	struct tls_record_test_flags flags;
++
++	memset(&flags, 0, sizeof(flags));
++
++	flags.display_alg = true;
++	flags.tls_version = RTE_SECURITY_VERSION_DTLS_1_2;
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_dtls_1_2_record_proto_sgl(void)
++{
++	struct tls_record_test_flags flags = {
++		.nb_segs_in_mbuf = 5,
++		.tls_version = RTE_SECURITY_VERSION_DTLS_1_2
+ 	};
+ 	struct crypto_testsuite_params *ts_params = &testsuite_params;
+ 	struct rte_cryptodev_info dev_info;
+@@ -17109,11 +17177,15 @@ static struct unit_test_suite tls12_record_proto_testsuite  = {
+ 		TEST_CASE_NAMED_ST(
+ 			"Combined test alg list",
+ 			ut_setup_security, ut_teardown,
+-			test_tls_record_proto_display_list),
++			test_tls_1_2_record_proto_display_list),
++		TEST_CASE_NAMED_ST(
++			"Data walkthrough combined test alg list",
++			ut_setup_security, ut_teardown,
++			test_tls_1_2_record_proto_data_walkthrough),
+ 		TEST_CASE_NAMED_ST(
+ 			"Multi-segmented mode",
+ 			ut_setup_security, ut_teardown,
+-			test_tls_record_proto_sgl),
++			test_tls_1_2_record_proto_sgl),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+@@ -17210,11 +17282,11 @@ static struct unit_test_suite dtls12_record_proto_testsuite  = {
+ 		TEST_CASE_NAMED_ST(
+ 			"Combined test alg list",
+ 			ut_setup_security, ut_teardown,
+-			test_tls_record_proto_display_list),
++			test_dtls_1_2_record_proto_display_list),
+ 		TEST_CASE_NAMED_ST(
+ 			"Multi-segmented mode",
+ 			ut_setup_security, ut_teardown,
+-			test_tls_record_proto_sgl),
++			test_dtls_1_2_record_proto_sgl),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev.h b/app/test/test_cryptodev.h
+index f27d9697fd4fd..e4e99d00c1f52 100644
+--- a/app/test/test_cryptodev.h
++++ b/app/test/test_cryptodev.h
+@@ -5,6 +5,9 @@
+ #define TEST_CRYPTODEV_H_
+ 
+ #include <rte_cryptodev.h>
++#ifdef RTE_LIB_SECURITY
++#include "test_security_proto.h"
++#endif
+ 
+ #define HEX_DUMP 0
+ 
+@@ -21,9 +24,16 @@
+ #define DEFAULT_NUM_XFORMS              (2)
+ #define NUM_MBUFS                       (8191)
+ #define MBUF_CACHE_SIZE                 (256)
++
++#ifdef RTE_LIB_SECURITY
++#define MBUF_DATAPAYLOAD_SIZE		RTE_MAX((unsigned int)(4096 + DIGEST_BYTE_LENGTH_SHA512), \
++						TEST_SEC_CIPHERTEXT_MAX_LEN)
++#else
+ #define MBUF_DATAPAYLOAD_SIZE		(4096 + DIGEST_BYTE_LENGTH_SHA512)
++#endif
++
+ #define MBUF_SIZE			(sizeof(struct rte_mbuf) + \
+-		RTE_PKTMBUF_HEADROOM + MBUF_DATAPAYLOAD_SIZE)
++					RTE_PKTMBUF_HEADROOM + MBUF_DATAPAYLOAD_SIZE)
+ 
+ #define BYTE_LENGTH(x)				(x/8)
+ /* HASH DIGEST LENGTHS */
+diff --git a/app/test/test_cryptodev_security_tls_record.c b/app/test/test_cryptodev_security_tls_record.c
+index 14a7a2511e4de..3745c6a0d13b2 100644
+--- a/app/test/test_cryptodev_security_tls_record.c
++++ b/app/test/test_cryptodev_security_tls_record.c
+@@ -62,7 +62,8 @@ test_tls_record_td_read_from_write(const struct tls_record_test_data *td_out,
+ void
+ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypto_param *param2,
+ 			   const struct tls_record_test_flags *flags,
+-			   struct tls_record_test_data *td_array, int nb_td)
++			   struct tls_record_test_data *td_array,
++			   int nb_td, unsigned int data_len)
+ {
+ 	int i, min_padding, hdr_len, tls_pkt_size, mac_len = 0, exp_nonce_len = 0, roundup_len = 0;
+ 	struct tls_record_test_data *td = NULL;
+@@ -76,7 +77,10 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 
+ 		if (param1->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
+ 			/* Copy template for packet & key fields */
+-			memcpy(td, &tls_test_data_aes_128_gcm_v1, sizeof(*td));
++			if (flags->tls_version == RTE_SECURITY_VERSION_DTLS_1_2)
++				memcpy(td, &dtls_test_data_aes_128_gcm, sizeof(*td));
++			else
++				memcpy(td, &tls_test_data_aes_128_gcm_v1, sizeof(*td));
+ 
+ 			td->aead = true;
+ 			td->xform.aead.aead.algo = param1->alg.aead;
+@@ -84,7 +88,10 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 			td->xform.aead.aead.digest_length = param1->digest_length;
+ 		} else {
+ 			/* Copy template for packet & key fields */
+-			memcpy(td, &tls_test_data_aes_128_cbc_sha1_hmac, sizeof(*td));
++			if (flags->tls_version == RTE_SECURITY_VERSION_DTLS_1_2)
++				memcpy(td, &dtls_test_data_aes_128_cbc_sha1_hmac, sizeof(*td));
++			else
++				memcpy(td, &tls_test_data_aes_128_cbc_sha1_hmac, sizeof(*td));
+ 
+ 			td->aead = false;
+ 			td->xform.chain.cipher.cipher.algo = param1->alg.cipher;
+@@ -96,6 +103,11 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 		}
+ 	}
+ 
++	if (flags->data_walkthrough) {
++		test_sec_proto_pattern_set(td->input_text.data, data_len);
++		td->input_text.len = data_len;
++	}
++
+ 	tls_pkt_size = td->input_text.len;
+ 
+ 	if (!td->aead) {
+@@ -221,6 +233,7 @@ test_tls_record_res_d_prepare(const uint8_t *output_text, uint32_t len,
+ 
+ 	return TEST_SUCCESS;
+ }
++
+ static int
+ tls_record_hdr_verify(const struct tls_record_test_data *td, const uint8_t *output_text)
+ {
+@@ -280,13 +293,13 @@ int
+ test_tls_record_post_process(const struct rte_mbuf *m, const struct tls_record_test_data *td,
+ 			     struct tls_record_test_data *res_d, bool silent)
+ {
++	uint8_t output_text[TEST_SEC_CIPHERTEXT_MAX_LEN];
+ 	uint32_t len = rte_pktmbuf_pkt_len(m), data_len;
+-	uint8_t output_text[TLS_RECORD_MAX_LEN];
+ 	const struct rte_mbuf *seg;
+ 	const uint8_t *output;
+ 	int ret;
+ 
+-	memset(output_text, 0, TLS_RECORD_MAX_LEN);
++	memset(output_text, 0, TEST_SEC_CIPHERTEXT_MAX_LEN);
+ 
+ 	/*
+ 	 * Actual data in packet might be less in error cases, hence take minimum of pkt_len and sum
+@@ -300,7 +313,7 @@ test_tls_record_post_process(const struct rte_mbuf *m, const struct tls_record_t
+ 	}
+ 
+ 	len = RTE_MIN(len, data_len);
+-	TEST_ASSERT(len <= TLS_RECORD_MAX_LEN, "Invalid packet length: %u", len);
++	TEST_ASSERT(len <= TEST_SEC_CIPHERTEXT_MAX_LEN, "Invalid packet length: %u", len);
+ 
+ 	/* Copy mbuf payload to continuous buffer */
+ 	output = rte_pktmbuf_read(m, 0, len, output_text);
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+index 0bd83f88f0945..14f73a5073e12 100644
+--- a/app/test/test_cryptodev_security_tls_record.h
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -10,7 +10,37 @@
+ 
+ #include "test_security_proto.h"
+ 
+-#define TLS_RECORD_MAX_LEN 16384u
++/* TLS 1.2 Ciphertext length can be up to (2^14 + 2048 + 5 (TLS Header)) Bytes */
++#define TLS_1_2_RECORD_CIPHERTEXT_MAX_LEN  (18437u)
++static_assert(TLS_1_2_RECORD_CIPHERTEXT_MAX_LEN <= TEST_SEC_CIPHERTEXT_MAX_LEN,
++	      "TEST_SEC_CIPHERTEXT_MAX_LEN should be at least RECORD MAX LEN!");
++
++/* TLS 1.2 Plaintext length can be up to (2^14 + 1024) Bytes */
++#define TLS_1_2_RECORD_PLAINTEXT_MAX_LEN   (17408u)
++static_assert(TLS_1_2_RECORD_PLAINTEXT_MAX_LEN <= TEST_SEC_CLEARTEXT_MAX_LEN,
++	      "TEST_SEC_CLEARTEXT_MAX_LEN should be at least RECORD MAX LEN!");
++
++/* DTLS 1.2 Ciphertext length is similar to TLS 1.2 */
++#define DTLS_1_2_RECORD_CIPHERTEXT_MAX_LEN (18437u)
++static_assert(DTLS_1_2_RECORD_CIPHERTEXT_MAX_LEN <= TEST_SEC_CIPHERTEXT_MAX_LEN,
++	      "TEST_SEC_CIPHERTEXT_MAX_LEN should be at least RECORD MAX LEN!");
++
++/* DTLS 1.2 Plaintext length is similar to TLS 1.2 */
++#define DTLS_1_2_RECORD_PLAINTEXT_MAX_LEN  (17408u)
++static_assert(DTLS_1_2_RECORD_PLAINTEXT_MAX_LEN <= TEST_SEC_CLEARTEXT_MAX_LEN,
++	      "TEST_SEC_CLEARTEXT_MAX_LEN should be at least RECORD MAX LEN!");
++
++/* TLS 1.3 Ciphertext length can be up to (2^14 + 256 + 5 (TLS Header)) Bytes */
++#define TLS_1_3_RECORD_CIPHERTEXT_MAX_LEN  (16645u)
++static_assert(TLS_1_3_RECORD_CIPHERTEXT_MAX_LEN <= TEST_SEC_CIPHERTEXT_MAX_LEN,
++	      "TEST_SEC_CIPHERTEXT_MAX_LEN should be at least RECORD MAX LEN!");
++
++/* TLS 1.3 Plaintext length can be up to 2^14 Bytes */
++#define TLS_1_3_RECORD_PLAINTEXT_MAX_LEN   (16384u)
++static_assert(TLS_1_3_RECORD_PLAINTEXT_MAX_LEN <= TEST_SEC_CLEARTEXT_MAX_LEN,
++	      "TEST_SEC_CLEARTEXT_MAX_LEN should be at least RECORD MAX LEN!");
++
++#define TLS_RECORD_PLAINTEXT_MIN_LEN       (1u)
+ 
+ struct tls_record_test_data {
+ 	struct {
+@@ -22,12 +52,12 @@ struct tls_record_test_data {
+ 	} auth_key;
+ 
+ 	struct {
+-		uint8_t data[TLS_RECORD_MAX_LEN];
++		uint8_t data[TEST_SEC_CIPHERTEXT_MAX_LEN];
+ 		unsigned int len;
+ 	} input_text;
+ 
+ 	struct {
+-		uint8_t data[TLS_RECORD_MAX_LEN];
++		uint8_t data[TEST_SEC_CIPHERTEXT_MAX_LEN];
+ 		unsigned int len;
+ 	} output_text;
+ 
+@@ -56,6 +86,8 @@ struct tls_record_test_data {
+ struct tls_record_test_flags {
+ 	bool display_alg;
+ 	int nb_segs_in_mbuf;
++	bool data_walkthrough;
++	enum rte_security_tls_version tls_version;
+ };
+ 
+ extern struct tls_record_test_data tls_test_data_aes_128_gcm_v1;
+@@ -89,7 +121,8 @@ void test_tls_record_td_read_from_write(const struct tls_record_test_data *td_ou
+ void test_tls_record_td_prepare(const struct crypto_param *param1,
+ 				const struct crypto_param *param2,
+ 				const struct tls_record_test_flags *flags,
+-				struct tls_record_test_data *td_array, int nb_td);
++				struct tls_record_test_data *td_array, int nb_td,
++				unsigned int data_len);
+ 
+ void test_tls_record_td_update(struct tls_record_test_data td_inb[],
+ 			       const struct tls_record_test_data td_outb[], int nb_td,
+diff --git a/app/test/test_security_proto.c b/app/test/test_security_proto.c
+index d242c852af3f5..cf40d5fc9a2da 100644
+--- a/app/test/test_security_proto.c
++++ b/app/test/test_security_proto.c
+@@ -13,6 +13,8 @@ struct crypto_param_comb sec_alg_list[RTE_DIM(aead_list) +
+ 
+ struct crypto_param_comb sec_auth_only_alg_list[2 * (RTE_DIM(auth_list) - 1)];
+ 
++static uint8_t cleartext_pattern[TEST_SEC_CLEARTEXT_MAX_LEN];
++
+ void
+ test_sec_alg_list_populate(void)
+ {
+@@ -152,3 +154,18 @@ test_sec_alg_display(const struct crypto_param *param1, const struct crypto_para
+ 	}
+ 	printf("\n");
+ }
++
++void
++test_sec_proto_pattern_generate(void)
++{
++	unsigned int i;
++
++	for (i = 0; i < TEST_SEC_CLEARTEXT_MAX_LEN; i++)
++		cleartext_pattern[i] = (i + 1) & 0xff;
++}
++
++void
++test_sec_proto_pattern_set(uint8_t *buf, int len)
++{
++	rte_memcpy(buf, cleartext_pattern, len);
++}
+diff --git a/app/test/test_security_proto.h b/app/test/test_security_proto.h
+index 5b92daa81070b..c737443081814 100644
+--- a/app/test/test_security_proto.h
++++ b/app/test/test_security_proto.h
+@@ -8,6 +8,8 @@
+ #include <rte_cryptodev.h>
+ #include <rte_security.h>
+ 
++#define TEST_SEC_CLEARTEXT_MAX_LEN  (17408u)
++#define TEST_SEC_CIPHERTEXT_MAX_LEN (18437u)
+ #define TEST_SEC_PKTS_MAX 32
+ 
+ struct crypto_param {
+@@ -186,4 +188,8 @@ int test_sec_crypto_caps_auth_verify(const struct rte_security_capability *sec_c
+ 
+ void test_sec_alg_display(const struct crypto_param *param1, const struct crypto_param *param2);
+ 
++void test_sec_proto_pattern_generate(void);
++
++void test_sec_proto_pattern_set(uint8_t *buf, int len);
++
+ #endif
+-- 
+2.25.1
+

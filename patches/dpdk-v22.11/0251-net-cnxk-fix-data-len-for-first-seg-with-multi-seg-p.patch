@@ -1,0 +1,94 @@
+From 96c08e1a4d0d9cc50562f324bc856c75d63994b7 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 24 Feb 2023 16:58:29 +0530
+Subject: [PATCH 251/955] net/cnxk: fix data len for first seg with multi seg
+ pkt
+
+When coming from vector routine, the first seg length is
+set to same as pkt len assuming it is a single segment pkt.
+Read just the same in cn10k_nix_prepare_mseg() that is called
+in case of mbuf-fast-free offload disabled.
+In CN9K, clear other data len fields to avoid using stale data.
+
+Fixes: 5fb7f5e66ebe ("net/cnxk: rework no-fast-free offload handling")
+Fixes: ae2c2cb60635 ("net/cnxk: avoid command copy from Tx queue")
+
+Change-Id: Ib89c9a9ddc792e3a5822d2ec8344627308d1d024
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97837
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_tx.h | 24 +++++++++++++++++++-----
+ drivers/net/cnxk/cn9k_tx.h  |  1 +
+ 2 files changed, 20 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index e25ebf5a19271..4d24ad1a16a70 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -1066,9 +1066,13 @@ cn10k_nix_prepare_mseg(struct cn10k_eth_txq *txq,
+ 		ol_flags = m->ol_flags;
+ 
+ 	/* Start from second segment, first segment is already there */
++	dlen = m->data_len;
+ 	is_sg2 = 0;
+ 	l_sg.u = sg->u;
+-	len -= l_sg.u & 0xFFFF;
++	/* Clear l_sg.u first seg length that might be stale from vector path */
++	l_sg.u &= ~0xFFFFUL;
++	l_sg.u |= dlen;
++	len -= dlen;
+ 	nb_segs = m->nb_segs - 1;
+ 	m_next = m->next;
+ 	slist = &cmd[3 + off + 1];
+@@ -1994,7 +1998,7 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 	uint64x2_t xtmp128, ytmp128;
+ 	uint64x2_t xmask01, xmask23;
+ 	uintptr_t c_laddr = laddr;
+-	uint8_t lnum, shift, loff;
++	uint8_t lnum, shift, loff = 0;
+ 	rte_iova_t c_io_addr;
+ 	uint64_t sa_base;
+ 	union wdata {
+@@ -2113,10 +2117,20 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 					    !!(flags & NIX_TX_OFFLOAD_TSTAMP_F);
+ 			}
+ 
+-			/* Check if there are enough LMTLINES for this loop */
+-			if (lnum + 4 > 32) {
++			/* Check if there are enough LMTLINES for this loop.
++			 * Consider previous line to be partial.
++			 */
++			if (lnum + 4 >= 32) {
+ 				uint8_t ldwords_con = 0, lneeded = 0;
+-				for (j = 0; j < NIX_DESCS_PER_LOOP; j++) {
++
++				if ((loff >> 4) + segdw[0] > 8) {
++					lneeded += 1;
++					ldwords_con = segdw[0];
++				} else {
++					ldwords_con = (loff >> 4) + segdw[0];
++				}
++
++				for (j = 1; j < NIX_DESCS_PER_LOOP; j++) {
+ 					ldwords_con += segdw[j];
+ 					if (ldwords_con > 8) {
+ 						lneeded += 1;
+diff --git a/drivers/net/cnxk/cn9k_tx.h b/drivers/net/cnxk/cn9k_tx.h
+index 09d777275beef..f096a9d69796e 100644
+--- a/drivers/net/cnxk/cn9k_tx.h
++++ b/drivers/net/cnxk/cn9k_tx.h
+@@ -461,6 +461,7 @@ cn9k_nix_prepare_mseg(struct cn9k_eth_txq *txq,
+ 	/* Start from second segment, first segment is already there */
+ 	i = 1;
+ 	sg_u = sg->u;
++	sg_u &= 0xFC0000000000FFFF;
+ 	nb_segs = m->nb_segs - 1;
+ 	m_next = m->next;
+ 	slist = &cmd[3 + off + 1];
+-- 
+2.25.1
+

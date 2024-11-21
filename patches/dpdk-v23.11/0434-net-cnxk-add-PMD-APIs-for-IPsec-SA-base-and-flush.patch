@@ -1,0 +1,255 @@
+From 67aace2d5728a20f299fe5d4093b5608a3f7001c Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Thu, 1 Aug 2024 17:02:42 +0530
+Subject: [PATCH 434/513] net/cnxk: add PMD APIs for IPsec SA base and flush
+
+Introduces new PMD APIs for Inline IPsec, including hardware SA
+flush and obtaining the base address for the inline device sa table.
+This allows applications to directly manage IPsec SAs.
+This patch also updates the rte_pmd_cnxk_hw_sa_read|write() API's to
+get use portid instead of device pointer as input.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Id3367ff8fb6ac242f9d4c562081e78fd3a4aa952
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132697
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.c  |  9 +++++
+ drivers/net/cnxk/cnxk_ethdev_sec.c | 64 ++++++++++++++++++++----------
+ drivers/net/cnxk/rte_pmd_cnxk.h    | 48 +++++++++++++++++++---
+ drivers/net/cnxk/version.map       |  2 +
+ 4 files changed, 97 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index d0328921a72d2..23ffd4391a027 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -1685,6 +1685,7 @@ roc_nix_inl_sa_sync(struct roc_nix *roc_nix, void *sa, bool inb,
+ 	struct roc_cpt_lf *outb_lf = NULL;
+ 	union cpt_lf_ctx_reload reload;
+ 	union cpt_lf_ctx_flush flush;
++	union cpt_lf_ctx_err err;
+ 	bool get_inl_lf = true;
+ 	uintptr_t rbase;
+ 	struct nix *nix;
+@@ -1726,6 +1727,14 @@ roc_nix_inl_sa_sync(struct roc_nix *roc_nix, void *sa, bool inb,
+ 		case ROC_NIX_INL_SA_OP_FLUSH:
+ 			flush.s.cptr = ((uintptr_t)sa) >> 7;
+ 			plt_write64(flush.u, rbase + CPT_LF_CTX_FLUSH);
++			plt_atomic_thread_fence(__ATOMIC_ACQ_REL);
++			/* Read a CSR to ensure that the FLUSH operation is complete */
++			err.u = plt_read64(rbase + CPT_LF_CTX_ERR);
++
++			if (err.s.flush_st_flt) {
++				plt_warn("CTX flush could not complete");
++				return -EIO;
++			}
+ 			break;
+ 		case ROC_NIX_INL_SA_OP_RELOAD:
+ 			reload.s.cptr = ((uintptr_t)sa) >> 7;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index cdd56568171de..ec129b658413f 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -297,47 +297,71 @@ cnxk_eth_sec_sess_get_by_sess(struct cnxk_eth_dev *dev,
+ 	return NULL;
+ }
+ 
++union rte_pmd_cnxk_ipsec_hw_sa *
++rte_pmd_cnxk_hw_session_base_get(uint16_t portid, bool inb)
++{
++	struct rte_eth_dev *eth_dev = &rte_eth_devices[portid];
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	uintptr_t sa_base;
++
++	if (inb)
++		sa_base = roc_nix_inl_inb_sa_base_get(&dev->nix, dev->inb.inl_dev);
++	else
++		sa_base = roc_nix_inl_outb_sa_base_get(&dev->nix);
++
++	return (union rte_pmd_cnxk_ipsec_hw_sa *)sa_base;
++}
++
+ int
+-rte_pmd_cnxk_hw_sa_read(void *device, void *__sess, union rte_pmd_cnxk_ipsec_hw_sa *data,
+-			uint32_t len)
++rte_pmd_cnxk_sa_flush(uint16_t portid, union rte_pmd_cnxk_ipsec_hw_sa *sess, bool inb)
+ {
+-	struct rte_security_session *sess = __sess;
+-	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
++	struct rte_eth_dev *eth_dev = &rte_eth_devices[portid];
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	return roc_nix_inl_sa_sync(&dev->nix, sess, inb, ROC_NIX_INL_SA_OP_FLUSH);
++}
++
++int
++rte_pmd_cnxk_hw_sa_read(uint16_t portid, void *sess, union rte_pmd_cnxk_ipsec_hw_sa *data,
++			uint32_t len, bool inb)
++{
++	struct rte_eth_dev *eth_dev = &rte_eth_devices[portid];
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	struct cnxk_eth_sec_sess *eth_sec;
++	void *sa;
+ 	int rc;
+ 
+ 	eth_sec = cnxk_eth_sec_sess_get_by_sess(dev, sess);
+-	if (eth_sec == NULL)
+-		return -EINVAL;
++	if (eth_sec)
++		sa = eth_sec->sa;
++	else
++		sa = sess;
+ 
+-	rc = roc_nix_inl_sa_sync(&dev->nix, eth_sec->sa, eth_sec->inb, ROC_NIX_INL_SA_OP_FLUSH);
++	rc = roc_nix_inl_sa_sync(&dev->nix, sa, inb, ROC_NIX_INL_SA_OP_FLUSH);
+ 	if (rc)
+ 		return -EINVAL;
+-	rte_delay_ms(1);
+-	memcpy(data, eth_sec->sa, len);
++
++	memcpy(data, sa, len);
+ 
+ 	return 0;
+ }
+ 
+ int
+-rte_pmd_cnxk_hw_sa_write(void *device, void *__sess, union rte_pmd_cnxk_ipsec_hw_sa *data,
+-			 uint32_t len)
++rte_pmd_cnxk_hw_sa_write(uint16_t portid, void *sess, union rte_pmd_cnxk_ipsec_hw_sa *data,
++			 uint32_t len, bool inb)
+ {
+-	struct rte_security_session *sess = __sess;
+-	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
++	struct rte_eth_dev *eth_dev = &rte_eth_devices[portid];
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	struct cnxk_eth_sec_sess *eth_sec;
+-	int rc = -EINVAL;
++	void *sa;
+ 
+ 	eth_sec = cnxk_eth_sec_sess_get_by_sess(dev, sess);
+-	if (eth_sec == NULL)
+-		return rc;
+-	rc = roc_nix_inl_ctx_write(&dev->nix, data, eth_sec->sa, eth_sec->inb, len);
+-	if (rc)
+-		return rc;
++	if (eth_sec)
++		sa = eth_sec->sa;
++	else
++		sa = sess;
+ 
+-	return 0;
++	return roc_nix_inl_ctx_write(&dev->nix, data, sa, inb, len);
+ }
+ 
+ union rte_pmd_cnxk_cpt_res_s *
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index 71b0c2b9d45bc..aefa5c92a0c62 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -480,7 +480,7 @@ union rte_pmd_cnxk_cpt_res_s {
+ /**
+  * Read HW SA context from session.
+  *
+- * @param device
++ * @param portid
+  *   Port identifier of Ethernet device.
+  * @param sess
+  *   Handle of the security session as void *.
+@@ -488,17 +488,19 @@ union rte_pmd_cnxk_cpt_res_s {
+  *   Destination pointer to copy SA context for application.
+  * @param len
+  *   Length of SA context to copy into data parameter.
++ * @param inb
++ *   Determines the type of specified SA.
+  *
+  * @return
+  *   0 on success, a negative errno value otherwise.
+  */
+ __rte_experimental
+-int rte_pmd_cnxk_hw_sa_read(void *device, void *sess,
+-			    union rte_pmd_cnxk_ipsec_hw_sa *data, uint32_t len);
++int rte_pmd_cnxk_hw_sa_read(uint16_t portid, void *sess, union rte_pmd_cnxk_ipsec_hw_sa *data,
++			    uint32_t len, bool inb);
+ /**
+  * Write HW SA context to session.
+  *
+- * @param device
++ * @param portid
+  *   Port identifier of Ethernet device.
+  * @param sess
+  *   Handle of the security session as void *.
+@@ -506,13 +508,15 @@ int rte_pmd_cnxk_hw_sa_read(void *device, void *sess,
+  *   Source data pointer from application to copy SA context into session.
+  * @param len
+  *   Length of SA context to copy from data parameter.
++ * @param inb
++ *   Determines the type of specified SA.
+  *
+  * @return
+  *   0 on success, a negative errno value otherwise.
+  */
+ __rte_experimental
+-int rte_pmd_cnxk_hw_sa_write(void *device, void *sess,
+-			     union rte_pmd_cnxk_ipsec_hw_sa *data, uint32_t len);
++int rte_pmd_cnxk_hw_sa_write(uint16_t portid, void *sess, union rte_pmd_cnxk_ipsec_hw_sa *data,
++			     uint32_t len, bool inb);
+ 
+ /**
+  * Get pointer to CPT result info for inline inbound processed pkt.
+@@ -530,4 +534,36 @@ int rte_pmd_cnxk_hw_sa_write(void *device, void *sess,
+  */
+ __rte_experimental
+ union rte_pmd_cnxk_cpt_res_s *rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf);
++
++/**
++ * Get pointer to the Inline Inbound or Outbound SA table base.
++ *
++ * @param portid
++ *   Port identifier of Ethernet device.
++ * @param inb
++ *   Determines the type of SA base to be returned.
++ *   When inb is true, the method returns the Inbound SA base.
++ *   When inb is false, the method returns the Outbound SA base.
++ *
++ * @return
++ *   Pointer to Inbound or Outbound SA base.
++ */
++__rte_experimental
++union rte_pmd_cnxk_ipsec_hw_sa *rte_pmd_cnxk_hw_session_base_get(uint16_t portid, bool inb);
++
++/**
++ * Executes a CPT flush on the specified session.
++ *
++ * @param portid
++ *   Port identifier of Ethernet device.
++ * @param sess
++ *   Handle of the session on which the CPT flush will be executed.
++ * @param inb
++ *   Determines the type of SA to be flushed, Inbound or Outbound.
++ *
++ * @return
++ *   0 upon success, a negative errno value otherwise.
++ */
++__rte_experimental
++int rte_pmd_cnxk_sa_flush(uint16_t portid, union rte_pmd_cnxk_ipsec_hw_sa *sess, bool inb);
+ #endif /* _PMD_CNXK_H_ */
+diff --git a/drivers/net/cnxk/version.map b/drivers/net/cnxk/version.map
+index 77f574bb1691c..18f841b4c8fcc 100644
+--- a/drivers/net/cnxk/version.map
++++ b/drivers/net/cnxk/version.map
+@@ -10,7 +10,9 @@ EXPERIMENTAL {
+ 	rte_pmd_cnxk_hw_sa_write;
+ 
+ 	# added in 23.11
++	rte_pmd_cnxk_hw_session_base_get;
+ 	rte_pmd_cnxk_inl_ipsec_res;
++	rte_pmd_cnxk_sa_flush;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

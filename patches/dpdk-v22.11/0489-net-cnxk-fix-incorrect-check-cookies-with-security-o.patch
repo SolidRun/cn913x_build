@@ -1,0 +1,74 @@
+From 72294a28cc5a5d36b41deaa3cbe1e7f6f987000a Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Sun, 4 Jun 2023 20:17:52 +0530
+Subject: [PATCH 489/955] net/cnxk: fix incorrect check cookies with security
+ offload
+
+Fix missing/incorrect check cookies call's with security offload
+enabled on Rx and Tx.
+
+Fixes: 55bfac717c72 ("net/cnxk: support Tx security offload on cn10k")
+Fixes: 0ed7107373b4 ("net/cnxk: remove duplicate mempool debug checks")
+
+Change-Id: Ibfb53d038a939d86dc9e7bc81812caca44ab2209
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104908
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_rx.h | 12 ++++++------
+ drivers/net/cnxk/cn10k_tx.h |  2 ++
+ 2 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_rx.h b/drivers/net/cnxk/cn10k_rx.h
+index 34fafe2998cf2..86526da153592 100644
+--- a/drivers/net/cnxk/cn10k_rx.h
++++ b/drivers/net/cnxk/cn10k_rx.h
+@@ -1337,6 +1337,12 @@ cn10k_nix_recv_pkts_vector(void *args, struct rte_mbuf **mbufs, uint16_t pkts,
+ 		mbuf2 = (struct rte_mbuf *)vgetq_lane_u64(mbuf23, 0);
+ 		mbuf3 = (struct rte_mbuf *)vgetq_lane_u64(mbuf23, 1);
+ 
++		/* Mark mempool obj as "get" as it is alloc'ed by NIX */
++		RTE_MEMPOOL_CHECK_COOKIES(mbuf0->pool, (void **)&mbuf0, 1, 1);
++		RTE_MEMPOOL_CHECK_COOKIES(mbuf1->pool, (void **)&mbuf1, 1, 1);
++		RTE_MEMPOOL_CHECK_COOKIES(mbuf2->pool, (void **)&mbuf2, 1, 1);
++		RTE_MEMPOOL_CHECK_COOKIES(mbuf3->pool, (void **)&mbuf3, 1, 1);
++
+ 		if (!(flags & NIX_RX_VWQE_F)) {
+ 			/* Mask to get packet len from NIX_RX_SG_S */
+ 			const uint8x16_t shuf_msk = {
+@@ -1882,12 +1888,6 @@ cn10k_nix_recv_pkts_vector(void *args, struct rte_mbuf **mbufs, uint16_t pkts,
+ 		vst1q_u64((uint64_t *)&mbufs[packets], mbuf01);
+ 		vst1q_u64((uint64_t *)&mbufs[packets + 2], mbuf23);
+ 
+-		/* Mark mempool obj as "get" as it is alloc'ed by NIX */
+-		RTE_MEMPOOL_CHECK_COOKIES(mbuf0->pool, (void **)&mbuf0, 1, 1);
+-		RTE_MEMPOOL_CHECK_COOKIES(mbuf1->pool, (void **)&mbuf1, 1, 1);
+-		RTE_MEMPOOL_CHECK_COOKIES(mbuf2->pool, (void **)&mbuf2, 1, 1);
+-		RTE_MEMPOOL_CHECK_COOKIES(mbuf3->pool, (void **)&mbuf3, 1, 1);
+-
+ 		nix_mbuf_validate_next(mbuf0);
+ 		nix_mbuf_validate_next(mbuf1);
+ 		nix_mbuf_validate_next(mbuf2);
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index a701a6e8b911b..b8cf28d6933f4 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -1966,10 +1966,12 @@ cn10k_nix_xmit_store(struct cn10k_eth_txq *txq,
+ 			vst1q_u64(LMT_OFF(laddr, 0, 16), cmd2);
+ 			vst1q_u64(LMT_OFF(laddr, 0, 32), cmd1);
+ 		}
++		RTE_MEMPOOL_CHECK_COOKIES(mbuf->pool, (void **)&mbuf, 1, 0);
+ 	} else {
+ 		/* Store the prepared send desc to LMT lines */
+ 		vst1q_u64(LMT_OFF(laddr, 0, 0), cmd0);
+ 		vst1q_u64(LMT_OFF(laddr, 0, 16), cmd1);
++		RTE_MEMPOOL_CHECK_COOKIES(mbuf->pool, (void **)&mbuf, 1, 0);
+ 	}
+ }
+ 
+-- 
+2.25.1
+

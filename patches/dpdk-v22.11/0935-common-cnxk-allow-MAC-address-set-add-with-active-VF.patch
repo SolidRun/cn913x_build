@@ -1,0 +1,50 @@
+From 07a639eab2b9089cc2ccf1598a831f6e8c907e0d Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Tue, 2 Jul 2024 15:43:25 +0530
+Subject: [PATCH 935/955] common/cnxk: allow MAC address set/add with active
+ VFs
+
+If device is in reconfigure state then it throws error while
+changing default MAC or adding new MAC in LMAC filter table
+if there are active VFs on a PF.
+
+Allowing MAC address set/add even active VFs are present on
+PF.
+
+Change-Id: Ib5ad7f67acd84ad893aa8adb7e63a50438533940
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_mac.c | 10 ----------
+ 1 file changed, 10 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_mac.c b/drivers/common/cnxk/roc_nix_mac.c
+index 0ffd05e4d4642..54db1adf171d3 100644
+--- a/drivers/common/cnxk/roc_nix_mac.c
++++ b/drivers/common/cnxk/roc_nix_mac.c
+@@ -91,11 +91,6 @@ roc_nix_mac_addr_set(struct roc_nix *roc_nix, const uint8_t addr[])
+ 		goto exit;
+ 	}
+ 
+-	if (dev_active_vfs(&nix->dev)) {
+-		rc = NIX_ERR_OP_NOTSUP;
+-		goto exit;
+-	}
+-
+ 	req = mbox_alloc_msg_cgx_mac_addr_set(mbox);
+ 	if (req == NULL)
+ 		goto exit;
+@@ -152,11 +147,6 @@ roc_nix_mac_addr_add(struct roc_nix *roc_nix, uint8_t addr[])
+ 		goto exit;
+ 	}
+ 
+-	if (dev_active_vfs(&nix->dev)) {
+-		rc = NIX_ERR_OP_NOTSUP;
+-		goto exit;
+-	}
+-
+ 	req = mbox_alloc_msg_cgx_mac_addr_add(mbox);
+ 	mbox_memcpy(req->mac_addr, addr, PLT_ETHER_ADDR_LEN);
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,394 @@
+From 0f6272df57c5214a52f02872544bbb5b111f495c Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Thu, 29 Feb 2024 12:51:55 +0000
+Subject: [PATCH 286/513] dma/odm: add device ops
+
+Add DMA device control ops.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Ie08d1026b182510c344a53cd1d99daabb8f195f7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122889
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/dma/odm/odm.c        | 144 ++++++++++++++++++++++++++++++++++-
+ drivers/dma/odm/odm.h        |  58 ++++++++++++++
+ drivers/dma/odm/odm_dmadev.c |  85 +++++++++++++++++++++
+ 3 files changed, 285 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/dma/odm/odm.c b/drivers/dma/odm/odm.c
+index c0963da451d58..6094ace9fdc6c 100644
+--- a/drivers/dma/odm/odm.c
++++ b/drivers/dma/odm/odm.c
+@@ -7,6 +7,7 @@
+ #include <bus_pci_driver.h>
+ 
+ #include <rte_io.h>
++#include <rte_malloc.h>
+ 
+ #include "odm.h"
+ #include "odm_priv.h"
+@@ -14,8 +15,15 @@
+ static void
+ odm_vchan_resc_free(struct odm_dev *odm, int qno)
+ {
+-	RTE_SET_USED(odm);
+-	RTE_SET_USED(qno);
++	struct odm_queue *vq = &odm->vq[qno];
++
++	rte_memzone_free(vq->iring_mz);
++	rte_memzone_free(vq->cring_mz);
++	rte_free(vq->extra_ins_sz);
++
++	vq->iring_mz = NULL;
++	vq->cring_mz = NULL;
++	vq->extra_ins_sz = NULL;
+ }
+ 
+ static int
+@@ -53,6 +61,138 @@ send_mbox_to_pf(struct odm_dev *odm, union odm_mbox_msg *msg, union odm_mbox_msg
+ 	return 0;
+ }
+ 
++static int
++odm_queue_ring_config(struct odm_dev *odm, int vchan, int isize, int csize)
++{
++	union odm_vdma_ring_cfg_s ring_cfg = {0};
++	struct odm_queue *vq = &odm->vq[vchan];
++
++	if (vq->iring_mz == NULL || vq->cring_mz == NULL)
++		return -EINVAL;
++
++	ring_cfg.s.isize = (isize / 1024) - 1;
++	ring_cfg.s.csize = (csize / 1024) - 1;
++
++	odm_write64(ring_cfg.u, odm->rbase + ODM_VDMA_RING_CFG(vchan));
++	odm_write64(vq->iring_mz->iova, odm->rbase + ODM_VDMA_IRING_BADDR(vchan));
++	odm_write64(vq->cring_mz->iova, odm->rbase + ODM_VDMA_CRING_BADDR(vchan));
++
++	return 0;
++}
++
++int
++odm_enable(struct odm_dev *odm)
++{
++	struct odm_queue *vq;
++	int qno, rc = 0;
++
++	for (qno = 0; qno < odm->num_qs; qno++) {
++		vq = &odm->vq[qno];
++
++		vq->desc_idx = vq->stats.completed_offset;
++		vq->pending_submit_len = 0;
++		vq->pending_submit_cnt = 0;
++		vq->iring_head = 0;
++		vq->cring_head = 0;
++		vq->ins_ring_head = 0;
++		vq->iring_sz_available = vq->iring_max_words;
++
++		rc = odm_queue_ring_config(odm, qno, vq->iring_max_words * 8,
++					   vq->cring_max_entry * 4);
++		if (rc < 0)
++			break;
++
++		odm_write64(0x1, odm->rbase + ODM_VDMA_EN(qno));
++	}
++
++	return rc;
++}
++
++int
++odm_disable(struct odm_dev *odm)
++{
++	int qno, wait_cnt = ODM_IRING_IDLE_WAIT_CNT;
++	uint64_t val;
++
++	/* Disable the queue and wait for the queue to became idle */
++	for (qno = 0; qno < odm->num_qs; qno++) {
++		odm_write64(0x0, odm->rbase + ODM_VDMA_EN(qno));
++		do {
++			val = odm_read64(odm->rbase + ODM_VDMA_IRING_BADDR(qno));
++		} while ((!(val & 1ULL << 63)) && (--wait_cnt > 0));
++	}
++
++	return 0;
++}
++
++int
++odm_vchan_setup(struct odm_dev *odm, int vchan, int nb_desc)
++{
++	struct odm_queue *vq = &odm->vq[vchan];
++	int isize, csize, max_nb_desc, rc = 0;
++	union odm_mbox_msg mbox_msg;
++	const struct rte_memzone *mz;
++	char name[32];
++
++	if (vq->iring_mz != NULL)
++		odm_vchan_resc_free(odm, vchan);
++
++	mbox_msg.u[0] = 0;
++	mbox_msg.u[1] = 0;
++
++	/* ODM PF driver expects vfid starts from index 0 */
++	mbox_msg.q.vfid = odm->vfid;
++	mbox_msg.q.cmd = ODM_QUEUE_OPEN;
++	mbox_msg.q.qidx = vchan;
++	rc = send_mbox_to_pf(odm, &mbox_msg, &mbox_msg);
++	if (rc < 0)
++		return rc;
++
++	/* Determine instruction & completion ring sizes. */
++
++	/* Create iring that can support nb_desc. Round up to a multiple of 1024. */
++	isize = RTE_ALIGN_CEIL(nb_desc * ODM_IRING_ENTRY_SIZE_MAX * 8, 1024);
++	isize = RTE_MIN(isize, ODM_IRING_MAX_SIZE);
++	snprintf(name, sizeof(name), "vq%d_iring%d", odm->vfid, vchan);
++	mz = rte_memzone_reserve_aligned(name, isize, 0, ODM_MEMZONE_FLAGS, 1024);
++	if (mz == NULL)
++		return -ENOMEM;
++	vq->iring_mz = mz;
++	vq->iring_max_words = isize / 8;
++
++	/* Create cring that can support max instructions that can be inflight in hw. */
++	max_nb_desc = (isize / (ODM_IRING_ENTRY_SIZE_MIN * 8));
++	csize = RTE_ALIGN_CEIL(max_nb_desc * sizeof(union odm_cmpl_ent_s), 1024);
++	snprintf(name, sizeof(name), "vq%d_cring%d", odm->vfid, vchan);
++	mz = rte_memzone_reserve_aligned(name, csize, 0, ODM_MEMZONE_FLAGS, 1024);
++	if (mz == NULL) {
++		rc = -ENOMEM;
++		goto iring_free;
++	}
++	vq->cring_mz = mz;
++	vq->cring_max_entry = csize / 4;
++
++	/* Allocate memory to track the size of each instruction. */
++	snprintf(name, sizeof(name), "vq%d_extra%d", odm->vfid, vchan);
++	vq->extra_ins_sz = rte_zmalloc(name, vq->cring_max_entry, 0);
++	if (vq->extra_ins_sz == NULL) {
++		rc = -ENOMEM;
++		goto cring_free;
++	}
++
++	vq->stats = (struct vq_stats){0};
++	return rc;
++
++cring_free:
++	rte_memzone_free(odm->vq[vchan].cring_mz);
++	vq->cring_mz = NULL;
++iring_free:
++	rte_memzone_free(odm->vq[vchan].iring_mz);
++	vq->iring_mz = NULL;
++
++	return rc;
++}
++
+ int
+ odm_dev_init(struct odm_dev *odm)
+ {
+diff --git a/drivers/dma/odm/odm.h b/drivers/dma/odm/odm.h
+index 49951b219d34d..40435242c864f 100644
+--- a/drivers/dma/odm/odm.h
++++ b/drivers/dma/odm/odm.h
+@@ -9,7 +9,9 @@
+ 
+ #include <rte_common.h>
+ #include <rte_compat.h>
++#include <rte_io.h>
+ #include <rte_log.h>
++#include <rte_memzone.h>
+ 
+ extern int odm_logtype;
+ 
+@@ -54,6 +56,14 @@ extern int odm_logtype;
+ 
+ #define ODM_MAX_QUEUES_PER_DEV 16
+ 
++#define ODM_IRING_MAX_SIZE	 (256 * 1024)
++#define ODM_IRING_ENTRY_SIZE_MIN 4
++#define ODM_IRING_ENTRY_SIZE_MAX 13
++#define ODM_IRING_MAX_WORDS	 (ODM_IRING_MAX_SIZE / 8)
++#define ODM_IRING_MAX_ENTRY	 (ODM_IRING_MAX_WORDS / ODM_IRING_ENTRY_SIZE_MIN)
++
++#define ODM_MAX_POINTER 4
++
+ #define odm_read64(addr)       rte_read64_relaxed((volatile void *)(addr))
+ #define odm_write64(val, addr) rte_write64_relaxed((val), (volatile void *)(addr))
+ 
+@@ -62,6 +72,10 @@ extern int odm_logtype;
+ #define odm_info(fmt, args...)                                                                     \
+ 	rte_log(RTE_LOG_INFO, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
+ 
++#define ODM_MEMZONE_FLAGS                                                                          \
++	(RTE_MEMZONE_1GB | RTE_MEMZONE_16MB | RTE_MEMZONE_16GB | RTE_MEMZONE_256MB |               \
++	 RTE_MEMZONE_512MB | RTE_MEMZONE_4GB | RTE_MEMZONE_SIZE_HINT_ONLY)
++
+ /**
+  * Structure odm_instr_hdr_s for ODM
+  *
+@@ -137,8 +151,48 @@ union odm_vdma_counts_s {
+ 	} s;
+ };
+ 
++struct vq_stats {
++	uint64_t submitted;
++	uint64_t completed;
++	uint64_t errors;
++	/*
++	 * Since stats.completed is used to return completion index, account for any packets
++	 * received before stats is reset.
++	 */
++	uint64_t completed_offset;
++};
++
++struct odm_queue {
++	struct odm_dev *dev;
++	/* Instructions that are prepared on the iring, but is not pushed to hw yet. */
++	uint16_t pending_submit_cnt;
++	/* Length (in words) of instructions that are not yet pushed to hw. */
++	uint16_t pending_submit_len;
++	uint16_t desc_idx;
++	/* Instruction ring head. Used for enqueue. */
++	uint16_t iring_head;
++	/* Completion ring head. Used for dequeue. */
++	uint16_t cring_head;
++	/* Extra instruction size ring head. Used in enqueue-dequeue.*/
++	uint16_t ins_ring_head;
++	/* Extra instruction size ring tail. Used in enqueue-dequeue.*/
++	uint16_t ins_ring_tail;
++	/* Instruction size available.*/
++	uint16_t iring_sz_available;
++	/* Number of 8-byte words in iring.*/
++	uint16_t iring_max_words;
++	/* Number of words in cring.*/
++	uint16_t cring_max_entry;
++	/* Extra instruction size used per inflight instruction.*/
++	uint8_t *extra_ins_sz;
++	struct vq_stats stats;
++	const struct rte_memzone *iring_mz;
++	const struct rte_memzone *cring_mz;
++};
++
+ struct odm_dev {
+ 	struct rte_pci_device *pci_dev;
++	struct odm_queue vq[ODM_MAX_QUEUES_PER_DEV];
+ 	uint8_t *rbase;
+ 	uint16_t vfid;
+ 	uint8_t max_qs;
+@@ -147,5 +201,9 @@ struct odm_dev {
+ 
+ int odm_dev_init(struct odm_dev *odm);
+ int odm_dev_fini(struct odm_dev *odm);
++int odm_configure(struct odm_dev *odm);
++int odm_enable(struct odm_dev *odm);
++int odm_disable(struct odm_dev *odm);
++int odm_vchan_setup(struct odm_dev *odm, int vchan, int nb_desc);
+ 
+ #endif /* _ODM_H_ */
+diff --git a/drivers/dma/odm/odm_dmadev.c b/drivers/dma/odm/odm_dmadev.c
+index bef335c10cb10..8c705978fe703 100644
+--- a/drivers/dma/odm/odm_dmadev.c
++++ b/drivers/dma/odm/odm_dmadev.c
+@@ -17,6 +17,87 @@
+ #define PCI_DEVID_ODYSSEY_ODM_VF 0xA08C
+ #define PCI_DRIVER_NAME		 dma_odm
+ 
++static int
++odm_dmadev_info_get(const struct rte_dma_dev *dev, struct rte_dma_info *dev_info, uint32_t size)
++{
++	struct odm_dev *odm = NULL;
++
++	RTE_SET_USED(size);
++
++	odm = dev->fp_obj->dev_private;
++
++	dev_info->max_vchans = odm->max_qs;
++	dev_info->nb_vchans = odm->num_qs;
++	dev_info->dev_capa =
++		(RTE_DMA_CAPA_MEM_TO_MEM | RTE_DMA_CAPA_OPS_COPY | RTE_DMA_CAPA_OPS_COPY_SG);
++	dev_info->max_desc = ODM_IRING_MAX_ENTRY;
++	dev_info->min_desc = 1;
++	dev_info->max_sges = ODM_MAX_POINTER;
++
++	return 0;
++}
++
++static int
++odm_dmadev_configure(struct rte_dma_dev *dev, const struct rte_dma_conf *conf, uint32_t conf_sz)
++{
++	struct odm_dev *odm = NULL;
++
++	RTE_SET_USED(conf_sz);
++
++	odm = dev->fp_obj->dev_private;
++	odm->num_qs = conf->nb_vchans;
++
++	return 0;
++}
++
++static int
++odm_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
++		       const struct rte_dma_vchan_conf *conf, uint32_t conf_sz)
++{
++	struct odm_dev *odm = dev->fp_obj->dev_private;
++
++	RTE_SET_USED(conf_sz);
++	return odm_vchan_setup(odm, vchan, conf->nb_desc);
++}
++
++static int
++odm_dmadev_start(struct rte_dma_dev *dev)
++{
++	struct odm_dev *odm = dev->fp_obj->dev_private;
++
++	return odm_enable(odm);
++}
++
++static int
++odm_dmadev_stop(struct rte_dma_dev *dev)
++{
++	struct odm_dev *odm = dev->fp_obj->dev_private;
++
++	return odm_disable(odm);
++}
++
++static int
++odm_dmadev_close(struct rte_dma_dev *dev)
++{
++	struct odm_dev *odm = dev->fp_obj->dev_private;
++
++	odm_disable(odm);
++	odm_dev_fini(odm);
++
++	return 0;
++}
++
++static const struct rte_dma_dev_ops odm_dmadev_ops = {
++	.dev_close = odm_dmadev_close,
++	.dev_configure = odm_dmadev_configure,
++	.dev_info_get = odm_dmadev_info_get,
++	.dev_start = odm_dmadev_start,
++	.dev_stop = odm_dmadev_stop,
++	.stats_get = NULL,
++	.stats_reset = NULL,
++	.vchan_setup = odm_dmadev_vchan_setup,
++};
++
+ static int
+ odm_dmadev_probe(struct rte_pci_driver *pci_drv __rte_unused, struct rte_pci_device *pci_dev)
+ {
+@@ -40,6 +121,10 @@ odm_dmadev_probe(struct rte_pci_driver *pci_drv __rte_unused, struct rte_pci_dev
+ 	odm_info("DMA device %s probed", name);
+ 	odm = dmadev->data->dev_private;
+ 
++	dmadev->device = &pci_dev->device;
++	dmadev->fp_obj->dev_private = odm;
++	dmadev->dev_ops = &odm_dmadev_ops;
++
+ 	odm->pci_dev = pci_dev;
+ 
+ 	rc = odm_dev_init(odm);
+-- 
+2.25.1
+

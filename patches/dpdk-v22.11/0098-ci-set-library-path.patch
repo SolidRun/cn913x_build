@@ -1,0 +1,67 @@
+From b189530b1e324e267a872246c6544a01f5e5f332 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Tue, 20 Dec 2022 15:28:22 +0530
+Subject: [PATCH 098/955] ci: set library path
+
+set LD_LIBRARY_PATH before executing command to find
+shared library.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ia92090d90c4b5ffbc93bb1abfc6efb5beb907873
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93136
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh     | 6 ++++--
+ marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh | 3 ++-
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+index 79bafb2700526..fb133846e2c53 100755
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+@@ -9,6 +9,8 @@ PLAT=${PLAT:-}
+ CNXKTESTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+ VFIO_DEVBIND="$1/marvell-ci/test/board/oxk-devbind-basic.sh"
+ 
++LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-"$1/deps/lib"}
++
+ source $CNXKTESTPATH/../common/testpmd/common.env
+ 
+ # Find the dpdk-ipsec-secgw application
+@@ -194,9 +196,9 @@ launch_gen() {
+ 	echo $START_STR ${test_name[$1]} >>$GEN_LOG_FULL
+ 	if [[ $WITH_GEN_BOARD -eq 1 ]] && [[ "${test_cmd[$idx]}" == "testpmd" ]]
+ 	then
+-	$remote_ssh "$SUDO PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=launch_basic $G_ENV $gen $GEN_ARG"
++	$remote_ssh "$SUDO LD_LIBRARY_PATH=$LD_LIBRARY_PATH PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=launch_basic $G_ENV $gen $GEN_ARG"
+ 	else
+-	$remote_ssh "$SUDO PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=launch $G_ENV $gen $GEN_ARG"
++	$remote_ssh "$SUDO LD_LIBRARY_PATH=$LD_LIBRARY_PATH PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=launch $G_ENV $gen $GEN_ARG"
+ 	fi
+ }
+ 
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+index 13c2e8786538d..6ef64d96f60e3 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+@@ -7,6 +7,7 @@ set -e
+ GENERATOR_BOARD=${GENERATOR_BOARD:-}
+ REMOTE_DIR=${REMOTE_DIR:-$(pwd | cut -d/ -f 1-3)}
+ CNXKTESTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
++LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-"$1/deps/lib"}
+ PKT_LIST="64 380 1410"
+ NUM_CAPTURE=3
+ MAX_TRY_CNT=5
+@@ -502,7 +503,7 @@ find_exec()
+ exec_testpmd_cmd_gen()
+ {
+ 	$TARGET_SSH_CMD $GENERATOR_BOARD "cd $REMOTE_DIR;" \
+-		"sudo TESTPMD_OP=$1 $(find_exec $GENERATOR_BOARD $GENERATOR_SCRIPT) $2 $3"
++		"sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH TESTPMD_OP=$1 $(find_exec $GENERATOR_BOARD $GENERATOR_SCRIPT) $2 $3"
+ }
+ 
+ function pmd_tx_launch()
+-- 
+2.25.1
+

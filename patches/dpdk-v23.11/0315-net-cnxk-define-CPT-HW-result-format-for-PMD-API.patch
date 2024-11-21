@@ -1,0 +1,92 @@
+From 5036892e686a261b112b385a4ac53427e08169d3 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Fri, 12 Apr 2024 17:01:02 +0530
+Subject: [PATCH 315/513] net/cnxk: define CPT HW result format for PMD API
+
+Defines CPT HW result format for PMD API,
+rte_pmd_cnxk_inl_ipsec_res().
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Ib0f037d381b880ad5b83ce63811022d9b8da7e51
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125354
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev_sec.c |  4 ++--
+ drivers/net/cnxk/rte_pmd_cnxk.h     | 28 ++++++++++++++++++++++++++--
+ 2 files changed, 28 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index eed4c29218416..b8b0da5ea91cd 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -1251,7 +1251,7 @@ rte_pmd_cnxk_hw_sa_write(void *device, struct rte_security_session *sess,
+ 	return 0;
+ }
+ 
+-void *
++union rte_pmd_cnxk_cpt_res_s *
+ rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf)
+ {
+ 	const union nix_rx_parse_u *rx;
+@@ -1265,7 +1265,7 @@ rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf)
+ 	rx = (const union nix_rx_parse_u *)(wqe + 8);
+ 	desc_size = (rx->desc_sizem1 + 1) * 16;
+ 
+-	/* cpt_res_s sits after SG list at 16B aligned address */
++	/* rte_pmd_cnxk_cpt_res_s sits after SG list at 16B aligned address */
+ 	return (void *)(wqe + 64 + desc_size);
+ }
+ 
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index 43f2a7ed9bc0c..67c8329abd3b7 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -453,6 +453,30 @@ union rte_pmd_cnxk_ipsec_hw_sa {
+ 	struct rte_pmd_cnxk_ipsec_outb_sa outb;
+ };
+ 
++/** CPT HW result format */
++union rte_pmd_cnxk_cpt_res_s {
++	struct rte_pmd_cpt_cn10k_res_s {
++		uint64_t compcode : 7;
++		uint64_t doneint : 1;
++		uint64_t uc_compcode : 8;
++		uint64_t rlen : 16;
++		uint64_t spi : 32;
++
++		uint64_t esn;
++	} cn10k;
++
++	struct rte_pmd_cpt_cn9k_res_s {
++		uint64_t compcode : 8;
++		uint64_t uc_compcode : 8;
++		uint64_t doneint : 1;
++		uint64_t reserved_17_63 : 47;
++
++		uint64_t reserved_64_127;
++	} cn9k;
++
++	uint64_t u64[2];
++};
++
+ /**
+  * Read HW SA context from session.
+  *
+@@ -501,9 +525,9 @@ int rte_pmd_cnxk_hw_sa_write(void *device, struct rte_security_session *sess,
+  *   Pointer to packet that was just received and was processed with Inline IPsec.
+  *
+  * @return
+- *   - Pointer to mbuf location where CPT result info is stored on success.
++ *   - Pointer to mbuf location where `union rte_pmd_cnxk_cpt_res_s` is stored on success.
+  *   - NULL on failure.
+  */
+ __rte_experimental
+-void *rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf);
++union rte_pmd_cnxk_cpt_res_s *rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf);
+ #endif /* _PMD_CNXK_H_ */
+-- 
+2.25.1
+

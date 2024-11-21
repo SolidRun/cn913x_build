@@ -1,0 +1,46 @@
+From 449535b6fc280c60578b228c8f1d732ab0802fa5 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Tue, 3 Jan 2023 11:28:37 +0530
+Subject: [PATCH 123/955] eventdev/eth_rx: fix return of rx adapter instance
+ get
+
+If PMD callback to get Rx adapter instance is not defined, adapter
+internal queue info can be used.
+
+Fixes: a1793ee8aba0 ("eventdev/eth_rx: add adapter instance get API")
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I41bda614d96f6bf520700f4b2691a329abf7a75a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93533
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ lib/eventdev/rte_event_eth_rx_adapter.c | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/lib/eventdev/rte_event_eth_rx_adapter.c b/lib/eventdev/rte_event_eth_rx_adapter.c
+index cf7bbd4d6907b..170823a03c84c 100644
+--- a/lib/eventdev/rte_event_eth_rx_adapter.c
++++ b/lib/eventdev/rte_event_eth_rx_adapter.c
+@@ -3415,14 +3415,10 @@ rte_event_eth_rx_adapter_instance_get(uint16_t eth_dev_id,
+ 		if (!rte_event_eth_rx_adapter_caps_get(rx_adapter->eventdev_id,
+ 						      eth_dev_id,
+ 						      &caps)) {
+-			if (caps & RTE_EVENT_ETH_RX_ADAPTER_CAP_INTERNAL_PORT) {
+-				ret = rxa_dev_instance_get(rx_adapter) ?
+-						rxa_dev_instance_get(rx_adapter)
+-								(eth_dev_id,
+-								 rx_queue_id,
+-								 rxa_inst_id)
+-							: -EINVAL;
+-			}
++			if (caps & RTE_EVENT_ETH_RX_ADAPTER_CAP_INTERNAL_PORT &&
++			    rxa_dev_instance_get(rx_adapter))
++				ret = rxa_dev_instance_get(rx_adapter)(eth_dev_id, rx_queue_id,
++								       rxa_inst_id);
+ 		}
+ 
+ 		/* return if entry found */
+-- 
+2.25.1
+

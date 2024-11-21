@@ -1,0 +1,51 @@
+From a8f1c115c26608996420e3dee5e201a5212bb458 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Wed, 5 Jun 2024 17:01:25 +0530
+Subject: [PATCH 370/513] app/testpmd: add Tx prepare function for MAC fwd mode
+
+Add packet preparation for transmission in the do_macfwd function. This
+change enables PMDs to make modifications (e.g., VLAN insertion) to the
+packet before transmission in mac fwd mode.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Iddac732a3fbf52b71fed80f3286635e4f3c9bc9c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129132
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ app/test-pmd/macfwd.h | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/app/test-pmd/macfwd.h b/app/test-pmd/macfwd.h
+index ae2346e589171..c881b7a87804e 100644
+--- a/app/test-pmd/macfwd.h
++++ b/app/test-pmd/macfwd.h
+@@ -14,6 +14,7 @@ do_macfwd(struct rte_mbuf *pkts_burst[], uint16_t nb_rx,
+ 	uint64_t tx_offloads;
+ 	struct rte_mbuf  *mb;
+ 	struct rte_port *txp = &ports[fs->tx_port];
++	uint16_t nb_prep;
+ 	uint16_t i;
+ 
+ 	tx_offloads = txp->dev_conf.txmode.offloads;
+@@ -40,6 +41,15 @@ do_macfwd(struct rte_mbuf *pkts_burst[], uint16_t nb_rx,
+ 		mb->vlan_tci = txp->tx_vlan_id;
+ 		mb->vlan_tci_outer = txp->tx_vlan_id_outer;
+ 	}
++
++	nb_prep = rte_eth_tx_prepare(fs->tx_port, fs->tx_queue, pkts_burst, nb_rx);
++	if (nb_prep != nb_rx) {
++		fprintf(stderr,
++			"Preparing packet burst to transmit failed: %s\n",
++			rte_strerror(rte_errno));
++		fs->fwd_dropped += (nb_rx - nb_prep);
++		rte_pktmbuf_free_bulk(&pkts_burst[nb_prep], nb_rx - nb_prep);
++	}
+ }
+ 
+ #endif /* _MACFWD_H_ */
+-- 
+2.25.1
+

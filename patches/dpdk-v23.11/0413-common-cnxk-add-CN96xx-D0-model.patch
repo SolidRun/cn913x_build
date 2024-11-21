@@ -1,0 +1,70 @@
+From ae47ef9cb0b7b1dabb743292e9545c9db449e579 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 30 Jul 2024 20:25:20 +0530
+Subject: [PATCH 413/513] common/cnxk: add CN96xx D0 model
+
+Adding support for CN96xx D0 pass.
+
+Change-Id: Iab3ae6f0bd5f9c7ec5c336f19ac29b7d54fc8fca
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132374
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_model.c |  1 +
+ drivers/common/cnxk/roc_model.h | 11 +++++++++--
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_model.c b/drivers/common/cnxk/roc_model.c
+index 6dc2afe7f07c2..cd6c7bd63ecf6 100644
+--- a/drivers/common/cnxk/roc_model.c
++++ b/drivers/common/cnxk/roc_model.c
+@@ -73,6 +73,7 @@ static const struct model_db {
+ 	{VENDOR_CAVIUM, PART_96xx, 0, 1, ROC_MODEL_CN96xx_B0, "cn96xx_b0"},
+ 	{VENDOR_CAVIUM, PART_96xx, 2, 0, ROC_MODEL_CN96xx_C0, "cn96xx_c0"},
+ 	{VENDOR_CAVIUM, PART_96xx, 2, 1, ROC_MODEL_CN96xx_C0, "cn96xx_c1"},
++	{VENDOR_CAVIUM, PART_96xx, 3, 0, ROC_MODEL_CN96xx_D0, "cn96xx_d0"},
+ 	{VENDOR_CAVIUM, PART_95xx, 0, 0, ROC_MODEL_CNF95xx_A0, "cnf95xx_a0"},
+ 	{VENDOR_CAVIUM, PART_95xx, 1, 0, ROC_MODEL_CNF95xx_B0, "cnf95xx_b0"},
+ 	{VENDOR_CAVIUM, PART_95xxN, 0, 0, ROC_MODEL_CNF95xxN_A0, "cnf95xxn_a0"},
+diff --git a/drivers/common/cnxk/roc_model.h b/drivers/common/cnxk/roc_model.h
+index b6dab4f64eb48..6c5759d5b78a2 100644
+--- a/drivers/common/cnxk/roc_model.h
++++ b/drivers/common/cnxk/roc_model.h
+@@ -15,6 +15,7 @@ struct roc_model {
+ #define ROC_MODEL_CN96xx_A0    BIT_ULL(0)
+ #define ROC_MODEL_CN96xx_B0    BIT_ULL(1)
+ #define ROC_MODEL_CN96xx_C0    BIT_ULL(2)
++#define ROC_MODEL_CN96xx_D0    BIT_ULL(3)
+ #define ROC_MODEL_CNF95xx_A0   BIT_ULL(4)
+ #define ROC_MODEL_CNF95xx_B0   BIT_ULL(6)
+ #define ROC_MODEL_CNF95xxMM_A0 BIT_ULL(8)
+@@ -46,8 +47,8 @@ struct roc_model {
+ #define ROC_MODEL_CN96xx_Ax (ROC_MODEL_CN96xx_A0 | ROC_MODEL_CN96xx_B0)
+ #define ROC_MODEL_CN98xx_Ax (ROC_MODEL_CN98xx_A0 | ROC_MODEL_CN98xx_A1)
+ #define ROC_MODEL_CN9K                                                         \
+-	(ROC_MODEL_CN96xx_Ax | ROC_MODEL_CN96xx_C0 | ROC_MODEL_CNF95xx_A0 |    \
+-	 ROC_MODEL_CNF95xx_B0 | ROC_MODEL_CNF95xxMM_A0 |                       \
++	(ROC_MODEL_CN96xx_Ax | ROC_MODEL_CN96xx_C0 | ROC_MODEL_CN96xx_D0      |\
++	 ROC_MODEL_CNF95xx_A0 | ROC_MODEL_CNF95xx_B0 | ROC_MODEL_CNF95xxMM_A0 |\
+ 	 ROC_MODEL_CNF95xxO_A0 | ROC_MODEL_CNF95xxN_A0 | ROC_MODEL_CN98xx_Ax | \
+ 	 ROC_MODEL_CNF95xxN_A1 | ROC_MODEL_CNF95xxN_B0)
+ #define ROC_MODEL_CNF9K                                                        \
+@@ -157,6 +158,12 @@ roc_model_is_cn96_cx(void)
+ 	return (roc_model->flag & ROC_MODEL_CN96xx_C0);
+ }
+ 
++static inline uint64_t
++roc_model_is_cn96_dx(void)
++{
++	return (roc_model->flag & ROC_MODEL_CN96xx_D0);
++}
++
+ static inline uint64_t
+ roc_model_is_cn95_a0(void)
+ {
+-- 
+2.25.1
+

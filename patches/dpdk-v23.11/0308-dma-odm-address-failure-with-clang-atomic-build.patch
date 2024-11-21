@@ -1,0 +1,64 @@
+From 8fe0289072ede0445fe37e7e55405c09d7a6f323 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 17 Apr 2024 13:29:24 +0000
+Subject: [PATCH 308/513] dma/odm: address failure with clang atomic build
+
+Address build failure from upstream CI with clang atomic build.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ib2a7d663bc10c09e6217d6665bdcba66e39ec6fe
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125586
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+(cherry picked from commit 9e6b8af8a9bfdf75f6a4bb09062828ed94a18f5d)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125620
+---
+ drivers/dma/odm/odm_dmadev.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/dma/odm/odm_dmadev.c b/drivers/dma/odm/odm_dmadev.c
+index 6e9ef904945e9..57bd6923f14c6 100644
+--- a/drivers/dma/odm/odm_dmadev.c
++++ b/drivers/dma/odm/odm_dmadev.c
+@@ -435,7 +435,8 @@ odm_dmadev_completed(void *dev_private, uint16_t vchan, const uint16_t nb_cpls,
+ 
+ 	for (cnt = 0; cnt < nb_cpls; cnt++) {
+ 		cmpl_ptr = RTE_PTR_ADD(base_addr, cring_head * sizeof(cmpl));
+-		cmpl.u = rte_atomic_load_explicit(cmpl_ptr, rte_memory_order_relaxed);
++		cmpl.u = rte_atomic_load_explicit((RTE_ATOMIC(uint32_t) *)cmpl_ptr,
++						  rte_memory_order_relaxed);
+ 		if (!cmpl.s.valid)
+ 			break;
+ 
+@@ -448,7 +449,8 @@ odm_dmadev_completed(void *dev_private, uint16_t vchan, const uint16_t nb_cpls,
+ 		/* Clear instruction extra space */
+ 		vq->extra_ins_sz[cring_head] = 0;
+ 
+-		rte_atomic_store_explicit(cmpl_ptr, cmpl_zero.u, rte_memory_order_relaxed);
++		rte_atomic_store_explicit((RTE_ATOMIC(uint32_t) *)cmpl_ptr, cmpl_zero.u,
++					  rte_memory_order_relaxed);
+ 		cring_head = (cring_head + 1) % cring_max_entry;
+ 	}
+ 
+@@ -500,7 +502,8 @@ odm_dmadev_completed_status(void *dev_private, uint16_t vchan, const uint16_t nb
+ 
+ 	for (cnt = 0; cnt < nb_cpls; cnt++) {
+ 		cmpl_ptr = RTE_PTR_ADD(base_addr, cring_head * sizeof(cmpl));
+-		cmpl.u = rte_atomic_load_explicit(cmpl_ptr, rte_memory_order_relaxed);
++		cmpl.u = rte_atomic_load_explicit((RTE_ATOMIC(uint32_t) *)cmpl_ptr,
++						  rte_memory_order_relaxed);
+ 		if (!cmpl.s.valid)
+ 			break;
+ 
+@@ -515,7 +518,8 @@ odm_dmadev_completed_status(void *dev_private, uint16_t vchan, const uint16_t nb
+ 		/* Clear instruction extra space */
+ 		vq->extra_ins_sz[cring_head] = 0;
+ 
+-		rte_atomic_store_explicit(cmpl_ptr, cmpl_zero.u, rte_memory_order_relaxed);
++		rte_atomic_store_explicit((RTE_ATOMIC(uint32_t) *)cmpl_ptr, cmpl_zero.u,
++					  rte_memory_order_relaxed);
+ 		cring_head = (cring_head + 1) % cring_max_entry;
+ 	}
+ 
+-- 
+2.25.1
+

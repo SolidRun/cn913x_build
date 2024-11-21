@@ -1,0 +1,40 @@
+From d81ce643d5c6f99b1957c0f8051e536f1c40ad99 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Mon, 2 Sep 2024 11:59:36 +0530
+Subject: [PATCH 925/955] common/cnxk: define platform configuration
+
+Defining compile time platform configuration to discrimate
+among different SOCs.
+
+Change-Id: I1aa3e11cb8256493f649b0b20f8e9b75ff517fdf
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/common/cnxk/meson.build | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/common/cnxk/meson.build b/drivers/common/cnxk/meson.build
+index 7fb0bcb6067c5..46f47c83b1931 100644
+--- a/drivers/common/cnxk/meson.build
++++ b/drivers/common/cnxk/meson.build
+@@ -91,5 +91,18 @@ sources += files('cnxk_telemetry_bphy.c',
+                  'cnxk_telemetry_sso.c',
+ )
+ 
++if meson.is_cross_build()
++    soc_type = meson.get_cross_property('platform', '')
++else
++    soc_type = platform
++endif
++if soc_type == 'cn9k'
++    dpdk_conf.set('ROC_PLATFORM_CN9K', 1)
++elif soc_type == 'cn10k'
++    dpdk_conf.set('ROC_PLATFORM_CN10K', 1)
++elif soc_type == 'cn20k'
++    dpdk_conf.set('ROC_PLATFORM_CN20K', 1)
++endif
++
+ deps += ['bus_pci', 'net', 'telemetry']
+ pmd_supports_disable_iova_as_pa = true
+-- 
+2.25.1
+

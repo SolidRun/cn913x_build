@@ -1,0 +1,69 @@
+From f9d88fcd4d477f49141cac821acf1c96290389c7 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Wed, 15 Mar 2023 12:45:06 +0530
+Subject: [PATCH 309/955] common/cnxk: add CN105xxN B0 model
+
+Adding support for CN105xxN B0 pass
+
+Change-Id: Ibf9d59c2d7d92424da5bf8b2848d1f81a0c81d83
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99202
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_model.c | 1 +
+ drivers/common/cnxk/roc_model.h | 9 ++++++++-
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_model.c b/drivers/common/cnxk/roc_model.c
+index eaab9b9e95464..6dc2afe7f07c2 100644
+--- a/drivers/common/cnxk/roc_model.c
++++ b/drivers/common/cnxk/roc_model.c
+@@ -66,6 +66,7 @@ static const struct model_db {
+ 	{VENDOR_ARM, PART_105xx, 0, 1, ROC_MODEL_CNF105xx_A1, "cnf10ka_a1"},
+ 	{VENDOR_ARM, PART_103xx, 0, 0, ROC_MODEL_CN103xx_A0, "cn10kb_a0"},
+ 	{VENDOR_ARM, PART_105xxN, 0, 0, ROC_MODEL_CNF105xxN_A0, "cnf10kb_a0"},
++	{VENDOR_ARM, PART_105xxN, 1, 0, ROC_MODEL_CNF105xxN_B0, "cnf10kb_b0"},
+ 	{VENDOR_CAVIUM, PART_98xx, 0, 0, ROC_MODEL_CN98xx_A0, "cn98xx_a0"},
+ 	{VENDOR_CAVIUM, PART_98xx, 0, 1, ROC_MODEL_CN98xx_A1, "cn98xx_a1"},
+ 	{VENDOR_CAVIUM, PART_96xx, 0, 0, ROC_MODEL_CN96xx_A0, "cn96xx_a0"},
+diff --git a/drivers/common/cnxk/roc_model.h b/drivers/common/cnxk/roc_model.h
+index 58046af193fd3..b6dab4f64eb48 100644
+--- a/drivers/common/cnxk/roc_model.h
++++ b/drivers/common/cnxk/roc_model.h
+@@ -31,6 +31,7 @@ struct roc_model {
+ #define ROC_MODEL_CN106xx_A1   BIT_ULL(24)
+ #define ROC_MODEL_CNF105xx_A1  BIT_ULL(25)
+ #define ROC_MODEL_CN106xx_B0   BIT_ULL(26)
++#define ROC_MODEL_CNF105xxN_B0 BIT_ULL(27)
+ /* Following flags describe platform code is running on */
+ #define ROC_ENV_HW   BIT_ULL(61)
+ #define ROC_ENV_EMUL BIT_ULL(62)
+@@ -57,7 +58,7 @@ struct roc_model {
+ 
+ #define ROC_MODEL_CN106xx   (ROC_MODEL_CN106xx_A0 | ROC_MODEL_CN106xx_A1 | ROC_MODEL_CN106xx_B0)
+ #define ROC_MODEL_CNF105xx  (ROC_MODEL_CNF105xx_A0 | ROC_MODEL_CNF105xx_A1)
+-#define ROC_MODEL_CNF105xxN (ROC_MODEL_CNF105xxN_A0)
++#define ROC_MODEL_CNF105xxN (ROC_MODEL_CNF105xxN_A0 | ROC_MODEL_CNF105xxN_B0)
+ #define ROC_MODEL_CN103xx   (ROC_MODEL_CN103xx_A0)
+ #define ROC_MODEL_CN10K                                                        \
+ 	(ROC_MODEL_CN106xx | ROC_MODEL_CNF105xx | ROC_MODEL_CNF105xxN |        \
+@@ -252,6 +253,12 @@ roc_model_is_cnf10kb_a0(void)
+ 	return roc_model->flag & ROC_MODEL_CNF105xxN_A0;
+ }
+ 
++static inline uint64_t
++roc_model_is_cnf10kb_b0(void)
++{
++	return roc_model->flag & ROC_MODEL_CNF105xxN_B0;
++}
++
+ static inline uint64_t
+ roc_model_is_cn10kb(void)
+ {
+-- 
+2.25.1
+

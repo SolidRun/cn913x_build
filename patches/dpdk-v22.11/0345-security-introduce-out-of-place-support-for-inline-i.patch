@@ -1,0 +1,173 @@
+From 958cd2862fbf4a2587127aee41cdc12d545d06a4 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 13 May 2022 18:08:07 +0530
+Subject: [PATCH 345/955] security: introduce out of place support for inline
+ ingress
+
+Similar to out of place(OOP) processing support that exists for
+Lookaside crypto/security sessions, Inline ingress security
+sessions may also need out of place processing in usecases
+where original encrypted packet needs to be retained for post
+processing. So for NIC's which have such a kind of HW support,
+a new SA option is provided to indicate whether OOP needs to
+be enabled on that Inline ingress security session or not.
+
+Since for inline ingress sessions, packet is not received by
+CPU until the processing is done, we can only have per-SA
+option and not per-packet option like Lookaside sessions.
+
+Change-Id: I1aae998a967ddb33d1606b66790804bb0c13aa09
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ lib/security/rte_security.c        | 17 +++++++++++++
+ lib/security/rte_security.h        | 39 +++++++++++++++++++++++++++++-
+ lib/security/rte_security_driver.h |  8 ++++++
+ lib/security/version.map           |  2 ++
+ 4 files changed, 65 insertions(+), 1 deletion(-)
+
+diff --git a/lib/security/rte_security.c b/lib/security/rte_security.c
+index 29af5f3e4ba5c..ff0550513e9c5 100644
+--- a/lib/security/rte_security.c
++++ b/lib/security/rte_security.c
+@@ -27,7 +27,10 @@
+ } while (0)
+ 
+ #define RTE_SECURITY_DYNFIELD_NAME "rte_security_dynfield_metadata"
++#define RTE_SECURITY_OOP_DYNFIELD_NAME "rte_security_oop_dynfield_metadata"
++
+ int rte_security_dynfield_offset = -1;
++int rte_security_oop_dynfield_offset = -1;
+ 
+ int
+ rte_security_dynfield_register(void)
+@@ -42,6 +45,20 @@ rte_security_dynfield_register(void)
+ 	return rte_security_dynfield_offset;
+ }
+ 
++int
++rte_security_oop_dynfield_register(void)
++{
++	static const struct rte_mbuf_dynfield dynfield_desc = {
++		.name = RTE_SECURITY_OOP_DYNFIELD_NAME,
++		.size = sizeof(rte_security_oop_dynfield_t),
++		.align = __alignof__(rte_security_oop_dynfield_t),
++	};
++
++	rte_security_oop_dynfield_offset =
++		rte_mbuf_dynfield_register(&dynfield_desc);
++	return rte_security_oop_dynfield_offset;
++}
++
+ void *
+ rte_security_session_create(struct rte_security_ctx *instance,
+ 			    struct rte_security_session_conf *conf,
+diff --git a/lib/security/rte_security.h b/lib/security/rte_security.h
+index 4bacf9fcd9e69..866cd4e8ee1a0 100644
+--- a/lib/security/rte_security.h
++++ b/lib/security/rte_security.h
+@@ -275,6 +275,17 @@ struct rte_security_ipsec_sa_options {
+ 	 */
+ 	uint32_t ip_reassembly_en : 1;
+ 
++	/** Enable out of place processing on inline inbound packets.
++	 *
++	 * * 1: Enable driver to perform Out-of-place(OOP) processing for this inline
++	 *      inbound SA if supported by driver. PMD need to register mbuf
++	 *      dynamic field using rte_security_oop_dynfield_register()
++	 *      and security session creation would fail if dynfield is not
++	 *      registered successfully.
++	 * * 0: Disable OOP processing for this session (default).
++	 */
++	uint32_t ingress_oop : 1;
++
+ 	/** Reserved bit fields for future extension
+ 	 *
+ 	 * User should ensure reserved_opts is cleared as it may change in
+@@ -282,7 +293,7 @@ struct rte_security_ipsec_sa_options {
+ 	 *
+ 	 * Note: Reduce number of bits in reserved_opts for every new option.
+ 	 */
+-	uint32_t reserved_opts : 17;
++	uint32_t reserved_opts : 16;
+ };
+ 
+ /** IPSec security association direction */
+@@ -812,6 +823,13 @@ typedef uint64_t rte_security_dynfield_t;
+ /** Dynamic mbuf field for device-specific metadata */
+ extern int rte_security_dynfield_offset;
+ 
++/** Out-of-Place(OOP) processing field type */
++typedef struct rte_mbuf *rte_security_oop_dynfield_t;
++/** Dynamic mbuf field for pointer to original mbuf for
++ * OOP processing session.
++ */
++extern int rte_security_oop_dynfield_offset;
++
+ /**
+  * @warning
+  * @b EXPERIMENTAL: this API may change without prior notice
+@@ -834,6 +852,25 @@ rte_security_dynfield(struct rte_mbuf *mbuf)
+ 		rte_security_dynfield_t *);
+ }
+ 
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change without prior notice
++ *
++ * Get pointer to mbuf field for original mbuf pointer when
++ * Out-Of-Place(OOP) processing is enabled in security session.
++ *
++ * @param       mbuf    packet to access
++ * @return pointer to mbuf field
++ */
++__rte_experimental
++static inline rte_security_oop_dynfield_t *
++rte_security_oop_dynfield(struct rte_mbuf *mbuf)
++{
++	return RTE_MBUF_DYNFIELD(mbuf,
++			rte_security_oop_dynfield_offset,
++			rte_security_oop_dynfield_t *);
++}
++
+ /**
+  * @warning
+  * @b EXPERIMENTAL: this API may change without prior notice
+diff --git a/lib/security/rte_security_driver.h b/lib/security/rte_security_driver.h
+index 421e6f7780678..91e7786ab7c64 100644
+--- a/lib/security/rte_security_driver.h
++++ b/lib/security/rte_security_driver.h
+@@ -190,6 +190,14 @@ typedef int (*security_macsec_sa_stats_get_t)(void *device, uint16_t sa_id,
+ __rte_internal
+ int rte_security_dynfield_register(void);
+ 
++/**
++ * @internal
++ * Register mbuf dynamic field for Security inline ingress Out-of-Place(OOP)
++ * processing.
++ */
++__rte_internal
++int rte_security_oop_dynfield_register(void);
++
+ /**
+  * Update the mbuf with provided metadata.
+  *
+diff --git a/lib/security/version.map b/lib/security/version.map
+index 07dcce9ffb38b..59a95f40bd971 100644
+--- a/lib/security/version.map
++++ b/lib/security/version.map
+@@ -23,10 +23,12 @@ EXPERIMENTAL {
+ 	rte_security_macsec_sc_stats_get;
+ 	rte_security_session_stats_get;
+ 	rte_security_session_update;
++	rte_security_oop_dynfield_offset;
+ };
+ 
+ INTERNAL {
+ 	global:
+ 
+ 	rte_security_dynfield_register;
++	rte_security_oop_dynfield_register;
+ };
+-- 
+2.25.1
+

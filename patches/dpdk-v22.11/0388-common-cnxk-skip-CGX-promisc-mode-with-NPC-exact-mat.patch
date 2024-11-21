@@ -1,0 +1,94 @@
+From f1f405e6e6995382e58f93d84c44d9d7e5e0cbb4 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 16 May 2023 17:19:38 +0530
+Subject: [PATCH 388/955] common/cnxk: skip CGX promisc mode with NPC exact
+ match
+
+When NPC exact match is enabled, we cannot use CGX promisc mode
+as CGX filtering is permanently disabled. Hence skip calling
+it to avoid mbox errors.
+
+Change-Id: I7c5e007b2ad07b55aedded68649bf611aff54e91
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103589
+Reviewed-by: Devapraba Muthumani <dmuthumani@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_mac.c  | 8 ++++++++
+ drivers/common/cnxk/roc_nix_priv.h | 1 +
+ drivers/common/cnxk/roc_npc.c      | 1 +
+ drivers/common/cnxk/roc_npc_mcam.c | 1 +
+ drivers/common/cnxk/roc_npc_priv.h | 1 +
+ 5 files changed, 12 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix_mac.c b/drivers/common/cnxk/roc_nix_mac.c
+index ac30fb52d1f1f..754d75ac73c90 100644
+--- a/drivers/common/cnxk/roc_nix_mac.c
++++ b/drivers/common/cnxk/roc_nix_mac.c
+@@ -201,6 +201,14 @@ roc_nix_mac_promisc_mode_enable(struct roc_nix *roc_nix, int enable)
+ 		goto exit;
+ 	}
+ 
++	/* Skip CGX promisc toggling if NPC exact match is enabled as
++	 * CGX filtering is disabled permanently.
++	 */
++	if (nix->exact_match_ena) {
++		rc = 0;
++		goto exit;
++	}
++
+ 	if (enable)
+ 		mbox_alloc_msg_cgx_promisc_enable(mbox);
+ 	else
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 6872630dc870d..ea4211dfeda88 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -130,6 +130,7 @@ struct nix {
+ 	struct nix_qint *cints_mem;
+ 	uint8_t configured_qints;
+ 	uint8_t configured_cints;
++	uint8_t exact_match_ena;
+ 	struct roc_nix_rq **rqs;
+ 	struct roc_nix_sq **sqs;
+ 	uint16_t vwqe_interval;
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 379d082e35fea..ac28a60f482de 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -272,6 +272,7 @@ roc_npc_init(struct roc_npc *roc_npc)
+ 	roc_npc->rx_parse_nibble = npc->keyx_supp_nmask[NPC_MCAM_RX];
+ 
+ 	npc->mcam_entries = npc_mcam_tot_entries() >> npc->keyw[NPC_MCAM_RX];
++	nix->exact_match_ena = npc->exact_match_ena;
+ 
+ 	/* Free, free_rev, live and live_rev entries */
+ 	bmap_sz = plt_bitmap_get_memory_footprint(npc->mcam_entries);
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index 72892be300a4f..46f0b9c33da79 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -542,6 +542,7 @@ npc_mcam_fetch_kex_cfg(struct npc *npc)
+ 	mbox_memcpy((char *)npc->profile_name, kex_rsp->mkex_pfl_name,
+ 		    MKEX_NAME_LEN);
+ 
++	npc->exact_match_ena = (kex_rsp->rx_keyx_cfg >> 40) & 0xF;
+ 	npc_mcam_process_mkex_cfg(npc, kex_rsp);
+ 
+ done:
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 714dcb09c9265..82c2d0aa06e64 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -403,6 +403,7 @@ struct npc {
+ 	struct npc_prio_flow_list_head *prio_flow_list;
+ 	struct plt_bitmap *rss_grp_entries;
+ 	struct npc_flow_list ipsec_list;
++	uint8_t exact_match_ena;
+ };
+ 
+ #define NPC_HASH_FIELD_LEN 16
+-- 
+2.25.1
+

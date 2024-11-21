@@ -1,0 +1,61 @@
+From 7a19b8fa30a0bc8dfee1c21d7a19cd5457f162fc Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Wed, 5 Jul 2023 17:42:17 +0530
+Subject: [PATCH 525/955] ci: enable CMAN test
+
+Update logic to validate stats for RED.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I80cc8b687342dd0116fac37b7e7ad4396dea5cfb
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107098
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107184
+---
+ marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh | 6 ++----
+ marvell-ci/test/env/cn10k.env                          | 1 -
+ 2 files changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh b/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh
+index 8feecfe20159e..d932e728f4028 100755
+--- a/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh
++++ b/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh
+@@ -335,7 +335,6 @@ function configure_mode()
+ 	testpmd_cmd $RXPRFX "start"
+ }
+ 
+-update_val=0
+ function check_stats()
+ {
+         local prefix=$1
+@@ -349,11 +348,10 @@ function check_stats()
+ 
+         val=`cat $out | grep "Rx-pps:" | awk -e '{print $2}' | tail -1`
+ 
+-	if [ "$val" -ge $update_val ]; then
++	if [ "$val" -ge 0 ]; then
+ 		echo "min_thres = $2 max_thres = $3 throughput $val"
+-		update_val=$val
+ 	else
+-		echo "cman test for min_thres = $2 max_thres = $3 failed"
++		echo "cman test for min_thres = $2 max_thres = $3 failed. throughput $val"
+ 		exit 1
+ 	fi
+ 
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 301ed497748b8..a5d80bfbb91ff 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -74,7 +74,6 @@ TM_SETUP=${TM_SETUP:-}
+ FIXME_SKIP_TESTS="
+ 	cnxk_mtr_test_config
+ 	cnxk_fc_test_config
+-	cnxk_cman_test_config
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+-- 
+2.25.1
+

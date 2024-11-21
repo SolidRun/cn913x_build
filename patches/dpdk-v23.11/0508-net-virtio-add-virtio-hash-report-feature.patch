@@ -1,0 +1,331 @@
+From 173deb48222563aa080a622ac90420ccdf65c69e Mon Sep 17 00:00:00 2001
+From: Kommula Shiva Shankar <kshankar@marvell.com>
+Date: Wed, 21 Aug 2024 23:42:13 +0530
+Subject: [PATCH 508/513] net/virtio: add virtio hash report feature
+
+This patch adds virtio hash report feature.
+
+Signed-off-by: Kommula Shiva Shankar <kshankar@marvell.com>
+Change-Id: I133b45195224e3654e8c61873257b1fa1a71edfc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134105
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Srujana Challa <schalla@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/virtio/virtio.h                   |  2 +
+ drivers/net/virtio/virtio_ethdev.c            | 14 +++++-
+ drivers/net/virtio/virtio_ethdev.h            |  1 +
+ drivers/net/virtio/virtio_rxtx.c              | 43 +++++++++++++++++++
+ drivers/net/virtio/virtio_rxtx_packed.h       | 27 ++++++++++++
+ drivers/net/virtio/virtio_rxtx_packed_avx.h   |  8 ++++
+ drivers/net/virtio/virtio_rxtx_packed_neon.h  |  8 ++++
+ .../net/virtio/virtio_user/virtio_user_dev.c  |  1 +
+ drivers/net/virtio/virtqueue.h                | 21 +++++++++
+ 9 files changed, 124 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/virtio/virtio.h b/drivers/net/virtio/virtio.h
+index 04a897bf51cfb..8f9a93a420797 100644
+--- a/drivers/net/virtio/virtio.h
++++ b/drivers/net/virtio/virtio.h
+@@ -30,6 +30,7 @@
+ #define VIRTIO_NET_F_GUEST_ANNOUNCE 21	/* Guest can announce device on the network */
+ #define VIRTIO_NET_F_MQ		22	/* Device supports Receive Flow Steering */
+ #define VIRTIO_NET_F_CTRL_MAC_ADDR 23	/* Set MAC address */
++#define VIRTIO_NET_F_HASH_REPORT  57    /* Supports hash report */
+ #define VIRTIO_NET_F_RSS	60	/* RSS supported */
+ 
+ /*
+@@ -187,6 +188,7 @@ struct virtio_hw {
+ 	uint8_t started;
+ 	uint8_t weak_barriers;
+ 	uint8_t vlan_strip;
++	uint8_t has_hash_report;
+ 	bool rx_ol_scatter;
+ 	uint8_t has_tx_offload;
+ 	uint8_t has_rx_offload;
+diff --git a/drivers/net/virtio/virtio_ethdev.c b/drivers/net/virtio/virtio_ethdev.c
+index c2c0a1a111376..727ec9f81ae45 100644
+--- a/drivers/net/virtio/virtio_ethdev.c
++++ b/drivers/net/virtio/virtio_ethdev.c
+@@ -1796,7 +1796,9 @@ virtio_init_device(struct rte_eth_dev *eth_dev, uint64_t req_features)
+ 	eth_dev->data->dev_flags |= RTE_ETH_DEV_AUTOFILL_QUEUE_XSTATS;
+ 
+ 	/* Setting up rx_header size for the device */
+-	if (virtio_with_feature(hw, VIRTIO_NET_F_MRG_RXBUF) ||
++	if (virtio_with_feature(hw, VIRTIO_NET_F_HASH_REPORT))
++		hw->vtnet_hdr_size = sizeof(struct virtio_net_hdr_hash_report);
++	else if (virtio_with_feature(hw, VIRTIO_NET_F_MRG_RXBUF) ||
+ 	    virtio_with_feature(hw, VIRTIO_F_VERSION_1) ||
+ 	    virtio_with_packed_queue(hw))
+ 		hw->vtnet_hdr_size = sizeof(struct virtio_net_hdr_mrg_rxbuf);
+@@ -2181,6 +2183,10 @@ virtio_dev_configure(struct rte_eth_dev *dev)
+ 			(1ULL << VIRTIO_NET_F_GUEST_TSO4) |
+ 			(1ULL << VIRTIO_NET_F_GUEST_TSO6);
+ 
++	if (rx_offloads & RTE_ETH_RX_OFFLOAD_RSS_HASH)
++		req_features |=
++			(1ULL << VIRTIO_NET_F_HASH_REPORT);
++
+ 	if (tx_offloads & (RTE_ETH_TX_OFFLOAD_UDP_CKSUM |
+ 			   RTE_ETH_TX_OFFLOAD_TCP_CKSUM))
+ 		req_features |= (1ULL << VIRTIO_NET_F_CSUM);
+@@ -2233,6 +2239,9 @@ virtio_dev_configure(struct rte_eth_dev *dev)
+ 	if (rx_offloads & RTE_ETH_RX_OFFLOAD_VLAN_STRIP)
+ 		hw->vlan_strip = 1;
+ 
++	if (rx_offloads & RTE_ETH_RX_OFFLOAD_RSS_HASH)
++		hw->has_hash_report = 1;
++
+ 	hw->rx_ol_scatter = (rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER);
+ 
+ 	if ((rx_offloads & RTE_ETH_RX_OFFLOAD_VLAN_FILTER) &&
+@@ -2669,6 +2678,9 @@ virtio_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+ 		dev_info->flow_type_rss_offloads = 0;
+ 	}
+ 
++	if (host_features & (1ULL << VIRTIO_NET_F_HASH_REPORT))
++		dev_info->rx_offload_capa |= RTE_ETH_RX_OFFLOAD_RSS_HASH;
++
+ 	if (host_features & (1ULL << VIRTIO_F_RING_PACKED)) {
+ 		/*
+ 		 * According to 2.7 Packed Virtqueues,
+diff --git a/drivers/net/virtio/virtio_ethdev.h b/drivers/net/virtio/virtio_ethdev.h
+index 7be1c9acd0b7b..7aa771fd2b84d 100644
+--- a/drivers/net/virtio/virtio_ethdev.h
++++ b/drivers/net/virtio/virtio_ethdev.h
+@@ -46,6 +46,7 @@
+ 	 1u << VIRTIO_NET_F_CSUM           |	\
+ 	 1u << VIRTIO_NET_F_HOST_TSO4      |	\
+ 	 1u << VIRTIO_NET_F_HOST_TSO6      |	\
++	 1ULL << VIRTIO_NET_F_HASH_REPORT  |    \
+ 	 1ULL << VIRTIO_NET_F_RSS)
+ 
+ extern const struct eth_dev_ops virtio_user_secondary_eth_dev_ops;
+diff --git a/drivers/net/virtio/virtio_rxtx.c b/drivers/net/virtio/virtio_rxtx.c
+index 99b95194cddd1..2bfa531d785cd 100644
+--- a/drivers/net/virtio/virtio_rxtx.c
++++ b/drivers/net/virtio/virtio_rxtx.c
+@@ -39,6 +39,19 @@
+ #define  VIRTIO_DUMP_PACKET(m, len) do { } while (0)
+ #endif
+ 
++static const uint32_t vhdr_hash_report_to_mbuf_pkt_type[] = {
++	RTE_PTYPE_UNKNOWN,
++	RTE_PTYPE_L3_IPV4,
++	RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_TCP,
++	RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP,
++	RTE_PTYPE_L3_IPV6,
++	RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_TCP,
++	RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_UDP,
++	RTE_PTYPE_L3_IPV6_EXT,
++	RTE_PTYPE_L3_IPV6_EXT | RTE_PTYPE_L4_TCP,
++	RTE_PTYPE_L3_IPV6_EXT | RTE_PTYPE_L4_UDP,
++};
++
+ void
+ vq_ring_free_inorder(struct virtqueue *vq, uint16_t desc_idx, uint16_t num)
+ {
+@@ -911,6 +924,16 @@ virtio_discard_rxbuf_inorder(struct virtqueue *vq, struct rte_mbuf *m)
+ 	}
+ }
+ 
++static inline void
++virtio_rx_update_hash_report(struct rte_mbuf *m, struct virtio_net_hdr_hash_report *hdr)
++{
++	if (likely(hdr->hash_report)) {
++		m->packet_type = vhdr_hash_report_to_mbuf_pkt_type[hdr->hash_report];
++		m->hash.rss = hdr->hash_value;
++		m->ol_flags |= RTE_MBUF_F_RX_RSS_HASH;
++	}
++}
++
+ /* Optionally fill offload information in structure */
+ static inline int
+ virtio_rx_offload(struct rte_mbuf *m, struct virtio_net_hdr *hdr)
+@@ -1042,6 +1065,10 @@ virtio_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
+ 		hdr = (struct virtio_net_hdr *)((char *)rxm->buf_addr +
+ 			RTE_PKTMBUF_HEADROOM - hdr_size);
+ 
++		if (hw->has_hash_report)
++			virtio_rx_update_hash_report(rxm,
++						    (struct virtio_net_hdr_hash_report *)hdr);
++
+ 		if (hw->vlan_strip)
+ 			rte_vlan_strip(rxm);
+ 
+@@ -1144,6 +1171,10 @@ virtio_recv_pkts_packed(void *rx_queue, struct rte_mbuf **rx_pkts,
+ 		hdr = (struct virtio_net_hdr *)((char *)rxm->buf_addr +
+ 			RTE_PKTMBUF_HEADROOM - hdr_size);
+ 
++		if (hw->has_hash_report)
++			virtio_rx_update_hash_report(rxm,
++						    (struct virtio_net_hdr_hash_report *)hdr);
++
+ 		if (hw->vlan_strip)
+ 			rte_vlan_strip(rxm);
+ 
+@@ -1275,6 +1306,10 @@ virtio_recv_pkts_inorder(void *rx_queue,
+ 			continue;
+ 		}
+ 
++		if (hw->has_hash_report)
++			virtio_rx_update_hash_report(rxm,
++						    (struct virtio_net_hdr_hash_report *)header);
++
+ 		if (hw->vlan_strip)
+ 			rte_vlan_strip(rx_pkts[nb_rx]);
+ 
+@@ -1453,6 +1488,10 @@ virtio_recv_mergeable_pkts(void *rx_queue,
+ 			continue;
+ 		}
+ 
++		if (hw->has_hash_report)
++			virtio_rx_update_hash_report(rxm,
++						     (struct virtio_net_hdr_hash_report *)header);
++
+ 		if (hw->vlan_strip)
+ 			rte_vlan_strip(rx_pkts[nb_rx]);
+ 
+@@ -1627,6 +1666,10 @@ virtio_recv_mergeable_pkts_packed(void *rx_queue,
+ 		if (hw->vlan_strip)
+ 			rte_vlan_strip(rx_pkts[nb_rx]);
+ 
++		if (hw->has_hash_report)
++			virtio_rx_update_hash_report(rxm,
++						    (struct virtio_net_hdr_hash_report *)header);
++
+ 		seg_res = seg_num - 1;
+ 
+ 		/* Merge remaining segments */
+diff --git a/drivers/net/virtio/virtio_rxtx_packed.h b/drivers/net/virtio/virtio_rxtx_packed.h
+index 536112983c1f1..98c27dcf1be18 100644
+--- a/drivers/net/virtio/virtio_rxtx_packed.h
++++ b/drivers/net/virtio/virtio_rxtx_packed.h
+@@ -152,6 +152,29 @@ virtqueue_enqueue_single_packed_vec(struct virtnet_tx *txvq,
+ 	return 0;
+ }
+ 
++static const uint32_t vhdr_hash_report_to_mbuf_pkt_type[] = {
++	RTE_PTYPE_UNKNOWN,
++	RTE_PTYPE_L3_IPV4,
++	RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_TCP,
++	RTE_PTYPE_L3_IPV4 | RTE_PTYPE_L4_UDP,
++	RTE_PTYPE_L3_IPV6,
++	RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_TCP,
++	RTE_PTYPE_L3_IPV6 | RTE_PTYPE_L4_UDP,
++	RTE_PTYPE_L3_IPV6_EXT,
++	RTE_PTYPE_L3_IPV6_EXT | RTE_PTYPE_L4_TCP,
++	RTE_PTYPE_L3_IPV6_EXT | RTE_PTYPE_L4_UDP,
++};
++
++static inline void
++virtio_vec_rx_update_hash_report(struct rte_mbuf *m, struct virtio_net_hdr_hash_report *hdr)
++{
++	if (likely(hdr->hash_report)) {
++		m->packet_type = vhdr_hash_report_to_mbuf_pkt_type[hdr->hash_report];
++		m->hash.rss = hdr->hash_value;
++		m->ol_flags |= RTE_MBUF_F_RX_RSS_HASH;
++	}
++}
++
+ /* Optionally fill offload information in structure */
+ static inline int
+ virtio_vec_rx_offload(struct rte_mbuf *m, struct virtio_net_hdr *hdr)
+@@ -241,6 +264,10 @@ virtqueue_dequeue_single_packed_vec(struct virtnet_rx *rxvq,
+ 
+ 	hdr = (struct virtio_net_hdr *)((char *)cookie->buf_addr +
+ 					RTE_PKTMBUF_HEADROOM - hdr_size);
++	if (hw->has_hash_report)
++		virtio_vec_rx_update_hash_report(cookie,
++				(struct virtio_net_hdr_hash_report *)hdr);
++
+ 	if (hw->has_rx_offload)
+ 		virtio_vec_rx_offload(cookie, hdr);
+ 
+diff --git a/drivers/net/virtio/virtio_rxtx_packed_avx.h b/drivers/net/virtio/virtio_rxtx_packed_avx.h
+index 584ac72f95199..7209b71bb4035 100644
+--- a/drivers/net/virtio/virtio_rxtx_packed_avx.h
++++ b/drivers/net/virtio/virtio_rxtx_packed_avx.h
+@@ -214,6 +214,14 @@ virtqueue_dequeue_batch_packed_vec(struct virtnet_rx *rxvq,
+ 	/* batch store into mbufs */
+ 	_mm512_i64scatter_epi64(0, v_index, v_value, 1);
+ 
++	if (hw->has_hash_report) {
++		virtio_for_each_try_unroll(i, 0, PACKED_BATCH_SIZE) {
++			char *addr = (char *)rx_pkts[i]->buf_addr +
++				RTE_PKTMBUF_HEADROOM - hdr_size;
++		virtio_vec_rx_update_hash_report(rx_pkts[i],
++				(struct virtio_net_hdr_hash_report *)addr);
++		}
++	}
+ 	if (hw->has_rx_offload) {
+ 		virtio_for_each_try_unroll(i, 0, PACKED_BATCH_SIZE) {
+ 			char *addr = (char *)rx_pkts[i]->buf_addr +
+diff --git a/drivers/net/virtio/virtio_rxtx_packed_neon.h b/drivers/net/virtio/virtio_rxtx_packed_neon.h
+index c222ebf00ca02..37c98a5269817 100644
+--- a/drivers/net/virtio/virtio_rxtx_packed_neon.h
++++ b/drivers/net/virtio/virtio_rxtx_packed_neon.h
+@@ -268,6 +268,14 @@ virtqueue_dequeue_batch_packed_vec(struct virtnet_rx *rxvq,
+ 	vst1q_u64((void *)&rx_pkts[2]->rx_descriptor_fields1, pkt_mb[2]);
+ 	vst1q_u64((void *)&rx_pkts[3]->rx_descriptor_fields1, pkt_mb[3]);
+ 
++	if (hw->has_hash_report) {
++		virtio_for_each_try_unroll(i, 0, PACKED_BATCH_SIZE) {
++			char *addr = (char *)rx_pkts[i]->buf_addr +
++				RTE_PKTMBUF_HEADROOM - head_size;
++		virtio_vec_rx_update_hash_report(rx_pkts[i],
++				(struct virtio_net_hdr_hash_report *)addr);
++		}
++	}
+ 	if (hw->has_rx_offload) {
+ 		virtio_for_each_try_unroll(i, 0, PACKED_BATCH_SIZE) {
+ 			char *addr = (char *)rx_pkts[i]->buf_addr +
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.c b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+index 3cfea4e6aea76..add18fcb2603b 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.c
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+@@ -729,6 +729,7 @@ virtio_user_free_vrings(struct virtio_user_dev *dev)
+ 	 1ULL << VIRTIO_F_RING_PACKED		|	\
+ 	 1ULL << VIRTIO_F_NOTIFICATION_DATA	|	\
+ 	 1ULL << VIRTIO_F_ORDER_PLATFORM        |       \
++	 1ULL << VIRTIO_NET_F_HASH_REPORT       |       \
+ 	 1ULL << VIRTIO_NET_F_RSS)
+ 
+ int
+diff --git a/drivers/net/virtio/virtqueue.h b/drivers/net/virtio/virtqueue.h
+index 5d0c0399a848c..6fead5d6cdf40 100644
+--- a/drivers/net/virtio/virtqueue.h
++++ b/drivers/net/virtio/virtqueue.h
+@@ -257,6 +257,27 @@ struct virtio_net_hdr_mrg_rxbuf {
+ 	uint16_t num_buffers; /**< Number of merged rx buffers */
+ };
+ 
++/**
++ * This is the version of the header to use when the HASH_REPORT
++ * feature has been negotiated.
++ */
++struct virtio_net_hdr_hash_report {
++	struct virtio_net_hdr_mrg_rxbuf hdr;
++	uint32_t hash_value;
++#define VIRTIO_NET_HASH_REPORT_NONE	0
++#define VIRTIO_NET_HASH_REPORT_IPv4	1
++#define VIRTIO_NET_HASH_REPORT_TCPv4	2
++#define VIRTIO_NET_HASH_REPORT_UDPv4	3
++#define VIRTIO_NET_HASH_REPORT_IPv6	4
++#define VIRTIO_NET_HASH_REPORT_TCPv6	5
++#define VIRTIO_NET_HASH_REPORT_UDPv6	6
++#define VIRTIO_NET_HASH_REPORT_IPv6_EX	7
++#define VIRTIO_NET_HASH_REPORT_TCPv6_EX	8
++#define VIRTIO_NET_HASH_REPORT_UDPv6_EX	9
++	uint16_t hash_report;
++	uint16_t pad_reserved;
++};
++
+ /* Region reserved to allow for transmit header and indirect ring */
+ #define VIRTIO_MAX_TX_INDIRECT 8
+ struct virtio_tx_region {
+-- 
+2.25.1
+

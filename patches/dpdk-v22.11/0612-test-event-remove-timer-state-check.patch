@@ -1,0 +1,39 @@
+From 66b9286127f0fe34990d13f900d7a41835286a40 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 31 Jul 2023 18:59:13 +0530
+Subject: [PATCH 612/955] test/event: remove timer state check
+
+Remove checking if timer state is set to RTE_EVENT_TIMER_NOT_ARMED
+after the timer has expired as certain timer device implementations
+might not have access to the rte_event_timer handle of a timer event.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Acked-by: Erik Gabriel Carrillo <erik.g.carrillo@intel.com>
+Change-Id: I13eb4d42bcd3cdceea4febedec744e44161b2f7f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110261
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test/test_event_timer_adapter.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/app/test/test_event_timer_adapter.c b/app/test/test_event_timer_adapter.c
+index 7e1a859ecc49b..428e0a13bdc86 100644
+--- a/app/test/test_event_timer_adapter.c
++++ b/app/test/test_event_timer_adapter.c
+@@ -1944,9 +1944,9 @@ test_timer_ticks_remaining(void)
+ 
+ 	TEST_ASSERT_EQUAL(timeout_event_dequeue(&ev, 1, WAIT_TICKS(1)), 1,
+ 			  "Armed timer failed to trigger.");
+-	TEST_ASSERT_EQUAL(ev_tim->state, RTE_EVENT_TIMER_NOT_ARMED,
+-			  "Improper timer state set expected %d returned %d",
+-			  RTE_EVENT_TIMER_NOT_ARMED, ev_tim->state);
++
++	if (ev_tim->state != RTE_EVENT_TIMER_NOT_ARMED)
++		ev_tim->state = RTE_EVENT_TIMER_NOT_ARMED;
+ 
+ 	/* Test that timer that fired returns error */
+ 	TEST_ASSERT_FAIL(rte_event_timer_remaining_ticks_get(timdev, ev_tim,
+-- 
+2.25.1
+

@@ -1,0 +1,102 @@
+From 3d382a21df4942afb2bc4cc1c01e49e8bf635d83 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Fri, 4 Aug 2023 12:53:26 +0530
+Subject: [PATCH 667/955] dmadev: offload to free source buffer
+
+This changeset adds support in DMA library to free source DMA buffer by
+hardware. On a supported hardware, application can pass on the mempool
+information as part of vchan config when the DMA transfer direction is
+configured as RTE_DMA_DIR_MEM_TO_DEV.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I34ec9beb5413cc02a115b1b65c6a487733e98b5f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109096
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Vamsi Krishna Attunuru <vattunuru@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 1b874647023e414181e90e6ff93fbdc26b3518f9)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114163
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ lib/dmadev/rte_dmadev.h | 43 +++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
+
+diff --git a/lib/dmadev/rte_dmadev.h b/lib/dmadev/rte_dmadev.h
+index e61d71959e824..ec7ed2ecec06a 100644
+--- a/lib/dmadev/rte_dmadev.h
++++ b/lib/dmadev/rte_dmadev.h
+@@ -269,6 +269,14 @@ int16_t rte_dma_next_dev(int16_t start_dev_id);
+  * must ensure that all memory addresses are valid and accessible by HW.
+  */
+ #define RTE_DMA_CAPA_HANDLES_ERRORS	RTE_BIT64(6)
++/** Support auto free for source buffer once mem to dev transfer is completed.
++ *
++ * @note Even though the DMA driver has this capability, it may not support all
++ * mempool drivers. If the mempool is not supported by the DMA driver,
++ * rte_dma_vchan_setup() will fail.
++ */
++#define RTE_DMA_CAPA_M2D_AUTO_FREE      RTE_BIT64(7)
++
+ /** Support copy operation.
+  * This capability start with index of 32, so that it could leave gap between
+  * normal capability and ops capability.
+@@ -553,6 +561,26 @@ struct rte_dma_port_param {
+ 	uint64_t reserved[2]; /**< Reserved for future fields. */
+ };
+ 
++/**
++ * A structure used for offload auto free params.
++ */
++struct rte_dma_auto_free_param {
++	union {
++		struct {
++			/**
++			 * Mempool from which buffer is allocated. Mempool info
++			 * is used for freeing buffer by hardware.
++			 *
++			 * @note If the mempool is not supported by the DMA device,
++			 * rte_dma_vchan_setup() will fail.
++			 */
++			struct rte_mempool *pool;
++		} m2d;
++	};
++	/** Reserved for future fields. */
++	uint64_t reserved[2];
++};
++
+ /**
+  * A structure used to configure a virtual DMA channel.
+  *
+@@ -582,6 +610,14 @@ struct rte_dma_vchan_conf {
+ 	 * @see struct rte_dma_port_param
+ 	 */
+ 	struct rte_dma_port_param dst_port;
++	/** Buffer params to auto free buffer by hardware. To free the buffer
++	 * by hardware, RTE_DMA_OP_FLAG_AUTO_FREE must be set while calling
++	 * rte_dma_copy and rte_dma_copy_sg().
++	 *
++	 * @see RTE_DMA_OP_FLAG_AUTO_FREE
++	 * @see struct rte_dma_auto_free_param
++	 */
++	struct rte_dma_auto_free_param auto_free;
+ };
+ 
+ /**
+@@ -819,6 +855,13 @@ struct rte_dma_sge {
+  * capability bit for this, driver should not return error if this flag was set.
+  */
+ #define RTE_DMA_OP_FLAG_LLC     RTE_BIT64(2)
++/** Auto free buffer flag.
++ * Operation with this flag must issue command to hardware to free the DMA
++ * buffer after DMA transfer is completed.
++ *
++ * @see struct rte_dma_vchan_conf::auto_free
++ */
++#define RTE_DMA_OP_FLAG_AUTO_FREE	RTE_BIT64(3)
+ /**@}*/
+ 
+ /**
+-- 
+2.25.1
+

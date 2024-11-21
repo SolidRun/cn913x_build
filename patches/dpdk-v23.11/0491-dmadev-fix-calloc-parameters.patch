@@ -1,0 +1,50 @@
+From 5989c69c2c3ba7d737357726ab8480d42af48738 Mon Sep 17 00:00:00 2001
+From: Ferruh Yigit <ferruh.yigit@amd.com>
+Date: Wed, 24 Jan 2024 18:54:02 +0000
+Subject: [PATCH 491/513] dmadev: fix calloc parameters
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+gcc [1] generates warning [2] about calloc usage, because calloc
+parameter order is wrong, fixing it by replacing parameters.
+
+[1]
+gcc (GCC) 14.0.1 20240124 (experimental)
+
+[2]
+Compiling C object lib/librte_dmadev.a.p/dmadev_rte_dmadev.c.o
+../lib/dmadev/rte_dmadev.c: In function ‘dmadev_handle_dev_dump’:
+../lib/dmadev/rte_dmadev.c:1033:29:
+  warning: ‘calloc’ sizes specified with ‘sizeof’ in the earlier
+  argument and not in the later argument [-Wcalloc-transposed-args]
+ 1033 |     buf = calloc(sizeof(char), RTE_TEL_MAX_SINGLE_STRING_LEN);
+      |                         ^~~~
+
+Fixes: 94043b04212a ("dmadev: support telemetry dump dmadev")
+Cc: stable@dpdk.org
+
+Signed-off-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Acked-by: Morten Brørup <mb@smartsharesystems.com>
+Reviewed-by: Chengwen Feng <fengchengwen@huawei.com>
+Change-Id: I37bd4d72e201468576dbfa8b9977851fd8cfeb59
+---
+ lib/dmadev/rte_dmadev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/dmadev/rte_dmadev.c b/lib/dmadev/rte_dmadev.c
+index 52d33643d5470..3ac78c3860f25 100644
+--- a/lib/dmadev/rte_dmadev.c
++++ b/lib/dmadev/rte_dmadev.c
+@@ -1035,7 +1035,7 @@ dmadev_handle_dev_dump(const char *cmd __rte_unused,
+ 	if (*end_param != '\0')
+ 		RTE_DMA_LOG(WARNING, "Extra parameters passed to dmadev telemetry command, ignoring");
+ 
+-	buf = calloc(sizeof(char), RTE_TEL_MAX_SINGLE_STRING_LEN);
++	buf = calloc(RTE_TEL_MAX_SINGLE_STRING_LEN, sizeof(char));
+ 	if (buf == NULL)
+ 		return -ENOMEM;
+ 
+-- 
+2.25.1
+

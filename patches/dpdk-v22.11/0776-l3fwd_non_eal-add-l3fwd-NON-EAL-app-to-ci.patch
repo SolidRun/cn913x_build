@@ -1,0 +1,91 @@
+From 9cdf51dbc840c92b2d437fa91ab0c62e65da046d Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 18 Jan 2024 14:38:09 +0530
+Subject: [PATCH 776/955] l3fwd_non_eal: add l3fwd NON-EAL app to ci
+
+Compile and generate binary l3fwd_non_eal
+to run l3fwd on NON-EAL threads
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I6636f82434ec0fb59d62fff96fbb3192944d9752
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120010
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/l3fwd_non_eal/meson.build | 46 +++++++++++--------
+ marvell-ci/test/cnxk-tests/meson.build        |  1 +
+ 2 files changed, 29 insertions(+), 18 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/l3fwd_non_eal/meson.build b/marvell-ci/test/cnxk-tests/l3fwd_non_eal/meson.build
+index c25de77bba744..3a41ea2ad2e96 100644
+--- a/marvell-ci/test/cnxk-tests/l3fwd_non_eal/meson.build
++++ b/marvell-ci/test/cnxk-tests/l3fwd_non_eal/meson.build
+@@ -1,23 +1,33 @@
+ # SPDX-License-Identifier: BSD-3-Clause
+-# Copyright(c) 2017 Intel Corporation
+-
+-# meson file, for building this example as part of a main DPDK build.
++# Copyright(C) 2019 Marvell International Ltd.
+ #
+-# To build this example as a standalone application with an already-installed
+-# DPDK instance, use 'make'
++
++# Test directory name relative to build directory.
++test_dir = meson.current_build_dir()
++
++# Test executable
++test_exec = 'l3fwd-non-eal'
+ 
+ allow_experimental_apis = true
+-deps += ['acl', 'hash', 'lpm', 'fib']
+-sources = files(
+-        'l3fwd_acl.c',
+-        'l3fwd_em.c',
+-        'l3fwd_event.c',
+-        'l3fwd_event_internal_port.c',
+-        'l3fwd_event_generic.c',
+-        'l3fwd_fib.c',
+-        'l3fwd_lpm.c',
+-        'main.c',
++deps += ['acl', 'fib', 'lpm']
++
++includes = include_directories('common')
++# Create the test executable
++l3fwd_non_eal_test=executable(
++    test_exec,
++    files('l3fwd_acl.c',
++      'l3fwd_em.c',
++      'l3fwd_event.c',
++      'l3fwd_event_internal_port.c',
++      'l3fwd_event_generic.c',
++      'l3fwd_fib.c',
++      'l3fwd_lpm.c',
++      'main.c'
++      ),
++    include_directories: includes,
++    link_whole: link_libs,
++    dependencies: test_dep_objs,
++    c_args: cflags,
++    install_dir: 'bin/cnxk/l3fwd',
++    install: true
+ )
+-if dpdk_conf.has('RTE_LIB_EVENTDEV')
+-    deps += 'eventdev'
+-endif
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index c9f737f3da5c6..763e0f7ea2ea5 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -82,6 +82,7 @@ test_subdirs_arm = [
+         'cpt_t106_mode',
+         'policer_test',
+         'flow_aging',
++        'l3fwd_non_eal',
+ ]
+ 
+ test_subdirs_x86 = [
+-- 
+2.25.1
+

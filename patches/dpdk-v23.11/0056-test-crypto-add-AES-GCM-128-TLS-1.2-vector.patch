@@ -1,0 +1,136 @@
+From a33e7838ec97c00019c7ae82d8095c6e8a62aca4 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Wed, 25 Oct 2023 17:21:44 +0530
+Subject: [PATCH 056/513] test/crypto: add AES-GCM 128 TLS 1.2 vector
+
+Add AES-GCM-128 test vector generated with kTLS.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Id8a29e10927d99eed27615d4bc1ac5384497dabc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114581
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117483
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_cryptodev.c                     |  8 +--
+ app/test/test_cryptodev_security_tls_record.h |  2 +-
+ ...yptodev_security_tls_record_test_vectors.h | 67 ++++++++++++++++++-
+ 3 files changed, 71 insertions(+), 6 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 093d2a334f215..a16a8adc836e1 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -16892,13 +16892,13 @@ static struct unit_test_suite tls12_record_proto_testsuite  = {
+ 	.setup = tls_record_proto_testsuite_setup,
+ 	.unit_test_cases = {
+ 		TEST_CASE_NAMED_WITH_DATA(
+-			"Known vector TBD",
++			"Write record known vector AES-GCM-128 (vector 1)",
+ 			ut_setup_security, ut_teardown,
+-			test_tls_record_proto_known_vec, &tls_test_data1),
++			test_tls_record_proto_known_vec, &tls_test_data_aes_128_gcm_v1),
+ 		TEST_CASE_NAMED_WITH_DATA(
+-			"Known vector TBD",
++			"Read record known vector AES-GCM-128 (vector 1)",
+ 			ut_setup_security, ut_teardown,
+-			test_tls_record_proto_known_vec_read, &tls_test_data1),
++			test_tls_record_proto_known_vec_read, &tls_test_data_aes_128_gcm_v1),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+index 9a0cf702189fc..b9cadd5cd4e7a 100644
+--- a/app/test/test_cryptodev_security_tls_record.h
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -55,7 +55,7 @@ struct tls_record_test_flags {
+ 	bool display_alg;
+ };
+ 
+-extern struct tls_record_test_data tls_test_data1;
++extern struct tls_record_test_data tls_test_data_aes_128_gcm_v1;
+ 
+ int test_tls_record_status_check(struct rte_crypto_op *op);
+ 
+diff --git a/app/test/test_cryptodev_security_tls_record_test_vectors.h b/app/test/test_cryptodev_security_tls_record_test_vectors.h
+index 5aa0d27fdab02..52e97e85571f8 100644
+--- a/app/test/test_cryptodev_security_tls_record_test_vectors.h
++++ b/app/test/test_cryptodev_security_tls_record_test_vectors.h
+@@ -11,6 +11,71 @@
+ #include "test_cryptodev.h"
+ #include "test_cryptodev_security_tls_record.h"
+ 
+-struct tls_record_test_data tls_test_data1;
++/* TLS 1.2 AES-GCM 128 vector generated with kTLS. */
++struct tls_record_test_data tls_test_data_aes_128_gcm_v1 = {
++	.key = {
++		.data = {
++			0x77, 0xc4, 0x9b, 0x0c, 0x2b, 0xe2, 0xd2, 0x4e,
++			0xf5, 0x36, 0xb4, 0xea, 0x16, 0xb0, 0xed, 0x1f
++		},
++	},
++	.input_text = {
++		.data = {
++			0x61, 0x62, 0x63, 0x64, 0x31, 0x32, 0x33, 0x34,
++			0x61, 0x62, 0x63, 0x64, 0x31, 0x32, 0x33, 0x34,
++			0xa
++		},
++		.len = 17,
++	},
++	.output_text = {
++		.data = {
++			0x17, 0x03, 0x03, 0x00, 0x29,
++			0x3a, 0xcd, 0x41, 0x5d, 0x42, 0xac, 0xce, 0x36,
++			0xad, 0xd1, 0x83, 0xa0, 0x16, 0x84, 0xce, 0x84,
++			0xfc, 0xc2, 0xa7, 0x6b, 0xa1, 0x89, 0x5d, 0xf2,
++			0xeb,
++			0x9b, 0x90, 0x01, 0x56, 0xf8, 0x9d, 0xac, 0x0c,
++			0xa8, 0x95, 0xba, 0xcc, 0x1f, 0xf3, 0x36, 0x2b
++		},
++		.len = 46,
++	},
++	.imp_nonce = {
++		.data = {
++			0xda, 0xf8, 0x8f, 0x12
++		},
++		.len = 4,
++	},
++
++	.iv = {
++		.data = {
++			0x3a, 0xcd, 0x41, 0x5d, 0x42, 0xac, 0xce, 0x36
++		},
++	},
++
++	.xform = {
++		.aead = {
++			.next = NULL,
++			.type = RTE_CRYPTO_SYM_XFORM_AEAD,
++			.aead = {
++				.op = RTE_CRYPTO_AEAD_OP_ENCRYPT,
++				.algo = RTE_CRYPTO_AEAD_AES_GCM,
++				.key.length = 16,
++				.iv.length = 12,
++				.iv.offset = IV_OFFSET,
++				.digest_length = 16,
++				.aad_length = 13,
++			},
++		},
++	},
++
++	.tls_record_xform = {
++		.ver = RTE_SECURITY_VERSION_TLS_1_2,
++		.type = RTE_SECURITY_TLS_SESS_TYPE_WRITE,
++		.tls_1_2.seq_no = 0x1,
++	},
++
++	.aead = true,
++	.app_type = 0x17,
++};
+ 
+ #endif
+-- 
+2.25.1
+

@@ -1,0 +1,117 @@
+From fad8c794b8b825d806f56f39952094b62d6f7be3 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 4 Apr 2023 11:51:25 +0530
+Subject: [PATCH 352/955] ci: update ipsec_mb version
+
+Update ipsec_mb version to SECLIB-IPSEC-2023.3.21.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Ic43de39af567553dae68e42bae4b8b8c0f4ab0ca
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100527
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/build/build-deps.sh                |  9 ++----
+ ...-Fix-build-error-with-AES_BLOCK_SIZE.patch | 29 -------------------
+ .../0001-enable-cross-compilation.patch       | 27 -----------------
+ 3 files changed, 2 insertions(+), 63 deletions(-)
+ delete mode 100644 marvell-ci/patches/ipsec_mb/0001-Fix-build-error-with-AES_BLOCK_SIZE.patch
+ delete mode 100644 marvell-ci/patches/ipsec_mb/0001-enable-cross-compilation.patch
+
+diff --git a/marvell-ci/build/build-deps.sh b/marvell-ci/build/build-deps.sh
+index a5fecac8d4ec1..e0bccaa694c95 100755
+--- a/marvell-ci/build/build-deps.sh
++++ b/marvell-ci/build/build-deps.sh
+@@ -67,16 +67,11 @@ function setup_libpcap()
+ 
+ function setup_ipsec_mb()
+ {
+-	local patch1="0001-enable-cross-compilation.patch"
+-	local patch2="0001-Fix-build-error-with-AES_BLOCK_SIZE.patch"
+-
+ 	mkdir -p $BUILD_ROOT/ipsec_mb
+ 
+ 	pushd $BUILD_ROOT/ipsec_mb
+-	fetch_dep https://gitlab.arm.com/arm-reference-solutions/ipsec-mb/-/archive/SECLIB-IPSEC-2022.05.25/ipsec-mb-SECLIB-IPSEC-2022.05.25.tar.gz
+-	tar -zxvf ipsec-mb-SECLIB-IPSEC-2022.05.25.tar.gz --strip-components=1
+-	patch -p1 < $PROJECT_ROOT/marvell-ci/patches/ipsec_mb/$patch1
+-	patch -p1 < $PROJECT_ROOT/marvell-ci/patches/ipsec_mb/$patch2
++	fetch_dep https://gitlab.arm.com/arm-reference-solutions/ipsec-mb/-/archive/SECLIB-IPSEC-2023.3.21/ipsec-mb-SECLIB-IPSEC-2023.3.21.tar.gz
++	tar -zxvf ipsec-mb-SECLIB-IPSEC-2023.3.21.tar.gz --strip-components=1
+ 	SHARED=y CC=aarch64-marvell-linux-gnu-gcc \
+ 		make -C lib AESNI_EMU=y ARCH=aarch64 PREFIX=$INSTALL_ROOT NOLDCONFIG=y
+ 	SHARED=y CC=aarch64-marvell-linux-gnu-gcc \
+diff --git a/marvell-ci/patches/ipsec_mb/0001-Fix-build-error-with-AES_BLOCK_SIZE.patch b/marvell-ci/patches/ipsec_mb/0001-Fix-build-error-with-AES_BLOCK_SIZE.patch
+deleted file mode 100644
+index 32fc5dcc9c4da..0000000000000
+--- a/marvell-ci/patches/ipsec_mb/0001-Fix-build-error-with-AES_BLOCK_SIZE.patch
++++ /dev/null
+@@ -1,29 +0,0 @@
+-From e2e8703463f6f388076d340a7f7229332a35e709 Mon Sep 17 00:00:00 2001
+-From: Ashwin Sekhar T K <asekhar@marvell.com>
+-Date: Thu, 21 Jul 2022 10:56:44 +0530
+-Subject: [PATCH] Fix build error with AES_BLOCK_SIZE
+-
+-fix build error with AES_BLOCK_SIZE
+-
+-Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+----
+- lib/ipsec-mb.h | 2 ++
+- 1 file changed, 2 insertions(+)
+-
+-diff --git a/lib/ipsec-mb.h b/lib/ipsec-mb.h
+-index acdca5a..f8976f3 100644
+---- a/lib/ipsec-mb.h
+-+++ b/lib/ipsec-mb.h
+-@@ -324,7 +324,9 @@ typedef enum {
+- #define DES_KEY_SCHED_SIZE      IMB_DES_KEY_SCHED_SIZE
+- #define DES_BLOCK_SIZE          IMB_DES_BLOCK_SIZE
+- 
+-+#ifndef AES_BLOCK_SIZE
+- #define AES_BLOCK_SIZE          IMB_AES_BLOCK_SIZE
+-+#endif
+- 
+- #define SHA1_DIGEST_SIZE_IN_BYTES   IMB_SHA1_DIGEST_SIZE_IN_BYTES
+- #define SHA224_DIGEST_SIZE_IN_BYTES IMB_SHA224_DIGEST_SIZE_IN_BYTES
+--- 
+-2.25.1
+-
+diff --git a/marvell-ci/patches/ipsec_mb/0001-enable-cross-compilation.patch b/marvell-ci/patches/ipsec_mb/0001-enable-cross-compilation.patch
+deleted file mode 100644
+index 133f9e1fe028b..0000000000000
+--- a/marvell-ci/patches/ipsec_mb/0001-enable-cross-compilation.patch
++++ /dev/null
+@@ -1,27 +0,0 @@
+-From 558e6baedda1dda6c8dc968a74ce354150e543a6 Mon Sep 17 00:00:00 2001
+-From: Ashwin Sekhar T K <asekhar@marvell.com>
+-Date: Thu, 15 Dec 2022 19:28:48 +0530
+-Subject: [PATCH] enable cross compilation
+-
+-Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+----
+- lib/Makefile | 3 ++-
+- 1 file changed, 2 insertions(+), 1 deletion(-)
+-
+-diff --git a/lib/Makefile b/lib/Makefile
+-index 4168b45..fa9e9a8 100644
+---- a/lib/Makefile
+-+++ b/lib/Makefile
+-@@ -781,7 +781,8 @@ install: $(LIB_DIR)/$(LIBNAME)
+- 	install -m 0444 $(MAN2) $(MAN_DIR)
+- 	install -d $(LIB_INSTALL_DIR)
+- ifeq ($(SHARED),y)
+--	install -s -m $(LIBPERM) $(LIB_DIR)/$(LIBNAME) $(LIB_INSTALL_DIR)
+-+	install -s --strip-program=aarch64-marvell-linux-gnu-strip -m $(LIBPERM) \
+-+		$(LIB_DIR)/$(LIBNAME) $(LIB_INSTALL_DIR)
+- else
+- 	# must not strip symbol table for static libs
+- 	install -m $(LIBPERM) $(LIB_DIR)/$(LIBNAME) $(LIB_INSTALL_DIR)
+--- 
+-2.25.1
+-
+-- 
+2.25.1
+

@@ -1,0 +1,196 @@
+From aa6dca54db772b16c32c27aa273c14c54b423003 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 31 Oct 2023 22:02:31 +0530
+Subject: [PATCH 660/955] net/octeon_ep: sync from 23.07
+
+Sync with 23.07-devel driver
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I1766f422bfb1e7de4b87730e1ec2f78efc4e1fda
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115036
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/otx2_ep_vf.h    |  1 -
+ drivers/net/octeon_ep/otx_ep_common.h | 24 +++++-----------------
+ drivers/net/octeon_ep/otx_ep_ethdev.c |  2 --
+ drivers/net/octeon_ep/otx_ep_mbox.c   | 29 +--------------------------
+ drivers/net/octeon_ep/otx_ep_mbox.h   | 16 +--------------
+ 5 files changed, 7 insertions(+), 65 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.h b/drivers/net/octeon_ep/otx2_ep_vf.h
+index 251c80a8547e2..d11a39cb095ec 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.h
++++ b/drivers/net/octeon_ep/otx2_ep_vf.h
+@@ -128,7 +128,6 @@
+ #define PCI_DEVID_CN98XX_EP_NET_VF		0xB103
+ #define PCI_DEVID_CNF95N_EP_NET_VF		0xB403
+ #define PCI_DEVID_CNF95O_EP_NET_VF		0xB603
+-#define PCI_DEVID_LIO3_EP_NET_VF		0x3383
+ 
+ int
+ otx2_ep_vf_setup_device(struct otx_ep_device *sdpvf);
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 031a5c5a52be7..60d16016e82c8 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -344,17 +344,6 @@ struct otx_ep_oq_config {
+ 	uint32_t refill_threshold;
+ };
+ 
+-struct otx_ep_fw_info {
+-	/* pkind value to be used in every Tx hardware descriptor */
+-	uint8_t pkind;
+-	/* front size data */
+-	uint8_t fsz;
+-	/* supported rx offloads */
+-	uint16_t rx_ol_flags;
+-	/* supported tx offloads */
+-	uint16_t tx_ol_flags;
+-};
+-
+ /* The Descriptor Ring Output Queue(DROQ) structure. */
+ struct otx_ep_droq {
+ 	struct otx_ep_device *otx_ep_dev;
+@@ -405,11 +394,11 @@ struct otx_ep_droq {
+ 	 */
+ 	void *pkts_sent_reg;
+ 
+-	/** Fix for DMA incompletion during pkt reads.
+-	 *  This variable is used to initiate a sent_reg_read
+-	 *  that completes pending dma
+-	 *  this variable is used as lvalue so compiler cannot optimize
+-	 *  the reads
++	/** Handle DMA incompletion during pkt reads.
++	 * This variable is used to initiate a sent_reg_read
++	 * that completes pending dma
++	 * this variable is used as lvalue so compiler cannot optimize
++	 * the reads.
+ 	 */
+ 	uint32_t sent_reg_val;
+ 
+@@ -558,9 +547,6 @@ struct otx_ep_device {
+ 
+ 	/* Negotiated Mbox version */
+ 	uint32_t mbox_neg_ver;
+-
+-	/* firmware info */
+-	struct otx_ep_fw_info fw_info;
+ };
+ 
+ int otx_ep_setup_iqs(struct otx_ep_device *otx_ep, uint32_t iq_no,
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 129564b3e5713..57b965ad06701 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -210,7 +210,6 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+ 		break;
+ 	case PCI_DEVID_CN9K_EP_NET_VF:
+-	case PCI_DEVID_LIO3_EP_NET_VF:
+ 	case PCI_DEVID_CN98XX_EP_NET_VF:
+ 	case PCI_DEVID_CNF95N_EP_NET_VF:
+ 	case PCI_DEVID_CNF95O_EP_NET_VF:
+@@ -740,7 +739,6 @@ static const struct rte_pci_id pci_id_otx_ep_map[] = {
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CN98XX_EP_NET_VF) },
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNF95N_EP_NET_VF) },
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNF95O_EP_NET_VF) },
+-	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_LIO3_EP_NET_VF) },
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CN10KA_EP_NET_VF) },
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CN10KB_EP_NET_VF) },
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNF10KA_EP_NET_VF) },
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index 3c5739c7e1407..4118645dc7f43 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -17,9 +17,7 @@
+  * with new command and it's version info.
+  */
+ static uint32_t otx_ep_cmd_versions[OTX_EP_MBOX_CMD_MAX] = {
+-	[0 ... OTX_EP_MBOX_CMD_DEV_REMOVE] = OTX_EP_MBOX_VERSION_V1,
+-	[OTX_EP_MBOX_CMD_GET_FW_INFO ... OTX_EP_MBOX_NOTIF_LINK_STATUS] =
+-		OTX_EP_MBOX_VERSION_V2
++	[0 ... OTX_EP_MBOX_CMD_DEV_REMOVE] = OTX_EP_MBOX_VERSION_V1
+ };
+ 
+ static int
+@@ -335,28 +333,3 @@ int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev)
+ 	ret = otx_ep_send_mbox_cmd(otx_ep, cmd, NULL);
+ 	return ret;
+ }
+-
+-int otx_ep_mbox_get_fw_info(struct rte_eth_dev *eth_dev)
+-{
+-	union otx_ep_mbox_word cmd;
+-	union otx_ep_mbox_word rsp;
+-	int ret;
+-	struct otx_ep_device *otx_ep =
+-		(struct otx_ep_device *)(eth_dev)->data->dev_private;
+-
+-	cmd.u64 = 0;
+-	cmd.s_fw_info.opcode = OTX_EP_MBOX_CMD_GET_FW_INFO;
+-	ret = otx_ep_send_mbox_cmd(otx_ep, cmd, &rsp);
+-	if (ret) {
+-		otx_ep_err("Get fw info via VF Mbox send failed\n");
+-		return ret;
+-	}
+-	otx_ep->fw_info.pkind = rsp.s_fw_info.pkind;
+-	otx_ep->fw_info.fsz = rsp.s_fw_info.fsz;
+-	otx_ep->fw_info.rx_ol_flags = rsp.s_fw_info.rx_ol_flags;
+-	otx_ep->fw_info.tx_ol_flags = rsp.s_fw_info.tx_ol_flags;
+-	otx_ep_dbg("Get fw info pkind:%d fsz:%d rx:%x tx:%x\n", rsp.s_fw_info.pkind,
+-		   rsp.s_fw_info.fsz, rsp.s_fw_info.rx_ol_flags, rsp.s_fw_info.tx_ol_flags);
+-
+-	return 0;
+-}
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.h b/drivers/net/octeon_ep/otx_ep_mbox.h
+index 37fd4ba3319f0..a3fc15cca7dd4 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.h
++++ b/drivers/net/octeon_ep/otx_ep_mbox.h
+@@ -11,10 +11,9 @@
+ enum octep_pfvf_mbox_version {
+ 	OTX_EP_MBOX_VERSION_V0,
+ 	OTX_EP_MBOX_VERSION_V1,
+-	OTX_EP_MBOX_VERSION_V2,
+ };
+ 
+-#define OTX_EP_MBOX_VERSION_CURRENT OTX_EP_MBOX_VERSION_V2
++#define OTX_EP_MBOX_VERSION_CURRENT OTX_EP_MBOX_VERSION_V1
+ 
+ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_VERSION,
+@@ -28,9 +27,6 @@ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_GET_LINK_STATUS,
+ 	OTX_EP_MBOX_CMD_GET_MTU,
+ 	OTX_EP_MBOX_CMD_DEV_REMOVE,
+-	OTX_EP_MBOX_CMD_GET_FW_INFO,
+-	OTX_EP_MBOX_CMD_SET_OFFLOADS,
+-	OTX_EP_MBOX_NOTIF_LINK_STATUS,
+ 	OTX_EP_MBOX_CMD_MAX,
+ };
+ 
+@@ -125,15 +121,6 @@ union otx_ep_mbox_word {
+ 		uint64_t status:1;
+ 		uint64_t rsvd:53;
+ 	} s_link_status;
+-	struct {
+-		uint64_t opcode:8;
+-		uint64_t type:2;
+-		uint64_t pkind:8;
+-		uint64_t fsz:8;
+-		uint64_t rx_ol_flags:16;
+-		uint64_t tx_ol_flags:16;
+-		uint64_t rsvd:6;
+-	} s_fw_info;
+ } __rte_packed;
+ 
+ /* Hardware interface link state information. */
+@@ -180,5 +167,4 @@ void otx_ep_mbox_disable_interrupt(struct otx_ep_device *otx_ep);
+ int otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev);
+ int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev);
+ int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev);
+-int otx_ep_mbox_get_fw_info(struct rte_eth_dev *eth_dev);
+ #endif
+-- 
+2.25.1
+

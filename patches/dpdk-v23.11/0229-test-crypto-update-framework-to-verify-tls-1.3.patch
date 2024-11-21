@@ -1,0 +1,188 @@
+From f2311a87c53b4d4587a2946f08565236dafc08ce Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Mon, 11 Dec 2023 22:21:27 -0800
+Subject: [PATCH 229/513] test/crypto: update framework to verify tls-1.3
+
+Update the fields in preparation of test descriptor.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: If15182fff5fe2820295d428aee51f4004ff02ea8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118045
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c                     | 17 +++++---
+ app/test/test_cryptodev_security_tls_record.c | 43 ++++++++++++-------
+ app/test/test_cryptodev_security_tls_record.h | 10 ++---
+ 3 files changed, 43 insertions(+), 27 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 8d748082b3dd1..2fb8c2250f7ad 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -11937,8 +11937,9 @@ test_tls_record_proto_process(const struct tls_record_test_data td[],
+ 		ut_params->op->param1.tls_record.content_type = td[i].app_type;
+ 
+ 		/* Copy IV in crypto operation when IV generation is disabled */
+-		if (sess_type == RTE_SECURITY_TLS_SESS_TYPE_WRITE &&
+-		    tls_record_xform.options.iv_gen_disable == 1) {
++		if ((sess_type == RTE_SECURITY_TLS_SESS_TYPE_WRITE) &&
++		    (tls_record_xform.ver != RTE_SECURITY_VERSION_TLS_1_3) &&
++		    (tls_record_xform.options.iv_gen_disable == 1)) {
+ 			uint8_t *iv;
+ 			int len;
+ 
+@@ -12053,8 +12054,10 @@ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ 		if (flags->zero_len)
+ 			payload_len = 0;
+ again:
+-		test_tls_record_td_prepare(sec_alg_list[i].param1, sec_alg_list[i].param2, flags,
+-					   td_outb, nb_pkts, payload_len);
++		ret = test_tls_record_td_prepare(sec_alg_list[i].param1, sec_alg_list[i].param2,
++						 flags, td_outb, nb_pkts, payload_len);
++		if (ret == TEST_SKIPPED)
++			continue;
+ 
+ 		ret = test_tls_record_proto_process(td_outb, td_inb, nb_pkts, true, flags);
+ 		if (ret == TEST_SKIPPED)
+@@ -12266,8 +12269,10 @@ test_dtls_pkt_replay(const uint64_t seq_no[],
+ 	int ret;
+ 
+ 	for (i = 0; i < RTE_DIM(sec_alg_list); i++) {
+-		test_tls_record_td_prepare(sec_alg_list[i].param1, sec_alg_list[i].param2, flags,
+-					   td_outb, nb_pkts, 0);
++		ret = test_tls_record_td_prepare(sec_alg_list[i].param1, sec_alg_list[i].param2,
++						 flags, td_outb, nb_pkts, 0);
++		if (ret == TEST_SKIPPED)
++			continue;
+ 
+ 		for (idx = 0; idx < nb_pkts; idx++)
+ 			td_outb[idx].tls_record_xform.dtls_1_2.seq_no = seq_no[idx];
+diff --git a/app/test/test_cryptodev_security_tls_record.c b/app/test/test_cryptodev_security_tls_record.c
+index 498c4923e0707..96d0a94731f9f 100644
+--- a/app/test/test_cryptodev_security_tls_record.c
++++ b/app/test/test_cryptodev_security_tls_record.c
+@@ -70,7 +70,7 @@ test_tls_record_td_read_from_write(const struct tls_record_test_data *td_out,
+ 	}
+ }
+ 
+-void
++int
+ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypto_param *param2,
+ 			   const struct tls_record_test_flags *flags,
+ 			   struct tls_record_test_data *td_array,
+@@ -79,6 +79,10 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 	int i, min_padding, hdr_len, tls_pkt_size, mac_len = 0, exp_nonce_len = 0, roundup_len = 0;
+ 	struct tls_record_test_data *td = NULL;
+ 
++	if ((flags->tls_version == RTE_SECURITY_VERSION_TLS_1_3) &&
++	    (param1->type != RTE_CRYPTO_SYM_XFORM_AEAD))
++		return TEST_SKIPPED;
++
+ 	memset(td_array, 0, nb_td * sizeof(*td));
+ 
+ 	for (i = 0; i < nb_td; i++) {
+@@ -88,10 +92,17 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 
+ 		if (param1->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
+ 			/* Copy template for packet & key fields */
+-			if (flags->tls_version == RTE_SECURITY_VERSION_DTLS_1_2)
+-				memcpy(td, &dtls_test_data_aes_128_gcm, sizeof(*td));
+-			else
++			switch (flags->tls_version) {
++			case RTE_SECURITY_VERSION_TLS_1_2:
+ 				memcpy(td, &tls_test_data_aes_128_gcm_v1, sizeof(*td));
++				break;
++			case RTE_SECURITY_VERSION_DTLS_1_2:
++				memcpy(td, &dtls_test_data_aes_128_gcm, sizeof(*td));
++				break;
++			case RTE_SECURITY_VERSION_TLS_1_3:
++				memcpy(td, &tls13_test_data_aes_128_gcm, sizeof(*td));
++				break;
++			}
+ 
+ 			td->aead = true;
+ 			td->xform.aead.aead.algo = param1->alg.aead;
+@@ -127,6 +138,7 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 
+ 		if (!td->aead) {
+ 			mac_len = td->xform.chain.auth.auth.digest_length;
++			min_padding = 1;
+ 			switch (td->xform.chain.cipher.cipher.algo) {
+ 			case RTE_CRYPTO_CIPHER_3DES_CBC:
+ 				roundup_len = 8;
+@@ -143,30 +155,28 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 			}
+ 		} else {
+ 			mac_len = td->xform.aead.aead.digest_length;
++			min_padding = 0;
+ 			roundup_len = 0;
+-			exp_nonce_len = 8;
++			if (td->tls_record_xform.ver == RTE_SECURITY_VERSION_TLS_1_3)
++				exp_nonce_len = 0;
++			else
++				exp_nonce_len = 8;
+ 		}
+ 
+ 		switch (td->tls_record_xform.ver) {
+ 		case RTE_SECURITY_VERSION_TLS_1_2:
++			hdr_len = sizeof(struct rte_tls_hdr);
++			break;
+ 		case RTE_SECURITY_VERSION_TLS_1_3:
+ 			hdr_len = sizeof(struct rte_tls_hdr);
+-			if (td->aead)
+-				min_padding = 0;
+-			else
+-				min_padding = 1;
++			/* Add 1 byte for content type in packet */
++			tls_pkt_size += 1;
+ 			break;
+ 		case RTE_SECURITY_VERSION_DTLS_1_2:
+ 			hdr_len = sizeof(struct rte_dtls_hdr);
+-			if (td->aead)
+-				min_padding = 0;
+-			else
+-				min_padding = 1;
+ 			break;
+ 		default:
+-			hdr_len = 0;
+-			min_padding = 0;
+-			break;
++			return TEST_SKIPPED;
+ 		}
+ 
+ 		tls_pkt_size += mac_len;
+@@ -186,6 +196,7 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 		td->output_text.len = tls_pkt_size;
+ 
+ 	}
++	return TEST_SUCCESS;
+ }
+ 
+ void
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+index 05bd7a986208d..21d25c02bff39 100644
+--- a/app/test/test_cryptodev_security_tls_record.h
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -137,11 +137,11 @@ int test_tls_record_sec_caps_verify(struct rte_security_tls_record_xform *tls_re
+ void test_tls_record_td_read_from_write(const struct tls_record_test_data *td_out,
+ 					struct tls_record_test_data *td_in);
+ 
+-void test_tls_record_td_prepare(const struct crypto_param *param1,
+-				const struct crypto_param *param2,
+-				const struct tls_record_test_flags *flags,
+-				struct tls_record_test_data *td_array, int nb_td,
+-				unsigned int data_len);
++int test_tls_record_td_prepare(const struct crypto_param *param1,
++			       const struct crypto_param *param2,
++			       const struct tls_record_test_flags *flags,
++			       struct tls_record_test_data *td_array, int nb_td,
++			       unsigned int data_len);
+ 
+ void test_tls_record_td_update(struct tls_record_test_data td_inb[],
+ 			       const struct tls_record_test_data td_outb[], int nb_td,
+-- 
+2.25.1
+

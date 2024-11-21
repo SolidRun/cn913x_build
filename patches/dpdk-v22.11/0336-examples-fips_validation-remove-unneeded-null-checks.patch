@@ -1,0 +1,47 @@
+From cae152bcc2848839fe28493d9254a085f99247bf Mon Sep 17 00:00:00 2001
+From: Stephen Hemminger <stephen@networkplumber.org>
+Date: Wed, 22 Mar 2023 18:04:28 -0700
+Subject: [PATCH 336/955] examples/fips_validation: remove unneeded null checks
+
+No check for null pointer is necessary before calling free().
+
+Fixes: 1ea7940e0f44 ("examples/fips_validation: add SHA3 validation")
+Fixes: 225f04fb3e4c ("examples/fips_validation: add SHAKE validation")
+
+Signed-off-by: Stephen Hemminger <stephen@networkplumber.org>
+Change-Id: I64610b06b7f1182eae2e81c7237ad0dac2fc2f04
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99862
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ examples/fips_validation/main.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/examples/fips_validation/main.c b/examples/fips_validation/main.c
+index 2c4353185edda..4c231fdb29cda 100644
+--- a/examples/fips_validation/main.c
++++ b/examples/fips_validation/main.c
+@@ -2288,8 +2288,7 @@ fips_mct_sha_test(void)
+ 
+ 	max_outlen = md_blocks * vec.cipher_auth.digest.len;
+ 
+-	if (vec.cipher_auth.digest.val)
+-		free(vec.cipher_auth.digest.val);
++	free(vec.cipher_auth.digest.val);
+ 
+ 	vec.cipher_auth.digest.val = calloc(1, max_outlen);
+ 
+@@ -2382,8 +2381,7 @@ fips_mct_shake_test(void)
+ 
+ 	max_outlen = vec.cipher_auth.digest.len;
+ 
+-	if (vec.cipher_auth.digest.val)
+-		free(vec.cipher_auth.digest.val);
++	free(vec.cipher_auth.digest.val);
+ 
+ 	vec.cipher_auth.digest.val = calloc(1, max_outlen);
+ 
+-- 
+2.25.1
+

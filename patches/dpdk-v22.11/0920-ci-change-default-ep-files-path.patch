@@ -1,0 +1,34 @@
+From 6424cf8c61b75c3f98dedcf9baf19b3e1586efaf Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 3 Sep 2024 21:41:54 +0530
+Subject: [PATCH 920/955] ci: change default ep files path
+
+Change default ep files path.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I58d1a947fbf1aabc6fa516e62899b8e14f7d98a8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134838
+(cherry picked from commit 14683088bd644242adc9d12d5ae73881af42d74b)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134877
+(cherry picked from commit 189c1ce6a768f3d7992110d178f2eef19daefa4d)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134878
+---
+ marvell-ci/test/board/ep_test_run.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/board/ep_test_run.sh b/marvell-ci/test/board/ep_test_run.sh
+index 791505615d82d..e675ce3c665d5 100755
+--- a/marvell-ci/test/board/ep_test_run.sh
++++ b/marvell-ci/test/board/ep_test_run.sh
+@@ -11,7 +11,7 @@ SKIP_SYNC=${SKIP_SYNC:-}
+ SKIP_TARGET_SETUP=${SKIP_TARGET_SETUP:-}
+ EP_HOST=${EP_HOST:-?}
+ EP_BOARD=${EP_BOARD:-?}
+-EP_FILES=${EP_FILES:-/tmp/ep_files}
++EP_FILES=${EP_FILES:-/tmp/ep_files_ci}
+ TARGET_SSH_CMD=${TARGET_SSH_CMD:-"ssh"}
+ TARGET_SCP_CMD=${TARGET_SCP_CMD:-"scp"}
+ REMOTE_HOST="$TARGET_SSH_CMD $EP_HOST -n"
+-- 
+2.25.1
+

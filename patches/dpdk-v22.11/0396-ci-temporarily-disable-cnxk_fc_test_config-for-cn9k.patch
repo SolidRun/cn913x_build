@@ -1,0 +1,42 @@
+From 7f590677d79d12c4e489a3e675225b02ec7206f2 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Wed, 10 May 2023 19:22:42 +0530
+Subject: [PATCH 396/955] ci: temporarily disable cnxk_fc_test_config for cn9k
+
+Temporarily disable cnxk_fc_test_config.
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I783d0603283c0b222af0e8f57290560233df9700
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103190
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn9k.env | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index 5f559be7765a7..c8916a111cc36 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -67,6 +67,10 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-1}
+ 
++FIXME_SKIP_TESTS="
++        cnxk_fc_test_config
++"
++
+ 
+ DEFAULT_SKIP_TESTS="
+ 	distributor_autotest
+@@ -111,6 +115,7 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_multi_pool_pkt_tx_scalar
+ 	cnxk_multi_mempool
+ 	cnxk_hwpool_tests
++	${FIXME_SKIP_TESTS}
+ "
+ 
+ # Tests to skipped.
+-- 
+2.25.1
+

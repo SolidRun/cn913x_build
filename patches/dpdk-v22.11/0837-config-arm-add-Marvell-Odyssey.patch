@@ -1,0 +1,89 @@
+From 3f04a23e7df674c17258aac75d14efaab1c846db Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 22 Mar 2023 19:26:05 +0000
+Subject: [PATCH 837/955] config/arm: add Marvell Odyssey
+
+Add meson build configuration for Marvell Odyssey platform with 64-bit
+ARM Neoverse V2 cores.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Honnappa Nagarahalli <honnappa.nagarahalli@arm.com>
+Reviewed-by: Ruifeng Wang <ruifeng.wang@arm.com>
+Change-Id: Iabd80db1ca940bfac9fa0f675beb23213492e46c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122373
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123363
+---
+ config/arm/arm64_odyssey_linux_gcc | 17 +++++++++++++++++
+ config/arm/meson.build             | 15 +++++++++++++++
+ 2 files changed, 32 insertions(+)
+ create mode 100644 config/arm/arm64_odyssey_linux_gcc
+
+diff --git a/config/arm/arm64_odyssey_linux_gcc b/config/arm/arm64_odyssey_linux_gcc
+new file mode 100644
+index 0000000000000..69b5cd42d80de
+--- /dev/null
++++ b/config/arm/arm64_odyssey_linux_gcc
+@@ -0,0 +1,17 @@
++[binaries]
++c = ['ccache', 'aarch64-marvell-linux-gnu-gcc']
++cpp = ['ccache', 'aarch64-marvell-linux-gnu-g++']
++ar = 'aarch64-marvell-linux-gnu-gcc-ar'
++strip = 'aarch64-marvell-linux-gnu-strip'
++pkgconfig = 'aarch64-linux-gnu-pkg-config'
++
++[host_machine]
++system = 'linux'
++cpu_family = 'aarch64'
++cpu = 'armv9-a'
++endian = 'little'
++
++[properties]
++platform = 'odyssey'
++
++[built-in options]
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index 588d9e29f62c6..6d11d2c865c7a 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -453,6 +453,19 @@ soc_n2 = {
+     'numa': false
+ }
+ 
++soc_odyssey = {
++    'description': 'Marvell Odyssey',
++    'implementer': '0x41',
++    'part_number': '0xd4f',
++    'extra_march_features': ['crypto'],
++    'numa': false,
++    'flags': [
++        ['RTE_MAX_LCORE', 80],
++        ['RTE_MAX_NUMA_NODES', 1],
++        ['RTE_MEMPOOL_ALIGN', 128],
++    ],
++}
++
+ soc_cn9k = {
+     'description': 'Marvell OCTEON 9',
+     'implementer': '0x43',
+@@ -520,6 +533,7 @@ kunpeng920:      HiSilicon Kunpeng 920
+ kunpeng930:      HiSilicon Kunpeng 930
+ n1sdp:           Arm Neoverse N1SDP
+ n2:              Arm Neoverse N2
++odyssey:         Marvell Odyssey
+ stingray:        Broadcom Stingray
+ thunderx2:       Marvell ThunderX2 T99
+ thunderxt88:     Marvell ThunderX T88
+@@ -549,6 +563,7 @@ socs = {
+     'kunpeng930': soc_kunpeng930,
+     'n1sdp': soc_n1sdp,
+     'n2': soc_n2,
++    'odyssey' : soc_odyssey,
+     'stingray': soc_stingray,
+     'thunderx2': soc_thunderx2,
+     'thunderxt88': soc_thunderxt88,
+-- 
+2.25.1
+

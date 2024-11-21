@@ -1,0 +1,241 @@
+From 43bf8020a11e06b0c89d8b2288feea0e038ff3ac Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Wed, 5 Jul 2023 21:46:12 +0530
+Subject: [PATCH 549/955] ci: add test case for flow aging
+
+Adds test case to test flow aging feature.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Change-Id: I917de6a22a8d80408bd3b8bc947ca0217e31f017
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107815
+---
+ .../cnxk-tests/flow_aging/cnxk_flow_aging.sh  | 124 ++++++++++++++++++
+ .../test/cnxk-tests/flow_aging/meson.build    |  31 +++++
+ .../flow_aging/pcap/eth_vlan_ipv4_tcp.pcap    | Bin 0 -> 298 bytes
+ marvell-ci/test/cnxk-tests/meson.build        |   1 +
+ marvell-ci/test/env/asim-cn10ka.env           |   1 +
+ marvell-ci/test/env/cn10k-nightly.env         |   1 +
+ 6 files changed, 158 insertions(+)
+ create mode 100755 marvell-ci/test/cnxk-tests/flow_aging/cnxk_flow_aging.sh
+ create mode 100644 marvell-ci/test/cnxk-tests/flow_aging/meson.build
+ create mode 100644 marvell-ci/test/cnxk-tests/flow_aging/pcap/eth_vlan_ipv4_tcp.pcap
+
+diff --git a/marvell-ci/test/cnxk-tests/flow_aging/cnxk_flow_aging.sh b/marvell-ci/test/cnxk-tests/flow_aging/cnxk_flow_aging.sh
+new file mode 100755
+index 0000000000000..bc84b6e3073ad
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/flow_aging/cnxk_flow_aging.sh
+@@ -0,0 +1,124 @@
++#!/bin/bash
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2023 Marvell.
++
++#set -e
++
++CNXKTESTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )/.."
++PRFX="rte_flow_aging"
++
++source $CNXKTESTPATH/common/testpmd/pktgen.env
++source $CNXKTESTPATH/common/testpmd/lbk.env
++source $CNXKTESTPATH/common/pcap/pcap.env
++
++function sig_handler()
++{
++	local status=$?
++	set +e
++	trap - ERR
++	trap - INT
++	trap - QUIT
++	trap - EXIT
++	if [[ $status -ne 0 ]]; then
++		echo "$1 Handler"
++	fi
++
++	testpmd_cleanup $PRFX
++	pktgen_cleanup
++	exit $status
++}
++
++PKTGEN_PORT="0002:01:00.1"
++PKTGEN_COREMASK="0x5"
++TESTPMD_PORT="0002:01:00.2"
++TESTPMD_COREMASK="0x3"
++
++#trap "sig_handler ERR" ERR
++trap "sig_handler INT" INT
++trap "sig_handler QUIT" QUIT
++trap "sig_handler EXIT" EXIT
++
++function pktgen_send_flow()
++{
++	local pcapfile=$1
++
++	echo "Starting pktgen with Port=$PKTGEN_PORT, Coremask=$PKTGEN_COREMASK, Pcap=$pcapfile"
++	pktgen_launch -c $PKTGEN_COREMASK -p $PKTGEN_PORT -i $pcapfile
++	pktgen_start
++
++	sleep 3
++
++	pktgen_stats > /dev/null
++	echo "-------------------------PKTGEN LOG-----------------------------"
++	pktgen_log
++}
++
++function testpmd_check_aging()
++{
++	local prefix=$1
++	local out=testpmd.out.$prefix
++
++	testpmd_cmd $prefix "flow aged 0"
++
++	sleep 3
++	testpmd_prompt $prefix
++	COUNT=`cat $out | tail -n6 | grep "total aged flows:" | cut -d':' -f2`
++
++	echo -e "Total aged flows:$COUNT \n"
++
++	if [[ "$COUNT" -eq "1" ]]; then
++		return 0
++	fi
++
++	return -1
++}
++
++function testpmd_test_aging()
++{
++	local prefix=$1
++	local name=$2
++	local flow=$3
++	local pcapfile=$4
++	local in=testpmd.in.$prefix
++	echo "$cmd" >> $in
++	testpmd_prompt $prefix
++
++	#Add rule
++	testpmd_cmd $prefix "$flow"
++
++	testpmd_cmd $prefix "start"
++
++	pktgen_send_flow $pcapfile
++
++	sleep 3
++
++	pktgen_quit
++	pktgen_cleanup
++
++	sleep 30
++
++	if testpmd_check_aging $prefix; then
++		echo "$name passed"
++		#Delete rule
++		testpmd_cmd $prefix "flow destroy 0 rule 0"
++		return 0
++	else
++		echo "$name failed"
++		exit -1
++	fi
++}
++
++echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
++testpmd_launch $PRFX \
++		" -c $TESTPMD_COREMASK -a $TESTPMD_PORT" \
++		" --no-flush-rx --nb-cores=1 --rxq 8 --txq 8" \
++		" --port-topology=loop"
++
++#---------------------------FLOW_AGING-----------------------------------------
++testpmd_test_aging $PRFX FLOW_AGING "flow create 0 ingress pattern eth / \
++ vlan / ipv4 / tcp / end actions age timeout 20 / queue index 2 / count / end" \
++ "pcap/eth_vlan_ipv4_tcp.pcap"
++
++testpmd_quit $PRFX
++echo "SUCCESS: flow aging test completed"
++exit 0
+diff --git a/marvell-ci/test/cnxk-tests/flow_aging/meson.build b/marvell-ci/test/cnxk-tests/flow_aging/meson.build
+new file mode 100644
+index 0000000000000..f7309e98b5f91
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/flow_aging/meson.build
+@@ -0,0 +1,31 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2023 Marvell.
++
++# Test script
++test_script = 'cnxk_flow_aging.sh'
++
++# Test name
++test_name = 'flow_aging'
++
++# Test arguments
++test_args = ''
++
++# Test directory name relative to build directory.
++test_dir = meson.current_build_dir()
++
++# Copy the required scripts to build directory.
++run_command(copy_data, test_script)
++run_command(copy_data, 'pcap/eth_vlan_ipv4_tcp.pcap')
++
++# Add the meson test
++test(test_name,
++     cnxk_test_script_wrapper,
++     env : ['DPDK_TEST=' + test_name, 'TEST_DIR=' + test_dir],
++     args : [test_script, test_args],
++     is_parallel : false,
++     suite : 'cnxk-tests')
++
++# Install the sample script
++install_data(test_script,
++             install_mode : 'rwxr-xr-x',
++             install_dir : 'bin/cnxk/flow_aging')
+diff --git a/marvell-ci/test/cnxk-tests/flow_aging/pcap/eth_vlan_ipv4_tcp.pcap b/marvell-ci/test/cnxk-tests/flow_aging/pcap/eth_vlan_ipv4_tcp.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..c6ea7f4eaa421764f970d45864e2b6dbadef8e62
+GIT binary patch
+literal 298
+zcmca|c+)~A1{MYcU}0bcaxDBeB-Y;MVqgMtKzP;eGk4$pFWCA*Gor7Nfl--*!Ig#K
+j14yX@oBs_iZXRAPAYgW7REC)pz@)$sSi!(hF-!meAGC2E
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index ac1d2a5eb0060..e3a362a5a52ce 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -83,6 +83,7 @@ test_subdirs = [
+         'hwpool',
+         'cpt_t106_mode',
+         'policer_test',
++        'flow_aging',
+ ]
+ 
+ foreach dir:test_subdirs
+diff --git a/marvell-ci/test/env/asim-cn10ka.env b/marvell-ci/test/env/asim-cn10ka.env
+index d282b87dab882..de6069940709a 100644
+--- a/marvell-ci/test/env/asim-cn10ka.env
++++ b/marvell-ci/test/env/asim-cn10ka.env
+@@ -132,6 +132,7 @@ DEFAULT_SKIP_TESTS="$DEFAULT_SKIP_TESTS
+ 	cnxk_flow_perf
+ 	cnxk_flow_regression
+ 	cnxk_extbuf_tests
++	flow_aging
+ "
+ 
+ # Tests to skipped.
+diff --git a/marvell-ci/test/env/cn10k-nightly.env b/marvell-ci/test/env/cn10k-nightly.env
+index fe561dca53491..010afeb60bc9b 100644
+--- a/marvell-ci/test/env/cn10k-nightly.env
++++ b/marvell-ci/test/env/cn10k-nightly.env
+@@ -42,6 +42,7 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_mbuf_perf
+ 	cnxk_ipsec_reassembly_perf
+ 	cnxk_dpdk_event_tests
++	flow_aging
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+-- 
+2.25.1
+

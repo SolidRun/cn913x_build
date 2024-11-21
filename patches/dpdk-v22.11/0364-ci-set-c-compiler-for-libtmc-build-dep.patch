@@ -1,0 +1,39 @@
+From 5fbc2e743a146536ee81ea7ad6ac3253b9a0fe91 Mon Sep 17 00:00:00 2001
+From: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Date: Thu, 13 Apr 2023 08:30:08 -0700
+Subject: [PATCH 364/955] ci: set c compiler for libtmc build-dep
+
+CC is not defined for libtmc in build deps. This is causing
+the build to use host compiler instead of cross compiler.
+Linking stage fails with below error.
+
+deps-prefix/lib/libtmc.a: error adding symbols: file in wrong format
+
+Signed-off-by: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Change-Id: I49fc3aad918ac7863e575e84bf11740104cc7436
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101336
+Reviewed-by: Ashwin Sekhar T K
+Tested-by: Ashwin Sekhar T K
+(cherry picked from commit feca1808642a4a2fb89eeb7efdc1e48c96ae8b9a)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101522
+---
+ marvell-ci/build/build-deps.sh | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/marvell-ci/build/build-deps.sh b/marvell-ci/build/build-deps.sh
+index e0bccaa694c95..46fdb7be9aaa2 100755
+--- a/marvell-ci/build/build-deps.sh
++++ b/marvell-ci/build/build-deps.sh
+@@ -118,7 +118,8 @@ function setup_libtmc()
+ 	fetch_dep https://github.com/PavanNikhilesh/libtmc/archive/refs/tags/pthread_timed_join.tar.gz
+ 	tar -zxvf pthread_timed_join.tar.gz --strip-components=1
+ 	./bootstrap
+-	./configure --host=aarch64-marvell-linux-gnu \
++	CC=aarch64-marvell-linux-gnu-gcc ./configure \
++		--host=aarch64-marvell-linux-gnu \
+ 		--prefix=$INSTALL_ROOT
+ 	make -j${MAKE_J}
+ 	make install -j${MAKE_J}
+-- 
+2.25.1
+

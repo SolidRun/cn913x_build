@@ -1,0 +1,49 @@
+From 24e2cef51f2bfbcdc900823c7436c23b1847e1a5 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 12 Jun 2024 13:03:48 +0530
+Subject: [PATCH 390/513] common/cnxk: add flush wait after write of inline ctx
+
+Reading a CPT_LF_CTX_ERR csr will ensure writes for
+FLUSH are complete and also tell whether flush is
+complete or not.
+
+Change-Id: I75a91d6d6fb5aa766e708cdfe8208b16f0a5de16
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130638
+Reviewed-by: Srujana Challa <schalla@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index a984ac56d9eb0..d0328921a72d2 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -1748,6 +1748,7 @@ roc_nix_inl_ctx_write(struct roc_nix *roc_nix, void *sa_dptr, void *sa_cptr,
+ 	struct nix_inl_dev *inl_dev = NULL;
+ 	struct roc_cpt_lf *outb_lf = NULL;
+ 	union cpt_lf_ctx_flush flush;
++	union cpt_lf_ctx_err err;
+ 	bool get_inl_lf = true;
+ 	uintptr_t rbase;
+ 	struct nix *nix;
+@@ -1789,6 +1790,13 @@ roc_nix_inl_ctx_write(struct roc_nix *roc_nix, void *sa_dptr, void *sa_cptr,
+ 		flush.s.cptr = ((uintptr_t)sa_cptr) >> 7;
+ 		plt_write64(flush.u, rbase + CPT_LF_CTX_FLUSH);
+ 
++		plt_atomic_thread_fence(__ATOMIC_ACQ_REL);
++
++		/* Read a CSR to ensure that the FLUSH operation is complete */
++		err.u = plt_read64(rbase + CPT_LF_CTX_ERR);
++
++		if (err.s.flush_st_flt)
++			plt_warn("CTX flush could not complete");
+ 		return 0;
+ 	}
+ 	plt_nix_dbg("Could not get CPT LF for CTX write");
+-- 
+2.25.1
+

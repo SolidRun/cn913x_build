@@ -1,0 +1,36 @@
+From 53c27da7c7f9b0936de0d0eb228ae0268faf0cce Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Wed, 25 Jan 2023 11:29:42 +0530
+Subject: [PATCH 182/955] app/test: enable SG support for cn10k
+
+Enabling Scatter Gather support for cn10k.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I58386326509bc829e05845cf45e7f0e2278abf03
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95201
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index e7d78983d21cf..44ad05c43c082 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -10404,10 +10404,6 @@ test_ipsec_proto_sgl(const void *data __rte_unused)
+ 		.nb_segs_in_mbuf = 5
+ 	};
+ 
+-	if (gbl_driver_id == rte_cryptodev_driver_id_get(
+-			RTE_STR(CRYPTODEV_NAME_CN10K_PMD)))
+-		return TEST_SKIPPED;
+-
+ 	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
+ 	if (!(dev_info.feature_flags & RTE_CRYPTODEV_FF_IN_PLACE_SGL)) {
+ 		printf("Device doesn't support in-place scatter-gather. "
+-- 
+2.25.1
+

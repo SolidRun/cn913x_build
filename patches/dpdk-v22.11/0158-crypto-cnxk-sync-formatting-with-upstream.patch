@@ -1,0 +1,34 @@
+From 0e345a3433f2a1142302f813756ed88d739044dc Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 10 Jan 2023 14:10:31 +0530
+Subject: [PATCH 158/955] crypto/cnxk: sync formatting with upstream
+
+Sync formatting with upstream.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I61d55561c3b729340c679c384407252236a035b8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94191
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+---
+ drivers/crypto/cnxk/cn9k_ipsec_la_ops.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+index 5cea712e44ea6..85aacb803f03d 100644
+--- a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
++++ b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+@@ -193,7 +193,9 @@ process_outb_sa(struct cpt_qp_meta_info *m_info, struct rte_crypto_op *cop,
+ }
+ 
+ static __rte_always_inline int
+-process_inb_sa(struct cpt_qp_meta_info *m_info, struct rte_crypto_op *cop, struct cn9k_sec_session *sess, struct cpt_inst_s *inst, struct cpt_inflight_req *infl_req)
++process_inb_sa(struct cpt_qp_meta_info *m_info, struct rte_crypto_op *cop,
++	       struct cn9k_sec_session *sess, struct cpt_inst_s *inst,
++	       struct cpt_inflight_req *infl_req)
+ {
+ 	const unsigned int hdr_len = ROC_IE_ON_INB_RPTR_HDR;
+ 	struct rte_crypto_sym_op *sym_op = cop->sym;
+-- 
+2.25.1
+

@@ -1,0 +1,127 @@
+From c5e29c883c8dfdcb3cfb50100cded1fd56ae7282 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 6 Jan 2023 09:50:07 -0500
+Subject: [PATCH 278/955] common/cnxk: reduce sqes per sqb by one
+
+Each SQB reserves last SQE to store pointer to next SQB. So
+each SQB will holds either 31 or 63 based on send descriptors
+selected.
+
+This patch also consider sqb_slack to maintain threshold buffers
+to sync between HW and SW. Threshold will be maximum of 30% of
+queue size or sqb_slack.
+
+Change-Id: I69d3922b5bd8bb8c2b0ee5993abe3212c281a624
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98438
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h       |  2 +-
+ drivers/common/cnxk/roc_nix_priv.h  |  2 +-
+ drivers/common/cnxk/roc_nix_queue.c | 21 ++++++++++-----------
+ drivers/event/cnxk/cn10k_eventdev.c |  2 +-
+ drivers/event/cnxk/cn9k_eventdev.c  |  2 +-
+ 5 files changed, 14 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 188b8800d3976..50aef4fe85cbb 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -13,7 +13,7 @@
+ #define ROC_NIX_BPF_STATS_MAX	      12
+ #define ROC_NIX_MTR_ID_INVALID	      UINT32_MAX
+ #define ROC_NIX_PFC_CLASS_INVALID     UINT8_MAX
+-#define ROC_NIX_SQB_LOWER_THRESH      70U
++#define ROC_NIX_SQB_THRESH	      30U
+ #define ROC_NIX_SQB_SLACK	      12U
+ 
+ /* Reserved interface types for BPID allocation */
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 99e27cdc56501..7144d1ee10296 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -12,7 +12,7 @@
+ #define NIX_MAX_SQB	     ((uint16_t)512)
+ #define NIX_DEF_SQB	     ((uint16_t)16)
+ #define NIX_MIN_SQB	     ((uint16_t)8)
+-#define NIX_SQB_LIST_SPACE   ((uint16_t)2)
++#define NIX_SQB_PREFETCH     ((uint16_t)1)
+ 
+ /* Apply BP/DROP when CQ is 95% full */
+ #define NIX_CQ_THRESH_LEVEL	(5 * 256 / 100)
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 21bfe7d498a2f..bbb0e4a3b857b 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -982,7 +982,7 @@ static int
+ sqb_pool_populate(struct roc_nix *roc_nix, struct roc_nix_sq *sq)
+ {
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+-	uint16_t sqes_per_sqb, count, nb_sqb_bufs;
++	uint16_t sqes_per_sqb, count, nb_sqb_bufs, thr;
+ 	struct npa_pool_s pool;
+ 	struct npa_aura_s aura;
+ 	uint64_t blk_sz;
+@@ -995,22 +995,21 @@ sqb_pool_populate(struct roc_nix *roc_nix, struct roc_nix_sq *sq)
+ 	else
+ 		sqes_per_sqb = (blk_sz / 8) / 8;
+ 
++	/* Reserve One SQE in each SQB to hold pointer for next SQB */
++	sqes_per_sqb -= 1;
++
+ 	sq->nb_desc = PLT_MAX(512U, sq->nb_desc);
+-	nb_sqb_bufs = sq->nb_desc / sqes_per_sqb;
+-	nb_sqb_bufs += NIX_SQB_LIST_SPACE;
++	nb_sqb_bufs = PLT_DIV_CEIL(sq->nb_desc, sqes_per_sqb);
++	thr = PLT_DIV_CEIL((nb_sqb_bufs * ROC_NIX_SQB_THRESH), 100);
++	nb_sqb_bufs += NIX_SQB_PREFETCH;
+ 	/* Clamp up the SQB count */
+-	nb_sqb_bufs = PLT_MIN(roc_nix->max_sqb_count,
+-			      (uint16_t)PLT_MAX(NIX_DEF_SQB, nb_sqb_bufs));
++	nb_sqb_bufs = PLT_MIN(roc_nix->max_sqb_count, (uint16_t)PLT_MAX(NIX_DEF_SQB, nb_sqb_bufs));
+ 
+ 	sq->nb_sqb_bufs = nb_sqb_bufs;
+ 	sq->sqes_per_sqb_log2 = (uint16_t)plt_log2_u32(sqes_per_sqb);
+-	sq->nb_sqb_bufs_adj =
+-		nb_sqb_bufs -
+-		(PLT_ALIGN_MUL_CEIL(nb_sqb_bufs, sqes_per_sqb) / sqes_per_sqb);
+-	sq->nb_sqb_bufs_adj =
+-		(sq->nb_sqb_bufs_adj * ROC_NIX_SQB_LOWER_THRESH) / 100;
++	sq->nb_sqb_bufs_adj = nb_sqb_bufs;
+ 
+-	nb_sqb_bufs += roc_nix->sqb_slack;
++	nb_sqb_bufs += PLT_MAX(thr, roc_nix->sqb_slack);
+ 	/* Explicitly set nat_align alone as by default pool is with both
+ 	 * nat_align and buf_offset = 1 which we don't want for SQB.
+ 	 */
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index 071ea5a212502..afd8e323b87ce 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -995,7 +995,7 @@ cn10k_sso_txq_fc_update(const struct rte_eth_dev *eth_dev, int32_t tx_queue_id)
+ 						(sqes_per_sqb - 1));
+ 		txq->nb_sqb_bufs_adj = sq->nb_sqb_bufs_adj;
+ 		txq->nb_sqb_bufs_adj =
+-			(ROC_NIX_SQB_LOWER_THRESH * txq->nb_sqb_bufs_adj) / 100;
++			((100 - ROC_NIX_SQB_THRESH) * txq->nb_sqb_bufs_adj) / 100;
+ 	}
+ }
+ 
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 2d2985f17512a..b104d19b9bdd9 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -1037,7 +1037,7 @@ cn9k_sso_txq_fc_update(const struct rte_eth_dev *eth_dev, int32_t tx_queue_id)
+ 						(sqes_per_sqb - 1));
+ 		txq->nb_sqb_bufs_adj = sq->nb_sqb_bufs_adj;
+ 		txq->nb_sqb_bufs_adj =
+-			(ROC_NIX_SQB_LOWER_THRESH * txq->nb_sqb_bufs_adj) / 100;
++			((100 - ROC_NIX_SQB_THRESH) * txq->nb_sqb_bufs_adj) / 100;
+ 	}
+ }
+ 
+-- 
+2.25.1
+

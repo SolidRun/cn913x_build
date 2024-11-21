@@ -1,0 +1,44 @@
+From 98236c9d147d509d838f2f1a7aaf5797e1c79ad8 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Wed, 15 Feb 2023 03:52:37 -0500
+Subject: [PATCH 212/955] ci: test: verify MAC filter counter for CN10K
+
+CN10K DMAC filter counter was not part of regular RPM statistics page.
+Kernel exported DMAC filter counts through sysfs debug interface,
+update test script.
+
+Change-Id: I327dc48ef60438517a4c6941ad079a9c258c6c34
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96915
+Reviewed-by: Sunil Kumar Kori <skori@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+index febe4e7d1e22b..7c1da64637109 100755
+--- a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
++++ b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+@@ -202,9 +202,14 @@ function macfltr_pkt_test()
+ 
+ function macfltr_dmac_filt_pkts()
+ {
+-	testpmd_log $PRFX | tail -62 |\
+-		grep -a "cgx_rx_dmac_filt_pkts: "|\
+-		cut --complement -f 1 -d ":"
++	if [[ $IS_CN10K -ne 0 ]]; then
++		cat /sys/kernel/debug/cn10k/rpm/rpm0/lmac0/mac_filter |\
++			 grep -a "DMAC filter drop count" | cut --complement -f 1 -d ":"
++	else
++		testpmd_log $PRFX | tail -62 |\
++			grep -a "cgx_rx_dmac_filt_pkts: "|\
++			cut --complement -f 1 -d ":"
++	fi
+ }
+ 
+ function macfltr_mac_cnt()
+-- 
+2.25.1
+

@@ -1,0 +1,73 @@
+From 54e6304e57afec3df8ed6232a9b4ab418f70800b Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 19 May 2023 04:30:56 +0530
+Subject: [PATCH 453/955] test/security: remove no MACsec support case
+
+Removed the test_capability_get_no_support_for_macsec case
+as MACsec is now supported and capability can have valid
+MACsec support.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: If11ca9cb2b3eaed42fc569be91494736d5ce47b0
+---
+ app/test/test_security.c | 37 -------------------------------------
+ 1 file changed, 37 deletions(-)
+
+diff --git a/app/test/test_security.c b/app/test/test_security.c
+index e4ddcefe40db2..4783cd0663023 100644
+--- a/app/test/test_security.c
++++ b/app/test/test_security.c
+@@ -1828,41 +1828,6 @@ test_capability_get_no_matching_protocol(void)
+ 	return TEST_SUCCESS;
+ }
+ 
+-/**
+- * Test execution of rte_security_capability_get when macsec protocol
+- * is searched and capabilities table contain proper entry.
+- * However macsec records search is not supported in rte_security.
+- */
+-static int
+-test_capability_get_no_support_for_macsec(void)
+-{
+-	struct security_unittest_params *ut_params = &unittest_params;
+-	struct rte_security_capability_idx idx = {
+-		.action = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+-		.protocol = RTE_SECURITY_PROTOCOL_MACSEC,
+-	};
+-	struct rte_security_capability capabilities[] = {
+-		{
+-			.action = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+-			.protocol = RTE_SECURITY_PROTOCOL_MACSEC,
+-		},
+-		{
+-			.action = RTE_SECURITY_ACTION_TYPE_NONE,
+-		},
+-	};
+-
+-	mock_capabilities_get_exp.device = NULL;
+-	mock_capabilities_get_exp.ret = capabilities;
+-
+-	const struct rte_security_capability *ret;
+-	ret = rte_security_capability_get(&ut_params->ctx, &idx);
+-	TEST_ASSERT_MOCK_FUNCTION_CALL_RET(rte_security_capability_get,
+-			ret, NULL, "%p");
+-	TEST_ASSERT_MOCK_CALLS(mock_capabilities_get_exp, 1);
+-
+-	return TEST_SUCCESS;
+-}
+-
+ /**
+  * Test execution of rte_security_capability_get when capabilities table
+  * does not contain entry with matching ipsec proto field
+@@ -2319,8 +2284,6 @@ static struct unit_test_suite security_testsuite  = {
+ 				test_capability_get_no_matching_action),
+ 		TEST_CASE_ST(ut_setup_with_session, ut_teardown,
+ 				test_capability_get_no_matching_protocol),
+-		TEST_CASE_ST(ut_setup_with_session, ut_teardown,
+-				test_capability_get_no_support_for_macsec),
+ 		TEST_CASE_ST(ut_setup_with_session, ut_teardown,
+ 				test_capability_get_ipsec_mismatch_proto),
+ 		TEST_CASE_ST(ut_setup_with_session, ut_teardown,
+-- 
+2.25.1
+

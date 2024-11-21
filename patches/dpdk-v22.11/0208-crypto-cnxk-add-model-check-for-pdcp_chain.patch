@@ -1,0 +1,35 @@
+From 4d01d10db32ac885ae287de2bfd70c128e4e033e Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 14 Feb 2023 13:02:09 +0530
+Subject: [PATCH 208/955] crypto/cnxk: add model check for pdcp_chain
+
+Adding cn9k model check for pdcp_chain as
+it is not supported in cn10k.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I0d7c6e23ecd81f41f2c024af6a446aeb8dc09f8d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96840
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index adc1c7652b07e..86efe75cc3b54 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -479,7 +479,7 @@ cnxk_sess_fill(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xform,
+ 	bool pdcp_chain_supported = false;
+ 	bool ciph_then_auth = false;
+ 
+-	if (roc_cpt->hw_caps[CPT_ENG_TYPE_SE].pdcp_chain)
++	if (roc_model_is_cn9k() && (roc_cpt->hw_caps[CPT_ENG_TYPE_SE].pdcp_chain))
+ 		pdcp_chain_supported = true;
+ 
+ 	if (xform == NULL)
+-- 
+2.25.1
+

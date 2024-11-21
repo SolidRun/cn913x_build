@@ -1,0 +1,333 @@
+From 013d372ba96c8fbcbdb6cc65e63cc6fae05ed57c Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Thu, 1 Dec 2022 18:18:23 +0530
+Subject: [PATCH 118/955] examples/fips_validation: add SHAKE validation
+
+Add support in fips_validation to parse SHAKE algorithms.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I43f0e21a4954516559277d31072df95cc13a74f6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92858
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ doc/guides/sample_app_ug/fips_validation.rst  |  1 +
+ examples/fips_validation/fips_validation.h    |  4 +-
+ .../fips_validation/fips_validation_sha.c     | 63 ++++++++++++-
+ examples/fips_validation/main.c               | 93 ++++++++++++++++++-
+ 4 files changed, 154 insertions(+), 7 deletions(-)
+
+diff --git a/doc/guides/sample_app_ug/fips_validation.rst b/doc/guides/sample_app_ug/fips_validation.rst
+index 55837895fe4ce..4fc8297b34194 100644
+--- a/doc/guides/sample_app_ug/fips_validation.rst
++++ b/doc/guides/sample_app_ug/fips_validation.rst
+@@ -67,6 +67,7 @@ ACVP
+     * HMAC (SHA1, SHA224, SHA256, SHA384, SHA512, SHA3_224, SHA3_256, SHA3_384, SHA3_512)
+     * SHA (1, 224, 256, 384, 512) - AFT, MCT
+     * SHA3 (224, 256, 384, 512) - AFT, MCT
++    * SHAKE (128, 256) - AFT, MCT, VOT
+     * TDES-CBC - AFT, MCT
+     * TDES-ECB - AFT, MCT
+     * RSA
+diff --git a/examples/fips_validation/fips_validation.h b/examples/fips_validation/fips_validation.h
+index 6c1bd35849d4c..8fcb5c8500b23 100644
+--- a/examples/fips_validation/fips_validation.h
++++ b/examples/fips_validation/fips_validation.h
+@@ -163,7 +163,8 @@ enum fips_ccm_test_types {
+ enum fips_sha_test_types {
+ 	SHA_KAT = 0,
+ 	SHA_AFT,
+-	SHA_MCT
++	SHA_MCT,
++	SHAKE_VOT
+ };
+ 
+ enum fips_rsa_test_types {
+@@ -205,6 +206,7 @@ struct sha_interim_data {
+ 	/* keep algo always on top as it is also used in asym digest */
+ 	enum rte_crypto_auth_algorithm algo;
+ 	enum fips_sha_test_types test_type;
++	uint8_t min_outlen;
+ 	uint8_t md_blocks;
+ };
+ 
+diff --git a/examples/fips_validation/fips_validation_sha.c b/examples/fips_validation/fips_validation_sha.c
+index 8b68f5ed36acd..7ce7d3744fc05 100644
+--- a/examples/fips_validation/fips_validation_sha.c
++++ b/examples/fips_validation/fips_validation_sha.c
+@@ -22,6 +22,9 @@
+ #define TESTTYPE_JSON_STR	"testType"
+ 
+ #define PT_JSON_STR		"msg"
++#define OUTLEN_JSON_STR	"outLen"
++#define MINOUTLEN_JSON_STR	"minOutLen"
++#define MAXOUTLEN_JSON_STR	"maxOutLen"
+ 
+ struct plain_hash_size_conversion {
+ 	const char *str;
+@@ -36,6 +39,8 @@ struct plain_hash_size_conversion {
+ 		{"32", RTE_CRYPTO_AUTH_SHA3_256},
+ 		{"48", RTE_CRYPTO_AUTH_SHA3_384},
+ 		{"64", RTE_CRYPTO_AUTH_SHA3_512},
++		{"16", RTE_CRYPTO_AUTH_SHAKE_128},
++		{"32", RTE_CRYPTO_AUTH_SHAKE_256},
+ };
+ 
+ int
+@@ -89,12 +94,26 @@ struct fips_test_callback sha_tests_interim_vectors[] = {
+ };
+ 
+ #ifdef USE_JANSSON
++static int
++parse_interim_str(const char *key, char *src, struct fips_val *val)
++{
++	RTE_SET_USED(val);
++
++	if (strcmp(key, MINOUTLEN_JSON_STR) == 0)
++		info.interim_info.sha_data.min_outlen = atoi(src) / 8;
++	else if (strcmp(key, MAXOUTLEN_JSON_STR) == 0)
++		vec.cipher_auth.digest.len = atoi(src) / 8;
++
++	return 0;
++}
++
+ static struct {
+ 	uint32_t type;
+ 	const char *desc;
+ } sha_test_types[] = {
+ 		{SHA_MCT, "MCT"},
+ 		{SHA_AFT, "AFT"},
++		{SHAKE_VOT, "VOT"},
+ };
+ 
+ static struct plain_hash_algorithms {
+@@ -111,10 +130,19 @@ static struct plain_hash_algorithms {
+ 		{"SHA3-256", RTE_CRYPTO_AUTH_SHA3_256, 1},
+ 		{"SHA3-384", RTE_CRYPTO_AUTH_SHA3_384, 1},
+ 		{"SHA3-512", RTE_CRYPTO_AUTH_SHA3_512, 1},
++		{"SHAKE-128", RTE_CRYPTO_AUTH_SHAKE_128, 1},
++		{"SHAKE-256", RTE_CRYPTO_AUTH_SHAKE_256, 1},
+ };
+ 
+ struct fips_test_callback sha_tests_json_vectors[] = {
+ 		{PT_JSON_STR, parse_uint8_hex_str, &vec.pt},
++		{OUTLEN_JSON_STR, parser_read_uint32_bit_val, &vec.cipher_auth.digest},
++		{NULL, NULL, NULL} /**< end pointer */
++};
++
++struct fips_test_callback sha_tests_interim_json_vectors[] = {
++		{MINOUTLEN_JSON_STR, parse_interim_str, NULL},
++		{MAXOUTLEN_JSON_STR, parse_interim_str, NULL},
+ 		{NULL, NULL, NULL} /**< end pointer */
+ };
+ #endif /* USE_JANSSON */
+@@ -185,6 +213,11 @@ parse_test_sha_json_writeback(struct fips_val *val)
+ 	md = json_string(info.one_line_text);
+ 	json_object_set_new(json_info.json_write_case, "md", md);
+ 
++	if (info.interim_info.sha_data.algo == RTE_CRYPTO_AUTH_SHAKE_128 ||
++		info.interim_info.sha_data.algo == RTE_CRYPTO_AUTH_SHAKE_256)
++		json_object_set_new(json_info.json_write_case, "outLen",
++			json_integer(vec.cipher_auth.digest.len * 8));
++
+ 	return 0;
+ }
+ 
+@@ -193,6 +226,11 @@ parse_test_sha_mct_json_writeback(struct fips_val *val)
+ {
+ 	json_t *tcId, *md, *resArr, *res;
+ 	struct fips_val val_local;
++	bool is_shake = false;
++
++	if (info.interim_info.sha_data.algo == RTE_CRYPTO_AUTH_SHAKE_128 ||
++		info.interim_info.sha_data.algo == RTE_CRYPTO_AUTH_SHAKE_256)
++		is_shake = true;
+ 
+ 	tcId = json_object_get(json_info.json_test_case, "tcId");
+ 	if (json_info.json_write_case) {
+@@ -204,11 +242,17 @@ parse_test_sha_mct_json_writeback(struct fips_val *val)
+ 			json_object_set_new(json_info.json_write_case, "tcId", tcId);
+ 			json_object_set_new(json_info.json_write_case, "resultsArray",
+ 								json_array());
++			if (is_shake)
++				json_object_set_new(json_info.json_write_case, "outLen",
++									json_integer(0));
+ 		}
+ 	} else {
+ 		json_info.json_write_case = json_object();
+ 		json_object_set_new(json_info.json_write_case, "tcId", tcId);
+ 		json_object_set_new(json_info.json_write_case, "resultsArray", json_array());
++		if (is_shake)
++			json_object_set_new(json_info.json_write_case, "outLen",
++								json_integer(0));
+ 	}
+ 
+ 	resArr = json_object_get(json_info.json_write_case, "resultsArray");
+@@ -224,6 +268,9 @@ parse_test_sha_mct_json_writeback(struct fips_val *val)
+ 	md = json_string(info.one_line_text);
+ 	json_object_set_new(res, "md", md);
+ 
++	if (is_shake)
++		json_object_set_new(res, "outLen", json_integer(vec.cipher_auth.digest.len * 8));
++
+ 	json_array_append_new(resArr, res);
+ 	return 0;
+ }
+@@ -250,12 +297,17 @@ parse_test_sha_json_algorithm(void)
+ 	if (i == RTE_DIM(json_algorithms))
+ 		return -1;
+ 
+-	sz = parse_test_sha_hash_size(info.interim_info.sha_data.algo);
++	if (info.interim_info.sha_data.test_type == SHAKE_VOT) {
++		sz = vec.cipher_auth.digest.len;
++	} else {
++		sz = parse_test_sha_hash_size(info.interim_info.sha_data.algo);
++		vec.cipher_auth.digest.len = sz;
++	}
++
+ 	if (sz < 0)
+ 		return -1;
+ 
+ 	free(vec.cipher_auth.digest.val);
+-	vec.cipher_auth.digest.len = sz;
+ 	vec.cipher_auth.digest.val = calloc(1, sz);
+ 	if (vec.cipher_auth.digest.val == NULL)
+ 		return -1;
+@@ -288,6 +340,7 @@ parse_test_sha_json_test_type(void)
+ 		info.parse_writeback = parse_test_sha_mct_json_writeback;
+ 		break;
+ 	case SHA_AFT:
++	case SHAKE_VOT:
+ 		info.parse_writeback = parse_test_sha_json_writeback;
+ 		break;
+ 	default:
+@@ -308,12 +361,12 @@ parse_test_sha_json_init(void)
+ 	info.callbacks = sha_tests_json_vectors;
+ 	info.writeback_callbacks = NULL;
+ 	info.kat_check = rsp_test_sha_check;
+-	info.interim_callbacks = NULL;
++	info.interim_callbacks = sha_tests_interim_json_vectors;
+ 
+-	if (parse_test_sha_json_algorithm() < 0)
++	if (parse_test_sha_json_test_type() < 0)
+ 		return -1;
+ 
+-	if (parse_test_sha_json_test_type() < 0)
++	if (parse_test_sha_json_algorithm() < 0)
+ 		return -1;
+ 
+ 	return 0;
+diff --git a/examples/fips_validation/main.c b/examples/fips_validation/main.c
+index cf29e440f1eaf..52076160b5e64 100644
+--- a/examples/fips_validation/main.c
++++ b/examples/fips_validation/main.c
+@@ -2356,6 +2356,93 @@ fips_mct_sha_test(void)
+ 	return 0;
+ }
+ 
++static int
++fips_mct_shake_test(void)
++{
++#define SHAKE_EXTERN_ITER	100
++#define SHAKE_INTERN_ITER	1000
++	uint32_t i, j, range, outlen, max_outlen;
++	struct fips_val val = {NULL, 0}, md;
++	uint8_t rightmost[2];
++	int ret;
++
++	max_outlen = vec.cipher_auth.digest.len;
++
++	if (vec.cipher_auth.digest.val)
++		free(vec.cipher_auth.digest.val);
++
++	vec.cipher_auth.digest.val = calloc(1, max_outlen);
++
++	if (vec.pt.val)
++		memcpy(vec.cipher_auth.digest.val, vec.pt.val, vec.pt.len);
++
++	rte_free(vec.pt.val);
++	vec.pt.val = rte_malloc(NULL, 16, 0);
++	vec.pt.len = 16;
++
++	md.val = rte_malloc(NULL, max_outlen, 0);
++	md.len = max_outlen;
++
++	if (info.file_type != FIPS_TYPE_JSON) {
++		fips_test_write_one_case();
++		fprintf(info.fp_wr, "\n");
++	}
++
++	range = max_outlen - info.interim_info.sha_data.min_outlen + 1;
++	outlen = max_outlen;
++	for (j = 0; j < SHAKE_EXTERN_ITER; j++) {
++		memset(md.val, 0, max_outlen);
++		memcpy(md.val, vec.cipher_auth.digest.val,
++			vec.cipher_auth.digest.len);
++
++		for (i = 0; i < (SHAKE_INTERN_ITER); i++) {
++			memset(vec.pt.val, 0, vec.pt.len);
++			memcpy(vec.pt.val, md.val, vec.pt.len);
++			vec.cipher_auth.digest.len = outlen;
++			ret = fips_run_test();
++			if (ret < 0) {
++				if (ret == -EPERM || ret == -ENOTSUP) {
++					if (info.file_type == FIPS_TYPE_JSON)
++						return ret;
++
++					fprintf(info.fp_wr, "Bypass\n\n");
++					return 0;
++				}
++				return ret;
++			}
++
++			ret = get_writeback_data(&val);
++			if (ret < 0)
++				return ret;
++
++			memset(md.val, 0, max_outlen);
++			memcpy(md.val, (val.val + vec.pt.len),
++				vec.cipher_auth.digest.len);
++			md.len = outlen;
++			rightmost[0] = md.val[md.len-1];
++			rightmost[1] = md.val[md.len-2];
++			outlen = info.interim_info.sha_data.min_outlen +
++				(*(uint16_t *)rightmost % range);
++		}
++
++		memcpy(vec.cipher_auth.digest.val, md.val, md.len);
++		vec.cipher_auth.digest.len = md.len;
++
++		if (info.file_type != FIPS_TYPE_JSON)
++			fprintf(info.fp_wr, "COUNT = %u\n", j);
++
++		info.parse_writeback(&val);
++
++		if (info.file_type != FIPS_TYPE_JSON)
++			fprintf(info.fp_wr, "\n");
++	}
++
++	rte_free(md.val);
++	rte_free(vec.pt.val);
++
++	free(val.val);
++	return 0;
++}
+ 
+ static int
+ init_test_ops(void)
+@@ -2408,7 +2495,11 @@ init_test_ops(void)
+ 		test_ops.prepare_sym_op = prepare_auth_op;
+ 		test_ops.prepare_sym_xform = prepare_sha_xform;
+ 		if (info.interim_info.sha_data.test_type == SHA_MCT)
+-			test_ops.test = fips_mct_sha_test;
++			if (info.interim_info.sha_data.algo == RTE_CRYPTO_AUTH_SHAKE_128 ||
++				info.interim_info.sha_data.algo == RTE_CRYPTO_AUTH_SHAKE_256)
++				test_ops.test = fips_mct_shake_test;
++			else
++				test_ops.test = fips_mct_sha_test;
+ 		else
+ 			test_ops.test = fips_generic_test;
+ 		break;
+-- 
+2.25.1
+

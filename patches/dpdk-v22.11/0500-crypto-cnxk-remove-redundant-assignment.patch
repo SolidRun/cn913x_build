@@ -1,0 +1,35 @@
+From b227dbe2ef83d2c3a0248882d7a7d51133fa1466 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 19 Apr 2023 08:21:00 +0000
+Subject: [PATCH 500/955] crypto/cnxk: remove redundant assignment
+
+In SG_VER2, DPTR would be poining at gather_comp. No need to set it
+m_vaddr only to be overwritten.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I799f28a5db48f9682e5478bb4dc0ad75e2665b3a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102112
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_se.h | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index b058775ec313b..10331cbfc0631 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -981,9 +981,6 @@ pdcp_chain_sg2_prep(struct roc_se_fc_params *params, struct roc_se_ctx *cpt_ctx,
+ 	w4.s.opcode_major |= (uint64_t)ROC_DMA_MODE_SG;
+ 	w4.s.dlen = inputlen + ROC_SE_OFF_CTRL_LEN;
+ 
+-	/* DPTR has SG list */
+-	inst->dptr = PLT_U64_CAST(m_vaddr);
+-
+ 	gather_comp = m_vaddr;
+ 
+ 	/* Input Gather List */
+-- 
+2.25.1
+

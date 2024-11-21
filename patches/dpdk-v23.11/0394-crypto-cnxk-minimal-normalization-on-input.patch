@@ -1,0 +1,87 @@
+From 29b96380f687fd96a0e49567c2a4a57af3b424c6 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Wed, 27 Mar 2024 11:42:41 +0530
+Subject: [PATCH 394/513] crypto/cnxk: minimal normalization on input
+
+Fix modex to nomalize input only when MSW is zero.
+
+Fixes: 5a3513caeb45 ("crypto/cnxk: add asymmetric session")
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I391218831266d311d4b412fc80318aba8a0007b5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/124504
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_ae.h | 30 +++++++++++++++++++++---------
+ 1 file changed, 21 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_ae.h b/drivers/crypto/cnxk/cnxk_ae.h
+index ea11e093bfe43..66277172c64c1 100644
+--- a/drivers/crypto/cnxk/cnxk_ae.h
++++ b/drivers/crypto/cnxk/cnxk_ae.h
+@@ -49,13 +49,22 @@ struct cnxk_ae_sess {
+ };
+ 
+ static __rte_always_inline void
+-cnxk_ae_modex_param_normalize(uint8_t **data, size_t *len)
++cnxk_ae_modex_param_normalize(uint8_t **data, size_t *len, size_t max)
+ {
++	uint8_t msw_len = *len % 8;
++	uint64_t msw_val = 0;
+ 	size_t i;
+ 
+-	/* Strip leading NUL bytes */
+-	for (i = 0; i < *len; i++) {
+-		if ((*data)[i] != 0)
++	if (*len <= 8)
++		return;
++
++	memcpy(&msw_val, *data, msw_len);
++	if (msw_val != 0)
++		return;
++
++	for (i = msw_len; i < *len && (*len - i) < max; i += 8) {
++		memcpy(&msw_val, &(*data)[i], 8);
++		if (msw_val != 0)
+ 			break;
+ 	}
+ 	*data += i;
+@@ -72,8 +81,8 @@ cnxk_ae_fill_modex_params(struct cnxk_ae_sess *sess,
+ 	uint8_t *exp = xform->modex.exponent.data;
+ 	uint8_t *mod = xform->modex.modulus.data;
+ 
+-	cnxk_ae_modex_param_normalize(&mod, &mod_len);
+-	cnxk_ae_modex_param_normalize(&exp, &exp_len);
++	cnxk_ae_modex_param_normalize(&mod, &mod_len, SIZE_MAX);
++	cnxk_ae_modex_param_normalize(&exp, &exp_len, mod_len);
+ 
+ 	if (unlikely(exp_len == 0 || mod_len == 0))
+ 		return -EINVAL;
+@@ -282,7 +291,7 @@ cnxk_ae_modex_prep(struct rte_crypto_op *op, struct roc_ae_buf_ptr *meta_buf,
+ 	struct rte_crypto_mod_op_param mod_op;
+ 	uint64_t total_key_len;
+ 	union cpt_inst_w4 w4;
+-	uint32_t base_len;
++	size_t base_len;
+ 	uint32_t dlen;
+ 	uint8_t *dptr;
+ 
+@@ -290,8 +299,11 @@ cnxk_ae_modex_prep(struct rte_crypto_op *op, struct roc_ae_buf_ptr *meta_buf,
+ 
+ 	base_len = mod_op.base.length;
+ 	if (unlikely(base_len > mod_len)) {
+-		op->status = RTE_CRYPTO_OP_STATUS_INVALID_ARGS;
+-		return -ENOTSUP;
++		cnxk_ae_modex_param_normalize(&mod_op.base.data, &base_len, mod_len);
++		if (base_len > mod_len) {
++			op->status = RTE_CRYPTO_OP_STATUS_INVALID_ARGS;
++			return -ENOTSUP;
++		}
+ 	}
+ 
+ 	total_key_len = mod_len + exp_len;
+-- 
+2.25.1
+

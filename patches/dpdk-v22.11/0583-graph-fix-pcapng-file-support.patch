@@ -1,0 +1,76 @@
+From a03835932500207606d75929429505fbbf9470f0 Mon Sep 17 00:00:00 2001
+From: Stephen Hemminger <stephen@networkplumber.org>
+Date: Wed, 31 May 2023 10:27:53 -0700
+Subject: [PATCH 583/955] graph: fix pcapng file support
+
+The interface to rte_pcapng changed in last release
+so that the interfaces used need to be added to the pcapng
+file via the API. If this step is missing the pcapng
+file will not be valid and can't be read by wireshark etc.
+
+Fixes: 9878f913a8dd ("graph: pcap capture for graph nodes")
+
+Signed-off-by: Stephen Hemminger <stephen@networkplumber.org>
+Acked-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: Ifc7e9e04d5cdb7d036751477f654c40517732453
+---
+ lib/graph/graph_pcap.c | 25 ++++++++++++++++++++++---
+ 1 file changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/lib/graph/graph_pcap.c b/lib/graph/graph_pcap.c
+index 9cbd1b8fdb6c9..7cf12b13be6d8 100644
+--- a/lib/graph/graph_pcap.c
++++ b/lib/graph/graph_pcap.c
+@@ -7,6 +7,7 @@
+ #include <stdlib.h>
+ #include <unistd.h>
+ 
++#include <rte_ethdev.h>
+ #include <rte_mbuf.h>
+ #include <rte_pcapng.h>
+ 
+@@ -81,7 +82,8 @@ graph_pcap_default_path_get(char **dir_path)
+ int
+ graph_pcap_file_open(const char *filename)
+ {
+-	int fd;
++	int fd, ret;
++	uint16_t portid;
+ 	char file_name[RTE_GRAPH_PCAP_FILE_SZ];
+ 	char *pcap_dir;
+ 
+@@ -111,12 +113,29 @@ graph_pcap_file_open(const char *filename)
+ 				      NULL);
+ 	if (pcapng_fd == NULL) {
+ 		graph_err("Graph rte_pcapng_fdopen failed.");
+-		close(fd);
+-		return -1;
++		goto error;
++	}
++
++	/* Add the configured interfaces as possible capture ports */
++	RTE_ETH_FOREACH_DEV(portid) {
++		ret = rte_pcapng_add_interface(pcapng_fd, portid,
++					       NULL, NULL, NULL);
++		if (ret < 0) {
++			graph_err("Graph rte_pcapng_add_interface port %u failed: %d",
++				  portid, ret);
++			goto error;
++		}
+ 	}
+ 
+ done:
+ 	return 0;
++error:
++	if (pcapng_fd != NULL) {
++		rte_pcapng_close(pcapng_fd);
++		pcapng_fd = NULL;
++	}
++	close(fd);
++	return -1;
+ }
+ 
+ int
+-- 
+2.25.1
+

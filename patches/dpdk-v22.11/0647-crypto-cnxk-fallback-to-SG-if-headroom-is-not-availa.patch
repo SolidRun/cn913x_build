@@ -1,0 +1,50 @@
+From 20c9b9cfe123a473387913663d7c5d97f9a8f3c5 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 3 Oct 2023 13:51:08 +0530
+Subject: [PATCH 647/955] crypto/cnxk: fallback to SG if headroom is not
+ available
+
+Falling back to SG mode for cn9k lookaside IPsec
+if headroom is not available.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Ifd003d3696bec88026c1f87f079df66de3a6ab47
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113029
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit c69488c87d5ac72d2c68a52b093406c183166bb4)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113119
+---
+ drivers/crypto/cnxk/cn9k_ipsec_la_ops.h | 8 +-------
+ 1 file changed, 1 insertion(+), 7 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+index 85aacb803f03d..3d0db72775674 100644
+--- a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
++++ b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+@@ -82,19 +82,13 @@ process_outb_sa(struct cpt_qp_meta_info *m_info, struct rte_crypto_op *cop,
+ 	extend_tail = rlen - dlen;
+ 	pkt_len += extend_tail;
+ 
+-	if (likely(m_src->next == NULL)) {
++	if (likely((m_src->next == NULL) && (hdr_len <= data_off))) {
+ 		if (unlikely(extend_tail > rte_pktmbuf_tailroom(m_src))) {
+ 			plt_dp_err("Not enough tail room (required: %d, available: %d)",
+ 				   extend_tail, rte_pktmbuf_tailroom(m_src));
+ 			return -ENOMEM;
+ 		}
+ 
+-		if (unlikely(hdr_len > data_off)) {
+-			plt_dp_err("Not enough head room (required: %d, available: %d)", hdr_len,
+-				   rte_pktmbuf_headroom(m_src));
+-			return -ENOMEM;
+-		}
+-
+ 		m_src->data_len = pkt_len;
+ 
+ 		hdr = PLT_PTR_ADD(m_src->buf_addr, data_off - hdr_len);
+-- 
+2.25.1
+

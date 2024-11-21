@@ -1,0 +1,531 @@
+From 15a59124fda2f9622a8b93a8acf6010ef68e3dd6 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 16 Mar 2023 21:11:39 +0530
+Subject: [PATCH 322/955] common/cnxk: support of 1:n pool:aura per NIX LF
+
+This will add the support of 1:n pool:aura per NIX LF when
+inl_cpt_channel devargs is set to inline device, otherwise
+it will create 1:1 pool:aura for CN103/CN106B0 SOCs.
+
+With 1:N, global pool will be created with Aura 0, and per NIX
+individual aura will be created and mapped to this global pool.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I33cdc9777b0fc008372d41a65580a9ccff4016d5
+---
+ drivers/common/cnxk/roc_idev_priv.h |   1 +
+ drivers/common/cnxk/roc_nix.h       |   1 +
+ drivers/common/cnxk/roc_nix_inl.c   | 176 ++++++++++++++++++++++++----
+ drivers/common/cnxk/roc_nix_inl.h   |   4 +
+ drivers/common/cnxk/version.map     |   1 +
+ drivers/event/cnxk/cn10k_worker.h   |   9 +-
+ drivers/net/cnxk/cn10k_rx_select.c  |   5 +-
+ drivers/net/cnxk/cnxk_ethdev.c      |   3 +
+ drivers/net/cnxk/cnxk_ethdev.h      |   3 +
+ drivers/net/cnxk/cnxk_ethdev_sec.c  |  62 ++++++++++
+ 10 files changed, 238 insertions(+), 27 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_idev_priv.h b/drivers/common/cnxk/roc_idev_priv.h
+index d83522799fc2e..4983578fc6aa8 100644
+--- a/drivers/common/cnxk/roc_idev_priv.h
++++ b/drivers/common/cnxk/roc_idev_priv.h
+@@ -13,6 +13,7 @@ struct nix_inl_dev;
+ 
+ struct idev_nix_inl_cfg {
+ 	uint64_t meta_aura;
++	uintptr_t meta_mempool;
+ 	uint32_t nb_bufs;
+ 	uint32_t buf_sz;
+ 	uint32_t refs;
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 37d0ed5ebe4fd..548854952ba6c 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -470,6 +470,7 @@ struct roc_nix {
+ 	bool local_meta_aura_ena;
+ 	uint32_t meta_buf_sz;
+ 	bool force_rx_aura_bp;
++	bool custom_meta_aura_ena;
+ 	/* End of input parameters */
+ 	/* LMT line base for "Per Core Tx LMT line" mode*/
+ 	uintptr_t lmt_base;
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 67f8ce9aa074a..b855cd78ba6d2 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -7,6 +7,7 @@
+ 
+ uint32_t soft_exp_consumer_cnt;
+ roc_nix_inl_meta_pool_cb_t meta_pool_cb;
++roc_nix_inl_custom_meta_pool_cb_t custom_meta_pool_cb;
+ 
+ PLT_STATIC_ASSERT(ROC_NIX_INL_ON_IPSEC_INB_SA_SZ ==
+ 		  1UL << ROC_NIX_INL_ON_IPSEC_INB_SA_SZ_LOG2);
+@@ -33,13 +34,14 @@ nix_inl_meta_aura_destroy(struct roc_nix *roc_nix)
+ 		return -EINVAL;
+ 
+ 	inl_cfg = &idev->inl_cfg;
+-	if (roc_nix->local_meta_aura_ena) {
++
++	if (!roc_nix->local_meta_aura_ena || roc_nix->custom_meta_aura_ena) {
++		meta_aura = &inl_cfg->meta_aura;
++	} else {
+ 		meta_aura = &roc_nix->meta_aura_handle;
+ 		snprintf(mempool_name, sizeof(mempool_name), "NIX_INL_META_POOL_%d",
+ 			 roc_nix->port_id + 1);
+ 		mp_name = mempool_name;
+-	} else {
+-		meta_aura = &inl_cfg->meta_aura;
+ 	}
+ 
+ 	/* Destroy existing Meta aura */
+@@ -72,7 +74,7 @@ nix_inl_meta_aura_destroy(struct roc_nix *roc_nix)
+ 
+ static int
+ nix_inl_meta_aura_create(struct idev_cfg *idev, struct roc_nix *roc_nix, uint16_t first_skip,
+-			 uint64_t *meta_aura)
++			 uint64_t *meta_aura, bool is_local_metaaura)
+ {
+ 	uint64_t mask = BIT_ULL(ROC_NPA_BUF_TYPE_PACKET_IPSEC);
+ 	struct idev_nix_inl_cfg *inl_cfg;
+@@ -89,7 +91,7 @@ nix_inl_meta_aura_create(struct idev_cfg *idev, struct roc_nix *roc_nix, uint16_
+ 	inl_cfg = &idev->inl_cfg;
+ 	nix_inl_dev = idev->nix_inl_dev;
+ 
+-	if (roc_nix->local_meta_aura_ena) {
++	if (is_local_metaaura) {
+ 		/* Per LF Meta Aura */
+ 		inl_rq_id = nix_inl_dev->nb_rqs > 1 ? port_id : 0;
+ 		inl_rq = &nix_inl_dev->rqs[inl_rq_id];
+@@ -134,15 +136,107 @@ nix_inl_meta_aura_create(struct idev_cfg *idev, struct roc_nix *roc_nix, uint16_
+ 	plt_nix_dbg("Created meta aura %p(%s)for port %d", (void *)*meta_aura, mp_name,
+ 		    roc_nix->port_id);
+ 
+-	if (!roc_nix->local_meta_aura_ena) {
++	if (!is_local_metaaura) {
+ 		inl_cfg->buf_sz = buf_sz;
+ 		inl_cfg->nb_bufs = nb_bufs;
++		inl_cfg->meta_mempool = mp;
+ 	} else
+ 		roc_nix->buf_sz = buf_sz;
+ 
+ 	return 0;
+ }
+ 
++static int
++nix_inl_custom_meta_aura_destroy(struct roc_nix *roc_nix)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++	struct idev_nix_inl_cfg *inl_cfg;
++	char mempool_name[24] = {'\0'};
++	char *mp_name = NULL;
++	uint64_t *meta_aura;
++	int rc;
++
++	if (!idev)
++		return -EINVAL;
++
++	inl_cfg = &idev->inl_cfg;
++	meta_aura = &roc_nix->meta_aura_handle;
++	snprintf(mempool_name, sizeof(mempool_name), "NIX_INL_META_POOL_%d",
++		 roc_nix->port_id + 1);
++	mp_name = mempool_name;
++
++	/* Destroy existing Meta aura */
++	if (*meta_aura) {
++		uint64_t avail, limit;
++
++		/* Check if all buffers are back to pool */
++		avail = roc_npa_aura_op_available(*meta_aura);
++		limit = roc_npa_aura_op_limit_get(*meta_aura);
++		if (avail != limit)
++			plt_warn("Not all buffers are back to meta pool,"
++				 " %" PRIu64 " != %" PRIu64, avail, limit);
++
++		rc = custom_meta_pool_cb(inl_cfg->meta_mempool, &roc_nix->meta_mempool, mp_name,
++					 meta_aura, 0, 0, true);
++		if (rc) {
++			plt_err("Failed to destroy meta aura, rc=%d", rc);
++			return rc;
++		}
++
++		roc_nix->buf_sz = 0;
++	}
++
++	return 0;
++}
++
++static int
++nix_inl_custom_meta_aura_create(struct idev_cfg *idev, struct roc_nix *roc_nix, uint16_t first_skip,
++				uint64_t *meta_aura)
++{
++	uint64_t mask = BIT_ULL(ROC_NPA_BUF_TYPE_PACKET_IPSEC);
++	struct idev_nix_inl_cfg *inl_cfg;
++	struct nix_inl_dev *nix_inl_dev;
++	char mempool_name[24] = {'\0'};
++	uint32_t nb_bufs, buf_sz;
++	char *mp_name = NULL;
++	uintptr_t mp;
++	int rc;
++
++	inl_cfg = &idev->inl_cfg;
++	nix_inl_dev = idev->nix_inl_dev;
++
++	/* Override meta buf count from devargs if present */
++	if (nix_inl_dev && nix_inl_dev->nb_meta_bufs)
++		nb_bufs = nix_inl_dev->nb_meta_bufs;
++	else
++		nb_bufs = roc_npa_buf_type_limit_get(mask);
++
++	/* Override meta buf size from devargs if present */
++	if (nix_inl_dev && nix_inl_dev->meta_buf_sz)
++		buf_sz = nix_inl_dev->meta_buf_sz;
++	else
++		buf_sz = first_skip + NIX_INL_META_SIZE;
++
++	/* Create Metapool name */
++	snprintf(mempool_name, sizeof(mempool_name), "NIX_INL_META_POOL_%d",
++		 roc_nix->port_id + 1);
++	mp_name = mempool_name;
++
++	/* Allocate meta aura */
++	rc = custom_meta_pool_cb(inl_cfg->meta_mempool, &mp, mp_name, meta_aura,
++				 buf_sz, nb_bufs, false);
++	if (rc) {
++		plt_err("Failed to allocate meta aura, rc=%d", rc);
++		return rc;
++	}
++
++	/* Overwrite */
++	roc_nix->meta_mempool = mp;
++	roc_nix->buf_sz = buf_sz;
++
++	return 0;
++}
++
+ static int
+ nix_inl_global_meta_buffer_validate(struct idev_cfg *idev, struct roc_nix_rq *rq)
+ {
+@@ -228,6 +322,7 @@ roc_nix_inl_meta_aura_check(struct roc_nix *roc_nix, struct roc_nix_rq *rq)
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	struct idev_cfg *idev = idev_get_cfg();
+ 	struct idev_nix_inl_cfg *inl_cfg;
++	bool is_local_metaaura;
+ 	bool aura_setup = false;
+ 	uint64_t *meta_aura;
+ 	int rc;
+@@ -238,18 +333,39 @@ roc_nix_inl_meta_aura_check(struct roc_nix *roc_nix, struct roc_nix_rq *rq)
+ 	inl_cfg = &idev->inl_cfg;
+ 
+ 	/* Create meta aura if not present */
+-	if (roc_nix->local_meta_aura_ena)
+-		meta_aura = &roc_nix->meta_aura_handle;
+-	else
++	if (!roc_nix->local_meta_aura_ena || roc_nix->custom_meta_aura_ena) {
+ 		meta_aura = &inl_cfg->meta_aura;
++		is_local_metaaura = false;
++	} else {
++		meta_aura = &roc_nix->meta_aura_handle;
++		is_local_metaaura = true;
++	}
+ 
+ 	if (!(*meta_aura)) {
+-		rc = nix_inl_meta_aura_create(idev, roc_nix, rq->first_skip, meta_aura);
++		rc = nix_inl_meta_aura_create(idev, roc_nix, rq->first_skip, meta_aura,
++					      is_local_metaaura);
+ 		if (rc)
+ 			return rc;
+ 
+ 		aura_setup = true;
+ 	}
++
++	if (roc_nix->custom_meta_aura_ena) {
++		/* Create metaura for 1:N pool:aura */
++		if (!custom_meta_pool_cb)
++			return -EFAULT;
++
++		meta_aura = &roc_nix->meta_aura_handle;
++		if (!(*meta_aura)) {
++			rc = nix_inl_custom_meta_aura_create(idev, roc_nix, rq->first_skip,
++							     meta_aura);
++			if (rc)
++				return rc;
++
++			aura_setup = true;
++		}
++	}
++
+ 	/* Update rq meta aura handle */
+ 	rq->meta_aura_handle = *meta_aura;
+ 
+@@ -698,6 +814,7 @@ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	struct roc_cpt_inline_ipsec_inb_cfg cfg;
+ 	struct idev_cfg *idev = idev_get_cfg();
++	struct nix_inl_dev *inl_dev;
+ 	uint16_t bpids[ROC_NIX_MAX_BPID_CNT];
+ 	struct roc_cpt *roc_cpt;
+ 	int rc;
+@@ -749,9 +866,11 @@ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ 	if (rc)
+ 		return rc;
+ 
++	inl_dev = idev->nix_inl_dev;
++	roc_nix->custom_meta_aura_ena = roc_nix->local_meta_aura_ena && inl_dev->is_multi_channel;
+ 	if (!roc_model_is_cn9k() && !roc_errata_nix_no_meta_aura()) {
+ 		nix->need_meta_aura = true;
+-		if (!roc_nix->local_meta_aura_ena)
++		if (!roc_nix->local_meta_aura_ena || roc_nix->custom_meta_aura_ena)
+ 			idev->inl_cfg.refs++;
+ 	}
+ 
+@@ -773,15 +892,17 @@ roc_nix_inl_inb_fini(struct roc_nix *roc_nix)
+ 		return -EFAULT;
+ 
+ 	nix->inl_inb_ena = false;
++
+ 	if (nix->need_meta_aura) {
+ 		nix->need_meta_aura = false;
+-		if (roc_nix->local_meta_aura_ena) {
+-			nix_inl_meta_aura_destroy(roc_nix);
+-		} else {
++		if (!roc_nix->local_meta_aura_ena || roc_nix->custom_meta_aura_ena)
+ 			idev->inl_cfg.refs--;
+-			if (!idev->inl_cfg.refs)
+-				nix_inl_meta_aura_destroy(roc_nix);
+-		}
++
++		if (roc_nix->custom_meta_aura_ena)
++			nix_inl_custom_meta_aura_destroy(roc_nix);
++
++		if (!idev->inl_cfg.refs)
++			nix_inl_meta_aura_destroy(roc_nix);
+ 	}
+ 
+ 	if (roc_feature_nix_has_inl_rq_mask()) {
+@@ -1309,17 +1430,18 @@ roc_nix_inl_inb_set(struct roc_nix *roc_nix, bool ena)
+ 
+ 	if (ena) {
+ 		nix->need_meta_aura = true;
+-		if (!roc_nix->local_meta_aura_ena)
++		if (!roc_nix->local_meta_aura_ena || roc_nix->custom_meta_aura_ena)
+ 			idev->inl_cfg.refs++;
+ 	} else if (nix->need_meta_aura) {
+ 		nix->need_meta_aura = false;
+-		if (roc_nix->local_meta_aura_ena) {
+-			nix_inl_meta_aura_destroy(roc_nix);
+-		} else {
++		if (!roc_nix->local_meta_aura_ena || roc_nix->custom_meta_aura_ena)
+ 			idev->inl_cfg.refs--;
+-			if (!idev->inl_cfg.refs)
+-				nix_inl_meta_aura_destroy(roc_nix);
+-		}
++
++		if (roc_nix->custom_meta_aura_ena)
++			nix_inl_custom_meta_aura_destroy(roc_nix);
++
++		if (!idev->inl_cfg.refs)
++			nix_inl_meta_aura_destroy(roc_nix);
+ 	}
+ }
+ 
+@@ -1672,3 +1794,9 @@ roc_nix_inl_eng_caps_get(struct roc_nix *roc_nix)
+ 
+ 	return nix->cpt_eng_caps;
+ }
++
++void
++roc_nix_inl_custom_meta_pool_cb_register(roc_nix_inl_custom_meta_pool_cb_t cb)
++{
++	custom_meta_pool_cb = cb;
++}
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index daa21a941a25d..885d95335e92d 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -121,6 +121,9 @@ typedef void (*roc_nix_inl_sso_work_cb_t)(uint64_t *gw, void *args,
+ typedef int (*roc_nix_inl_meta_pool_cb_t)(uint64_t *aura_handle,  uintptr_t *mpool,
+ 					  uint32_t blk_sz, uint32_t nb_bufs, bool destroy,
+ 					  const char *mempool_name);
++typedef int (*roc_nix_inl_custom_meta_pool_cb_t)(uintptr_t pmpool, uintptr_t *mpool,
++						 const char *mempool_name, uint64_t *aura_handle,
++						 uint32_t blk_sz, uint32_t nb_bufs, bool destroy);
+ 
+ struct roc_nix_inl_dev {
+ 	/* Input parameters */
+@@ -199,6 +202,7 @@ int __roc_api roc_nix_inl_outb_soft_exp_poll_switch(struct roc_nix *roc_nix,
+ 						    bool poll);
+ uint64_t *__roc_api roc_nix_inl_outb_ring_base_get(struct roc_nix *roc_nix);
+ void __roc_api roc_nix_inl_meta_pool_cb_register(roc_nix_inl_meta_pool_cb_t cb);
++void __roc_api roc_nix_inl_custom_meta_pool_cb_register(roc_nix_inl_custom_meta_pool_cb_t cb);
+ 
+ /* NIX Inline/Outbound API */
+ enum roc_nix_inl_sa_sync_op {
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 825923e14421c..2a31aa31cf14d 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -170,6 +170,7 @@ INTERNAL {
+ 	roc_nix_inb_is_with_inl_dev;
+ 	roc_nix_inl_meta_aura_check;
+ 	roc_nix_inl_meta_pool_cb_register;
++	roc_nix_inl_custom_meta_pool_cb_register;
+ 	roc_nix_inb_mode_set;
+ 	roc_nix_inl_outb_fini;
+ 	roc_nix_inl_outb_init;
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index 3907919135d4d..55ec5f9a70066 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -169,6 +169,10 @@ cn10k_sso_hws_post_process(struct cn10k_sso_hws *ws, uint64_t *u64,
+ 		mbuf = u64[1] - sizeof(struct rte_mbuf);
+ 		rte_prefetch0((void *)mbuf);
+ 		if (flags & NIX_RX_OFFLOAD_SECURITY_F) {
++			void *lookup_mem = ws->lookup_mem;
++			struct rte_mempool *mp = NULL;
++			uint64_t meta_aura;
++
+ 			const uint64_t mbuf_init =
+ 				0x100010000ULL | RTE_PKTMBUF_HEADROOM |
+ 				(flags & NIX_RX_OFFLOAD_TSTAMP_F ? 8 : 0);
+@@ -193,8 +197,11 @@ cn10k_sso_hws_post_process(struct cn10k_sso_hws *ws, uint64_t *u64,
+ 				cq_w1, cq_w5, sa_base, (uintptr_t)&iova, &loff,
+ 				(struct rte_mbuf *)mbuf, d_off, flags,
+ 				mbuf_init | ((uint64_t)port) << 48);
++			mp = (struct rte_mempool *)cnxk_nix_inl_metapool_get(port, lookup_mem);
++			meta_aura = mp ? mp->pool_id : m->pool->pool_id;
++
+ 			if (loff)
+-				roc_npa_aura_op_free(m->pool->pool_id, 0, iova);
++				roc_npa_aura_op_free(meta_aura, 0, iova);
+ 		}
+ 
+ 		u64[0] = CNXK_CLR_SUB_EVENT(u64[0]);
+diff --git a/drivers/net/cnxk/cn10k_rx_select.c b/drivers/net/cnxk/cn10k_rx_select.c
+index b906f6725a9a9..1e0de1b7ac0e5 100644
+--- a/drivers/net/cnxk/cn10k_rx_select.c
++++ b/drivers/net/cnxk/cn10k_rx_select.c
+@@ -79,9 +79,10 @@ cn10k_eth_set_rx_function(struct rte_eth_dev *eth_dev)
+ #undef R
+ 	};
+ 
+-	/* Copy multi seg version with no offload for tear down sequence */
++	/* Copy multi seg version with security for tear down sequence */
+ 	if (rte_eal_process_type() == RTE_PROC_PRIMARY)
+-		dev->rx_pkt_burst_no_offload = nix_eth_rx_burst_mseg[0];
++		dev->rx_pkt_burst_no_offload =
++			nix_eth_rx_burst_mseg_reas[NIX_RX_OFFLOAD_SECURITY_F];
+ 
+ 	if (dev->scalar_ena) {
+ 		if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER) {
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 23e08e61652a6..01e4a057d5434 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1882,6 +1882,9 @@ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	/* Register callback for inline meta pool create */
+ 	roc_nix_inl_meta_pool_cb_register(cnxk_nix_inl_meta_pool_cb);
+ 
++	/* Register callback for inline meta pool create 1:N pool:aura */
++	roc_nix_inl_custom_meta_pool_cb_register(cnxk_nix_inl_custom_meta_pool_cb);
++
+ 	dev->eth_dev = eth_dev;
+ 	dev->configured = 0;
+ 	dev->ptype_disable = 0;
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index d76f5486e61e1..85287dd66c204 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -608,6 +608,9 @@ cnxk_eth_sec_sess_get_by_sess(struct cnxk_eth_dev *dev,
+ 			      struct rte_security_session *sess);
+ int cnxk_nix_inl_meta_pool_cb(uint64_t *aura_handle, uintptr_t *mpool, uint32_t buf_sz,
+ 			      uint32_t nb_bufs, bool destroy, const char *mempool_name);
++int cnxk_nix_inl_custom_meta_pool_cb(uintptr_t pmpool, uintptr_t *mpool, const char *mempool_name,
++				     uint64_t *aura_handle, uint32_t buf_sz, uint32_t nb_bufs,
++				     bool destroy);
+ 
+ /* Congestion Management */
+ int cnxk_nix_cman_info_get(struct rte_eth_dev *dev, struct rte_eth_cman_info *info);
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index cd64daacc086d..a66d58ca61398 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -6,6 +6,7 @@
+ #include <cnxk_mempool.h>
+ 
+ #define CNXK_NIX_INL_META_POOL_NAME "NIX_INL_META_POOL"
++#define CN10K_HW_POOL_OPS_NAME "cn10k_hwpool_ops"
+ 
+ #define CNXK_NIX_INL_SELFTEST	      "selftest"
+ #define CNXK_NIX_INL_IPSEC_IN_MIN_SPI "ipsec_in_min_spi"
+@@ -114,6 +115,67 @@ cnxk_nix_inl_meta_pool_cb(uint64_t *aura_handle, uintptr_t *mpool, uint32_t buf_
+ 	return rc;
+ }
+ 
++/* Create Aura and link with Global mempool for 1:N Pool:Aura case */
++int
++cnxk_nix_inl_custom_meta_pool_cb(uintptr_t pmpool, uintptr_t *mpool, const char *mempool_name,
++				 uint64_t *aura_handle, uint32_t buf_sz, uint32_t nb_bufs,
++				 bool destroy)
++{
++	struct rte_mempool *hp;
++	int rc;
++
++	/* Destroy the mempool if requested */
++	if (destroy) {
++		hp = rte_mempool_lookup(mempool_name);
++		if (!hp)
++			return -ENOENT;
++
++		if (hp->pool_id != *aura_handle) {
++			plt_err("Meta pool aura mismatch");
++			return -EINVAL;
++		}
++
++		rte_mempool_free(hp);
++		plt_free(hp->pool_config);
++
++		*aura_handle = 0;
++		*mpool = 0;
++		return 0;
++	}
++
++	/* Need to make it similar to rte_pktmbuf_pool() for sake of OOP
++	 * support.
++	 */
++	hp = rte_mempool_create_empty(mempool_name, nb_bufs, buf_sz, 0,
++				      sizeof(struct rte_pktmbuf_pool_private),
++				      SOCKET_ID_ANY, 0);
++	if (!hp) {
++		plt_err("Failed to create inline meta pool");
++		return -EIO;
++	}
++
++	rc = rte_mempool_set_ops_byname(hp, CN10K_HW_POOL_OPS_NAME, (void *)pmpool);
++
++	if (rc) {
++		plt_err("Failed to setup ops, rc=%d", rc);
++		goto free_hp;
++	}
++
++	/* Populate buffer */
++	rc = rte_mempool_populate_default(hp);
++	if (rc < 0) {
++		plt_err("Failed to populate pool, rc=%d", rc);
++		goto free_hp;
++	}
++
++	*aura_handle = hp->pool_id;
++	*mpool = (uintptr_t)hp;
++	return 0;
++free_hp:
++	rte_mempool_free(hp);
++	return rc;
++}
++
+ static int
+ parse_max_ipsec_rules(const char *key, const char *value, void *extra_args)
+ {
+-- 
+2.25.1
+

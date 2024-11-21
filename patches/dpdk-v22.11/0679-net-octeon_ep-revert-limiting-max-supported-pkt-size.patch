@@ -1,0 +1,46 @@
+From 3180907779eff0229b0f792bfc88d249b908c7b1 Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Fri, 17 Nov 2023 17:53:44 -0800
+Subject: [PATCH 679/955] net/octeon_ep: revert limiting max supported pkt size
+
+As NIX PMD does not rely on send_mem, cqe, wqe types of tx completions,
+there is no impact on software in supporting max packet sizes (>16KB).
+So this commit reverts the previous workaround.
+
+Fixes: 83db3cd34974 ("net/octeon_ep: limit max supported packet length")
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: I979536c6f1785d04b15e8a542d1436614adef19b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116217
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit fdfa7e4a5b1f967da247223e2c09a326f564616a)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116264
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index cc4ba82cfbac0..893aea409a724 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -99,13 +99,6 @@ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 		return -EINVAL;
+ 	}
+ 
+-	if (otx_epvf->chip_id == PCI_DEVID_CN9K_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CNF95N_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CNF95O_EP_NET_VF) {
+-		max_rx_pktlen =  OTX2_EP_MAX_RX_PKT_LEN;
+-		otx_ep_dbg("Max supported pkt len is %d", max_rx_pktlen);
+-	}
+-
+ 	devinfo->speed_capa = RTE_ETH_LINK_SPEED_10G;
+ 	devinfo->max_rx_queues = otx_epvf->max_rx_queues;
+ 	devinfo->max_tx_queues = otx_epvf->max_tx_queues;
+-- 
+2.25.1
+

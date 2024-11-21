@@ -1,0 +1,63 @@
+From df6136562da191318dd8c42b6dd281f0c8396c29 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Fri, 24 Mar 2023 17:24:55 +0530
+Subject: [PATCH 339/955] marvell-ci: enable debug build tests
+
+Introduce cn*-debug.env to allow only minimal tests
+to be run for debug build tests.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I8bac270e86494dab3b5962aa2962b788d4d6bf40
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99882
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/env/cn10k-debug.env | 14 ++++++++++++++
+ marvell-ci/test/env/cn9k-debug.env  | 14 ++++++++++++++
+ 2 files changed, 28 insertions(+)
+ create mode 100644 marvell-ci/test/env/cn10k-debug.env
+ create mode 100644 marvell-ci/test/env/cn9k-debug.env
+
+diff --git a/marvell-ci/test/env/cn10k-debug.env b/marvell-ci/test/env/cn10k-debug.env
+new file mode 100644
+index 0000000000000..0afc3ac0b27f2
+--- /dev/null
++++ b/marvell-ci/test/env/cn10k-debug.env
+@@ -0,0 +1,14 @@
++#!/bin/bash
++
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
++
++RUN_TESTS="
++	mbuf_autotest
++	mempool_autotest
++"
++
++# Export the path to this conf so that other scripts can source this conf.
++export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn10k-debug.env
+diff --git a/marvell-ci/test/env/cn9k-debug.env b/marvell-ci/test/env/cn9k-debug.env
+new file mode 100644
+index 0000000000000..d6de22a4b7b3a
+--- /dev/null
++++ b/marvell-ci/test/env/cn9k-debug.env
+@@ -0,0 +1,14 @@
++#!/bin/bash
++
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++source $PROJECT_ROOT/marvell-ci/test/env/cn9k.env
++
++RUN_TESTS="
++	mbuf_autotest
++	mempool_autotest
++"
++
++# Export the path to this conf so that other scripts can source this conf.
++export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn9k-debug.env
+-- 
+2.25.1
+

@@ -1,0 +1,148 @@
+From b80df0d23e52a3900ba67a9bd3d3409bdcef2975 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Thu, 14 Dec 2023 10:46:51 +0530
+Subject: [PATCH 799/955] net/cnxk: eswitch VF as ethernet device
+
+Adding support for eswitch VF to probe as normal cnxk ethernet device
+
+Change-Id: I08261b0960f9b402ee3188c0daba4ce8992c2e5e
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev.c    |  1 +
+ drivers/net/cnxk/cnxk_ethdev.c     | 41 +++++++++++++++++++++---------
+ drivers/net/cnxk/cnxk_ethdev.h     |  3 +++
+ drivers/net/cnxk/cnxk_ethdev_ops.c |  4 +++
+ drivers/net/cnxk/cnxk_link.c       |  3 ++-
+ 5 files changed, 39 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index b4b80b60d500d..6d89526a7de43 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -967,6 +967,7 @@ static const struct rte_pci_id cn10k_pci_nix_map[] = {
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KB, PCI_DEVID_CNXK_RVU_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CNF10KB, PCI_DEVID_CNXK_RVU_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KA, PCI_DEVID_CNXK_RVU_VF),
++	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KA, PCI_DEVID_CNXK_RVU_ESWITCH_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KAS, PCI_DEVID_CNXK_RVU_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CNF10KA, PCI_DEVID_CNXK_RVU_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KB, PCI_DEVID_CNXK_RVU_VF),
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 76409107826fe..6b37bd877ffa0 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -390,7 +390,7 @@ nix_update_flow_ctrl_config(struct rte_eth_dev *eth_dev)
+ 	struct cnxk_fc_cfg *fc = &dev->fc_cfg;
+ 	struct rte_eth_fc_conf fc_cfg = {0};
+ 
+-	if (roc_nix_is_sdp(&dev->nix))
++	if (roc_nix_is_sdp(&dev->nix) || roc_nix_is_esw(&dev->nix))
+ 		return 0;
+ 
+ 	/* Don't do anything if PFC is enabled */
+@@ -1449,12 +1449,14 @@ cnxk_nix_configure(struct rte_eth_dev *eth_dev)
+ 		goto cq_fini;
+ 
+ 	/* Init flow control configuration */
+-	fc_cfg.type = ROC_NIX_FC_RXCHAN_CFG;
+-	fc_cfg.rxchan_cfg.enable = true;
+-	rc = roc_nix_fc_config_set(nix, &fc_cfg);
+-	if (rc) {
+-		plt_err("Failed to initialize flow control rc=%d", rc);
+-		goto cq_fini;
++	if (!roc_nix_is_esw(nix)) {
++		fc_cfg.type = ROC_NIX_FC_RXCHAN_CFG;
++		fc_cfg.rxchan_cfg.enable = true;
++		rc = roc_nix_fc_config_set(nix, &fc_cfg);
++		if (rc) {
++			plt_err("Failed to initialize flow control rc=%d", rc);
++			goto cq_fini;
++		}
+ 	}
+ 
+ 	/* Update flow control configuration to PMD */
+@@ -1977,11 +1979,21 @@ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		TAILQ_INIT(&dev->mcs_list);
+ 	}
+ 
+-	plt_nix_dbg("Port=%d pf=%d vf=%d ver=%s hwcap=0x%" PRIx64
+-		    " rxoffload_capa=0x%" PRIx64 " txoffload_capa=0x%" PRIx64,
+-		    eth_dev->data->port_id, roc_nix_get_pf(nix),
+-		    roc_nix_get_vf(nix), CNXK_ETH_DEV_PMD_VERSION, dev->hwcap,
+-		    dev->rx_offload_capa, dev->tx_offload_capa);
++	/* Reserve a switch domain for eswitch device */
++	if (pci_dev->id.device_id == PCI_DEVID_CNXK_RVU_ESWITCH_VF) {
++		eth_dev->data->dev_flags |= RTE_ETH_DEV_REPRESENTOR;
++		rc = rte_eth_switch_domain_alloc(&dev->switch_domain_id);
++		if (rc) {
++			plt_err("Failed to alloc switch domain: %d", rc);
++			goto free_mac_addrs;
++		}
++	}
++
++	plt_nix_dbg("Port=%d pf=%d vf=%d ver=%s hwcap=0x%" PRIx64 " rxoffload_capa=0x%" PRIx64
++		    " txoffload_capa=0x%" PRIx64,
++		    eth_dev->data->port_id, roc_nix_get_pf(nix), roc_nix_get_vf(nix),
++		    CNXK_ETH_DEV_PMD_VERSION, dev->hwcap, dev->rx_offload_capa,
++		    dev->tx_offload_capa);
+ 	return 0;
+ 
+ free_mac_addrs:
+@@ -2047,6 +2059,11 @@ cnxk_eth_dev_uninit(struct rte_eth_dev *eth_dev, bool reset)
+ 		}
+ 	}
+ 
++	/* Free switch domain ID reserved for eswitch device */
++	if ((eth_dev->data->dev_flags & RTE_ETH_DEV_REPRESENTOR) &&
++	    rte_eth_switch_domain_free(dev->switch_domain_id))
++		plt_err("Failed to free switch domain");
++
+ 	/* Disable and free rte_meter entries */
+ 	nix_meter_fini(dev);
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index eb8d2bf4ebebe..02837ca32fdca 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -427,6 +427,9 @@ struct cnxk_eth_dev {
+ 
+ 	/* Inject packets */
+ 	struct cnxk_ethdev_inj_cfg inj_cfg;
++
++	/* Eswitch domain ID */
++	uint16_t switch_domain_id;
+ };
+ 
+ struct cnxk_eth_rxq_sp {
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index 56049c5dd2d3c..c8260fcb9c581 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -70,6 +70,10 @@ cnxk_nix_info_get(struct rte_eth_dev *eth_dev, struct rte_eth_dev_info *devinfo)
+ 			    RTE_ETH_DEV_CAPA_FLOW_RULE_KEEP;
+ 
+ 	devinfo->max_rx_mempools = CNXK_NIX_NUM_POOLS_MAX;
++	if (eth_dev->data->dev_flags & RTE_ETH_DEV_REPRESENTOR) {
++		devinfo->switch_info.name = eth_dev->device->name;
++		devinfo->switch_info.domain_id = dev->switch_domain_id;
++	}
+ 
+ 	return 0;
+ }
+diff --git a/drivers/net/cnxk/cnxk_link.c b/drivers/net/cnxk/cnxk_link.c
+index 127c9e72e7db8..903b44de2cc7f 100644
+--- a/drivers/net/cnxk/cnxk_link.c
++++ b/drivers/net/cnxk/cnxk_link.c
+@@ -13,7 +13,8 @@ cnxk_nix_toggle_flag_link_cfg(struct cnxk_eth_dev *dev, bool set)
+ 		dev->flags &= ~CNXK_LINK_CFG_IN_PROGRESS_F;
+ 
+ 	/* Update link info for LBK */
+-	if (!set && (roc_nix_is_lbk(&dev->nix) || roc_nix_is_sdp(&dev->nix))) {
++	if (!set &&
++	    (roc_nix_is_lbk(&dev->nix) || roc_nix_is_sdp(&dev->nix) || roc_nix_is_esw(&dev->nix))) {
+ 		struct rte_eth_link link;
+ 
+ 		link.link_status = RTE_ETH_LINK_UP;
+-- 
+2.25.1
+

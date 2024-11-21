@@ -1,0 +1,106 @@
+From 275e67638c58818876ccc5878fc32f2db9ea3557 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 17 Jul 2024 07:17:36 +0000
+Subject: [PATCH 462/513] crypto/cnxk: add PMD API to flush CTX
+
+Add PMD API to flush CPT CTX entry.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I6172093bbaf059b86be9e8d2851bf70740e20ddc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131449
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134277
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  | 24 ++++++++++++++++++++++
+ drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h | 25 +++++++++++++++++++++++
+ drivers/crypto/cnxk/version.map           |  1 +
+ 3 files changed, 50 insertions(+)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 82f929706e1cf..f74e81f75c6ac 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -1041,6 +1041,30 @@ rte_pmd_cnxk_crypto_submit(struct rte_pmd_cnxk_crypto_qptr *qptr, void *inst, ui
+ 	plt_err("Invalid cnxk model");
+ }
+ 
++int
++rte_pmd_cnxk_crypto_cptr_flush(struct rte_pmd_cnxk_crypto_qptr *qptr,
++			       struct rte_pmd_cnxk_crypto_cptr *cptr, bool invalidate)
++{
++	struct cnxk_cpt_qp *qp = PLT_PTR_CAST(qptr);
++
++	if (unlikely(qptr == NULL)) {
++		plt_err("Invalid queue pair pointer");
++		return -EINVAL;
++	}
++
++	if (unlikely(cptr == NULL)) {
++		plt_err("Invalid CPTR pointer");
++		return -EINVAL;
++	}
++
++	if (unlikely(!roc_model_is_cn10k())) {
++		plt_err("Invalid cnxk model");
++		return -EINVAL;
++	}
++
++	return roc_cpt_lf_ctx_flush(&qp->lf, cptr, invalidate);
++}
++
+ struct rte_pmd_cnxk_crypto_cptr *
+ rte_pmd_cnxk_crypto_cptr_get(struct rte_pmd_cnxk_crypto_sess *rte_sess)
+ {
+diff --git a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+index ca5f1f964ed60..e4541483ef105 100644
+--- a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
++++ b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+@@ -86,6 +86,31 @@ __rte_experimental
+ void rte_pmd_cnxk_crypto_submit(struct rte_pmd_cnxk_crypto_qptr *qptr, void *inst,
+ 				uint16_t nb_inst);
+ 
++/**
++ * Flush the CPTR from CPT CTX cache.
++ *
++ * This API must be called only after the cryptodev and queue pair is configured and is started.
++ *
++ * @param qptr
++ *   Pointer obtained with ``rte_pmd_cnxk_crypto_qptr_get``.
++ * @param cptr
++ *   Pointer obtained with ``rte_pmd_cnxk_crypto_cptr_get`` or any valid CPTR address that can be
++ *   used with CPT CTX cache.
++ * @param invalidate
++ *   If true, invalidate the CTX cache entry. If false, flush the CTX cache entry.
++ * @return
++ *   - 0 on success.
++ *   - Negative value on error.
++ *     - -EINVAL if the input parameters are invalid.
++ *     - -ENOTSUP if the operation is not supported.
++ *     - -EAGAIN if the operation is not successful.
++ *     - -EFAULT if the operation failed.
++ */
++__rte_experimental
++int rte_pmd_cnxk_crypto_cptr_flush(struct rte_pmd_cnxk_crypto_qptr *qptr,
++				   struct rte_pmd_cnxk_crypto_cptr *cptr,
++				   bool invalidate);
++
+ /**
+  * Get the HW CPTR pointer from the rte_crypto/rte_security session.
+  *
+diff --git a/drivers/crypto/cnxk/version.map b/drivers/crypto/cnxk/version.map
+index b510ec48479e1..7a8122dc1dded 100644
+--- a/drivers/crypto/cnxk/version.map
++++ b/drivers/crypto/cnxk/version.map
+@@ -6,6 +6,7 @@ EXPERIMENTAL {
+ 	rte_pmd_cnxk_crypto_qptr_get;
+ 
+ 	# added in 24.07
++	rte_pmd_cnxk_crypto_cptr_flush;
+ 	rte_pmd_cnxk_crypto_cptr_get;
+ };
+ 
+-- 
+2.25.1
+

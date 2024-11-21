@@ -1,0 +1,54 @@
+From fd33c28a5fca8a4d5ff33b73f989f606eeb4b981 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 7 Mar 2023 12:49:18 +0530
+Subject: [PATCH 271/955] ci: temporarily disable cnxk_cman_test_config
+
+Temporarily disable cnxk_cman_test_config.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: Id88b1c1abcd919a91f119e3b14076964bda7b7c6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98673
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn10k.env | 5 ++++-
+ marvell-ci/test/env/cn9k.env  | 4 +++-
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 3b4aaada6b5e3..d585a9d8d5d0a 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -68,7 +68,10 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-}
+ 
+-FIXME_SKIP_TESTS=""
++FIXME_SKIP_TESTS="
++	cnxk_cman_test_config
++	cnxk_mtr_test_config
++"
+ 
+ DEFAULT_SKIP_TESTS="
+ 	distributor_autotest
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index b6a6f16b93725..8169e29d5e424 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -67,7 +67,9 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-1}
+ 
+-FIXME_SKIP_TESTS=""
++FIXME_SKIP_TESTS="
++	cnxk_cman_test_config
++"
+ 
+ DEFAULT_SKIP_TESTS="
+ 	distributor_autotest
+-- 
+2.25.1
+

@@ -1,0 +1,128 @@
+From 15a602070c319433d123897500262ec715591609 Mon Sep 17 00:00:00 2001
+From: Shiyang He <shiyangx.he@intel.com>
+Date: Tue, 23 May 2023 21:08:00 +0530
+Subject: [PATCH 463/955] app/testpmd: fix secondary process packet forwarding
+
+Under multi-process scenario, the secondary process gets queue state
+from the wrong location (the global variable 'ports'). Therefore, the
+secondary process can not forward since "stream_init" is not called.
+
+This commit fixes the issue by calling 'rte_eth_rx/tx_queue_info_get'
+to get queue state from shared memory.
+
+Fixes: 3c4426db54fc ("app/testpmd: do not poll stopped queues")
+
+Change-Id: I2bb2392754ed9a283fe84cc6b4fd7e99d6d28f61
+Signed-off-by: Shiyang He <shiyangx.he@intel.com>
+Reviewed-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103823
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test-pmd/testpmd.c | 72 +++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 71 insertions(+), 1 deletion(-)
+
+diff --git a/app/test-pmd/testpmd.c b/app/test-pmd/testpmd.c
+index 134d79a555478..c0bb36f616aa8 100644
+--- a/app/test-pmd/testpmd.c
++++ b/app/test-pmd/testpmd.c
+@@ -2339,6 +2339,70 @@ launch_packet_forwarding(lcore_function_t *pkt_fwd_on_lcore)
+ 	}
+ }
+ 
++static void
++update_rx_queue_state(uint16_t port_id, uint16_t queue_id)
++{
++	struct rte_eth_rxq_info rx_qinfo;
++	int32_t rc;
++
++	rc = rte_eth_rx_queue_info_get(port_id,
++			queue_id, &rx_qinfo);
++	if (rc == 0) {
++		ports[port_id].rxq[queue_id].state =
++			rx_qinfo.queue_state;
++	} else if (rc == -ENOTSUP) {
++		/*
++		 * Set the rxq state to RTE_ETH_QUEUE_STATE_STARTED
++		 * to ensure that the PMDs do not implement
++		 * rte_eth_rx_queue_info_get can forward.
++		 */
++		ports[port_id].rxq[queue_id].state =
++			RTE_ETH_QUEUE_STATE_STARTED;
++	} else {
++		TESTPMD_LOG(WARNING,
++			"Failed to get rx queue info\n");
++	}
++}
++
++static void
++update_tx_queue_state(uint16_t port_id, uint16_t queue_id)
++{
++	struct rte_eth_txq_info tx_qinfo;
++	int32_t rc;
++
++	rc = rte_eth_tx_queue_info_get(port_id,
++			queue_id, &tx_qinfo);
++	if (rc == 0) {
++		ports[port_id].txq[queue_id].state =
++			tx_qinfo.queue_state;
++	} else if (rc == -ENOTSUP) {
++		/*
++		 * Set the txq state to RTE_ETH_QUEUE_STATE_STARTED
++		 * to ensure that the PMDs do not implement
++		 * rte_eth_tx_queue_info_get can forward.
++		 */
++		ports[port_id].txq[queue_id].state =
++			RTE_ETH_QUEUE_STATE_STARTED;
++	} else {
++		TESTPMD_LOG(WARNING,
++			"Failed to get tx queue info\n");
++	}
++}
++
++static void
++update_queue_state(void)
++{
++	portid_t pi;
++	queueid_t qi;
++
++	RTE_ETH_FOREACH_DEV(pi) {
++		for (qi = 0; qi < nb_rxq; qi++)
++			update_rx_queue_state(pi, qi);
++		for (qi = 0; qi < nb_txq; qi++)
++			update_tx_queue_state(pi, qi);
++	}
++}
++
+ /*
+  * Launch packet forwarding configuration.
+  */
+@@ -2378,9 +2442,12 @@ start_packet_forwarding(int with_tx_first)
+ 	if (!pkt_fwd_shared_rxq_check())
+ 		return;
+ 
+-	if (stream_init != NULL)
++	if (stream_init != NULL) {
++		if (rte_eal_process_type() == RTE_PROC_SECONDARY)
++			update_queue_state();
+ 		for (i = 0; i < cur_fwd_config.nb_fwd_streams; i++)
+ 			stream_init(fwd_streams[i]);
++	}
+ 
+ 	port_fwd_begin = cur_fwd_config.fwd_eng->port_fwd_begin;
+ 	if (port_fwd_begin != NULL) {
+@@ -3136,6 +3203,9 @@ start_port(portid_t pid)
+ 		pl[cfg_pi++] = pi;
+ 	}
+ 
++	if (rte_eal_process_type() == RTE_PROC_SECONDARY)
++		update_queue_state();
++
+ 	if (need_check_link_status == 1 && !no_link_check)
+ 		check_all_ports_link_status(RTE_PORT_ALL);
+ 	else if (need_check_link_status == 0)
+-- 
+2.25.1
+

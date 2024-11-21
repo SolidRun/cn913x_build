@@ -1,0 +1,44 @@
+From c6950b4c7d2b0c583404b7cca075527bb5471a07 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 27 Sep 2024 23:15:29 +0530
+Subject: [PATCH 512/513] vhost_vdpa: implement update link state API
+
+This patch introduces the vhost_vdpa_update_link_state API to manage the
+link state updates.
+
+Change-Id: I3ec288ec4b005f6b7b138555f29cc019e2674871
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/136468
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/virtio/virtio_user/vhost_vdpa.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/virtio/virtio_user/vhost_vdpa.c b/drivers/net/virtio/virtio_user/vhost_vdpa.c
+index ab3d908bc84f1..e29c45b7c297a 100644
+--- a/drivers/net/virtio/virtio_user/vhost_vdpa.c
++++ b/drivers/net/virtio/virtio_user/vhost_vdpa.c
+@@ -619,9 +619,17 @@ vhost_vdpa_get_backend_features(uint64_t *features)
+ }
+ 
+ static int
+-vhost_vdpa_update_link_state(struct virtio_user_dev *dev __rte_unused)
++vhost_vdpa_update_link_state(struct virtio_user_dev *dev)
+ {
+-	/* Nothing to update (for now?) */
++	uint16_t status;
++	int rc, offset;
++
++	offset = offsetof(struct virtio_net_config, status);
++	rc = vhost_vdpa_get_config(dev, (uint8_t *)&status, offset, sizeof(status));
++	if (rc)
++		return rc;
++	dev->net_status = status & VIRTIO_NET_S_LINK_UP;
++
+ 	return 0;
+ }
+ 
+-- 
+2.25.1
+

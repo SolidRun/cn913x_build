@@ -1,0 +1,1325 @@
+From 36d9cf8eb57470d8a39eecaca91f1c93c45bcc3a Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Mon, 21 Aug 2023 11:09:18 +0530
+Subject: [PATCH 646/955] ci: add l2fwd-macsec
+
+Added dpdk-l2fwd-macsec to CI performance testing on CN103.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I633980e2064184a8389853dd0d68146ca83fe507
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/112498
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113028
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../macsec_perf/README_standalone.txt         |  87 +++
+ .../macsec_perf/cnxk_macsec_perf.sh           | 685 ++++++++++++++++++
+ .../macsec_perf/cnxk_macsec_perf_gen.sh       | 114 +++
+ .../test/cnxk-tests/macsec_perf/meson.build   |  47 ++
+ .../pcap/port_0_enc_pkt_1410B.pcap            | Bin 0 -> 1482 bytes
+ .../macsec_perf/pcap/port_0_enc_pkt_380B.pcap | Bin 0 -> 452 bytes
+ .../macsec_perf/pcap/port_0_enc_pkt_64B.pcap  | Bin 0 -> 136 bytes
+ .../pcap/port_0_plain_pkt_1410B.pcap          | Bin 0 -> 1450 bytes
+ .../pcap/port_0_plain_pkt_380B.pcap           | Bin 0 -> 420 bytes
+ .../pcap/port_0_plain_pkt_64B.pcap            | Bin 0 -> 104 bytes
+ .../pcap/port_1_enc_pkt_1410B.pcap            | Bin 0 -> 1482 bytes
+ .../macsec_perf/pcap/port_1_enc_pkt_380B.pcap | Bin 0 -> 452 bytes
+ .../macsec_perf/pcap/port_1_enc_pkt_64B.pcap  | Bin 0 -> 136 bytes
+ .../pcap/port_1_plain_pkt_1410B.pcap          | Bin 0 -> 1450 bytes
+ .../pcap/port_1_plain_pkt_380B.pcap           | Bin 0 -> 420 bytes
+ .../pcap/port_1_plain_pkt_64B.pcap            | Bin 0 -> 104 bytes
+ .../cn10k/rclk2500_sclk1100.103xx.ip.inb      |   5 +
+ .../cn10k/rclk2500_sclk1100.103xx.ip.outb     |   5 +
+ marvell-ci/test/cnxk-tests/meson.build        |   1 +
+ marvell-ci/test/env/cn103.env                 |  14 +-
+ marvell-ci/test/env/cn10k.env                 |   1 +
+ marvell-ci/test/env/cn9k.env                  |   1 +
+ 22 files changed, 959 insertions(+), 1 deletion(-)
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/README_standalone.txt
+ create mode 100755 marvell-ci/test/cnxk-tests/macsec_perf/cnxk_macsec_perf.sh
+ create mode 100755 marvell-ci/test/cnxk-tests/macsec_perf/cnxk_macsec_perf_gen.sh
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/meson.build
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_enc_pkt_1410B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_enc_pkt_380B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_enc_pkt_64B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_plain_pkt_1410B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_plain_pkt_380B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_plain_pkt_64B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_enc_pkt_1410B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_enc_pkt_380B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_enc_pkt_64B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_plain_pkt_1410B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_plain_pkt_380B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_plain_pkt_64B.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/macsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/README_standalone.txt b/marvell-ci/test/cnxk-tests/macsec_perf/README_standalone.txt
+new file mode 100644
+index 0000000000000..f9bbb5cee1124
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/macsec_perf/README_standalone.txt
+@@ -0,0 +1,87 @@
++MACsec perf standalone application
++==================================
++
++The macsec_perf_host.sh and macsec_perf_target.sh can be
++used by developers to generate MACsec performance numbers.
++The dpdk-l2fwd-macsec is used for MACsec functionality and dpdk-testpmd
++application is used to generate and receive packets.
++
++The macsec_perf_host.sh runs on the host machine and does the following:
++
++1. Prints system info about the target.
++
++2. Creates the remote directory on target board(103xx), copies the required
++   files like dpdk-l2fwd-macsec application, dpdk-testpmd application, the
++   macsec_perf_target.sh script, pcap files, oxk-devbind-basic.sh script and
++   testpmd directory on the target board.
++   By default the files will be copied in /tmp/dpdk directory on target board.
++   This can be changed by exporting REMOTE_DIR variable.
++
++3. Do the target setup by calling cnxk-target-setup.sh script. This can be skipped
++   if the target is already setup once by exporting SKIP_TARGET_SETUP=y.
++
++4. Then executes the macsec_perf_target.sh script on the target board.
++
++
++The macsec_perf_target.sh script runs on the target board and executes the various
++macsec tests. The inline protocol outbound and inbound mode tests are supported.
++
++On the target board the dpdk-testpmd application in tx mode transmit the packets or
++pcap(in inbound side). The l2fwd-macsec receives the packet and does the encrypt or
++decrypt. The dpdk-testpmd application in rx mode receives the processed packets. The
++throughput is captured on the rx side.
++
++
++How to run
++==========
++cd <dpdk_dir>
++export PROJROOT=$PWD
++export BUILD_DIR=$PWD/build
++export REMOTE_DIR=<target dir> (optional)
++export SKIP_TARGET_SETUP=y (optional)
++export TARGET_BOARD=ci@<target ip>
++(The ci user is present by default in linux used in Marvell's DPDK devel CI)
++./marvell-ci/test/cnxk-tests/macsec_perf/macsec_perf_host.sh
++
++Outbound Setup:
++  ---------------------        -----------------------------------         ---------------------
++  |  dpdk-testpmd(TX) |        |          dpdk-ipsec-secgw       |         |  dpdk-testpmd(RX) |
++  |                   |        |                                 |         |                   |
++  |      0002:01:00.5 | ------>| 0002:01:00.6       0002:01:00.7 | ------> | 0002:01:01.0      |
++  |                   |  (PT)  |                                 |  (CT)   |                   |
++  ---------------------        -----------------------------------         ---------------------
++
++Inbound Setup:
++  ---------------------        -----------------------------------         ---------------------
++  |  dpdk-testpmd(TX) |        |          dpdk-ipsec-secgw       |         |  dpdk-testpmd(RX) |
++  |                   |        |                                 |         |                   |
++  |      0002:01:00.5 | ------>| 0002:01:00.6       0002:01:00.7 | ------> | 0002:01:01.0      |
++  |                   |  (CT)  |                                 |  (PT)   |                   |
++  ---------------------        -----------------------------------         ---------------------
++
++Output File
++===========
++
++The throughput (in pps) is stored in the output files. The output files
++are stored in ref_numbers/<cn9k or cn10k> directory on the target.
++
++The output file is named according to following format:
++rclk<rclk freq>_sclk<sclk freq>_cptclk<cptclk freq>.<HW>.<ipsec mode>.<dir>
++where:
++rclk freq - coreclk/rclk frequency in Mhz
++sclk freq - sclk frequency in Mhz
++cptclk freq - CPT clock frequency in Mhz
++HW - 103xx
++macsec mode - ip: inline protocol
++dir - outb: outbound test
++      inb:  inbound test
++
++The following is the snippet of output file for aes-gcm algorithm.
++aes-gcm
++64: 2203558
++380: 2237834
++1410: 2098405
++<end>
++
++The 1st column (64, 380, 1410) is the packet size. The 2nd column shows the throughput (in pps)
++for 1 core. Only 1 core is supported.
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/cnxk_macsec_perf.sh b/marvell-ci/test/cnxk-tests/macsec_perf/cnxk_macsec_perf.sh
+new file mode 100755
+index 0000000000000..2f09dc1ce1bc1
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/macsec_perf/cnxk_macsec_perf.sh
+@@ -0,0 +1,685 @@
++#!/bin/bash
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2023 Marvell.
++
++set -e
++
++GENERATOR_BOARD=${GENERATOR_BOARD:-}
++REMOTE_DIR=${REMOTE_DIR:-$(pwd | cut -d/ -f 1-3)}
++CNXKTESTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
++LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-"$1/deps/lib"}
++PKT_LIST="64 380 1410"
++NUM_CAPTURE=3
++MAX_TRY_CNT=5
++CORES=(1)
++COREMASK="0x10"
++TXWAIT=15
++RXWAIT=5
++WS=2
++IS_RXPPS_TXTPMD=0
++TARGET_SSH_CMD=${TARGET_SSH_CMD:-"ssh -o LogLevel=ERROR -o ServerAliveInterval=30 \
++	-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"}
++TARGET_SSH_CMD="$TARGET_SSH_CMD -n"
++GENERATOR_SCRIPT=${GENERATOR_SCRIPT:-cnxk_macsec_perf_gen.sh}
++WITH_GEN_BOARD=0
++
++source $CNXKTESTPATH/../common/testpmd/pktgen.env
++source $CNXKTESTPATH/../common/testpmd/lbk.env
++source $CNXKTESTPATH/../common/testpmd/common.env
++
++MACSEC_PREFIX="macsec_dpdk"
++TPMD_RX_PREFIX="tpmd_rx"
++TPMD_TX_PREFIX="tpmd_tx"
++
++declare -i SCLK
++declare -i RCLK
++declare -i CPTCLK
++declare -A PASS_PPS_TABLE
++
++! $(cat /proc/device-tree/compatible | grep -q "cn10kb")
++IS_CN103=$?
++
++if [[ $IS_CN103 -ne 0 ]]; then
++	HW="103xx"
++fi
++
++if [[ -d /sys/bus/pci/drivers/octeontx2-nicvf ]]; then
++	NICVF="octeontx2-nicvf"
++else
++	NICVF="rvu_nicvf"
++fi
++
++# Find the dpdk-l2fwd-macsec application
++if [[ -f $CNXKTESTPATH/../../../../examples/dpdk-l2fwd-macsec ]]; then
++	# This is running from build directory
++	L2FWD_MACSEC_BIN=$CNXKTESTPATH/../../../../examples/dpdk-l2fwd-macsec
++elif [[ -f $CNXKTESTPATH/../../dpdk-l2fwd-macsec ]]; then
++	# This is running from install directory
++	L2FWD_MACSEC_BIN=$CNXKTESTPATH/../../dpdk-l2fwd-macsec
++else
++	L2FWD_MACSEC_BIN=$(which dpdk-l2fwd-macsec)
++	if [[ -z $L2FWD_MACSEC_BIN ]]; then
++		echo "dpdk-l2fwd-macsec not found !!"
++		exit 1
++	fi
++fi
++
++TYPE=(
++	"ip"
++)
++
++TN=(
++	"Inline Protocol: Poll Mode"
++)
++
++NB_TYPES=${#TYPE[@]}
++
++function assert_arr_len()
++{
++	local name=$1
++	local -n arr=$name
++	local arr_len=${#arr[@]}
++
++	if [[ $arr_len -ne $NB_TYPES ]]; then
++		echo "'$name' array($arr_len) should be same length as 'TYPE' array($NB_TYPES)"
++		exit 1
++	fi
++}
++
++assert_arr_len TN
++
++Failed_tests=""
++
++LIF1=0002:01:00.5
++LIF2=0002:01:00.6
++
++# MACsec log file name for app will be as
++# macsec_{1/2 for aes-cbc/aes-gcm}_{outb/inb}_{Test number}_{Trial number}.log
++MACSEC_LOG=macsec_*.log
++VFIO_DEVBIND="$1/marvell-ci/test/board/oxk-devbind-basic.sh"
++
++rm -f $MACSEC_LOG
++
++if [[ -z "$GENERATOR_BOARD" ]]; then
++	echo "Generator board details missing!!"
++	WITH_GEN_BOARD=0
++else
++	echo "Found Generator board details $GENERATOR_BOARD"
++	if [[ $IS_CN103 -ne 0 ]]; then
++		WITH_GEN_BOARD=1
++	fi
++fi
++
++if [[ $WITH_GEN_BOARD -eq 1 ]]
++then
++	IF0=0002:02:00.0
++	IF1=0002:03:00.0
++	echo "Inline Protocol tests will run with generator board"
++else
++	IF0=$LIF2
++	IF1=$LIF3
++	echo "All tests will run locally without generator board"
++fi
++
++function get_system_info()
++{
++	local sysclk_dir
++	local fp_rclk
++	local fp_sclk
++	local fp_cptclk
++	local div=1000000
++
++	sysclk_dir="/sys/kernel/debug/clk"
++if [[ $IS_CN103 -ne 0 ]]; then
++	fp_rclk="$sysclk_dir/coreclk/clk_rate"
++else
++	fp_rclk="$sysclk_dir/rclk/clk_rate"
++	fp_cptclk="$sysclk_dir/cptclk/clk_rate"
++fi
++	fp_sclk="$sysclk_dir/sclk/clk_rate"
++
++	if $SUDO test -f "$fp_rclk"; then
++		RCLK=$(echo "`$SUDO cat $fp_rclk` / $div" | bc)
++	else
++		echo "$fp_rclk not available"
++		exit 1
++	fi
++
++	if $SUDO test -f "$fp_sclk"; then
++		SCLK=$(echo "`$SUDO cat $fp_sclk` / $div" | bc)
++	else
++		echo "$fp_sclk not available"
++		exit 1
++	fi
++
++if [[ $IS_CN103 -ne 0 ]]; then
++	echo "CORECLK:   $RCLK Mhz"
++	echo "SCLK:      $SCLK Mhz"
++	return
++fi
++	if $SUDO test -f "$fp_cptclk"; then
++		CPTCLK=$(echo "`$SUDO cat $fp_cptclk` / $div" | bc)
++	else
++		echo "$fp_cptclk not available"
++		exit 1
++	fi
++
++	echo "RCLK:   $RCLK Mhz"
++	echo "SCLK:   $SCLK Mhz"
++	echo "CPTCLK: $CPTCLK Mhz"
++}
++
++function is_inline_proto_test()
++{
++	local type=${TYPE[$Y]}
++	local ip_tests=(ip)
++
++	[[ " ${ip_tests[*]} " =~ " $type " ]]
++}
++
++function run_test()
++{
++	local cmd=$1
++	touch $MACSEC_LOG
++	echo $env
++	echo $1
++	eval "nohup $1 >> $MACSEC_LOG 2>&1 &"
++	PT1="L2FWD: entering main loop on lcore"
++
++	local itr=0
++	sleep 1
++	while ! (cat $MACSEC_LOG | grep -q -e "$PT1" )
++	do
++		sleep 1
++		((itr+=1))
++
++		if [[ $itr -eq 100 ]]
++		then
++			echo "Timeout waiting for MACSEC main loop"
++			exit 2
++		fi
++
++		if [[ $((itr%5)) -eq 0 ]]
++		then echo "Waiting for MACSEC main loop"; fi
++	done
++}
++
++function run_l2fwd_macsec()
++{
++	echo "l2fwd-macsec outb"
++	if [[ $IS_CN103 -ne 0 ]]; then
++		local env="$L2FWD_MACSEC_BIN -c $COREMASK -a $IF0  --file-prefix $MACSEC_PREFIX -- -P -p 0x1"
++		if is_inline_proto_test; then
++			IS_RXPPS_TXTPMD=1
++		fi
++		case "${TYPE[$Y]}" in
++			ip)
++				# Inline Protocol Poll Mode
++				run_test '$env --mcs-tx-portmask 0x1 --mcs-port-config="(0,02:03:04:05:06:07,01:02:03:04:05:06)"'
++				;;
++		esac
++	fi
++	echo "run_l2fwd_macsec 2"
++	sleep $WS
++}
++
++function run_l2fwd_macsec_inb()
++{
++	echo "l2fwd-macsec inb"
++	if [[ $IS_CN103 -ne 0 ]]; then
++		local env="$L2FWD_MACSEC_BIN -c $COREMASK -a $IF0 --file-prefix $MACSEC_PREFIX -- -P -p 0x1"
++		if is_inline_proto_test; then
++			IS_RXPPS_TXTPMD=1
++		fi
++		case "${TYPE[$Y]}" in
++			ip)
++				# Inline Protocol Poll Mode
++				run_test '$env --mcs-rx-portmask 0x1 --mcs-port-config="(0,02:03:04:05:06:07,01:02:03:04:05:06)"'
++				;;
++		esac
++	fi
++	sleep $WS
++}
++
++function macsec_exit()
++{
++	killall -q dpdk-l2fwd-macsec | echo "macsec_exit: killed dpdk-l2fwd-macsec"
++
++	# Wait until the process is killed
++	while (ps -ef | grep dpdk-l2fwd-macsec | grep -q $MACSEC_PREFIX); do
++		continue
++	done
++	sleep 7
++}
++
++function sig_handler()
++{
++	local status=$?
++	set +e
++	trap - ERR
++	trap - INT
++	trap - QUIT
++	trap - EXIT
++	macsec_exit
++	quit_testpmd "$TPMD_TX_PREFIX"
++	quit_testpmd "$TPMD_RX_PREFIX"
++	if [[ $status -ne 0 ]]; then
++		echo "$1 Handler"
++		ps -ef
++		# print all MACsec logs
++		MACSEC_LOG=macsec_*.log
++		awk ' { print FILENAME": " $0 } ' $MACSEC_LOG
++		awk ' { print FILENAME": " $0 } ' testpmd.out.$TPMD_TX_PREFIX
++		awk ' { print FILENAME": " $0 } ' testpmd.out.$TPMD_RX_PREFIX
++	fi
++	cleanup_interfaces
++	exit $status
++}
++
++find_exec()
++{
++	local dut=$1
++	local test_name=$2
++
++	$TARGET_SSH_CMD $dut find $REMOTE_DIR -type f -executable -iname $test_name
++}
++
++function exec_genboard_cleanup()
++{
++	if [[ $WITH_GEN_BOARD -eq 1 ]]; then
++		$TARGET_SSH_CMD $GENERATOR_BOARD "sudo pkill -f dpdk*;"
++		echo "Gen board previous test processes cleanup up"
++	fi
++}
++
++exec_testpmd_cmd_gen()
++{
++	$TARGET_SSH_CMD $GENERATOR_BOARD "cd $REMOTE_DIR;" \
++		"sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH TESTPMD_OP=$1 $(find_exec $GENERATOR_BOARD $GENERATOR_SCRIPT) $2 $3"
++}
++
++function pmd_tx_launch()
++{
++	local pcap=$CNXKTESTPATH/pcap/port_0_plain_pkt_$2B.pcap
++	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
++		echo "pmd_tx_launch with Gen"
++		exec_testpmd_cmd_gen "launch_tx_outb" $TPMD_TX_PREFIX $pcap
++	fi
++}
++
++function pmd_tx_launch_for_inb()
++{
++	local pcap=$CNXKTESTPATH/pcap/port_0_enc_pkt_$2B.pcap
++	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
++		exec_testpmd_cmd_gen "launch_tx_inb" $TPMD_TX_PREFIX $pcap
++	fi
++}
++
++function pmd_rx_launch()
++{
++	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then :
++		echo "pmd_rx_launch with Gen"
++	fi
++}
++
++function pmd_rx_dry_run()
++{
++	local port="0"
++	PREFIX=("$TPMD_RX_PREFIX" "$TPMD_TX_PREFIX")
++
++	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
++		rxpps=$(exec_testpmd_cmd_gen "rx_pps" $TPMD_TX_PREFIX $port)
++	fi
++}
++
++function rx_stats()
++{
++	local prefix=$1
++	local port=$2
++	local in=testpmd.in.$prefix
++	local out=testpmd.out.$prefix
++
++	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
++		rxpps=$(exec_testpmd_cmd_gen "rx_pps" $prefix $port)
++		echo $rxpps
++	fi
++}
++
++function capture_rx_pps()
++{
++	local stats
++	if [[ $IS_RXPPS_TXTPMD -ne 0 ]]; then
++		# Specific case of Inline Protocol Single-SA configuration.
++		# Packets are routed back to originating port.
++		stats=$(rx_stats $TPMD_TX_PREFIX "0")
++	else
++		stats=$(rx_stats $TPMD_RX_PREFIX "0")
++	fi
++
++	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
++		echo $stats
++	fi
++}
++
++# Configure interfaces
++function setup_interfaces()
++{
++	echo -e "dev bind $LIF1 $LIF2 $LIF3 $LIF4"
++
++	$VFIO_DEVBIND -b vfio-pci $LIF1
++	$VFIO_DEVBIND -b vfio-pci $LIF2
++	$VFIO_DEVBIND -b vfio-pci $LIF3
++	$VFIO_DEVBIND -b vfio-pci $LIF4
++}
++
++function cleanup_interfaces()
++{
++	# Bind the vfio-pci binded devices back to nicvf
++	$VFIO_DEVBIND -b $NICVF $LIF1
++	$VFIO_DEVBIND -b $NICVF $LIF2
++	$VFIO_DEVBIND -b $NICVF $LIF3
++	$VFIO_DEVBIND -b $NICVF $LIF4
++}
++
++function start_testpmd()
++{
++	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
++		exec_testpmd_cmd_gen "start" $TPMD_TX_PREFIX
++	fi
++}
++
++function stop_testpmd()
++{
++	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
++		exec_testpmd_cmd_gen "stop" $TPMD_TX_PREFIX
++	fi
++}
++
++function quit_testpmd()
++{
++	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
++		if [[ $1 == $TPMD_TX_PREFIX ]]; then
++			exec_testpmd_cmd_gen "log" $1 >testpmd.out.$1
++			exec_testpmd_cmd_gen "quit" $1
++		fi
++	fi
++}
++
++function outb_perf()
++{
++	local rx_pps
++	local avg_pps
++	local pktsz
++	local tcnt
++	local algo
++	local rn
++	local i
++
++	rn=0
++	for pktsz in ${PKT_LIST[@]}
++	do
++		sleep $WS
++		pmd_tx_launch $1 $pktsz
++
++		tcnt=1
++		while [ $tcnt -le $MAX_TRY_CNT ]; do
++			echo "Try $tcnt"
++			i=1
++			rx_pps=0
++			if [[ $tcnt -gt 1 ]]; then
++				# Restart l2fwd-macsec
++				macsec_exit
++				echo "Restart l2fwd-macsec"
++				MACSEC_LOG=macsec_outb_"$Y"_"$tcnt".log
++				run_l2fwd_macsec
++			fi
++			start_testpmd
++			pmd_rx_dry_run
++			# Wait for few seconds for traffic to stabilize
++			sleep $TXWAIT
++			while [ $i -le $NUM_CAPTURE ]; do
++				rx_pps=$rx_pps+$(capture_rx_pps)
++				((++i))
++				sleep $RXWAIT
++			done
++			stop_testpmd
++			avg_pps=$(echo "(($rx_pps) / $NUM_CAPTURE)" | bc)
++			echo $NUM_CAPTURE
++			p=${PASS_PPS_TABLE[$rn,$2]}
++			echo "pktsize: $pktsz avg_pps: $avg_pps"
++			echo "pass_pps $p"
++			if (( $(echo "$avg_pps < $p" | bc) )); then
++				echo "$1:Low numbers for packet size $pktsz " \
++					"($avg_pps < $p) for $3 cores">&2
++			else
++				echo "Test Passed"
++				break
++			fi
++			((++tcnt))
++			sleep $WS
++		done
++		if [[ $tcnt -gt $MAX_TRY_CNT ]]; then
++			echo "Test Failed"
++			Failed_tests="$Failed_tests \"${TN[$Y]} outbound $algo pktsize:$pktsz\""
++		fi
++		((++rn))
++	done
++}
++
++function inb_perf()
++{
++	local rx_pps
++	local avg_pps
++	local pktsz
++	local tcnt
++	local algo
++	local rn
++	local i
++
++	rn=0
++	for pktsz in ${PKT_LIST[@]}
++	do
++		sleep $WS
++		pmd_tx_launch_for_inb $1 $pktsz
++
++		tcnt=1
++		while [ $tcnt -le $MAX_TRY_CNT ]; do
++			echo "Try $tcnt"
++			i=1
++			rx_pps=0
++			if [[ $tcnt -gt 1 ]]; then
++				# Restart l2fwd-macsec
++				macsec_exit
++				echo "Restart l2fwd-macsec"
++				MACSEC_LOG=macsec_inb_"$Y"_"$tcnt".log
++				run_l2fwd_macsec_inb
++			fi
++			start_testpmd
++			pmd_rx_dry_run
++			# Wait for few seconds for traffic to stabilize
++			sleep $TXWAIT
++			while [ $i -le $NUM_CAPTURE ]; do
++				rx_pps=$rx_pps+$(capture_rx_pps)
++				((++i))
++				sleep $RXWAIT
++			done
++			stop_testpmd
++			avg_pps=$(echo "(($rx_pps) / $NUM_CAPTURE)" | bc)
++			p=${PASS_PPS_TABLE[$rn,$2]}
++			echo "pktsize: $pktsz avg_pps: $avg_pps"
++			echo "pass_pps $p"
++			if (( $(echo "$avg_pps < $p" | bc) )); then
++				echo "$1:Low numbers for packet size $pktsz " \
++					"($avg_pps < $p) for $3 cores">&2
++			else
++				echo "Test Passed"
++				quit_testpmd "$TPMD_TX_PREFIX"
++				break
++			fi
++			((++tcnt))
++			sleep $WS
++		done
++		if [[ $tcnt -gt $MAX_TRY_CNT ]]; then
++			echo "Test Failed"
++			quit_testpmd "$TPMD_TX_PREFIX"
++			Failed_tests="$Failed_tests \"${TN[$Y]} inbound $algo pktsize:$pktsz\""
++		fi
++		((++rn))
++	done
++}
++
++function get_ref_mops()
++{
++	local ref_mops
++	ref_mops=$(awk -v pat=$1 '$0~pat','/end/' \
++			$FPATH.$3 | grep $2: | tr -s ' ')
++	echo $ref_mops
++}
++
++function populate_pass_mops()
++{
++	local rn=0
++	local cn
++
++	for i in ${PKT_LIST[@]}
++	do
++		cn=0
++		ref_mops=$(get_ref_mops $1 $i $2)
++		for j in ${CORES[@]}
++		do
++			tmp=$(( $cn + 2 ))
++			ref_n=$(echo "$ref_mops" | cut -d " " -f $tmp)
++			PASS_PPS_TABLE[$rn,$cn]=$(echo "($ref_n * .97)" | bc)
++			((++cn))
++		done
++		((++rn))
++	done
++}
++
++function macsec_gcm_outb()
++{
++	local algo_str="macsec-gcm"
++	local cn
++
++	echo "Outbound Perf Test: $algo_str"
++	populate_pass_mops $algo_str "${TYPE[$Y]}.outb"
++
++	cn=0
++	for j in ${CORES[@]}
++	do
++		outb_perf $algo_str $cn $j
++		((++cn))
++	done
++}
++
++function macsec_gcm_inb()
++{
++	local algo_str="macsec-gcm"
++	local cn
++
++	echo "Inbound Perf Test: $algo_str"
++	populate_pass_mops $algo_str "${TYPE[$Y]}.inb"
++
++	cn=0
++	for j in ${CORES[@]}
++	do
++		inb_perf $algo_str $cn $j
++		((++cn))
++	done
++}
++
++get_system_info
++
++if [[ $IS_CN103 -ne 0 ]]; then
++	FNAME="rclk"${RCLK}"_sclk"${SCLK}"."${HW}
++	FPATH="$CNXKTESTPATH/ref_numbers/cn10k/$FNAME"
++else
++	FNAME="rclk"${RCLK}"_sclk"${SCLK}"_cptclk"${CPTCLK}"."${HW}
++	FPATH="$CNXKTESTPATH/ref_numbers/cn9k/$FNAME"
++fi
++
++function check_ref_files()
++{
++	local outb
++	local inb
++
++	for type in "${TYPE[@]}"; do
++		if [[ $IS_CN103 -eq 0 ]] && ! supported_by_9k $type; then
++			continue
++		fi
++		outb="$FPATH.$type.outb"
++		if [[ ! -f $outb ]]; then
++			echo "File $outb not present"
++			exit 1
++		fi
++
++		inb="$FPATH.$type.inb"
++		if [[ ! -f $inb ]]; then
++			echo "File $inb not present"
++			exit 1
++		fi
++	done
++}
++
++check_ref_files
++
++trap "sig_handler ERR" ERR
++trap "sig_handler INT" INT
++trap "sig_handler QUIT" QUIT
++trap "sig_handler EXIT" EXIT
++
++setup_interfaces
++exec_genboard_cleanup
++
++function is_skip_test()
++{
++	local inline=$1
++	if [[ $inline = "inline" ]]; then
++		! is_inline_proto_test
++	else
++		is_inline_proto_test
++	fi
++}
++
++Y=0
++
++while [[ $Y -lt $NB_TYPES ]]; do
++	echo ""
++	echo "Test: ${TN[$Y]}"
++	echo "----------------------"
++	# Outbound
++	sleep $WS
++
++	MACSEC_LOG=macsec_outb_"$Y"_1.log
++	run_l2fwd_macsec
++
++	pmd_rx_launch
++	macsec_gcm_outb
++	quit_testpmd "$TPMD_TX_PREFIX"
++	quit_testpmd "$TPMD_RX_PREFIX"
++	macsec_exit
++
++	sleep $WS
++
++	echo ""
++	# Inbound
++	MACSEC_LOG=macsec_inb_"$Y"_1.log
++	run_l2fwd_macsec_inb
++	pmd_rx_launch
++	macsec_gcm_inb
++	quit_testpmd "$TPMD_RX_PREFIX"
++
++	sleep $WS
++
++	echo ""
++	macsec_exit
++	((++Y))
++done
++
++echo ""
++if [[ -n $Failed_tests ]]; then
++	echo "FAILURE: Test(s) [$Failed_tests] failed"
++	exit 1
++fi
++
++exit 0
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/cnxk_macsec_perf_gen.sh b/marvell-ci/test/cnxk-tests/macsec_perf/cnxk_macsec_perf_gen.sh
+new file mode 100755
+index 0000000000000..b23c471e326cc
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/macsec_perf/cnxk_macsec_perf_gen.sh
+@@ -0,0 +1,114 @@
++#!/bin/bash
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++set -eou pipefail
++CNXKTESTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )/.."
++source $CNXKTESTPATH/common/testpmd/common.env
++
++TX_PRFX="tpmd_tx"
++RX_PRFX="tpmd_rx"
++PORT0="${PORT0:-0002:02:00.0}"
++PORT1="${PORT1:-0002:03:00.0}"
++
++function sig_handler()
++{
++        local status=$?
++        set +e
++        trap - ERR
++        trap - INT
++        if [[ $status -ne 0 ]]; then
++                echo "$1 Handler"
++                # Dump error logs
++                testpmd_log $TX_PRFX
++                testpmd_log $RX_PRFX
++        fi
++
++        testpmd_cleanup $TX_PRFX
++        testpmd_cleanup $RX_PRFX
++        exit $status
++}
++
++trap "sig_handler ERR" ERR
++trap "sig_handler INT" INT
++
++launch_testpmd_rx()
++{
++	#local out=testpmd.out.$1
++	testpmd_launch $1 \
++		"-c 0xfc -a $PORT1" \
++		"--nb-cores=1 --forward-mode=rxonly" \
++		</dev/null 2>/dev/null &
++	sleep 1
++	testpmd_cmd $1 "port stop 0"
++	testpmd_cmd $1 "set flow_ctrl rx off 0"
++	testpmd_cmd $1 "set flow_ctrl tx off 0"
++	testpmd_cmd $1 "port start 0"
++}
++
++launch_testpmd_tx_outb()
++{
++	echo "launch_testpmd_tx_outb"
++	testpmd_launch $1 \
++		"-c 0xFC --vdev net_pcap0,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,infinite_rx=1 -a $PORT0 " \
++		"--nb-cores=5 --txq=5 --rxq=5 --no-flush-rx" \
++		</dev/null 2>/dev/null &
++	sleep 1
++	testpmd_cmd $1 "port stop 0"
++	testpmd_cmd $1 "set flow_ctrl rx off 0"
++	testpmd_cmd $1 "set flow_ctrl tx off 0"
++	testpmd_cmd $1 "port start 0"
++}
++
++launch_testpmd_tx_inb()
++{
++	testpmd_launch $1 \
++		"-c 0xFC --vdev net_pcap0,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,rx_pcap=$2,infinite_rx=1 -a $PORT0 " \
++		"--nb-cores=5 --txq=5 --rxq=5 --no-flush-rx" \
++		</dev/null 2>/dev/null &
++	sleep 1
++	testpmd_cmd $1 "port stop 0"
++	testpmd_cmd $1 "set flow_ctrl rx off 0"
++	testpmd_cmd $1 "set flow_ctrl tx off 0"
++	testpmd_cmd $1 "port start 0"
++}
++
++case $TESTPMD_OP in
++	launch_tx_outb)
++		launch_testpmd_tx_outb $1 $2
++		;;
++	launch_tx_inb)
++		launch_testpmd_tx_inb $1 $2
++		;;
++	launch_rx)
++		launch_testpmd_rx $1
++		;;
++	start)
++		testpmd_cmd $1 "start tx_first 64"
++		testpmd_cmd $1 "show port stats all"
++		;;
++	stop)
++		testpmd_cmd $1 "stop"
++		;;
++	rx_pps)
++		prev=$(testpmd_log_sz $1)
++		curr=$prev
++		testpmd_cmd $1 "show port stats $2"
++
++		while [ $prev -eq $curr ]; do sleep 0.1; curr=$(testpmd_log_sz $1); done
++		testpmd_prompt $1
++		val=`testpmd_log $1 | tail -4 | grep -ao 'Rx-pps: .*' | \
++		    awk -e '{print $2}'`
++		echo $val
++		;;
++	pktsize)
++		testpmd_cmd $1 "set txpkts $2"
++		;;
++	quit)
++		testpmd_quit $1
++		;;
++	log)
++		testpmd_log $1
++		;;
++esac
++exit 0
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/meson.build b/marvell-ci/test/cnxk-tests/macsec_perf/meson.build
+new file mode 100644
+index 0000000000000..54bcb6ee6ab6e
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/macsec_perf/meson.build
+@@ -0,0 +1,47 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2023 Marvell.
++
++# Test script
++test_script = 'cnxk_macsec_perf.sh'
++# Test name
++test_inline_name = 'cnxk_macsec_inline_perf'
++# Test arguments
++test_args = '$REMOTE_DIR'
++# Test directory name relative to build directory.
++test_dir = meson.current_build_dir()
++# Copy the required scripts to build directory.
++run_command(copy_data, test_script)
++run_command(copy_data, 'cnxk_macsec_perf_gen.sh')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb')
++run_command(copy_data, 'pcap/port_0_enc_pkt_64B.pcap')
++run_command(copy_data, 'pcap/port_0_enc_pkt_380B.pcap')
++run_command(copy_data, 'pcap/port_0_enc_pkt_1410B.pcap')
++run_command(copy_data, 'pcap/port_0_plain_pkt_64B.pcap')
++run_command(copy_data, 'pcap/port_0_plain_pkt_380B.pcap')
++run_command(copy_data, 'pcap/port_0_plain_pkt_1410B.pcap')
++run_command(copy_data, 'pcap/port_1_enc_pkt_64B.pcap')
++run_command(copy_data, 'pcap/port_1_enc_pkt_380B.pcap')
++run_command(copy_data, 'pcap/port_1_enc_pkt_1410B.pcap')
++run_command(copy_data, 'pcap/port_1_plain_pkt_64B.pcap')
++run_command(copy_data, 'pcap/port_1_plain_pkt_380B.pcap')
++run_command(copy_data, 'pcap/port_1_plain_pkt_1410B.pcap')
++# Add the meson test
++test(test_name,
++    cnxk_test_script_wrapper,
++    env : [['DPDK_TEST=' + test_name],
++    ['TEST_DIR=' + test_dir]],
++    args : [[test_script], [test_args]],
++    is_parallel : false, suite : 'cnxk-tests')
++
++test_args+= ' inline'
++test(test_inline_name,
++    cnxk_test_script_wrapper,
++    env : [['DPDK_TEST=' + test_inline_name],
++    ['TEST_DIR=' + test_dir]],
++    args : [[test_script], [test_args]],
++    is_parallel : false, suite : 'cnxk-tests')
++# Install the sample script
++install_data(test_script,
++             install_mode : 'rwxr-xr-x',
++             install_dir : 'bin/cnxk/macsec_perf')
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_enc_pkt_1410B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_enc_pkt_1410B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8df87817a93aa80e56bd5a9ad6ce4bc265828e0
+GIT binary patch
+literal 1482
+zcmV;*1vUEA!?K|Q00aO4000000000000aO50001c9Rp>{@(lo@1pok|1poj60s{mE
+z1_A>F1qKI*<tzZFtfFWD000000001rzuexHE4SN0)T{diOi>q@Bf#j)X-A13eRnA-
+zIYF+g-xw58K?YQYU(9`b0-T_S?o+gF!~H^FFld9+Kw{YE>_f(|oG0uz(1PV)si*Ww
+zC5hIDm!8ObRV^c}+$7iifCN5h4FT$nyVdOzuMV5Ey6)TT!XQf3tgK1-e5Wk~Im4Jt
+zib>i?t+i&!)Qo`h94Ulf3rUvN6}Pvc9Xu*Cu+TtT*z8r$Ww56jfT$%!rwaNNMhzYJ
+z<7Uv~tkiWDQ%0x=?=_wPY^dzjAB^DdPCJH76q?6-?+6pzCqaA?@~wVQ-q9}RBVzm6
+zs*wfm#)vg5ycHGoNU0xvvL$rqKmM(EuKrnqL1N4rBsSx&4mGUQ(p<<j^D>~-vbBF>
+zgbm0FsBAGDgi<)5Ay5w^Z%0j0sBCo7;7QDjqzHHQ>Cg-}<t8$`l8{XkZ8&P=rRh_9
+zKW3_<cr7HF21UQ#h%G8tY)NT6Rux#)M=ffQoMmxxzeVcu<QpR#6;4*L_Wpa`qw0vV
+znxrqipW3D!QS|0o*p=mR;&!BzROho8o8Ka&22~X+bGa6MlL}!fMwFtNRs<``xDQXE
+zF$3L#>%Dg5=7#)MdWgRv!YeJGm)v8yTXhZD+=r^2h_(^AAgoK{lesAhQA61}R(5Jk
+zr~)+D+UB-g$xmj3{rtj-{$B*cZZdQ<wn!=E%3TP<cV6jc<gUV>CGA_|`BG1~y{s+J
+zXZVU?k(vGDRb5Yv7c3oCPUZHt3^0a}*k0?a1kv-<oNNFi{)F~pj&s`uUtilhOjbS7
+zD>fT`A=Y3&m6Eb?hH`vpdk+Aq=;V-w%Ckky>=Ee7iJJmE5(;9ouoPj*rG-aGRZ=_c
+zfFF3=w^aZPC5YQwaX%TEZ+`;XbF?TPi&GwKgLnsms|kP>0_xY;&KhCALo6N;w!VRw
+zEC}fumVf;&-pp#d*APKs?Gb4}WP!~`--8$zHxUP302xjQo{jI>!Pi|4q)gS%u<3^K
+z`hkO=r-_jqs)Q>sZ6JHSUYhD;NO}g^jXO7Pr>4U{NK;K4_u-7>^(>Qd5|}EHEvr6Q
+z5<`d4EUF#Y>Lk$ZLFxz!#ALL8UcqtXSFV5mElQ<R<o9M9ILvoq;mN7kfhE1ktwI-h
+z0pHC29<+&SzPIxtEzp9>Xy*lgq}zAJApEk6Q*(;%x>A!)3LQpKJ#?qV_q0chybQ)*
+zhkd@>Q+S%>>%l<vW0fr*b3H=k_I$TfR^}Mx1?XN6NQ1`Ciag3k+=-b9VLXiq=H%ro
+z){rAbFg$$7!)UlF2Pb|z=x$Lw`BhFDUTlIA35tf~DQz7*+nNazpB{F7(eca<+ct9j
+zNtJG%{T%M>OK{nek|s)os>IT_&1rBqg6^+?1W;njU8RiYd~NCrc}f&A8ejbyr-iLw
+zo`DGXN|v&3cbXI%a$!28HV2kVKJxG0-CNpebv-J{$jAeU#e*q0A~%PRr;J2oPWth4
+z)4Nf2$}#^hFJl*~Q^Y&uoh!C@DmB`aqvRFHggvCJX{O_cDCE3}59pQ+J@HPoafpzM
+z3Tfv9D!)sy9EIOsDrW02lI(ZEG6!&>;Ug_+XlLRyD$f3n`k`xSTlK_Czc6KE_O#xW
+zt0N}wK76}MWH6vtnWn+0oN}iaxVB_&8q2?b&(QQz?q9$jnPXQB`%!f5oW;~mUZ$gh
+zM%^9Dc<YzD7Li&qv@f0eJ+`_{`_t&5=&<^a9ZXzvMDUw)$Dgw&NuT|GRJcGWEudX6
+zy>$JPRLl{nS)G8c2Dr=>R1;EMrcoNvB(vXbTknXMuB^SKNLSyHUK)V|o#KpnKvpnD
+k`Q+gn=h3dHpC5f^#6;Ff%K=j{We(!5STD>NpQg?zcsMo8P5=M^
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_enc_pkt_380B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_enc_pkt_380B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..085dec2107d9a8402a88a3f7aac5912a159ae396
+GIT binary patch
+literal 452
+zcmca|c+)~A1{MYcU}0bca=yqir#4JuVweNufG{HyGYcylm|*XCs>854!s`M|&#ngw
+zDNM${wnf>N-kK(SN&Lv4^%XozTQB5EE%|cw$ZcQs=MjO={Y$H5b?$FuPP8`vyl~B}
+z7?#fmJG5Ra*|=N$QjtGCT}u0p=#hEvuiby^wAuCh<Gb^JO5M<!w@vL}L8hdQM812-
+zX<oT0O2r%#rroJtfBweKS67Yi$JW~f%I#Nf{O$XKt@X=6ZzKJN^Xn}Fp1ug_SDv34
+zo#buH{PujIe&Uv!6C6{DWOlt(E0}2MZh2RDrSgYqbAEnX8N*fX%)3HdC^9%pVWqQ|
+z&5I38r(e1sSg-iBmc{&#YL)Xd>*xzjXV=-ga(u6!`BKblwz>0ZNymoBO&NDm9!-t8
+zzsYB}m=w2Z>6=SF*A2NH3yydjvMJ8*H)F8<u75y5TBG~j%Sp^a0{g7C?=}CzQ~W-6
+zQrx5v=U?dpsU>{(9<rJ5>g)^rbSTLA*lfXFm-g(RXDe#NzQX(&i`l`zAOkm9NsrYG
+p@)qV5x`CMrpEUD!zBAepA~wn2FI;i<n>87$nES(a6bk<p1OQxCzCZu~
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_enc_pkt_64B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_enc_pkt_64B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..95eec65e5962dbc46ccf1f4ec8969ce3de24f898
+GIT binary patch
+literal 136
+zcmca|c+)~A1{MYcU}0bca%M_0r~c+=VMqY7L70(=nT3@NOt5!6)nPC({&o~73<m2|
+zlm$4y%e)nkO;~+9bJ?<O#u}e?o=q&VbDd&i#l6R(;`+*!n^b>JaBa%33F715@XS}^
+WrBKkay4~B8*q8pBc3pw}t|9;=wkbCN
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_plain_pkt_1410B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_plain_pkt_1410B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..f42969f01a69bbc417421515f3400d9e17deb49e
+GIT binary patch
+literal 1450
+zcmca|c+)~A1{MYcU}0bcaw27zQ@vR^7@Alaz?hMVnT3@NOt5n>xH7O7fOI$r<~xb(
+zzg;21z{H}#5Wv71^W_2qL@7H5Cl@ylFCV{vppdYLsF=8fq?ELbtem`pqLQ+Ts+zin
+zrk1vjuAaVup^>qPshPQjrIodft)0Dtqm#3XtDC!rr<b>nub+QFU{G*KXjpheWK?ua
+zY+QUoVp4KSYFc_mW>$7iZeD&tVNr2OX<2ziWmR=eZC!msV^ecWYg>CqXIFPmZ(sj}
+ziIXNznL2IyjG41$&zU=K{(^;z7B5-4Z25|nt5&aByKeo4jhi-a*}84}j-9)9@7cR=
+z|AB*t4j(ys?D&b3r%s<ad+z*&i<d56xq9vTjhnY_-?@A5{)2~)9zS{d?D>nAuU@}-
+t`|kaRkDoq&`TFhqkDtGO|M~mx|ET|=sbn<%N7Mgk{-;X$ceIJ;BLJ(VnTh}a
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_plain_pkt_380B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_plain_pkt_380B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..edf25cfc261363dc31ffaa800451ebc281bc954e
+GIT binary patch
+literal 420
+zcmca|c+)~A1{MYcU}0bca+qb9Q=Ro#7;1nV5N2dzW?^Lm6YLxet_+M>ARP{Z_HH6e
+z__IV9m<%)+0vH&>cAbSPW#{1J;^yJy;};MV5*85^6PJ*bl9rK`lUGnwQdUt_Q`gYc
+z($>+{(>E|QGBz<aGq<p`vbM3cvv+WGa&~cbbNBG{^7ird^A89N3JwVk3y+A5ijIkm
+zi%&>QN=`{lOV7y6%FfBn%P%M_DlRE4E3c@ms;;T6t8Zv*YHn$5Ywzgn>h9_7>z^=j
+z(&Q;qr%j(RbJpxRbLY)puyE1hB}<nrU$Ju4>NRWEt>3V5)8;K(w{73CbJy-Yd-v@>
+zaPZLKBS()NKXLNZ=`&}~oxgDL(&Z~xuU)@!^VaP<ckkVQ@bJ;&Cr_U}fAR9w>o;%T
+fz5np>)8{W=zkUDl^Vjb`fB*fbuK!<H+c^LLS5TKz
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_plain_pkt_64B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_0_plain_pkt_64B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c11c070de8c9ac3285afa4df5b0b7f7c7147e67
+GIT binary patch
+literal 104
+zcmca|c+)~A1{MYcU}0bcayX@#Q>}X$861FY5N2dzW?^Lm6YLxet_%!%KtTov!F{_#
+lWG6C+FfhH)U<hDfkZMkbDrM*3<l^Sx<>MC+jGg{60|1Qo4OIXD
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_enc_pkt_1410B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_enc_pkt_1410B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..880a35f0d4d2dcd79bfc6145eedef03d2092f4ef
+GIT binary patch
+literal 1482
+zcmV;*1vUEA!?K|Q00aO4000000000000aO50000HHUnh|<Ou+x1pok|1poj60s{mE
+z76JnV1qK(0<tzXoxN<%K000000002_(h-{TPNudlxRaW#P7xu6yrhLC4%#m8tz9m1
+z?@YV5IegZKd#N6OM)3fQ;V)V1*Xqt{M%rE6PLyEUV^7l3vd`Vu{<^R$JY_t&nBOnP
+zL`50`1r-GP_uWt}I%SPoLW}F@ZNcVLWOV#D&uRNp{Uj(pms3?f=;Wt=19h;I7J_dM
+z3QR9G`bY&tbfOam)8na5!AJpLsRimV^CYBPW{wK>r5K;dvq|qApv1+8j?tghwL@59
+z9fD0E7sNI$mWlE>ea3~y=F%kKoy(LNI3hahD5DRBa4b<W+?^5nU)0EEO%fg|R|2Lp
+zSg2)nTUeZ?X!<e|gF}c44b;D`4YupHXcT-S-c^-JiPrW-r8Dy|KWX)1y8>b2|4!`T
+zkEMtM|5d(Erye2D%dPWH5k3FfBKnLB_Y6gRF3hx6rGS6uAd<!VM9n0F3o1C<6h^?C
+zD--;;N?a;}DG1TMLMprm8+YMfZ=ipNe4P3?BhogmAMfb^f1={pa@u)~{yN7OW2T8@
+zmIDpOW<sc+<;s03Y;!sn^T46+YM+Ushu#Z`ObTrwhhc()U!I^KUs3XBUX4T%dXmC9
+z#XlWPfpWfS_@O()8wX27J1G2@g!$YN+SRaJiMMl;fs%L{Tg-+Co*zfpiO(wrR{-<o
+z5kPxsGp^e0<-NfkUKbSR$v9OF_jn*5>BXK4gxr_q@Efywd^<X14kxoPeIXs3@73R}
+z0qq&p!XdVd#4%bB6zg0=YEh4`iICSLNSKWO2)>i;d<RQZE?*zIZ&&1y6}3Ekc+IdZ
+z)~>kibXc~yO>EJx-pN4s@1H6kW9sD=#_~v~`Ft~P60EV)Cleo%C@(xV1}^VEu2B(~
+zA@2Bm$4sW70k;FH?arm~k^ZY}^chdfpJ2!oTcZ?>#8UR;Lck$tZG7~cQrk@MsJ_D~
+z*!Y)OsbYh+xFyH26?)QI2rT{Hcls$-x4pka;$}ZDx&=htItlB!1}yf^)p7*PSSyHS
+zP&jGv`X2tu57B(2`flCrsC5&0bSKB2b1)VJr=bU_nedMK5-zHvCBuHv3%{2ejAk`I
+z1Jjax0I&%9OX3rB&>Cqt2y?}Q!>Qu+q11~&Rb1vzZ>e5aUbswDMcvyvzz!EbXB-m}
+zR9>j4va$Tpo~mJUc(qF{!0`~@ggeNM#yUcy^`pDuf+pYU@-{TtPM^#2C1$#g&A$xm
+zlpVX?Ve!aa9N{^U0o?_uiM-X~8!(m=*l>-g-E9RN@hWhE-z)%VNL4gn-T`pK1}mAy
+z!<z--{jfz74{wR?nRpCGf8aRi{F>#2D<Y9}bK}JO?DadSFn{^f^kg=t+*-2O5$c|o
+zaCRU+2a9dKaPHQ*N)>#V*ChmM)7oZ>v&eGj1ot)EX-n%(MKp+`HrEes@o585W@d(>
+zSRE+}F3}57xhydnSG@iW%H+vfRmsN9JG<x`BJB3R*Ii~F(jQnqG&L-@n@r-C#0`#;
+z4w)K^H6*PU{|kK*J|)BGvC72#$hD?GJde{VtB4V7YN87+^IgLIk_CPF4JD9ghWfE8
+zs9WSc;%i`ND(`%r@Q<&NBU#%znfk3<?7G`|zkI(1Up{R1y@s_*heBk2ecF_tc|>RG
+ziBX-I?VuWKqZdtu2BdUbhLsG_jo-YO-e!~*EopiyK#}(ezDP&uyD48g!`fAn9_>s#
+z#)!B)61N3I5HSigR@udjcq#PaWU0R1AqD;k81XL&LJsDz1Z7zCxDr3<MNd>}og`T~
+z?*5oB*z|$xp$P0Q1!?>WxDSb``$o|Kf;b0o`+M(A4KDT1L{!TX$d^*Ds&-nT#TX>9
+khtROel(K^BvxbVy`>*4}7At+hT{%blnL`58E;y2RqcFtD!T<mO
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_enc_pkt_380B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_enc_pkt_380B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..5fe7998085179b26111964a9b2a6585b31a4adf2
+GIT binary patch
+literal 452
+zcmca|c+)~A1{MYcU}0bca{SGhQ(v6rW0(WvfG{HyGYhL2h+q@%c&fvo#8o2=)8nmt
+z^R9vL`aO!%*Ql{Rc1@PPwwc9CMJ}s%Q&|C{`37$B-G_GjZe7^+uHms!zO>zM<AvV*
+z?Aqp2S4T37FbDUYeKtXLXV)2@zkTLMl_NVgJZ)a~C;3q1|J4;!ZpoianEvEr#2?2?
+zSEKfJF8VgL{Cvy*l7Fqq+RD`?H+oBBG?%^pc<4yi^p|Q6Ul&#~=1Ar~e>(Z6c>PZ|
+zp4AOyzK+Vhrxmjw`)c#74m>0q<7#A`5$>{>b4u3gyRy4p{gHXJa=yIdx4T9=r)ETD
+z<Zyh{sh<0G*3UOb!|s&s42ip|eIkEBZsTK<<UJD%g!x|XxaZB-6JF`vzj$xQ>g$~@
+z9!5ugoI5S_&-2U2T92g{d{;A9-1^ZHnf{;qgLNj8&$jG@X<J1Y1n!^Pvp!f@%JciV
+z`$=bSH<&nFnX=};q2dz<=hU7~&b7)fCKhg%6j_-U^>o7Pf)@YPrkm#%XHE3!c_kRE
+q5>%SAw#P>zr|we1Qu78AC1r&bcC#+|uZW5{6mueW-{H`=PvihD8p<R9
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_enc_pkt_64B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_enc_pkt_64B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..21f7a864f7c37c2fb7515220cd517b3badd7f619
+GIT binary patch
+literal 136
+zcmca|c+)~A1{MYcU}0bcaweEDr=E6TWJmzAL70(=nT1shM6ii>Jk?=P*UN4K3WGuY
+zwIgYP|Li&aCOs=kV~VOdsd4oMQ!?Apn3t8B3g_SaU6A-pa_=$wqpnW`raE<2+-Sb%
+X9$OyTd--SUk5~QWUOpG&^L7CMg*z=d
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_plain_pkt_1410B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_plain_pkt_1410B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..3f4d426a49e71891765d263ef62ab184829c55c1
+GIT binary patch
+literal 1450
+zcmca|c+)~A1{MYcU}0bca@LzNr#8&vVQ6Ay0AofbW)@a45WyzS!QjfkS^(1FASme|
+z2LcRCObqr6_N*~tfec`!Z0sDIT--doeEb4}Lc$`VV&W2#QqnTAa`Fm_O3Es#YU&!A
+zTG~3gdin;2M#d(lX66=_R@OGQcJ>aAPR=f_ZtfnQUfw>we*OW0LBS!RVc`*xQPDB6
+zaq$U>Ny#axY3Ui6S=l+cdHDr}Ma3nhW#tu>Rn;}Mb@dI6P0cN>ZS5VMUEMvsef<+A
+zPMSPr>a^)IX3m;DXYRcD3l=U~ykzOJ<ttXMTD@lNy7e12ZrZ$M>$dGXcJA7}XYaoK
+z2M!)OeB|h{<0np@I(_Esx$_q;Ub=kc>b2`PZr-|m=kC4x4<0^x{N(Ag=PzEqdj00@
+syZ0YHe)|07>$mSee*XIX=kLG&qy7h{lF|4dP5-0$pGxK57uPN80cBK|?f?J)
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_plain_pkt_380B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_plain_pkt_380B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..c4a1ec2ba9b296767b249a7db458634409352e3b
+GIT binary patch
+literal 420
+zcmca|c+)~A1{MYcU}0bca?(wiQyVWaGSmP$Ak4_b%)%-LBG|+^7+e_`vp_l=1ZCai
+zK!AaXiNT)1o-s@y0HTzQor9B$n}?T=UqDbuSVUAzTtZSxT1Hk*UO`bwSw&S%T|-k#
+zTSr$<-@wqw*u>P#+``hz+Q!z--oeqy*~Qh(-NVz%+sD_>KOitDI3zSIJR&kGIwm$Q
+zJ|QtFIVCkMJtH$KJ0~|Uzo4+FxTLhKyrQzIx~8_SzM-+HxuvzOy`!_MyQjCWf5OB`
+zlc!9bHhsp-S+nQNoi~5M!bOXhEM2yI#mZHy*Q{N)e#6F1o40J;wtdIWUAy<}-M9b1
+z!9$0S96fgY#K}{q&zwDX{=&sem#<vCcKyc9Tet7ry?6h?!$*&wJbm{3#miT(-@JYI
+e{=>&lpTB(l_Wj4tU%&tS{r8``{{K}Me*^%(s+Xw%
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_plain_pkt_64B.pcap b/marvell-ci/test/cnxk-tests/macsec_perf/pcap/port_1_plain_pkt_64B.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..6e193187ce21a3ed6dbfff0622e87a43173f4f8e
+GIT binary patch
+literal 104
+zcmca|c+)~A1{MYcU}0bca=PW2Q-7Z4WN-koL70(=nT1shM6ii-Ft{=>=m7;890cW>
+j<UoLdiHX4;2&JOdLX@(xb8vET^YHTV3kW{_7bOD#%5x1s
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb b/marvell-ci/test/cnxk-tests/macsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb
+new file mode 100644
+index 0000000000000..84563f55fd09e
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/macsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb
+@@ -0,0 +1,5 @@
++macsec-gcm
++64: 49097637
++380: 14334784
++1410: 4263292
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/macsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb b/marvell-ci/test/cnxk-tests/macsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb
+new file mode 100644
+index 0000000000000..25b9ad798908d
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/macsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb
+@@ -0,0 +1,5 @@
++macsec-gcm
++64: 52081001
++380: 14334735
++1410: 4263310
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index 057f96f5aa669..0fae956eac13b 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -46,6 +46,7 @@ test_subdirs = [
+         'ipsec_secgw',
+         'l2fwd_simple',
+         'ipsec_perf',
++        'macsec_perf',
+         'sample',
+         'tx_chksum',
+         'rx_chksum',
+diff --git a/marvell-ci/test/env/cn103.env b/marvell-ci/test/env/cn103.env
+index ef8800458e1cb..136f5aa2a0def 100644
+--- a/marvell-ci/test/env/cn103.env
++++ b/marvell-ci/test/env/cn103.env
+@@ -5,7 +5,19 @@
+ 
+ source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
+ 
+-RUN_TESTS="inline_macsec_autotest"
++RUN_TESTS="
++	inline_macsec_autotest
++	cnxk_macsec_inline_perf
++"
++
++# Update command timeout
++CMD_TIMEOUTS="cnxk_macsec_inline_perf=70m $CMD_TIMEOUTS"
++
++# Perf stage flag
++PERF_STAGE=1
++
++# Continue testing regardless of failure
++CONTINUE_ON_FAILURE=1
+ 
+ # Export the path to this conf so that other scripts can source this conf.
+ export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn103.env
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index d9f71b4b2d487..18b07d35e341e 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -114,6 +114,7 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_mbuf_perf
+ 	cnxk_ipsec_reassembly_perf
+ 	cnxk_dpdk_event_tests
++	cnxk_macsec_inline_perf
+ 	acl_autotest
+ 	atomic_autotest
+ 	bitmap_autotest
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index cfce274b75afe..5bf7da5526707 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -114,6 +114,7 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_mtr_test_config
+ 	cpt_2nd_pass_flow
+ 	cnxk_mbuf_perf
++	cnxk_macsec_inline_perf
+ 	inline_ipsec_autotest
+ 	inline_macsec_autotest
+ 	cnxk_ipsec_reassembly_perf
+-- 
+2.25.1
+

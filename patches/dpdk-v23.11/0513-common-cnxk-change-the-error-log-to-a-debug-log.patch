@@ -1,0 +1,34 @@
+From 59542d077c2b3d23bb3aaba1225e1bc11312b571 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Tue, 1 Oct 2024 15:06:34 +0530
+Subject: [PATCH 513/513] common/cnxk: change the error log to a debug log
+
+This patch updates the error log to a debug log since
+it is not needed.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Iec22facffe4ef00e0dd0531813c472824d1326f6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/136488
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl_dev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index 753b60563a132..bb4883d194877 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -855,7 +855,7 @@ roc_nix_inl_dev_qptr_get(uint8_t qid)
+ 		inl_dev = idev->nix_inl_dev;
+ 
+ 	if (!inl_dev) {
+-		plt_err("Inline Device could not be detected\n");
++		plt_nix_dbg("Inline Device could not be detected\n");
+ 		return NULL;
+ 	}
+ 	if (!inl_dev->attach_cptlf) {
+-- 
+2.25.1
+

@@ -1,0 +1,217 @@
+From 5a07d5176a1e15dc897fa23e4c7dfae34abf2fca Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Mon, 8 Jan 2024 21:22:39 -0800
+Subject: [PATCH 772/955] net/octeon_ep: fix multi-process support
+
+Use static binding of functions instead of function pointers
+to address failures in secondary processes in multi-process
+usecases.
+
+Fixes: 24b70ddcf957 ("net/octeon_ep: use devargs to enable ISM accesses")
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: Ief7b1785acc424dc49159f05013bbaa9e4f8f80c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119687
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit d5c7a53b835295af676c337090d030ceb9cf1dda)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119913
+---
+ drivers/net/octeon_ep/cnxk_ep_rx.h    | 20 +++++++++++++-------
+ drivers/net/octeon_ep/cnxk_ep_tx.c    | 15 ++++++++++-----
+ drivers/net/octeon_ep/otx_ep_common.h |  8 +++++---
+ drivers/net/octeon_ep/otx_ep_rxtx.c   | 12 ++----------
+ drivers/net/octeon_ep/otx_ep_rxtx.h   |  8 ++------
+ 5 files changed, 32 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx.h b/drivers/net/octeon_ep/cnxk_ep_rx.h
+index 1d2aaa69ca6c7..fe41a5a168442 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_rx.h
++++ b/drivers/net/octeon_ep/cnxk_ep_rx.h
+@@ -84,9 +84,10 @@ cnxk_ep_rx_refill(struct otx_ep_droq *droq)
+ 	rte_write32(desc_refilled, droq->pkts_credit_reg);
+ }
+ 
+-static inline void
+-cnxk_ep_check_rx_ism_mem(struct otx_ep_droq *droq)
++static inline uint32_t
++cnxk_ep_check_rx_ism_mem(void *rx_queue)
+ {
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
+ 	uint32_t new_pkts;
+ 	uint32_t val;
+ 
+@@ -115,12 +116,14 @@ cnxk_ep_check_rx_ism_mem(struct otx_ep_droq *droq)
+ 	}
+ 
+ 	rte_write64(OTX2_SDP_REQUEST_ISM, droq->pkts_sent_reg);
+-	droq->pkts_pending += new_pkts;
++
++	return new_pkts;
+ }
+ 
+-static inline void
+-cnxk_ep_check_rx_pkt_reg(struct otx_ep_droq *droq)
++static inline uint32_t
++cnxk_ep_check_rx_pkt_reg(void *rx_queue)
+ {
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
+ 	uint32_t new_pkts;
+ 	uint32_t val;
+ 
+@@ -138,14 +141,17 @@ cnxk_ep_check_rx_pkt_reg(struct otx_ep_droq *droq)
+ 		droq->pkts_sent_prev = 0;
+ 	}
+ 
+-	droq->pkts_pending += new_pkts;
++	return new_pkts;
+ }
+ 
+ static inline int16_t __rte_hot
+ cnxk_ep_rx_pkts_to_process(struct otx_ep_droq *droq, uint16_t nb_pkts)
+ {
++	const otx_ep_check_pkt_count_t cnxk_rx_pkt_count[2] = { cnxk_ep_check_rx_pkt_reg,
++								cnxk_ep_check_rx_ism_mem};
++
+ 	if (droq->pkts_pending < nb_pkts)
+-		droq->check_rx_pkts(droq);
++		droq->pkts_pending += cnxk_rx_pkt_count[droq->ism_ena](droq);
+ 
+ 	return RTE_MIN(nb_pkts, droq->pkts_pending);
+ }
+diff --git a/drivers/net/octeon_ep/cnxk_ep_tx.c b/drivers/net/octeon_ep/cnxk_ep_tx.c
+index d69fbb35ee055..98c0a861c380b 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_tx.c
++++ b/drivers/net/octeon_ep/cnxk_ep_tx.c
+@@ -5,9 +5,10 @@
+ #include "cnxk_ep_vf.h"
+ #include "otx_ep_rxtx.h"
+ 
+-uint32_t
+-cnxk_ep_check_tx_ism_mem(struct otx_ep_instr_queue *iq)
++static inline uint32_t
++cnxk_ep_check_tx_ism_mem(void *tx_queue)
+ {
++	struct otx_ep_instr_queue *iq = (struct otx_ep_instr_queue *)tx_queue;
+ 	uint32_t val;
+ 
+ 	/* Batch subtractions from the HW counter to reduce PCIe traffic
+@@ -41,9 +42,10 @@ cnxk_ep_check_tx_ism_mem(struct otx_ep_instr_queue *iq)
+ 	return iq->inst_cnt & (iq->nb_desc - 1);
+ }
+ 
+-uint32_t
+-cnxk_ep_check_tx_pkt_reg(struct otx_ep_instr_queue *iq)
++static inline uint32_t
++cnxk_ep_check_tx_pkt_reg(void *tx_queue)
+ {
++	struct otx_ep_instr_queue *iq = (struct otx_ep_instr_queue *)tx_queue;
+ 	uint32_t val;
+ 
+ 	val = rte_read32(iq->inst_cnt_reg);
+@@ -69,10 +71,13 @@ cnxk_ep_check_tx_pkt_reg(struct otx_ep_instr_queue *iq)
+ static inline void
+ cnxk_ep_flush_iq(struct otx_ep_instr_queue *iq)
+ {
++	const otx_ep_check_pkt_count_t cnxk_tx_pkt_count[2] = { cnxk_ep_check_tx_pkt_reg,
++								cnxk_ep_check_tx_ism_mem};
++
+ 	uint32_t instr_processed = 0;
+ 	uint32_t cnt = 0;
+ 
+-	iq->otx_read_index = iq->update_read_index(iq);
++	iq->otx_read_index = cnxk_tx_pkt_count[iq->ism_ena](iq);
+ 
+ 	if (unlikely(iq->flush_index == iq->otx_read_index))
+ 		return;
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 499796aaabe5d..d2fcf8f3a8f18 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -246,8 +246,6 @@ struct otx_ep_instr_queue {
+ 	/* OTX_EP instruction count register for this ring. */
+ 	void *inst_cnt_reg;
+ 
+-	uint32_t (*update_read_index)(struct otx_ep_instr_queue *iq);
+-
+ 	/* Number of instructions pending to be posted to OCTEON 9. */
+ 	uint32_t fill_cnt;
+ 
+@@ -264,6 +262,9 @@ struct otx_ep_instr_queue {
+ 	/* Number of  descriptors in this ring. */
+ 	uint32_t nb_desc;
+ 
++	/* Use ISM memory */
++	uint8_t ism_ena;
++
+ 	/* Size of the descriptor. */
+ 	uint8_t desc_size;
+ 
+@@ -408,7 +409,8 @@ struct otx_ep_droq {
+ 	 */
+ 	void *pkts_sent_reg;
+ 
+-	void (*check_rx_pkts)(struct otx_ep_droq *droq);
++	/* Use ISM memory */
++	uint8_t ism_ena;
+ 
+ 	/* Pointer to host memory copy of output packet count, set by ISM */
+ 	uint32_t *pkts_sent_ism;
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 06488cf901e72..a4c0b0c5d1377 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -160,11 +160,7 @@ otx_ep_init_instr_queue(struct otx_ep_device *otx_ep, int iq_no, int num_descs,
+ 		otx_ep->io_qmask.iq64B |= (1ull << iq_no);
+ 
+ 	iq->iqcmd_64B = (conf->iq.instr_type == 64);
+-
+-	if (otx_ep->ism_ena)
+-		iq->update_read_index = cnxk_ep_check_tx_ism_mem;
+-	else
+-		iq->update_read_index = cnxk_ep_check_tx_pkt_reg;
++	iq->ism_ena = otx_ep->ism_ena;
+ 
+ 	/* Set up IQ registers */
+ 	ret = otx_ep->fn_list.setup_iq_regs(otx_ep, iq_no);
+@@ -373,11 +369,7 @@ otx_ep_init_droq(struct otx_ep_device *otx_ep, uint32_t q_no,
+ 
+ 	droq->refill_threshold = c_refill_threshold;
+ 	droq->rearm_data = otx_ep_set_rearm_data(otx_ep);
+-
+-	if (otx_ep->ism_ena)
+-		droq->check_rx_pkts = cnxk_ep_check_rx_ism_mem;
+-	else
+-		droq->check_rx_pkts = cnxk_ep_check_rx_pkt_reg;
++	droq->ism_ena = otx_ep->ism_ena;
+ 
+ 	/* Set up OQ registers */
+ 	ret = otx_ep->fn_list.setup_oq_regs(otx_ep, q_no);
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.h b/drivers/net/octeon_ep/otx_ep_rxtx.h
+index 0e3146555e871..152d9f4599cd9 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.h
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.h
+@@ -24,18 +24,14 @@
+ #define DROQ_REFILL_THRESHOLD 16
+ #define OTX2_SDP_REQUEST_ISM   (0x1ULL << 63)
+ 
++typedef uint32_t (*otx_ep_check_pkt_count_t)(void *queue);
++
+ static inline uint32_t
+ otx_ep_incr_index(uint32_t index, uint32_t count, uint32_t max)
+ {
+ 	return ((index + count) & (max - 1));
+ }
+ 
+-uint32_t
+-cnxk_ep_check_tx_pkt_reg(struct otx_ep_instr_queue *iq);
+-
+-uint32_t
+-cnxk_ep_check_tx_ism_mem(struct otx_ep_instr_queue *iq);
+-
+ uint16_t
+ otx_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts);
+ 
+-- 
+2.25.1
+

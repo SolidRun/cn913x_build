@@ -1,0 +1,447 @@
+From 59cfa1493c79eaee3829be4d3eaebbb536583651 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 18 Aug 2023 04:54:31 +0000
+Subject: [PATCH 050/513] test/crypto: move security caps checks to separate
+ file
+
+Move routines performing security caps verifications to a separate file
+to allow the usage of same for other protocol tests such as TLS record.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I01ca04d3a0708ea53a8eb419931aa4ffa84cdcac
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110046
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117475
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test-security-perf/meson.build          |  1 +
+ app/test-security-perf/test_security_perf.c | 17 ++---
+ app/test/meson.build                        |  1 +
+ app/test/test_cryptodev.c                   | 17 ++---
+ app/test/test_cryptodev_security_ipsec.c    | 78 -------------------
+ app/test/test_cryptodev_security_ipsec.h    | 12 ---
+ app/test/test_security_inline_proto.c       | 12 +--
+ app/test/test_security_proto.c              | 83 +++++++++++++++++++++
+ app/test/test_security_proto.h              | 20 +++++
+ 9 files changed, 121 insertions(+), 120 deletions(-)
+ create mode 100644 app/test/test_security_proto.c
+ create mode 100644 app/test/test_security_proto.h
+
+diff --git a/app/test-security-perf/meson.build b/app/test-security-perf/meson.build
+index 076999022edf8..547de9c908ef6 100644
+--- a/app/test-security-perf/meson.build
++++ b/app/test-security-perf/meson.build
+@@ -10,5 +10,6 @@ endif
+ sources = files(
+         'test_security_perf.c',
+         '../test/test_cryptodev_security_ipsec.c',
++        '../test/test_security_proto.c',
+ )
+ deps += ['security', 'cmdline']
+diff --git a/app/test-security-perf/test_security_perf.c b/app/test-security-perf/test_security_perf.c
+index 4dfaca48005d0..c64f20e76c678 100644
+--- a/app/test-security-perf/test_security_perf.c
++++ b/app/test-security-perf/test_security_perf.c
+@@ -16,6 +16,7 @@
+ #include <app/test/test_cryptodev.h>
+ #include <app/test/test_cryptodev_security_ipsec.h>
+ #include <app/test/test_cryptodev_security_ipsec_test_vectors.h>
++#include <app/test/test_security_proto.h>
+ 
+ #define NB_DESC 4096
+ #define DEF_NB_SESSIONS (16 * 10 * 1024) /* 16 * 10K tunnels */
+@@ -258,9 +259,7 @@ sec_conf_init(struct lcore_conf *conf,
+ 		conf->aead_xform.aead.iv.offset = IV_OFFSET;
+ 
+ 		/* Verify crypto capabilities */
+-		if (test_ipsec_crypto_caps_aead_verify(
+-				sec_cap,
+-				&conf->aead_xform) != 0) {
++		if (test_sec_crypto_caps_aead_verify(sec_cap, &conf->aead_xform) != 0) {
+ 			RTE_LOG(ERR, USER1,
+ 				"Crypto capabilities not supported\n");
+ 			return -1;
+@@ -270,9 +269,7 @@ sec_conf_init(struct lcore_conf *conf,
+ 		       sizeof(conf->auth_xform));
+ 		conf->auth_xform.auth.key.data = td[0].auth_key.data;
+ 
+-		if (test_ipsec_crypto_caps_auth_verify(
+-				sec_cap,
+-				&conf->auth_xform) != 0) {
++		if (test_sec_crypto_caps_auth_verify(sec_cap, &conf->auth_xform) != 0) {
+ 			RTE_LOG(INFO, USER1,
+ 				"Auth crypto capabilities not supported\n");
+ 			return -1;
+@@ -288,17 +285,13 @@ sec_conf_init(struct lcore_conf *conf,
+ 
+ 		/* Verify crypto capabilities */
+ 
+-		if (test_ipsec_crypto_caps_cipher_verify(
+-				sec_cap,
+-				&conf->cipher_xform) != 0) {
++		if (test_sec_crypto_caps_cipher_verify(sec_cap, &conf->cipher_xform) != 0) {
+ 			RTE_LOG(ERR, USER1,
+ 				"Cipher crypto capabilities not supported\n");
+ 			return -1;
+ 		}
+ 
+-		if (test_ipsec_crypto_caps_auth_verify(
+-				sec_cap,
+-				&conf->auth_xform) != 0) {
++		if (test_sec_crypto_caps_auth_verify(sec_cap, &conf->auth_xform) != 0) {
+ 			RTE_LOG(ERR, USER1,
+ 				"Auth crypto capabilities not supported\n");
+ 			return -1;
+diff --git a/app/test/meson.build b/app/test/meson.build
+index dcc93f4a43b49..58e120a6aba6e 100644
+--- a/app/test/meson.build
++++ b/app/test/meson.build
+@@ -169,6 +169,7 @@ source_file_deps = {
+     'test_security.c': ['net', 'security'],
+     'test_security_inline_macsec.c': ['ethdev', 'security'],
+     'test_security_inline_proto.c': ['ethdev', 'security', 'eventdev'] + test_cryptodev_deps,
++    'test_security_proto.c' : ['cryptodev', 'security'],
+     'test_seqlock.c': [],
+     'test_service_cores.c': [],
+     'test_spinlock.c': [],
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 58b533ad93364..2e749b73a31f4 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -53,6 +53,7 @@
+ #include "test_cryptodev_security_pdcp_sdap_test_vectors.h"
+ #include "test_cryptodev_security_pdcp_test_func.h"
+ #include "test_cryptodev_security_docsis_test_vectors.h"
++#include "test_security_proto.h"
+ 
+ #define SDAP_DISABLED	0
+ #define SDAP_ENABLED	1
+@@ -10300,9 +10301,7 @@ test_ipsec_proto_process(const struct ipsec_test_data td[],
+ 		ut_params->aead_xform.aead.iv.offset = IV_OFFSET;
+ 
+ 		/* Verify crypto capabilities */
+-		if (test_ipsec_crypto_caps_aead_verify(
+-				sec_cap,
+-				&ut_params->aead_xform) != 0) {
++		if (test_sec_crypto_caps_aead_verify(sec_cap, &ut_params->aead_xform) != 0) {
+ 			if (!silent)
+ 				RTE_LOG(INFO, USER1,
+ 					"Crypto capabilities not supported\n");
+@@ -10313,9 +10312,7 @@ test_ipsec_proto_process(const struct ipsec_test_data td[],
+ 		       sizeof(ut_params->auth_xform));
+ 		ut_params->auth_xform.auth.key.data = td[0].auth_key.data;
+ 
+-		if (test_ipsec_crypto_caps_auth_verify(
+-				sec_cap,
+-				&ut_params->auth_xform) != 0) {
++		if (test_sec_crypto_caps_auth_verify(sec_cap, &ut_params->auth_xform) != 0) {
+ 			if (!silent)
+ 				RTE_LOG(INFO, USER1,
+ 					"Auth crypto capabilities not supported\n");
+@@ -10332,18 +10329,14 @@ test_ipsec_proto_process(const struct ipsec_test_data td[],
+ 
+ 		/* Verify crypto capabilities */
+ 
+-		if (test_ipsec_crypto_caps_cipher_verify(
+-				sec_cap,
+-				&ut_params->cipher_xform) != 0) {
++		if (test_sec_crypto_caps_cipher_verify(sec_cap, &ut_params->cipher_xform) != 0) {
+ 			if (!silent)
+ 				RTE_LOG(INFO, USER1,
+ 					"Cipher crypto capabilities not supported\n");
+ 			return TEST_SKIPPED;
+ 		}
+ 
+-		if (test_ipsec_crypto_caps_auth_verify(
+-				sec_cap,
+-				&ut_params->auth_xform) != 0) {
++		if (test_sec_crypto_caps_auth_verify(sec_cap, &ut_params->auth_xform) != 0) {
+ 			if (!silent)
+ 				RTE_LOG(INFO, USER1,
+ 					"Auth crypto capabilities not supported\n");
+diff --git a/app/test/test_cryptodev_security_ipsec.c b/app/test/test_cryptodev_security_ipsec.c
+index 205714b2704c7..01e0a45ffd2de 100644
+--- a/app/test/test_cryptodev_security_ipsec.c
++++ b/app/test/test_cryptodev_security_ipsec.c
+@@ -224,84 +224,6 @@ test_ipsec_sec_caps_verify(struct rte_security_ipsec_xform *ipsec_xform,
+ 	return 0;
+ }
+ 
+-int
+-test_ipsec_crypto_caps_aead_verify(
+-		const struct rte_security_capability *sec_cap,
+-		struct rte_crypto_sym_xform *aead)
+-{
+-	const struct rte_cryptodev_symmetric_capability *sym_cap;
+-	const struct rte_cryptodev_capabilities *crypto_cap;
+-	int j = 0;
+-
+-	while ((crypto_cap = &sec_cap->crypto_capabilities[j++])->op !=
+-			RTE_CRYPTO_OP_TYPE_UNDEFINED) {
+-		if (crypto_cap->op == RTE_CRYPTO_OP_TYPE_SYMMETRIC &&
+-				crypto_cap->sym.xform_type == aead->type &&
+-				crypto_cap->sym.aead.algo == aead->aead.algo) {
+-			sym_cap = &crypto_cap->sym;
+-			if (rte_cryptodev_sym_capability_check_aead(sym_cap,
+-					aead->aead.key.length,
+-					aead->aead.digest_length,
+-					aead->aead.aad_length,
+-					aead->aead.iv.length) == 0)
+-				return 0;
+-		}
+-	}
+-
+-	return -ENOTSUP;
+-}
+-
+-int
+-test_ipsec_crypto_caps_cipher_verify(
+-		const struct rte_security_capability *sec_cap,
+-		struct rte_crypto_sym_xform *cipher)
+-{
+-	const struct rte_cryptodev_symmetric_capability *sym_cap;
+-	const struct rte_cryptodev_capabilities *cap;
+-	int j = 0;
+-
+-	while ((cap = &sec_cap->crypto_capabilities[j++])->op !=
+-			RTE_CRYPTO_OP_TYPE_UNDEFINED) {
+-		if (cap->op == RTE_CRYPTO_OP_TYPE_SYMMETRIC &&
+-				cap->sym.xform_type == cipher->type &&
+-				cap->sym.cipher.algo == cipher->cipher.algo) {
+-			sym_cap = &cap->sym;
+-			if (rte_cryptodev_sym_capability_check_cipher(sym_cap,
+-					cipher->cipher.key.length,
+-					cipher->cipher.iv.length) == 0)
+-				return 0;
+-		}
+-	}
+-
+-	return -ENOTSUP;
+-}
+-
+-int
+-test_ipsec_crypto_caps_auth_verify(
+-		const struct rte_security_capability *sec_cap,
+-		struct rte_crypto_sym_xform *auth)
+-{
+-	const struct rte_cryptodev_symmetric_capability *sym_cap;
+-	const struct rte_cryptodev_capabilities *cap;
+-	int j = 0;
+-
+-	while ((cap = &sec_cap->crypto_capabilities[j++])->op !=
+-			RTE_CRYPTO_OP_TYPE_UNDEFINED) {
+-		if (cap->op == RTE_CRYPTO_OP_TYPE_SYMMETRIC &&
+-				cap->sym.xform_type == auth->type &&
+-				cap->sym.auth.algo == auth->auth.algo) {
+-			sym_cap = &cap->sym;
+-			if (rte_cryptodev_sym_capability_check_auth(sym_cap,
+-					auth->auth.key.length,
+-					auth->auth.digest_length,
+-					auth->auth.iv.length) == 0)
+-				return 0;
+-		}
+-	}
+-
+-	return -ENOTSUP;
+-}
+-
+ void
+ test_ipsec_td_in_from_out(const struct ipsec_test_data *td_out,
+ 			  struct ipsec_test_data *td_in)
+diff --git a/app/test/test_cryptodev_security_ipsec.h b/app/test/test_cryptodev_security_ipsec.h
+index d7fc5627516c6..dc1b4c4a80b0c 100644
+--- a/app/test/test_cryptodev_security_ipsec.h
++++ b/app/test/test_cryptodev_security_ipsec.h
+@@ -263,18 +263,6 @@ int test_ipsec_sec_caps_verify(struct rte_security_ipsec_xform *ipsec_xform,
+ 			       const struct rte_security_capability *sec_cap,
+ 			       bool silent);
+ 
+-int test_ipsec_crypto_caps_aead_verify(
+-		const struct rte_security_capability *sec_cap,
+-		struct rte_crypto_sym_xform *aead);
+-
+-int test_ipsec_crypto_caps_cipher_verify(
+-		const struct rte_security_capability *sec_cap,
+-		struct rte_crypto_sym_xform *cipher);
+-
+-int test_ipsec_crypto_caps_auth_verify(
+-		const struct rte_security_capability *sec_cap,
+-		struct rte_crypto_sym_xform *auth);
+-
+ void test_ipsec_td_in_from_out(const struct ipsec_test_data *td_out,
+ 			       struct ipsec_test_data *td_in);
+ 
+diff --git a/app/test/test_security_inline_proto.c b/app/test/test_security_inline_proto.c
+index 78a2064b656be..9644a3c39cd1c 100644
+--- a/app/test/test_security_inline_proto.c
++++ b/app/test/test_security_inline_proto.c
+@@ -12,6 +12,7 @@
+ 
+ #include "test.h"
+ #include "test_security_inline_proto_vectors.h"
++#include "test_security_proto.h"
+ 
+ #ifdef RTE_EXEC_ENV_WINDOWS
+ static int
+@@ -248,8 +249,7 @@ create_inline_ipsec_session(struct ipsec_test_data *sa, uint16_t portid,
+ 				sizeof(struct rte_crypto_sym_xform));
+ 		sess_conf->crypto_xform->aead.key.data = sa->key.data;
+ 		/* Verify crypto capabilities */
+-		if (test_ipsec_crypto_caps_aead_verify(sec_cap,
+-					sess_conf->crypto_xform) != 0) {
++		if (test_sec_crypto_caps_aead_verify(sec_cap, sess_conf->crypto_xform) != 0) {
+ 			RTE_LOG(INFO, USER1,
+ 				"Crypto capabilities not supported\n");
+ 			return TEST_SKIPPED;
+@@ -268,14 +268,14 @@ create_inline_ipsec_session(struct ipsec_test_data *sa, uint16_t portid,
+ 			sess_conf->crypto_xform->next->auth.key.data =
+ 							sa->auth_key.data;
+ 			/* Verify crypto capabilities */
+-			if (test_ipsec_crypto_caps_cipher_verify(sec_cap,
++			if (test_sec_crypto_caps_cipher_verify(sec_cap,
+ 					sess_conf->crypto_xform) != 0) {
+ 				RTE_LOG(INFO, USER1,
+ 					"Cipher crypto capabilities not supported\n");
+ 				return TEST_SKIPPED;
+ 			}
+ 
+-			if (test_ipsec_crypto_caps_auth_verify(sec_cap,
++			if (test_sec_crypto_caps_auth_verify(sec_cap,
+ 					sess_conf->crypto_xform->next) != 0) {
+ 				RTE_LOG(INFO, USER1,
+ 					"Auth crypto capabilities not supported\n");
+@@ -294,14 +294,14 @@ create_inline_ipsec_session(struct ipsec_test_data *sa, uint16_t portid,
+ 							sa->key.data;
+ 
+ 			/* Verify crypto capabilities */
+-			if (test_ipsec_crypto_caps_cipher_verify(sec_cap,
++			if (test_sec_crypto_caps_cipher_verify(sec_cap,
+ 					sess_conf->crypto_xform->next) != 0) {
+ 				RTE_LOG(INFO, USER1,
+ 					"Cipher crypto capabilities not supported\n");
+ 				return TEST_SKIPPED;
+ 			}
+ 
+-			if (test_ipsec_crypto_caps_auth_verify(sec_cap,
++			if (test_sec_crypto_caps_auth_verify(sec_cap,
+ 					sess_conf->crypto_xform) != 0) {
+ 				RTE_LOG(INFO, USER1,
+ 					"Auth crypto capabilities not supported\n");
+diff --git a/app/test/test_security_proto.c b/app/test/test_security_proto.c
+new file mode 100644
+index 0000000000000..bc4c5e11d2eb4
+--- /dev/null
++++ b/app/test/test_security_proto.c
+@@ -0,0 +1,83 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include <rte_cryptodev.h>
++#include <rte_security.h>
++
++#include "test_security_proto.h"
++
++int
++test_sec_crypto_caps_aead_verify(const struct rte_security_capability *sec_cap,
++		struct rte_crypto_sym_xform *aead)
++{
++	const struct rte_cryptodev_symmetric_capability *sym_cap;
++	const struct rte_cryptodev_capabilities *crypto_cap;
++	int j = 0;
++
++	while ((crypto_cap = &sec_cap->crypto_capabilities[j++])->op !=
++			RTE_CRYPTO_OP_TYPE_UNDEFINED) {
++		if (crypto_cap->op == RTE_CRYPTO_OP_TYPE_SYMMETRIC &&
++				crypto_cap->sym.xform_type == aead->type &&
++				crypto_cap->sym.aead.algo == aead->aead.algo) {
++			sym_cap = &crypto_cap->sym;
++			if (rte_cryptodev_sym_capability_check_aead(sym_cap,
++					aead->aead.key.length,
++					aead->aead.digest_length,
++					aead->aead.aad_length,
++					aead->aead.iv.length) == 0)
++				return 0;
++		}
++	}
++
++	return -ENOTSUP;
++}
++
++int
++test_sec_crypto_caps_cipher_verify(const struct rte_security_capability *sec_cap,
++		struct rte_crypto_sym_xform *cipher)
++{
++	const struct rte_cryptodev_symmetric_capability *sym_cap;
++	const struct rte_cryptodev_capabilities *cap;
++	int j = 0;
++
++	while ((cap = &sec_cap->crypto_capabilities[j++])->op !=
++			RTE_CRYPTO_OP_TYPE_UNDEFINED) {
++		if (cap->op == RTE_CRYPTO_OP_TYPE_SYMMETRIC &&
++				cap->sym.xform_type == cipher->type &&
++				cap->sym.cipher.algo == cipher->cipher.algo) {
++			sym_cap = &cap->sym;
++			if (rte_cryptodev_sym_capability_check_cipher(sym_cap,
++					cipher->cipher.key.length,
++					cipher->cipher.iv.length) == 0)
++				return 0;
++		}
++	}
++
++	return -ENOTSUP;
++}
++
++int
++test_sec_crypto_caps_auth_verify(const struct rte_security_capability *sec_cap,
++		struct rte_crypto_sym_xform *auth)
++{
++	const struct rte_cryptodev_symmetric_capability *sym_cap;
++	const struct rte_cryptodev_capabilities *cap;
++	int j = 0;
++
++	while ((cap = &sec_cap->crypto_capabilities[j++])->op !=
++			RTE_CRYPTO_OP_TYPE_UNDEFINED) {
++		if (cap->op == RTE_CRYPTO_OP_TYPE_SYMMETRIC &&
++				cap->sym.xform_type == auth->type &&
++				cap->sym.auth.algo == auth->auth.algo) {
++			sym_cap = &cap->sym;
++			if (rte_cryptodev_sym_capability_check_auth(sym_cap,
++					auth->auth.key.length,
++					auth->auth.digest_length,
++					auth->auth.iv.length) == 0)
++				return 0;
++		}
++	}
++
++	return -ENOTSUP;
++}
+diff --git a/app/test/test_security_proto.h b/app/test/test_security_proto.h
+new file mode 100644
+index 0000000000000..b91181384bbfb
+--- /dev/null
++++ b/app/test/test_security_proto.h
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#ifndef _TEST_SECURITY_PROTO_H_
++#define _TEST_SECURITY_PROTO_H_
++
++#include <rte_cryptodev.h>
++#include <rte_security.h>
++
++int test_sec_crypto_caps_aead_verify(const struct rte_security_capability *sec_cap,
++		struct rte_crypto_sym_xform *aead);
++
++int test_sec_crypto_caps_cipher_verify(const struct rte_security_capability *sec_cap,
++		struct rte_crypto_sym_xform *cipher);
++
++int test_sec_crypto_caps_auth_verify(const struct rte_security_capability *sec_cap,
++		struct rte_crypto_sym_xform *auth);
++
++#endif
+-- 
+2.25.1
+

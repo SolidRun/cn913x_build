@@ -1,0 +1,104 @@
+From 3d5097f8fcc1c29cb86ec04d4f378dd0274fcf88 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 20 Dec 2022 17:22:00 +0530
+Subject: [PATCH 279/955] common/cnxk: dump SW SSO work count as xstat
+
+Dump SW SSO work count as xstat.
+
+Change-Id: Ifcf991b498d5aee604538ccf21dbc402c9eabb76
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98439
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl_dev_irq.c |  1 +
+ drivers/common/cnxk/roc_nix_inl_priv.h    |  1 +
+ drivers/common/cnxk/roc_nix_stats.c       | 17 +++++++++++------
+ drivers/common/cnxk/roc_nix_xstats.h      |  4 ++++
+ 4 files changed, 17 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev_irq.c b/drivers/common/cnxk/roc_nix_inl_dev_irq.c
+index 445b44044779c..becd7907f2472 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev_irq.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev_irq.c
+@@ -41,6 +41,7 @@ nix_inl_sso_work_cb(struct nix_inl_dev *inl_dev)
+ 			goto again;
+ 	}
+ 
++	inl_dev->sso_work_cnt += cnt;
+ 	plt_atomic_thread_fence(__ATOMIC_ACQ_REL);
+ }
+ 
+diff --git a/drivers/common/cnxk/roc_nix_inl_priv.h b/drivers/common/cnxk/roc_nix_inl_priv.h
+index 528d2db365991..b0a8976c6b691 100644
+--- a/drivers/common/cnxk/roc_nix_inl_priv.h
++++ b/drivers/common/cnxk/roc_nix_inl_priv.h
+@@ -57,6 +57,7 @@ struct nix_inl_dev {
+ 	bool is_nix1;
+ 	uint8_t spb_drop_pc;
+ 	uint8_t lpb_drop_pc;
++	uint64_t sso_work_cnt;
+ 
+ 	/* NIX/CPT data */
+ 	void *inb_sa_base;
+diff --git a/drivers/common/cnxk/roc_nix_stats.c b/drivers/common/cnxk/roc_nix_stats.c
+index 6b5803af84422..ca0e8ccb4f6a3 100644
+--- a/drivers/common/cnxk/roc_nix_stats.c
++++ b/drivers/common/cnxk/roc_nix_stats.c
+@@ -24,12 +24,7 @@
+ int
+ roc_nix_num_xstats_get(struct roc_nix *roc_nix)
+ {
+-	if (roc_nix_is_vf_or_sdp(roc_nix))
+-		return CNXK_NIX_NUM_XSTATS_REG;
+-	else if (roc_model_is_cn9k())
+-		return CNXK_NIX_NUM_XSTATS_CGX;
+-
+-	return CNXK_NIX_NUM_XSTATS_RPM;
++	return roc_nix_xstats_names_get(roc_nix, NULL, 0);
+ }
+ 
+ int
+@@ -360,6 +355,12 @@ roc_nix_xstats_get(struct roc_nix *roc_nix, struct roc_nix_xstat *xstats,
+ 				xstats[count].id = count;
+ 				count++;
+ 			}
++			for (i = 0; i < PLT_DIM(inl_sw_xstats); i++) {
++				if (!inl_sw_xstats[i].offset)
++					xstats[count].value = inl_dev->sso_work_cnt;
++				xstats[count].id = count;
++				count++;
++			}
+ 		}
+ 	}
+ 
+@@ -475,6 +476,10 @@ roc_nix_xstats_names_get(struct roc_nix *roc_nix,
+ 						      inl_nix_rq_xstats, i);
+ 				count++;
+ 			}
++			for (i = 0; i < PLT_DIM(inl_sw_xstats); i++) {
++				NIX_XSTATS_NAME_PRINT(xstats_names, count, inl_sw_xstats, i);
++				count++;
++			}
+ 		}
+ 	}
+ 
+diff --git a/drivers/common/cnxk/roc_nix_xstats.h b/drivers/common/cnxk/roc_nix_xstats.h
+index 813fb7f578915..11b8e1c0ff909 100644
+--- a/drivers/common/cnxk/roc_nix_xstats.h
++++ b/drivers/common/cnxk/roc_nix_xstats.h
+@@ -206,6 +206,10 @@ static const struct cnxk_nix_xstats_name nix_tx_xstats_cgx[] = {
+ 	{"cgx_tx_pause_packets", CGX_TX_PAUSE_PKTS},
+ };
+ 
++static const struct cnxk_nix_xstats_name inl_sw_xstats[] = {
++	{"inl_sso_work_cnt", 0},
++};
++
+ #define CNXK_NIX_NUM_RX_XSTATS	   PLT_DIM(nix_rx_xstats)
+ #define CNXK_NIX_NUM_TX_XSTATS	   PLT_DIM(nix_tx_xstats)
+ #define CNXK_NIX_NUM_QUEUE_XSTATS  PLT_DIM(nix_q_xstats)
+-- 
+2.25.1
+

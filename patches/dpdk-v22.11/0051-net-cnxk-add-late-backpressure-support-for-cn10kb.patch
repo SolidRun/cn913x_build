@@ -1,0 +1,200 @@
+From e7753736e9267cbaae7f63705f59e28bbe0ff563 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 28 Nov 2022 15:24:38 +0530
+Subject: [PATCH 051/955] net/cnxk: add late backpressure support for cn10kb
+
+Add late backpressure support for cn10kb and set it up
+to backpressure CPT.
+
+ci: skip_checkformat
+
+Change-Id: I7cdaff41a65d5acd4df578b8e64772e207054b83
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/hw/nix.h        | 18 ++++++++++++------
+ drivers/common/cnxk/roc_model.h     |  6 ++++++
+ drivers/common/cnxk/roc_nix_debug.c | 10 ++++++++--
+ drivers/common/cnxk/roc_nix_irq.c   |  3 +++
+ drivers/common/cnxk/roc_nix_priv.h  |  3 +++
+ drivers/common/cnxk/roc_nix_queue.c | 14 +++++++++++++-
+ drivers/net/cnxk/cnxk_ethdev.c      |  5 +++--
+ 7 files changed, 48 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/nix.h b/drivers/common/cnxk/hw/nix.h
+index 425c335bf3c3c..0d8f2a5e9b3dd 100644
+--- a/drivers/common/cnxk/hw/nix.h
++++ b/drivers/common/cnxk/hw/nix.h
+@@ -861,6 +861,7 @@
+ #define NIX_CQERRINT_DOOR_ERR  (0x0ull)
+ #define NIX_CQERRINT_WR_FULL   (0x1ull)
+ #define NIX_CQERRINT_CQE_FAULT (0x2ull)
++#define NIX_CQERRINT_CPT_DROP  (0x3ull) /* [CN10KB, .) */
+ 
+ #define NIX_LINK_SDP (0xdull) /* [CN10K, .) */
+ #define NIX_LINK_CPT (0xeull) /* [CN10K, .) */
+@@ -1009,11 +1010,12 @@ struct nix_cqe_hdr_s {
+ /* NIX completion queue context structure */
+ struct nix_cq_ctx_s {
+ 	uint64_t base : 64; /* W0 */
+-	uint64_t rsvd_67_64 : 4;
++	uint64_t lbp_ena : 1;
++	uint64_t lbpid_low : 3;
+ 	uint64_t bp_ena : 1;
+-	uint64_t rsvd_71_69 : 3;
++	uint64_t lbpid_med : 3;
+ 	uint64_t bpid : 9;
+-	uint64_t rsvd_83_81 : 3;
++	uint64_t lbpid_high : 3;
+ 	uint64_t qint_idx : 7;
+ 	uint64_t cq_err : 1;
+ 	uint64_t cint_idx : 7;
+@@ -1027,10 +1029,14 @@ struct nix_cq_ctx_s {
+ 	uint64_t drop : 8;
+ 	uint64_t drop_ena : 1;
+ 	uint64_t ena : 1;
+-	uint64_t rsvd_211_210 : 2;
+-	uint64_t substream : 20;
++	uint64_t cpt_drop_err_en : 1;
++	uint64_t rsvd_211 : 1;
++	uint64_t substream : 12;
++	uint64_t stash_thresh : 4;
++	uint64_t lbp_frac : 4;
+ 	uint64_t caching : 1;
+-	uint64_t rsvd_235_233 : 3;
++	uint64_t stashing : 1;
++	uint64_t rsvd_235_234 : 2;
+ 	uint64_t qsize : 4;
+ 	uint64_t cq_err_int : 8;
+ 	uint64_t cq_err_int_ena : 8;
+diff --git a/drivers/common/cnxk/roc_model.h b/drivers/common/cnxk/roc_model.h
+index 1985dd771d559..848609eb351fa 100644
+--- a/drivers/common/cnxk/roc_model.h
++++ b/drivers/common/cnxk/roc_model.h
+@@ -236,6 +236,12 @@ roc_model_is_cnf10kb_a0(void)
+ 	return roc_model->flag & ROC_MODEL_CNF105xxN_A0;
+ }
+ 
++static inline uint64_t
++roc_model_is_cn10kb(void)
++{
++	return roc_model->flag & ROC_MODEL_CN103xx;
++}
++
+ static inline bool
+ roc_env_is_hw(void)
+ {
+diff --git a/drivers/common/cnxk/roc_nix_debug.c b/drivers/common/cnxk/roc_nix_debug.c
+index 6f82350b5330b..e491060765ad2 100644
+--- a/drivers/common/cnxk/roc_nix_debug.c
++++ b/drivers/common/cnxk/roc_nix_debug.c
+@@ -665,8 +665,14 @@ nix_lf_cq_dump(__io struct nix_cq_ctx_s *ctx, FILE *file)
+ 		 ctx->cq_err_int_ena, ctx->cq_err_int);
+ 	nix_dump(file, "W3: qsize \t\t\t%d\nW3: caching \t\t\t%d", ctx->qsize,
+ 		 ctx->caching);
+-	nix_dump(file, "W3: substream \t\t\t0x%03x\nW3: ena \t\t\t%d", ctx->substream,
+-		 ctx->ena);
++	nix_dump(file, "W3: substream \t\t\t0x%03x\nW3: ena \t\t\t%d\nW3: lbp_ena \t\t\t%d",
++		 ctx->substream, ctx->ena, ctx->lbp_ena);
++	nix_dump(file,
++		 "W3: lbpid_high \t\t\t0x%03x\nW3: lbpid_med \t\t\t0x%03x\n"
++		 "W3: lbpid_low \t\t\t0x%03x\n(W3: lbpid) \t\t\t0x%03x",
++		 ctx->lbpid_high, ctx->lbpid_med, ctx->lbpid_low,
++		 ctx->lbpid_high << 6 | ctx->lbpid_med << 3 | ctx->lbpid_low);
++	nix_dump(file, "W3: lbp_frac \t\t\t%d\n", ctx->lbp_frac);
+ 	nix_dump(file, "W3: drop_ena \t\t\t%d\nW3: drop \t\t\t%d", ctx->drop_ena,
+ 		 ctx->drop);
+ 	nix_dump(file, "W3: bp \t\t\t\t%d\n", ctx->bp);
+diff --git a/drivers/common/cnxk/roc_nix_irq.c b/drivers/common/cnxk/roc_nix_irq.c
+index 661af7919313a..2e4bccb713b63 100644
+--- a/drivers/common/cnxk/roc_nix_irq.c
++++ b/drivers/common/cnxk/roc_nix_irq.c
+@@ -287,6 +287,9 @@ nix_lf_q_irq(void *param)
+ 
+ 		if (irq & BIT_ULL(NIX_CQERRINT_CQE_FAULT))
+ 			plt_err("CQ=%d NIX_CQERRINT_CQE_FAULT", cq);
++
++		if (irq & BIT_ULL(NIX_CQERRINT_CPT_DROP))
++			plt_err("CQ=%d NIX_CQERRINT_CPT_DROP", cq);
+ 	}
+ 
+ 	/* Handle SQ interrupts */
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 02290a1b86e76..0a9461c8569c6 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -16,6 +16,9 @@
+ 
+ /* Apply BP/DROP when CQ is 95% full */
+ #define NIX_CQ_THRESH_LEVEL	(5 * 256 / 100)
++#define NIX_CQ_SEC_THRESH_LEVEL (25 * 256 / 100)
++/* Apply LBP at 75% of actual BP */
++#define NIX_CQ_LPB_THRESH_FRAC	(75 * 16 / 100)
+ #define NIX_CQ_FULL_ERRATA_SKID (1024ull * 256)
+ #define NIX_RQ_AURA_THRESH(x)	(((x)*95) / 100)
+ 
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 0dd3c8d4dfbf3..5fad8e45434f3 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -743,6 +743,8 @@ roc_nix_cq_init(struct roc_nix *roc_nix, struct roc_nix_cq *cq)
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	struct mbox *mbox = (&nix->dev)->mbox;
+ 	volatile struct nix_cq_ctx_s *cq_ctx;
++	uint16_t drop_thresh = NIX_CQ_THRESH_LEVEL;
++	uint16_t cpt_lbpid = nix->bpid[0];
+ 	enum nix_q_size qsize;
+ 	size_t desc_sz;
+ 	int rc;
+@@ -797,6 +799,16 @@ roc_nix_cq_init(struct roc_nix *roc_nix, struct roc_nix_cq *cq)
+ 	cq_ctx->avg_level = 0xff;
+ 	cq_ctx->cq_err_int_ena = BIT(NIX_CQERRINT_CQE_FAULT);
+ 	cq_ctx->cq_err_int_ena |= BIT(NIX_CQERRINT_DOOR_ERR);
++	if (roc_model_is_cn10kb() && roc_nix_inl_inb_is_enabled(roc_nix)) {
++		cq_ctx->cq_err_int_ena |= BIT(NIX_CQERRINT_CPT_DROP);
++		cq_ctx->cpt_drop_err_en = 1;
++		cq_ctx->lbp_ena = 1;
++		cq_ctx->lbpid_low = cpt_lbpid & 0x7;
++		cq_ctx->lbpid_med = (cpt_lbpid >> 3) & 0x7;
++		cq_ctx->lbpid_high = (cpt_lbpid >> 6) & 0x7;
++		cq_ctx->lbp_frac = NIX_CQ_LPB_THRESH_FRAC;
++		drop_thresh = NIX_CQ_SEC_THRESH_LEVEL;
++	}
+ 
+ 	/* Many to one reduction */
+ 	cq_ctx->qint_idx = cq->qid % nix->qints;
+@@ -812,7 +824,7 @@ roc_nix_cq_init(struct roc_nix *roc_nix, struct roc_nix_cq *cq)
+ 		cq_ctx->drop_ena = 1;
+ 		cq->drop_thresh = min_rx_drop;
+ 	} else {
+-		cq->drop_thresh = NIX_CQ_THRESH_LEVEL;
++		cq->drop_thresh = drop_thresh;
+ 		/* Drop processing or red drop cannot be enabled due to
+ 		 * due to packets coming for second pass from CPT.
+ 		 */
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 1be2e9e776bee..d711eb6b27b1b 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -49,8 +49,9 @@ nix_inl_cq_sz_clamp_up(struct roc_nix *nix, struct rte_mempool *mp,
+ 	struct roc_nix_rq *inl_rq;
+ 	uint64_t limit;
+ 
++	/* For CN10KB and above, LBP needs minimum CQ size */
+ 	if (!roc_errata_cpt_hang_on_x2p_bp())
+-		return nb_desc;
++		return RTE_MAX(nb_desc, (uint32_t)4096);
+ 
+ 	/* CQ should be able to hold all buffers in first pass RQ's aura
+ 	 * this RQ's aura.
+@@ -695,7 +696,7 @@ cnxk_nix_rx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	first_skip += RTE_PKTMBUF_HEADROOM;
+ 	first_skip += rte_pktmbuf_priv_size(lpb_pool);
+ 	rq->first_skip = first_skip;
+-	rq->later_skip = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(mp);
++	rq->later_skip = sizeof(struct rte_mbuf) + rte_pktmbuf_priv_size(lpb_pool);
+ 	rq->lpb_size = lpb_pool->elt_size;
+ 	if (roc_errata_nix_no_meta_aura())
+ 		rq->lpb_drop_ena = !(dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY);
+-- 
+2.25.1
+

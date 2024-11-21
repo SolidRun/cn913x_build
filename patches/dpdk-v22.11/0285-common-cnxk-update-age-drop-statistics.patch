@@ -1,0 +1,95 @@
+From 03c373005255499593e0ff2f73313c0c974087e5 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Tue, 17 Jan 2023 13:35:51 +0530
+Subject: [PATCH 285/955] common/cnxk: update age drop statistics
+
+Update age drop statistics. Added telemetry statistics for age drops.
+
+Change-Id: Iba3afebdcfd16e499048e2efafda4b115c6bfe2f
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98442
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/cnxk_telemetry_nix.c | 4 ++++
+ drivers/common/cnxk/hw/nix.h             | 2 ++
+ drivers/common/cnxk/roc_features.h       | 6 ++++++
+ drivers/common/cnxk/roc_nix.h            | 2 ++
+ drivers/common/cnxk/roc_nix_stats.c      | 4 ++++
+ 5 files changed, 18 insertions(+)
+
+diff --git a/drivers/common/cnxk/cnxk_telemetry_nix.c b/drivers/common/cnxk/cnxk_telemetry_nix.c
+index b7285cf1371be..ccae5d7853af2 100644
+--- a/drivers/common/cnxk/cnxk_telemetry_nix.c
++++ b/drivers/common/cnxk/cnxk_telemetry_nix.c
+@@ -680,6 +680,10 @@ nix_sq_ctx(volatile void *qctx, struct plt_tel_data *d)
+ 	/* W12 */
+ 	CNXK_TEL_DICT_BF_PTR(d, ctx, pkts, w12_);
+ 
++	/* W13 */
++	CNXK_TEL_DICT_INT(d, ctx, aged_drop_octs, w13_);
++	CNXK_TEL_DICT_INT(d, ctx, aged_drop_pkts, w13_);
++
+ 	/* W14 */
+ 	CNXK_TEL_DICT_BF_PTR(d, ctx, drop_octs, w14_);
+ 
+diff --git a/drivers/common/cnxk/hw/nix.h b/drivers/common/cnxk/hw/nix.h
+index 0d8f2a5e9b3dd..fbdf1b64f63cc 100644
+--- a/drivers/common/cnxk/hw/nix.h
++++ b/drivers/common/cnxk/hw/nix.h
+@@ -363,6 +363,8 @@
+ #define NIX_LF_SQ_OP_STATUS	 (0xa30ull)
+ #define NIX_LF_SQ_OP_DROP_OCTS	 (0xa40ull)
+ #define NIX_LF_SQ_OP_DROP_PKTS	 (0xa50ull)
++#define NIX_LF_SQ_OP_AGE_DROP_OCTS (0xa60ull) /* [CN10K, .) */
++#define NIX_LF_SQ_OP_AGE_DROP_PKTS (0xa70ull) /* [CN10K, .) */
+ #define NIX_LF_CQ_OP_INT	 (0xb00ull)
+ #define NIX_LF_CQ_OP_DOOR	 (0xb30ull)
+ #define NIX_LF_CQ_OP_STATUS	 (0xb40ull)
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index 742b8997bc5c6..37cd607a5134e 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -47,4 +47,10 @@ roc_feature_nix_has_rxchan_multi_bpid(void)
+ 		return true;
+ 	return false;
+ }
++
++static inline bool
++roc_feature_nix_has_age_drop_stats(void)
++{
++	return (roc_model_is_cn10kb() || roc_model_is_cn10ka_b0());
++}
+ #endif
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 2b576f08911d1..f84e473db66b5 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -293,6 +293,8 @@ struct roc_nix_stats_queue {
+ 			uint64_t tx_octs;
+ 			uint64_t tx_drop_pkts;
+ 			uint64_t tx_drop_octs;
++			uint64_t tx_age_drop_pkts;
++			uint64_t tx_age_drop_octs;
+ 		};
+ 	};
+ };
+diff --git a/drivers/common/cnxk/roc_nix_stats.c b/drivers/common/cnxk/roc_nix_stats.c
+index ca0e8ccb4f6a3..1e93191a07ef9 100644
+--- a/drivers/common/cnxk/roc_nix_stats.c
++++ b/drivers/common/cnxk/roc_nix_stats.c
+@@ -137,6 +137,10 @@ nix_stat_tx_queue_get(struct nix *nix, uint16_t qid,
+ 	qstats->tx_octs = qstat_read(nix, qid, NIX_LF_SQ_OP_OCTS);
+ 	qstats->tx_drop_pkts = qstat_read(nix, qid, NIX_LF_SQ_OP_DROP_PKTS);
+ 	qstats->tx_drop_octs = qstat_read(nix, qid, NIX_LF_SQ_OP_DROP_OCTS);
++	if (roc_feature_nix_has_age_drop_stats()) {
++		qstats->tx_age_drop_pkts = qstat_read(nix, qid, NIX_LF_SQ_OP_AGE_DROP_PKTS);
++		qstats->tx_age_drop_octs = qstat_read(nix, qid, NIX_LF_SQ_OP_AGE_DROP_OCTS);
++	}
+ }
+ 
+ static int
+-- 
+2.25.1
+

@@ -1,0 +1,80 @@
+From 58635d484b3eb966637d283bc0b1b341392ae8ba Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 30 May 2023 12:40:32 +0530
+Subject: [PATCH 469/955] crypto/cnxk: enable context cache for 103XX
+
+Enabling context cache for SE instructions on 106B0
+and 103XX.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Id1d6d50120394dff0d9c7d7c9e76aa6c06a23568
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104369
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit b5f66848f354298577d0395c6146d8ac3e470790)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104472
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c | 6 +++---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.h | 8 ++++++++
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 2018b0eba5573..d0c99d37e82e1 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -653,7 +653,7 @@ cnxk_cpt_inst_w7_get(struct cnxk_se_sess *sess, struct roc_cpt *roc_cpt)
+ 
+ 	inst_w7.s.cptr = (uint64_t)&sess->roc_se_ctx.se_ctx;
+ 
+-	if (roc_errata_cpt_hang_on_mixed_ctx_val())
++	if (hw_ctx_cache_enable())
+ 		inst_w7.s.ctx_val = 1;
+ 	else
+ 		inst_w7.s.cptr += 8;
+@@ -729,7 +729,7 @@ sym_session_configure(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xfor
+ 
+ 	sess_priv->cpt_inst_w7 = cnxk_cpt_inst_w7_get(sess_priv, roc_cpt);
+ 
+-	if (roc_errata_cpt_hang_on_mixed_ctx_val())
++	if (hw_ctx_cache_enable())
+ 		roc_se_ctx_init(&sess_priv->roc_se_ctx);
+ 
+ 	return 0;
+@@ -755,7 +755,7 @@ sym_session_clear(struct rte_cryptodev_sym_session *sess, bool is_session_less)
+ 	struct cnxk_se_sess *sess_priv = (struct cnxk_se_sess *)sess;
+ 
+ 	/* Trigger CTX flush + invalidate to remove from CTX_CACHE */
+-	if (roc_errata_cpt_hang_on_mixed_ctx_val())
++	if (hw_ctx_cache_enable())
+ 		roc_cpt_lf_ctx_flush(sess_priv->lf, &sess_priv->roc_se_ctx.se_ctx, true);
+ 
+ 	if (sess_priv->roc_se_ctx.auth_key != NULL)
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+index b1a40e8e25ba6..6ee4cbda703e8 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+@@ -13,6 +13,7 @@
+ #include "roc_constants.h"
+ #include "roc_cpt.h"
+ #include "roc_cpt_sg.h"
++#include "roc_errata.h"
+ #include "roc_se.h"
+ 
+ #define CNXK_CPT_MIN_HEADROOM_REQ	 32
+@@ -180,4 +181,11 @@ alloc_op_meta(struct roc_se_buf_ptr *buf, int32_t len, struct rte_mempool *cpt_m
+ 
+ 	return mdata;
+ }
++
++static __rte_always_inline bool
++hw_ctx_cache_enable(void)
++{
++	return roc_errata_cpt_hang_on_mixed_ctx_val() || roc_model_is_cn10ka_b0() ||
++	       roc_model_is_cn10kb_a0();
++}
+ #endif /* _CNXK_CRYPTODEV_OPS_H_ */
+-- 
+2.25.1
+

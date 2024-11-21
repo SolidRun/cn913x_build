@@ -1,0 +1,173 @@
+From ffa9b0a48764b779c0e9e23558462f0e6d45642d Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 13 Dec 2022 20:36:43 +0530
+Subject: [PATCH 122/955] event/cnxk: use WFE in Tx fc wait
+
+Use WFE is Tx path when waiting for space in the Tx queue.
+Depending upon the Tx queue contention and size, WFE will
+reduce the cache pressure and power consumption.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I617d2e3c7ff95738b71f829520af81956b72e7b7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92502
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_sso_dp.h     | 12 +++---
+ drivers/event/cnxk/cn10k_tx_worker.h | 19 +++++++++
+ drivers/net/cnxk/cn10k_tx.h          | 60 ++++++++++++++++++++++++++--
+ 3 files changed, 82 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_sso_dp.h b/drivers/common/cnxk/roc_sso_dp.h
+index 9d30286d2f846..03c5bdf7ee538 100644
+--- a/drivers/common/cnxk/roc_sso_dp.h
++++ b/drivers/common/cnxk/roc_sso_dp.h
+@@ -13,13 +13,13 @@ roc_sso_hws_head_wait(uintptr_t base)
+ 
+ #if defined(__aarch64__)
+ 	asm volatile(PLT_CPU_FEATURE_PREAMBLE
+-		     "		ldr %[tag], [%[tag_op]]	\n"
+-		     "		tbnz %[tag], 35, done%=		\n"
++		     "		ldr %[tag], [%[tag_op]]		\n"
++		     "		tbnz %[tag], 35, .Ldone%=	\n"
+ 		     "		sevl				\n"
+-		     "rty%=:	wfe				\n"
+-		     "		ldr %[tag], [%[tag_op]]	\n"
+-		     "		tbz %[tag], 35, rty%=		\n"
+-		     "done%=:					\n"
++		     ".Lrty%=:	wfe				\n"
++		     "		ldr %[tag], [%[tag_op]]		\n"
++		     "		tbz %[tag], 35, .Lrty%=		\n"
++		     ".Ldone%=:					\n"
+ 		     : [tag] "=&r"(tag)
+ 		     : [tag_op] "r"(tag_op));
+ #else
+diff --git a/drivers/event/cnxk/cn10k_tx_worker.h b/drivers/event/cnxk/cn10k_tx_worker.h
+index c18786a14cbb4..9618f00e71010 100644
+--- a/drivers/event/cnxk/cn10k_tx_worker.h
++++ b/drivers/event/cnxk/cn10k_tx_worker.h
+@@ -24,9 +24,28 @@ cn10k_sso_hws_xtract_meta(struct rte_mbuf *m, const uint64_t *txq_data)
+ static __rte_always_inline void
+ cn10k_sso_txq_fc_wait(const struct cn10k_eth_txq *txq)
+ {
++#ifdef RTE_ARCH_ARM64
++	uint64_t adj, space;
++
++	asm volatile(PLT_CPU_FEATURE_PREAMBLE
++		     "		ldr %[adj], [%[adj_addr]]		\n"
++		     "		ldxr %[space], [%[addr]]		\n"
++		     "		cmp %[adj], %[space] 			\n"
++		     "		b.hi .Ldne%=				\n"
++		     "		sevl					\n"
++		     ".Lrty%=:	wfe					\n"
++		     "		ldxr %[space], [%[addr]]		\n"
++		     "		cmp %[adj], %[space]			\n"
++		     "		b.ls .Lrty%=				\n"
++		     ".Ldne%=:						\n"
++		     : [adj] "=&r"(adj), [space] "=&r"(space)
++		     : [adj_addr] "r"(&txq->nb_sqb_bufs_adj), [addr] "r"(txq->fc_mem)
++		     : "memory");
++#else
+ 	while ((uint64_t)txq->nb_sqb_bufs_adj <=
+ 	       __atomic_load_n(txq->fc_mem, __ATOMIC_RELAXED))
+ 		;
++#endif
+ }
+ 
+ static __rte_always_inline int32_t
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index 1c1ce9642a545..d5dcd4bc8d442 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -104,20 +104,58 @@ static __plt_always_inline void
+ cn10k_nix_vwqe_wait_fc(struct cn10k_eth_txq *txq, int64_t req)
+ {
+ 	int64_t cached, refill;
++	int16_t pkts;
+ 
+ retry:
++#ifdef RTE_ARCH_ARM64
++
++	asm volatile(PLT_CPU_FEATURE_PREAMBLE
++		     "		ldxrh %w[pkts], [%[addr]]		\n"
++		     "		tbz %w[pkts], 15, .Ldne%=		\n"
++		     "		sevl					\n"
++		     ".Lrty%=:	wfe					\n"
++		     "		ldxrh %w[pkts], [%[addr]]		\n"
++		     "		tbnz %w[pkts], 15, .Lrty%=		\n"
++		     ".Ldne%=:						\n"
++		     : [pkts] "=&r"(pkts)
++		     : [addr] "r"(&txq->fc_cache_pkts)
++		     : "memory");
++#else
++	RTE_SET_USED(pkts);
+ 	while (__atomic_load_n(&txq->fc_cache_pkts, __ATOMIC_RELAXED) < 0)
+ 		;
++#endif
+ 	cached = __atomic_sub_fetch(&txq->fc_cache_pkts, req, __ATOMIC_ACQUIRE);
+ 	/* Check if there is enough space, else update and retry. */
+ 	if (cached < 0) {
+ 		/* Check if we have space else retry. */
++#ifdef RTE_ARCH_ARM64
++		asm volatile(PLT_CPU_FEATURE_PREAMBLE
++			     "		ldrsh %[adj], [%[adj_addr]]	\n"
++			     "		ldxr %[refill], [%[addr]]	\n"
++			     "		sub %[refill], %[adj], %[refill]\n"
++			     "		cmp %[refill], #0x0		\n"
++			     "		b.gt .Ldne%=			\n"
++			     "		sevl				\n"
++			     ".Lrty%=:	wfe				\n"
++			     "		ldxr %[refill], [%[addr]]	\n"
++			     "		sub %[refill], %[adj], %[refill]\n"
++			     "		cmp %[refill], #0x0		\n"
++			     "		b.le .Lrty%=			\n"
++			     ".Ldne%=:					\n"
++			     : [refill] "=&r"(refill), [adj] "=&r"(pkts)
++			     : [addr] "r"(txq->fc_mem),
++			       [adj_addr] "r"(&txq->nb_sqb_bufs_adj)
++			     : "memory");
++		refill <<= txq->sqes_per_sqb_log2;
++#else
+ 		do {
+ 			refill =
+ 				(txq->nb_sqb_bufs_adj -
+ 				 __atomic_load_n(txq->fc_mem, __ATOMIC_RELAXED))
+ 				<< txq->sqes_per_sqb_log2;
+ 		} while (refill <= 0);
++#endif
+ 		__atomic_compare_exchange(&txq->fc_cache_pkts, &cached, &refill,
+ 					  0, __ATOMIC_RELEASE,
+ 					  __ATOMIC_RELAXED);
+@@ -283,10 +321,26 @@ static __rte_always_inline void
+ cn10k_nix_sec_fc_wait_one(struct cn10k_eth_txq *txq)
+ {
+ 	uint64_t nb_desc = txq->cpt_desc;
+-	uint64_t *fc = txq->cpt_fc;
+-
+-	while (nb_desc <= __atomic_load_n(fc, __ATOMIC_RELAXED))
++	uint64_t fc;
++
++#ifdef RTE_ARCH_ARM64
++	asm volatile(PLT_CPU_FEATURE_PREAMBLE
++		     "		ldxr %[space], [%[addr]]		\n"
++		     "		cmp %[nb_desc], %[space]		\n"
++		     "		b.hi .Ldne%=				\n"
++		     "		sevl					\n"
++		     ".Lrty%=:	wfe					\n"
++		     "		ldxr %[space], [%[addr]]		\n"
++		     "		cmp %[nb_desc], %[space]		\n"
++		     "		b.ls .Lrty%=				\n"
++		     ".Ldne%=:						\n"
++		     : [space] "=&r"(fc)
++		     : [nb_desc] "r"(nb_desc), [addr] "r"(txq->cpt_fc)
++		     : "memory");
++#else
++	while (nb_desc <= __atomic_load_n(txq->cpt_fc, __ATOMIC_RELAXED))
+ 		;
++#endif
+ }
+ 
+ static __rte_always_inline void
+-- 
+2.25.1
+

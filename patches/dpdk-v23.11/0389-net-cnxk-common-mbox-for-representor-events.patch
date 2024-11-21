@@ -1,0 +1,84 @@
+From ba735130834ef852b51157097ede63855b9dc873 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Tue, 2 Jul 2024 21:10:11 +0530
+Subject: [PATCH 389/513] net/cnxk: common mbox for representor events
+
+Under a common mbox, multiple events can be received. These events are
+processed by net driver based on event IDs.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Change-Id: I4678e12b3ee103677419ff028ed0dbcbc945e00d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130788
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130911
+---
+ drivers/net/cnxk/cnxk_rep.c | 35 ++++++++++++++++++++++++++++-------
+ 1 file changed, 28 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_rep.c b/drivers/net/cnxk/cnxk_rep.c
+index ca0637bde5135..e58fff3ef8f61 100644
+--- a/drivers/net/cnxk/cnxk_rep.c
++++ b/drivers/net/cnxk/cnxk_rep.c
+@@ -253,12 +253,30 @@ cnxk_representee_state_msg_process(struct cnxk_eswitch_dev *eswitch_dev, uint16_
+ 
+ static int
+ cnxk_representee_mtu_msg_process(struct cnxk_eswitch_dev *eswitch_dev, uint16_t hw_func,
+-				 uint16_t rep_id, uint16_t mtu)
++				 uint16_t mtu)
+ {
++	struct cnxk_eswitch_devargs *esw_da;
+ 	struct cnxk_rep_dev *rep_dev = NULL;
+ 	struct rte_eth_dev *rep_eth_dev;
++	uint16_t rep_id = UINT16_MAX;
+ 	int rc = 0;
+-	int i;
++	int i, j;
++
++	/* Traversing the initialized represented list */
++	for (i = 0; i < eswitch_dev->nb_esw_da; i++) {
++		esw_da = &eswitch_dev->esw_da[i];
++		for (j = 0; j < esw_da->nb_repr_ports; j++) {
++			if (esw_da->repr_hw_info[j].hw_func == hw_func) {
++				rep_id = esw_da->repr_hw_info[j].rep_id;
++				break;
++			}
++		}
++		if (rep_id != UINT16_MAX)
++			break;
++	}
++	/* No action on PF func for which representor has not been created */
++	if (rep_id == UINT16_MAX)
++		goto done;
+ 
+ 	for (i = 0; i < eswitch_dev->repr_cnt.nb_repr_probed; i++) {
+ 		rep_eth_dev = eswitch_dev->rep_info[i].rep_eth_dev;
+@@ -289,17 +307,20 @@ cnxk_representee_msg_process(struct cnxk_eswitch_dev *eswitch_dev,
+ 
+ 	switch (notify_msg->type) {
+ 	case ROC_ESWITCH_REPTE_STATE:
+-		plt_rep_dbg("	   type %d: hw_func %x action %s", notify_msg->type,
+-			    notify_msg->state.hw_func,
++		plt_rep_dbg("	  REPTE STATE: hw_func %x action %s", notify_msg->state.hw_func,
+ 			    notify_msg->state.enable ? "enable" : "disable");
+ 		rc = cnxk_representee_state_msg_process(eswitch_dev, notify_msg->state.hw_func,
+ 							notify_msg->state.enable);
+ 		break;
++	case ROC_ESWITCH_LINK_STATE:
++		plt_rep_dbg("	  LINK STATE: hw_func %x action %s", notify_msg->link.hw_func,
++			    notify_msg->link.enable ? "enable" : "disable");
++		break;
+ 	case ROC_ESWITCH_REPTE_MTU:
+-		plt_rep_dbg("	   type %d: hw_func %x rep_id %d mtu %d", notify_msg->type,
+-			    notify_msg->mtu.hw_func, notify_msg->mtu.rep_id, notify_msg->mtu.mtu);
++		plt_rep_dbg("	   REPTE MTU: hw_func %x rep_id %d mtu %d", notify_msg->mtu.hw_func,
++			    notify_msg->mtu.rep_id, notify_msg->mtu.mtu);
+ 		rc = cnxk_representee_mtu_msg_process(eswitch_dev, notify_msg->mtu.hw_func,
+-						      notify_msg->mtu.rep_id, notify_msg->mtu.mtu);
++						      notify_msg->mtu.mtu);
+ 		break;
+ 	default:
+ 		plt_err("Invalid notification msg received %d", notify_msg->type);
+-- 
+2.25.1
+

@@ -1,0 +1,100 @@
+From e571d3327c758de22a624a687c5fa517a70e0fdc Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 21 Jun 2024 17:32:39 +0530
+Subject: [PATCH 369/513] common/cnxk: sync with DPDK 24.03
+
+Sync with DPDK 24.03
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I9dc9cc755ec6f129b75e5269f9a8cb7de4042f7d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130018
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c       | 8 ++++----
+ drivers/common/cnxk/roc_cpt.h       | 2 +-
+ drivers/common/cnxk/roc_cpt_priv.h  | 2 +-
+ drivers/common/cnxk/roc_ie_ot_tls.h | 2 +-
+ 4 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index 2f00e9d6a1be1..3855d5e7a54bd 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -463,7 +463,7 @@ cpt_available_lfs_get(struct dev *dev, uint16_t *nb_lf)
+ 
+ int
+ cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blkaddr, bool inl_dev_sso,
+-	      bool ctx_ilen_valid, uint8_t ctx_ilen, bool rxc_ena, uint16_t rx_inj_lf)
++	      bool ctx_ilen_valid, uint8_t ctx_ilen, bool rxc_ena, uint16_t rx_inject_qp)
+ {
+ 	struct cpt_lf_alloc_req_msg *req;
+ 	struct mbox *mbox = mbox_get(dev->mbox);
+@@ -491,7 +491,7 @@ cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blkaddr, bool inl_dev
+ 	req->ctx_ilen = ctx_ilen;
+ 	if (rxc_ena) {
+ 		req->rxc_ena = 1;
+-		req->rxc_ena_lf_id = rx_inj_lf;
++		req->rxc_ena_lf_id = rx_inject_qp;
+ 	}
+ 
+ 	rc = mbox_process(mbox);
+@@ -590,7 +590,7 @@ cpt_iq_init(struct roc_cpt_lf *lf)
+ }
+ 
+ int
+-roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena, uint16_t rx_inj_lf)
++roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena, uint16_t rx_inject_qp)
+ {
+ 	struct cpt *cpt = roc_cpt_to_cpt_priv(roc_cpt);
+ 	uint8_t blkaddr[ROC_CPT_MAX_BLKS];
+@@ -635,7 +635,7 @@ roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena, uint16_t
+ 	}
+ 
+ 	rc = cpt_lfs_alloc(&cpt->dev, eng_grpmsk, blkaddr[blknum], false, ctx_ilen_valid, ctx_ilen,
+-			   rxc_ena, rx_inj_lf);
++			   rxc_ena, rx_inject_qp);
+ 	if (rc)
+ 		goto lfs_detach;
+ 
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index 636a1b887db0e..0b9c933925dcd 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -183,7 +183,7 @@ int __roc_api roc_cpt_dev_fini(struct roc_cpt *roc_cpt);
+ int __roc_api roc_cpt_eng_grp_add(struct roc_cpt *roc_cpt,
+ 				  enum cpt_eng_type eng_type);
+ int __roc_api roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena,
+-				    uint16_t rx_inj_lf);
++				    uint16_t rx_inject_qp);
+ void __roc_api roc_cpt_dev_clear(struct roc_cpt *roc_cpt);
+ int __roc_api roc_cpt_lf_init(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf);
+ void __roc_api roc_cpt_lf_fini(struct roc_cpt_lf *lf);
+diff --git a/drivers/common/cnxk/roc_cpt_priv.h b/drivers/common/cnxk/roc_cpt_priv.h
+index fa4986d671f26..0bd956e373609 100644
+--- a/drivers/common/cnxk/roc_cpt_priv.h
++++ b/drivers/common/cnxk/roc_cpt_priv.h
+@@ -22,7 +22,7 @@ int cpt_lfs_attach(struct dev *dev, uint8_t blkaddr, bool modify,
+ 		   uint16_t nb_lf);
+ int cpt_lfs_detach(struct dev *dev);
+ int cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blk, bool inl_dev_sso,
+-		  bool ctx_ilen_valid, uint8_t ctx_ilen, bool rxc_ena, uint16_t rx_inj_lf);
++		  bool ctx_ilen_valid, uint8_t ctx_ilen, bool rxc_ena, uint16_t rx_inject_qp);
+ int cpt_lfs_free(struct dev *dev);
+ int cpt_lf_init(struct roc_cpt_lf *lf);
+ void cpt_lf_fini(struct roc_cpt_lf *lf);
+diff --git a/drivers/common/cnxk/roc_ie_ot_tls.h b/drivers/common/cnxk/roc_ie_ot_tls.h
+index 81b399fd9969c..2d6a290d9be7a 100644
+--- a/drivers/common/cnxk/roc_ie_ot_tls.h
++++ b/drivers/common/cnxk/roc_ie_ot_tls.h
+@@ -1,5 +1,5 @@
+ /* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2023 Marvell.
++ * Copyright(C) 2024 Marvell.
+  */
+ 
+ #ifndef __ROC_IE_OT_TLS_H__
+-- 
+2.25.1
+

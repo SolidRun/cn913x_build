@@ -1,0 +1,33 @@
+From 53a9a4efc028317e3b20248ce5e61c9ba542385f Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 30 Aug 2024 05:46:32 +0000
+Subject: [PATCH 468/513] cnxk-tests/cpt_raw_test: free all cptrs
+
+When CTX cache is not used, it won't free all packets. Address the same.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I527dc4defb843b5a9ad36f2dd1595596fb9f9a7e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134563
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/cpt_raw_test/main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c b/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
+index 2f074b6f7ff67..4532b32d456d5 100644
+--- a/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
++++ b/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
+@@ -503,7 +503,7 @@ test_cpt_raw_api(struct test_ctx *ctx, struct test_case_params *tc_params, int n
+ 	if (ret < 0)
+ 		status = TEST_FAILED;
+ 
+-	rte_mempool_put_bulk(ctx->cptr_mp, cptrs, i);
++	rte_mempool_put_bulk(ctx->cptr_mp, cptrs, NB_CPTR);
+ 
+ rptrs_free:
+ 	rte_mempool_put_bulk(ctx->rptr_mp, rptrs, nb_dptrs);
+-- 
+2.25.1
+

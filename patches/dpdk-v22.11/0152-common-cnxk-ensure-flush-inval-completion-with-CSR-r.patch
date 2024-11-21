@@ -1,0 +1,93 @@
+From 2bbb395b3fcce3d7ae220ef9f1f5c6a13996489b Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 17 Jan 2023 09:57:58 +0530
+Subject: [PATCH 152/955] common/cnxk: ensure flush inval completion with CSR
+ read
+
+If a CSR read is issued after a write, the read would block till the
+write operation is complete. This would help in determining when the
+FLUSH+INVALIDATE operation is complete.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Id191b492308e539a78f02a3d26f673520020f0f6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94663
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94695
+---
+ drivers/common/cnxk/hw/cpt.h             | 11 +++++++++++
+ drivers/common/cnxk/roc_cpt.c            | 16 ++++++++++++++++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c |  2 --
+ 3 files changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/cpt.h b/drivers/common/cnxk/hw/cpt.h
+index d378a4eaddabc..44ff8b08b2d08 100644
+--- a/drivers/common/cnxk/hw/cpt.h
++++ b/drivers/common/cnxk/hw/cpt.h
+@@ -100,6 +100,17 @@ union cpt_lf_ctx_flush {
+ 	} s;
+ };
+ 
++union cpt_lf_ctx_err {
++	uint64_t u;
++	struct {
++		uint64_t flush_st_flt : 1;
++		uint64_t busy_flr : 1;
++		uint64_t busy_sw_flush : 1;
++		uint64_t reload_faulted : 1;
++		uint64_t reserved_4_63 : 1;
++	} s;
++};
++
+ union cpt_lf_ctx_reload {
+ 	uint64_t u;
+ 	struct {
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index cf514be69f7e2..dff2fbf2a481d 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -783,6 +783,7 @@ int
+ roc_cpt_lf_ctx_flush(struct roc_cpt_lf *lf, void *cptr, bool inval)
+ {
+ 	union cpt_lf_ctx_flush reg;
++	union cpt_lf_ctx_err err;
+ 
+ 	if (lf == NULL) {
+ 		plt_err("Could not trigger CTX flush");
+@@ -795,6 +796,21 @@ roc_cpt_lf_ctx_flush(struct roc_cpt_lf *lf, void *cptr, bool inval)
+ 
+ 	plt_write64(reg.u, lf->rbase + CPT_LF_CTX_FLUSH);
+ 
++	plt_atomic_thread_fence(__ATOMIC_ACQ_REL);
++
++	/* Read a CSR to ensure that the FLUSH operation is complete */
++	err.u = plt_read64(lf->rbase + CPT_LF_CTX_ERR);
++
++	if (err.s.busy_sw_flush && inval) {
++		plt_err("CTX entry could not be invalidated due to active usage.");
++		return -EAGAIN;
++	}
++
++	if (err.s.flush_st_flt) {
++		plt_err("CTX flush could not complete due to store fault");
++		abort();
++	}
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 27f2846f740fd..1f7b546eea7a4 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -737,8 +737,6 @@ sym_session_clear(struct rte_cryptodev_sym_session *sess, bool is_session_less)
+ 	/* Trigger CTX flush + invalidate to remove from CTX_CACHE */
+ 	roc_cpt_lf_ctx_flush(sess_priv->lf, &sess_priv->roc_se_ctx.se_ctx, true);
+ 
+-	plt_delay_ms(1);
+-
+ 	if (sess_priv->roc_se_ctx.auth_key != NULL)
+ 		plt_free(sess_priv->roc_se_ctx.auth_key);
+ 
+-- 
+2.25.1
+

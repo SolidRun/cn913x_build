@@ -1,0 +1,52 @@
+From c1fd6be813fd04f07cb54f7abb217d48c72c5600 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 28 Aug 2024 10:45:07 +0000
+Subject: [PATCH 467/513] cnxk-tests/cpt_raw_test: perform flush only when CTX
+ cache is used
+
+Perform flush only when CTX cache tests are enabled.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I53dffbc4848923e9a608eb3ff8f54b06c1b8bbe7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134393
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit befd8dcd17979e2f837cc013b4214e07bfa0010e)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134428
+---
+ marvell-ci/test/cnxk-tests/cpt_raw_test/main.c | 16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c b/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
+index b2b63fecfa308..2f074b6f7ff67 100644
+--- a/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
++++ b/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
+@@ -487,15 +487,17 @@ test_cpt_raw_api(struct test_ctx *ctx, struct test_case_params *tc_params, int n
+ 		status = TEST_FAILED;
+ 	}
+ 
+-	for (i = 0; i < NB_CPTR; i++) {
+-		for (retries = 0; retries < 100; retries++) {
+-			ret = rte_pmd_cnxk_crypto_cptr_flush(qptr, cptrs[i], true);
+-			if (ret == 0)
++	if (tc_params->ctx_val) {
++		for (i = 0; i < NB_CPTR; i++) {
++			for (retries = 0; retries < 100; retries++) {
++				ret = rte_pmd_cnxk_crypto_cptr_flush(qptr, cptrs[i], true);
++				if (ret == 0)
++					break;
++				rte_delay_ms(1);
++			}
++			if (ret < 0)
+ 				break;
+-			rte_delay_ms(1);
+ 		}
+-		if (ret < 0)
+-			break;
+ 	}
+ 
+ 	if (ret < 0)
+-- 
+2.25.1
+

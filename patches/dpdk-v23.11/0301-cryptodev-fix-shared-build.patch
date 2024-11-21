@@ -1,0 +1,37 @@
+From d2aee4bf3657f4740bd0354d13e3834128f33c02 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 12 Apr 2024 17:40:03 +0530
+Subject: [PATCH 301/513] cryptodev: fix shared build
+
+Added version.map entry for inline function
+__rte_cryptodev_trace_qp_depth_used
+
+Fixes: 0b85c1572845 ("cryptodev: add API to get used queue pair depth")
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ia3830b820e090d728c9d3c1245efc9f75e1b9973
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125274
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ lib/cryptodev/version.map | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/lib/cryptodev/version.map b/lib/cryptodev/version.map
+index c39199be54f53..eef8e1e0e3ec0 100644
+--- a/lib/cryptodev/version.map
++++ b/lib/cryptodev/version.map
+@@ -83,6 +83,9 @@ EXPERIMENTAL {
+ 	rte_cryptodev_get_auth_algo_string;
+ 	rte_cryptodev_get_cipher_algo_string;
+ 	rte_cryptodev_queue_pair_event_error_query;
++
++	# added in 24.07
++	__rte_cryptodev_trace_qp_depth_used;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

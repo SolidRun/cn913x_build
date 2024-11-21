@@ -1,0 +1,342 @@
+From c7b2f35b79ecb9ad3968ce5c4930eba4e5bbfe1d Mon Sep 17 00:00:00 2001
+From: Archana Muniganti <marchana@marvell.com>
+Date: Tue, 30 Aug 2022 14:43:08 +0530
+Subject: [PATCH 025/955] test/crypto: add scatter-gather test cases
+
+Add test cases to verify scatter-gather (SGL) buffers, with multiple
+segments.
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Signed-off-by: Archana Muniganti <marchana@marvell.com>
+Change-Id: I3578612b3bcd4fc1328be888d9949cb353f553d5
+---
+ app/test/test_cryptodev.c                | 49 ++++++++++---
+ app/test/test_cryptodev_security_ipsec.c | 93 +++++++++---------------
+ app/test/test_cryptodev_security_ipsec.h |  3 +-
+ 3 files changed, 74 insertions(+), 71 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index b31a7e2c265eb..e7d78983d21cf 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -9492,6 +9492,7 @@ test_ipsec_proto_process(const struct ipsec_test_data td[],
+ 				0xe82c, 0x4887};
+ 	const struct rte_ipv4_hdr *ipv4 =
+ 			(const struct rte_ipv4_hdr *)td[0].output_text.data;
++	int nb_segs = flags->nb_segs_in_mbuf ? flags->nb_segs_in_mbuf : 1;
+ 	struct crypto_testsuite_params *ts_params = &testsuite_params;
+ 	struct crypto_unittest_params *ut_params = &unittest_params;
+ 	struct rte_security_capability_idx sec_cap_idx;
+@@ -9500,9 +9501,9 @@ test_ipsec_proto_process(const struct ipsec_test_data td[],
+ 	uint8_t dev_id = ts_params->valid_devs[0];
+ 	enum rte_security_ipsec_sa_direction dir;
+ 	struct ipsec_test_data *res_d_tmp = NULL;
++	uint8_t input_text[IPSEC_TEXT_MAX_LEN];
+ 	int salt_len, i, ret = TEST_SUCCESS;
+ 	struct rte_security_ctx *ctx;
+-	uint8_t *input_text;
+ 	uint32_t src, dst;
+ 	uint32_t verify;
+ 
+@@ -9687,20 +9688,16 @@ test_ipsec_proto_process(const struct ipsec_test_data td[],
+ 			}
+ 		}
+ 
+-		/* Setup source mbuf payload */
+-		ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+-		memset(rte_pktmbuf_mtod(ut_params->ibuf, uint8_t *), 0,
+-				rte_pktmbuf_tailroom(ut_params->ibuf));
+-
+-		input_text = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf,
+-				td[i].input_text.len);
+-
+-		memcpy(input_text, td[i].input_text.data,
+-		       td[i].input_text.len);
+-
++		/* Copy test data before modification */
++		memcpy(input_text, td[i].input_text.data, td[i].input_text.len);
+ 		if (test_ipsec_pkt_update(input_text, flags))
+ 			return TEST_FAILED;
+ 
++		/* Setup source mbuf payload */
++		ut_params->ibuf = create_segmented_mbuf(ts_params->mbuf_pool, td[i].input_text.len,
++				nb_segs, 0);
++		pktmbuf_write(ut_params->ibuf, 0, td[i].input_text.len, input_text);
++
+ 		/* Generate crypto op data structure */
+ 		ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
+ 					RTE_CRYPTO_OP_TYPE_SYMMETRIC);
+@@ -10397,6 +10394,30 @@ test_ipsec_proto_ipv6_set_dscp_1_inner_0(const void *data __rte_unused)
+ 	return test_ipsec_proto_all(&flags);
+ }
+ 
++static int
++test_ipsec_proto_sgl(const void *data __rte_unused)
++{
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	struct ipsec_test_flags flags = {
++		.nb_segs_in_mbuf = 5
++	};
++
++	if (gbl_driver_id == rte_cryptodev_driver_id_get(
++			RTE_STR(CRYPTODEV_NAME_CN10K_PMD)))
++		return TEST_SKIPPED;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++	if (!(dev_info.feature_flags & RTE_CRYPTODEV_FF_IN_PLACE_SGL)) {
++		printf("Device doesn't support in-place scatter-gather. "
++				"Test Skipped.\n");
++		return TEST_SKIPPED;
++	}
++
++	return test_ipsec_proto_all(&flags);
++}
++
+ static int
+ test_ipsec_pkt_replay(const void *test_data, const uint64_t esn[],
+ 		      bool replayed_pkt[], uint32_t nb_pkts, bool esn_en,
+@@ -15708,6 +15729,10 @@ static struct unit_test_suite ipsec_proto_testsuite  = {
+ 			"Tunnel header IPv6 decrement inner hop limit",
+ 			ut_setup_security, ut_teardown,
+ 			test_ipsec_proto_ipv6_hop_limit_decrement),
++		TEST_CASE_NAMED_ST(
++			"Multi-segmented mode",
++			ut_setup_security, ut_teardown,
++			test_ipsec_proto_sgl),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev_security_ipsec.c b/app/test/test_cryptodev_security_ipsec.c
+index 833be94c09aba..89c63ee028c14 100644
+--- a/app/test/test_cryptodev_security_ipsec.c
++++ b/app/test/test_cryptodev_security_ipsec.c
+@@ -664,12 +664,12 @@ test_ipsec_tunnel_hdr_len_get(const struct ipsec_test_data *td)
+ }
+ 
+ static int
+-test_ipsec_iv_verify_push(struct rte_mbuf *m, const struct ipsec_test_data *td)
++test_ipsec_iv_verify_push(const uint8_t *output_text, const struct ipsec_test_data *td)
+ {
+ 	static uint8_t iv_queue[IV_LEN_MAX * IPSEC_TEST_PACKETS_MAX];
+-	uint8_t *iv_tmp, *output_text = rte_pktmbuf_mtod(m, uint8_t *);
+ 	int i, iv_pos, iv_len;
+ 	static int index;
++	uint8_t *iv_tmp;
+ 
+ 	if (td->aead)
+ 		iv_len = td->xform.aead.aead.iv.length - td->salt.len;
+@@ -704,12 +704,12 @@ test_ipsec_iv_verify_push(struct rte_mbuf *m, const struct ipsec_test_data *td)
+ }
+ 
+ static int
+-test_ipsec_l3_csum_verify(struct rte_mbuf *m)
++test_ipsec_l3_csum_verify(uint8_t *output_text)
+ {
+ 	uint16_t actual_cksum, expected_cksum;
+ 	struct rte_ipv4_hdr *ip;
+ 
+-	ip = rte_pktmbuf_mtod(m, struct rte_ipv4_hdr *);
++	ip = (struct rte_ipv4_hdr *)output_text;
+ 
+ 	if (!is_ipv4((void *)ip))
+ 		return TEST_SKIPPED;
+@@ -727,26 +727,16 @@ test_ipsec_l3_csum_verify(struct rte_mbuf *m)
+ }
+ 
+ static int
+-test_ipsec_l4_csum_verify(struct rte_mbuf *m)
++test_ipsec_l4_csum_verify(uint8_t *output_text)
+ {
+ 	uint16_t actual_cksum = 0, expected_cksum = 0;
+-	uint32_t len = rte_pktmbuf_pkt_len(m);
+-	uint8_t data_arr[IPSEC_TEXT_MAX_LEN];
+ 	struct rte_ipv4_hdr *ipv4;
+ 	struct rte_ipv6_hdr *ipv6;
+-	uint8_t *data = data_arr;
+ 	struct rte_tcp_hdr *tcp;
+ 	struct rte_udp_hdr *udp;
+-	const uint8_t *ptr;
+ 	void *ip, *l4;
+ 
+-	ptr = rte_pktmbuf_read(m, 0, len, data_arr);
+-	if (!ptr)
+-		return -EINVAL;
+-	else if (ptr != data_arr)
+-		data = rte_pktmbuf_mtod_offset(m, uint8_t *, 0);
+-
+-	ip = (struct rte_ipv4_hdr *)data;
++	ip = output_text;
+ 
+ 	if (is_ipv4(ip)) {
+ 		ipv4 = ip;
+@@ -823,14 +813,11 @@ test_ipsec_ttl_or_hop_decrement_verify(void *received, void *expected)
+ }
+ 
+ static int
+-test_ipsec_td_verify(struct rte_mbuf *m, const struct ipsec_test_data *td,
+-		     bool silent, const struct ipsec_test_flags *flags)
++test_ipsec_td_verify(uint8_t *output_text, uint32_t len, uint32_t ol_flags,
++		const struct ipsec_test_data *td, bool silent, const struct ipsec_test_flags *flags)
+ {
+-	uint32_t skip, len = rte_pktmbuf_pkt_len(m);
+ 	uint8_t td_output_text[IPSEC_TEXT_MAX_LEN];
+-	uint8_t data_arr[IPSEC_TEXT_MAX_LEN];
+-	uint8_t *output_text = data_arr;
+-	const uint8_t *ptr;
++	uint32_t skip;
+ 	int ret;
+ 
+ 	/* For tests with status as error for test success, skip verification */
+@@ -841,12 +828,6 @@ test_ipsec_td_verify(struct rte_mbuf *m, const struct ipsec_test_data *td,
+ 	     td->ar_packet))
+ 		return TEST_SUCCESS;
+ 
+-	ptr = rte_pktmbuf_read(m, 0, len, data_arr);
+-	if (!ptr)
+-		return -EINVAL;
+-	else if (ptr != data_arr)
+-		output_text = rte_pktmbuf_mtod_offset(m, uint8_t *, 0);
+-
+ 	if (td->ipsec_xform.direction == RTE_SECURITY_IPSEC_SA_DIR_EGRESS &&
+ 	   flags->udp_encap) {
+ 
+@@ -870,15 +851,10 @@ test_ipsec_td_verify(struct rte_mbuf *m, const struct ipsec_test_data *td,
+ 		}
+ 	}
+ 
+-	skip = test_ipsec_tunnel_hdr_len_get(td);
+-
+-	len -= skip;
+-	output_text += skip;
+-
+ 	if ((td->ipsec_xform.direction == RTE_SECURITY_IPSEC_SA_DIR_INGRESS) &&
+ 				flags->ip_csum) {
+-		if (m->ol_flags & RTE_MBUF_F_RX_IP_CKSUM_GOOD)
+-			ret = test_ipsec_l3_csum_verify(m);
++		if (ol_flags & RTE_MBUF_F_RX_IP_CKSUM_GOOD)
++			ret = test_ipsec_l3_csum_verify(output_text);
+ 		else
+ 			ret = TEST_FAILED;
+ 
+@@ -890,8 +866,8 @@ test_ipsec_td_verify(struct rte_mbuf *m, const struct ipsec_test_data *td,
+ 
+ 	if ((td->ipsec_xform.direction == RTE_SECURITY_IPSEC_SA_DIR_INGRESS) &&
+ 				flags->l4_csum) {
+-		if (m->ol_flags & RTE_MBUF_F_RX_L4_CKSUM_GOOD)
+-			ret = test_ipsec_l4_csum_verify(m);
++		if (ol_flags & RTE_MBUF_F_RX_L4_CKSUM_GOOD)
++			ret = test_ipsec_l4_csum_verify(output_text);
+ 		else
+ 			ret = TEST_FAILED;
+ 
+@@ -901,6 +877,11 @@ test_ipsec_td_verify(struct rte_mbuf *m, const struct ipsec_test_data *td,
+ 		return ret;
+ 	}
+ 
++	skip = test_ipsec_tunnel_hdr_len_get(td);
++
++	len -= skip;
++	output_text += skip;
++
+ 	memcpy(td_output_text, td->output_text.data + skip, len);
+ 
+ 	if ((td->ipsec_xform.direction == RTE_SECURITY_IPSEC_SA_DIR_INGRESS) &&
+@@ -932,25 +913,13 @@ test_ipsec_td_verify(struct rte_mbuf *m, const struct ipsec_test_data *td,
+ }
+ 
+ static int
+-test_ipsec_res_d_prepare(struct rte_mbuf *m, const struct ipsec_test_data *td,
+-		   struct ipsec_test_data *res_d)
++test_ipsec_res_d_prepare(const uint8_t *output_text, uint32_t len,
++		const struct ipsec_test_data *td, struct ipsec_test_data *res_d)
+ {
+-	uint8_t *output_text = rte_pktmbuf_mtod(m, uint8_t *);
+-	uint32_t len = rte_pktmbuf_pkt_len(m);
+-	struct rte_mbuf *next = m;
+-	uint32_t off = 0;
+-
+ 	memcpy(res_d, td, sizeof(*res_d));
+ 
+-	while (next && off < len) {
+-		output_text = rte_pktmbuf_mtod(next, uint8_t *);
+-		if (off + next->data_len > sizeof(res_d->input_text.data))
+-			break;
+-		memcpy(&res_d->input_text.data[off], output_text, next->data_len);
+-		off += next->data_len;
+-		next = next->next;
+-	}
+-	res_d->input_text.len = off;
++		memcpy(&res_d->input_text.data, output_text, len);
++	res_d->input_text.len = len;
+ 
+ 	res_d->ipsec_xform.direction = RTE_SECURITY_IPSEC_SA_DIR_INGRESS;
+ 	if (res_d->aead) {
+@@ -1069,19 +1038,27 @@ test_ipsec_iph6_hdr_validate(const struct rte_ipv6_hdr *iph6,
+ }
+ 
+ int
+-test_ipsec_post_process(struct rte_mbuf *m, const struct ipsec_test_data *td,
++test_ipsec_post_process(const struct rte_mbuf *m, const struct ipsec_test_data *td,
+ 			struct ipsec_test_data *res_d, bool silent,
+ 			const struct ipsec_test_flags *flags)
+ {
+-	uint8_t *output_text = rte_pktmbuf_mtod(m, uint8_t *);
++	uint32_t len = rte_pktmbuf_pkt_len(m);
++	uint8_t output_text[IPSEC_TEXT_MAX_LEN];
++	const uint8_t *output;
+ 	int ret;
+ 
++	/* Copy mbuf payload to continuous buffer */
++	output = rte_pktmbuf_read(m, 0, len, output_text);
++	if (output != output_text)
++		/* Single segment mbuf, copy manually */
++		memcpy(output_text, output, len);
++
+ 	if (td->ipsec_xform.direction == RTE_SECURITY_IPSEC_SA_DIR_EGRESS) {
+ 		const struct rte_ipv4_hdr *iph4;
+ 		const struct rte_ipv6_hdr *iph6;
+ 
+ 		if (flags->iv_gen) {
+-			ret = test_ipsec_iv_verify_push(m, td);
++			ret = test_ipsec_iv_verify_push(output_text, td);
+ 			if (ret != TEST_SUCCESS)
+ 				return ret;
+ 		}
+@@ -1181,9 +1158,9 @@ test_ipsec_post_process(struct rte_mbuf *m, const struct ipsec_test_data *td,
+ 	 */
+ 
+ 	if (res_d == NULL)
+-		return test_ipsec_td_verify(m, td, silent, flags);
++		return test_ipsec_td_verify(output_text, len, m->ol_flags, td, silent, flags);
+ 	else
+-		return test_ipsec_res_d_prepare(m, td, res_d);
++		return test_ipsec_res_d_prepare(output_text, len, td, res_d);
+ }
+ 
+ int
+diff --git a/app/test/test_cryptodev_security_ipsec.h b/app/test/test_cryptodev_security_ipsec.h
+index e55961dd1f0c0..92e641ba0b1e9 100644
+--- a/app/test/test_cryptodev_security_ipsec.h
++++ b/app/test/test_cryptodev_security_ipsec.h
+@@ -109,6 +109,7 @@ struct ipsec_test_flags {
+ 	bool dec_ttl_or_hop_limit;
+ 	bool ah;
+ 	uint32_t plaintext_len;
++	int nb_segs_in_mbuf;
+ };
+ 
+ struct crypto_param {
+@@ -288,7 +289,7 @@ void test_ipsec_td_update(struct ipsec_test_data td_inb[],
+ void test_ipsec_display_alg(const struct crypto_param *param1,
+ 			    const struct crypto_param *param2);
+ 
+-int test_ipsec_post_process(struct rte_mbuf *m,
++int test_ipsec_post_process(const struct rte_mbuf *m,
+ 			    const struct ipsec_test_data *td,
+ 			    struct ipsec_test_data *res_d, bool silent,
+ 			    const struct ipsec_test_flags *flags);
+-- 
+2.25.1
+

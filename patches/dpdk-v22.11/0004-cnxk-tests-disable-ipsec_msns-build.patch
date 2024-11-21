@@ -1,0 +1,31 @@
+From a20b13801fe5772ec16eacb34f16c986a36e3953 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 29 Nov 2022 15:26:16 +0530
+Subject: [PATCH 004/955] cnxk-tests: disable ipsec_msns build
+
+Disable ipsec_msns build as the build is failing.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Iae48e1721acf4f22efd35cc047b80907c4b058c0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91472
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/meson.build | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index c18a4156dc2a2..cbda05182215c 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -62,7 +62,6 @@ test_subdirs = [
+         'meter_test',
+         'bphy_irq',
+         'queue_intr_test',
+-        'ipsec_msns',
+         'dpdk_config_test',
+         'trace_autotest',
+         'mbuf_perf',
+-- 
+2.25.1
+

@@ -1,0 +1,67 @@
+From 0e47567556f9e007047ea837ef72917763c70dcd Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 19 Apr 2023 22:58:25 +0530
+Subject: [PATCH 385/955] app/eventdev: prevent mempool exhaustion
+
+Prevent mempool exhaustion due to elements being stuck in lcore
+local caches.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ibbbfa814bdfcd60d5bee1ea31a6d5b2277af86a6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101796
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test-eventdev/test_perf_common.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/app/test-eventdev/test_perf_common.c b/app/test-eventdev/test_perf_common.c
+index 68af3cb346363..5e0255cfebdcc 100644
+--- a/app/test-eventdev/test_perf_common.c
++++ b/app/test-eventdev/test_perf_common.c
+@@ -1859,34 +1859,35 @@ int
+ perf_mempool_setup(struct evt_test *test, struct evt_options *opt)
+ {
+ 	struct test_perf *t = evt_test_priv(test);
++	unsigned int cache_sz;
+ 
++	cache_sz = RTE_MIN(RTE_MEMPOOL_CACHE_MAX_SIZE, (opt->pool_sz / 1.5) / t->nb_workers);
+ 	if (opt->prod_type == EVT_PROD_TYPE_SYNT ||
+ 			opt->prod_type == EVT_PROD_TYPE_EVENT_TIMER_ADPTR) {
+ 		t->pool = rte_mempool_create(test->name, /* mempool name */
+ 				opt->pool_sz, /* number of elements*/
+ 				sizeof(struct perf_elt), /* element size*/
+-				512, /* cache size*/
++				cache_sz, /* cache size*/
+ 				0, NULL, NULL,
+ 				perf_elt_init, /* obj constructor */
+ 				NULL, opt->socket_id, 0); /* flags */
+ 	} else if (opt->prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR &&
+-			opt->crypto_op_type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC)  {
++		   opt->crypto_op_type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC) {
+ 		t->pool = rte_mempool_create(test->name, /* mempool name */
+ 				opt->pool_sz, /* number of elements*/
+ 				sizeof(struct perf_elt) + modex_test_case.result_len,
+ 				/* element size*/
+-				512, /* cache size*/
++				cache_sz, /* cache size*/
+ 				0, NULL, NULL,
+ 				NULL, /* obj constructor */
+ 				NULL, opt->socket_id, 0); /* flags */
+ 	} else {
+ 		t->pool = rte_pktmbuf_pool_create(test->name, /* mempool name */
+ 				opt->pool_sz, /* number of elements*/
+-				512, /* cache size*/
++				cache_sz, /* cache size*/
+ 				0,
+ 				RTE_MBUF_DEFAULT_BUF_SIZE,
+ 				opt->socket_id); /* flags */
+-
+ 	}
+ 
+ 	if (t->pool == NULL) {
+-- 
+2.25.1
+

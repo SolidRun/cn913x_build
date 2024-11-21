@@ -1,0 +1,5245 @@
+From 6558e59c18d5876a144260e24908abb9c53360df Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Sun, 5 Feb 2023 14:38:43 +0530
+Subject: [PATCH 379/955] event/cnxk: remove alternate fp for crypto events
+
+Remove alternate fastpath function pointers for crypto events.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I837f012ba4b7efef5c3b246d2bbaaf584474f0e3
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96129
+Reviewed-by: Shijith Thotton <sthotton@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_eventdev.c           | 154 +-------------
+ drivers/event/cnxk/cn10k_worker.h             |  10 +-
+ drivers/event/cnxk/cn9k_eventdev.c            | 153 --------------
+ drivers/event/cnxk/cn9k_worker.h              |  54 +----
+ drivers/event/cnxk/cnxk_eventdev.h            |   2 -
+ drivers/event/cnxk/deq/cn10k/deq_0_15_ca.c    |  16 --
+ .../event/cnxk/deq/cn10k/deq_0_15_ca_burst.c  |  18 --
+ .../event/cnxk/deq/cn10k/deq_0_15_ca_seg.c    |  16 --
+ .../cnxk/deq/cn10k/deq_0_15_ca_seg_burst.c    |  18 --
+ .../event/cnxk/deq/cn10k/deq_0_15_ca_tmo.c    |  16 --
+ .../cnxk/deq/cn10k/deq_0_15_ca_tmo_burst.c    |  18 --
+ .../cnxk/deq/cn10k/deq_0_15_ca_tmo_seg.c      |  17 --
+ .../deq/cn10k/deq_0_15_ca_tmo_seg_burst.c     |  18 --
+ drivers/event/cnxk/deq/cn10k/deq_112_127_ca.c |  16 --
+ .../cnxk/deq/cn10k/deq_112_127_ca_burst.c     |  18 --
+ .../event/cnxk/deq/cn10k/deq_112_127_ca_seg.c |  16 --
+ .../cnxk/deq/cn10k/deq_112_127_ca_seg_burst.c |  18 --
+ .../event/cnxk/deq/cn10k/deq_112_127_ca_tmo.c |  16 --
+ .../cnxk/deq/cn10k/deq_112_127_ca_tmo_burst.c |  18 --
+ .../cnxk/deq/cn10k/deq_112_127_ca_tmo_seg.c   |  17 --
+ .../deq/cn10k/deq_112_127_ca_tmo_seg_burst.c  |  18 --
+ drivers/event/cnxk/deq/cn10k/deq_16_31_ca.c   |  16 --
+ .../event/cnxk/deq/cn10k/deq_16_31_ca_burst.c |  18 --
+ .../event/cnxk/deq/cn10k/deq_16_31_ca_seg.c   |  17 --
+ .../cnxk/deq/cn10k/deq_16_31_ca_seg_burst.c   |  18 --
+ .../event/cnxk/deq/cn10k/deq_16_31_ca_tmo.c   |  17 --
+ .../cnxk/deq/cn10k/deq_16_31_ca_tmo_burst.c   |  18 --
+ .../cnxk/deq/cn10k/deq_16_31_ca_tmo_seg.c     |  17 --
+ .../deq/cn10k/deq_16_31_ca_tmo_seg_burst.c    |  18 --
+ drivers/event/cnxk/deq/cn10k/deq_32_47_ca.c   |  16 --
+ .../event/cnxk/deq/cn10k/deq_32_47_ca_burst.c |  18 --
+ .../event/cnxk/deq/cn10k/deq_32_47_ca_seg.c   |  17 --
+ .../cnxk/deq/cn10k/deq_32_47_ca_seg_burst.c   |  18 --
+ .../event/cnxk/deq/cn10k/deq_32_47_ca_tmo.c   |  17 --
+ .../cnxk/deq/cn10k/deq_32_47_ca_tmo_burst.c   |  18 --
+ .../cnxk/deq/cn10k/deq_32_47_ca_tmo_seg.c     |  17 --
+ .../deq/cn10k/deq_32_47_ca_tmo_seg_burst.c    |  18 --
+ drivers/event/cnxk/deq/cn10k/deq_48_63_ca.c   |  16 --
+ .../event/cnxk/deq/cn10k/deq_48_63_ca_burst.c |  18 --
+ .../event/cnxk/deq/cn10k/deq_48_63_ca_seg.c   |  17 --
+ .../cnxk/deq/cn10k/deq_48_63_ca_seg_burst.c   |  18 --
+ .../event/cnxk/deq/cn10k/deq_48_63_ca_tmo.c   |  17 --
+ .../cnxk/deq/cn10k/deq_48_63_ca_tmo_burst.c   |  18 --
+ .../cnxk/deq/cn10k/deq_48_63_ca_tmo_seg.c     |  17 --
+ .../deq/cn10k/deq_48_63_ca_tmo_seg_burst.c    |  18 --
+ drivers/event/cnxk/deq/cn10k/deq_64_79_ca.c   |  16 --
+ .../event/cnxk/deq/cn10k/deq_64_79_ca_burst.c |  18 --
+ .../event/cnxk/deq/cn10k/deq_64_79_ca_seg.c   |  16 --
+ .../cnxk/deq/cn10k/deq_64_79_ca_seg_burst.c   |  18 --
+ .../event/cnxk/deq/cn10k/deq_64_79_ca_tmo.c   |  16 --
+ .../cnxk/deq/cn10k/deq_64_79_ca_tmo_burst.c   |  18 --
+ .../cnxk/deq/cn10k/deq_64_79_ca_tmo_seg.c     |  17 --
+ .../deq/cn10k/deq_64_79_ca_tmo_seg_burst.c    |  18 --
+ drivers/event/cnxk/deq/cn10k/deq_80_95_ca.c   |  16 --
+ .../event/cnxk/deq/cn10k/deq_80_95_ca_burst.c |  18 --
+ .../event/cnxk/deq/cn10k/deq_80_95_ca_seg.c   |  16 --
+ .../cnxk/deq/cn10k/deq_80_95_ca_seg_burst.c   |  18 --
+ .../event/cnxk/deq/cn10k/deq_80_95_ca_tmo.c   |  16 --
+ .../cnxk/deq/cn10k/deq_80_95_ca_tmo_burst.c   |  18 --
+ .../cnxk/deq/cn10k/deq_80_95_ca_tmo_seg.c     |  17 --
+ .../deq/cn10k/deq_80_95_ca_tmo_seg_burst.c    |  18 --
+ drivers/event/cnxk/deq/cn10k/deq_96_111_ca.c  |  16 --
+ .../cnxk/deq/cn10k/deq_96_111_ca_burst.c      |  18 --
+ .../event/cnxk/deq/cn10k/deq_96_111_ca_seg.c  |  16 --
+ .../cnxk/deq/cn10k/deq_96_111_ca_seg_burst.c  |  18 --
+ .../event/cnxk/deq/cn10k/deq_96_111_ca_tmo.c  |  16 --
+ .../cnxk/deq/cn10k/deq_96_111_ca_tmo_burst.c  |  18 --
+ .../cnxk/deq/cn10k/deq_96_111_ca_tmo_seg.c    |  17 --
+ .../deq/cn10k/deq_96_111_ca_tmo_seg_burst.c   |  18 --
+ drivers/event/cnxk/deq/cn9k/deq_0_15_ca.c     |  12 --
+ .../event/cnxk/deq/cn9k/deq_0_15_ca_burst.c   |  14 --
+ drivers/event/cnxk/deq/cn9k/deq_0_15_ca_seg.c |  12 --
+ .../cnxk/deq/cn9k/deq_0_15_ca_seg_burst.c     |  14 --
+ drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo.c |  12 --
+ .../cnxk/deq/cn9k/deq_0_15_ca_tmo_burst.c     |  14 --
+ .../event/cnxk/deq/cn9k/deq_0_15_ca_tmo_seg.c |  13 --
+ .../cnxk/deq/cn9k/deq_0_15_ca_tmo_seg_burst.c |  14 --
+ .../event/cnxk/deq/cn9k/deq_0_15_dual_ca.c    |  12 --
+ .../cnxk/deq/cn9k/deq_0_15_dual_ca_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_0_15_dual_ca_seg.c      |  13 --
+ .../deq/cn9k/deq_0_15_dual_ca_seg_burst.c     |  14 --
+ .../cnxk/deq/cn9k/deq_0_15_dual_ca_tmo.c      |  13 --
+ .../deq/cn9k/deq_0_15_dual_ca_tmo_burst.c     |  14 --
+ .../cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_seg.c  |  13 --
+ .../deq/cn9k/deq_0_15_dual_ca_tmo_seg_burst.c |  14 --
+ drivers/event/cnxk/deq/cn9k/deq_112_127_ca.c  |  12 --
+ .../cnxk/deq/cn9k/deq_112_127_ca_burst.c      |  14 --
+ .../event/cnxk/deq/cn9k/deq_112_127_ca_seg.c  |  12 --
+ .../cnxk/deq/cn9k/deq_112_127_ca_seg_burst.c  |  14 --
+ .../event/cnxk/deq/cn9k/deq_112_127_ca_tmo.c  |  12 --
+ .../cnxk/deq/cn9k/deq_112_127_ca_tmo_burst.c  |  14 --
+ .../cnxk/deq/cn9k/deq_112_127_ca_tmo_seg.c    |  13 --
+ .../deq/cn9k/deq_112_127_ca_tmo_seg_burst.c   |  14 --
+ .../event/cnxk/deq/cn9k/deq_112_127_dual_ca.c |  12 --
+ .../cnxk/deq/cn9k/deq_112_127_dual_ca_burst.c |  14 --
+ .../cnxk/deq/cn9k/deq_112_127_dual_ca_seg.c   |  13 --
+ .../deq/cn9k/deq_112_127_dual_ca_seg_burst.c  |  14 --
+ .../cnxk/deq/cn9k/deq_112_127_dual_ca_tmo.c   |  13 --
+ .../deq/cn9k/deq_112_127_dual_ca_tmo_burst.c  |  14 --
+ .../deq/cn9k/deq_112_127_dual_ca_tmo_seg.c    |  13 --
+ .../cn9k/deq_112_127_dual_ca_tmo_seg_burst.c  |  14 --
+ drivers/event/cnxk/deq/cn9k/deq_16_31_ca.c    |  12 --
+ .../event/cnxk/deq/cn9k/deq_16_31_ca_burst.c  |  14 --
+ .../event/cnxk/deq/cn9k/deq_16_31_ca_seg.c    |  12 --
+ .../cnxk/deq/cn9k/deq_16_31_ca_seg_burst.c    |  14 --
+ .../event/cnxk/deq/cn9k/deq_16_31_ca_tmo.c    |  12 --
+ .../cnxk/deq/cn9k/deq_16_31_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_16_31_ca_tmo_seg.c      |  13 --
+ .../deq/cn9k/deq_16_31_ca_tmo_seg_burst.c     |  14 --
+ .../event/cnxk/deq/cn9k/deq_16_31_dual_ca.c   |  12 --
+ .../cnxk/deq/cn9k/deq_16_31_dual_ca_burst.c   |  14 --
+ .../cnxk/deq/cn9k/deq_16_31_dual_ca_seg.c     |  13 --
+ .../deq/cn9k/deq_16_31_dual_ca_seg_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_16_31_dual_ca_tmo.c     |  13 --
+ .../deq/cn9k/deq_16_31_dual_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_seg.c |  13 --
+ .../cn9k/deq_16_31_dual_ca_tmo_seg_burst.c    |  14 --
+ drivers/event/cnxk/deq/cn9k/deq_32_47_ca.c    |  12 --
+ .../event/cnxk/deq/cn9k/deq_32_47_ca_burst.c  |  14 --
+ .../event/cnxk/deq/cn9k/deq_32_47_ca_seg.c    |  12 --
+ .../cnxk/deq/cn9k/deq_32_47_ca_seg_burst.c    |  14 --
+ .../event/cnxk/deq/cn9k/deq_32_47_ca_tmo.c    |  12 --
+ .../cnxk/deq/cn9k/deq_32_47_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_32_47_ca_tmo_seg.c      |  13 --
+ .../deq/cn9k/deq_32_47_ca_tmo_seg_burst.c     |  14 --
+ .../event/cnxk/deq/cn9k/deq_32_47_dual_ca.c   |  12 --
+ .../cnxk/deq/cn9k/deq_32_47_dual_ca_burst.c   |  14 --
+ .../cnxk/deq/cn9k/deq_32_47_dual_ca_seg.c     |  13 --
+ .../deq/cn9k/deq_32_47_dual_ca_seg_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_32_47_dual_ca_tmo.c     |  13 --
+ .../deq/cn9k/deq_32_47_dual_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_seg.c |  13 --
+ .../cn9k/deq_32_47_dual_ca_tmo_seg_burst.c    |  14 --
+ drivers/event/cnxk/deq/cn9k/deq_48_63_ca.c    |  12 --
+ .../event/cnxk/deq/cn9k/deq_48_63_ca_burst.c  |  14 --
+ .../event/cnxk/deq/cn9k/deq_48_63_ca_seg.c    |  12 --
+ .../cnxk/deq/cn9k/deq_48_63_ca_seg_burst.c    |  14 --
+ .../event/cnxk/deq/cn9k/deq_48_63_ca_tmo.c    |  12 --
+ .../cnxk/deq/cn9k/deq_48_63_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_48_63_ca_tmo_seg.c      |  13 --
+ .../deq/cn9k/deq_48_63_ca_tmo_seg_burst.c     |  14 --
+ .../event/cnxk/deq/cn9k/deq_48_63_dual_ca.c   |  12 --
+ .../cnxk/deq/cn9k/deq_48_63_dual_ca_burst.c   |  14 --
+ .../cnxk/deq/cn9k/deq_48_63_dual_ca_seg.c     |  13 --
+ .../deq/cn9k/deq_48_63_dual_ca_seg_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_48_63_dual_ca_tmo.c     |  13 --
+ .../deq/cn9k/deq_48_63_dual_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_seg.c |  13 --
+ .../cn9k/deq_48_63_dual_ca_tmo_seg_burst.c    |  14 --
+ drivers/event/cnxk/deq/cn9k/deq_64_79_ca.c    |  12 --
+ .../event/cnxk/deq/cn9k/deq_64_79_ca_burst.c  |  14 --
+ .../event/cnxk/deq/cn9k/deq_64_79_ca_seg.c    |  12 --
+ .../cnxk/deq/cn9k/deq_64_79_ca_seg_burst.c    |  14 --
+ .../event/cnxk/deq/cn9k/deq_64_79_ca_tmo.c    |  12 --
+ .../cnxk/deq/cn9k/deq_64_79_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_64_79_ca_tmo_seg.c      |  13 --
+ .../deq/cn9k/deq_64_79_ca_tmo_seg_burst.c     |  14 --
+ .../event/cnxk/deq/cn9k/deq_64_79_dual_ca.c   |  12 --
+ .../cnxk/deq/cn9k/deq_64_79_dual_ca_burst.c   |  14 --
+ .../cnxk/deq/cn9k/deq_64_79_dual_ca_seg.c     |  13 --
+ .../deq/cn9k/deq_64_79_dual_ca_seg_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_64_79_dual_ca_tmo.c     |  13 --
+ .../deq/cn9k/deq_64_79_dual_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_seg.c |  13 --
+ .../cn9k/deq_64_79_dual_ca_tmo_seg_burst.c    |  14 --
+ drivers/event/cnxk/deq/cn9k/deq_80_95_ca.c    |  12 --
+ .../event/cnxk/deq/cn9k/deq_80_95_ca_burst.c  |  14 --
+ .../event/cnxk/deq/cn9k/deq_80_95_ca_seg.c    |  12 --
+ .../cnxk/deq/cn9k/deq_80_95_ca_seg_burst.c    |  14 --
+ .../event/cnxk/deq/cn9k/deq_80_95_ca_tmo.c    |  12 --
+ .../cnxk/deq/cn9k/deq_80_95_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_80_95_ca_tmo_seg.c      |  13 --
+ .../deq/cn9k/deq_80_95_ca_tmo_seg_burst.c     |  14 --
+ .../event/cnxk/deq/cn9k/deq_80_95_dual_ca.c   |  12 --
+ .../cnxk/deq/cn9k/deq_80_95_dual_ca_burst.c   |  14 --
+ .../cnxk/deq/cn9k/deq_80_95_dual_ca_seg.c     |  13 --
+ .../deq/cn9k/deq_80_95_dual_ca_seg_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_80_95_dual_ca_tmo.c     |  13 --
+ .../deq/cn9k/deq_80_95_dual_ca_tmo_burst.c    |  14 --
+ .../cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_seg.c |  13 --
+ .../cn9k/deq_80_95_dual_ca_tmo_seg_burst.c    |  14 --
+ drivers/event/cnxk/deq/cn9k/deq_96_111_ca.c   |  12 --
+ .../event/cnxk/deq/cn9k/deq_96_111_ca_burst.c |  14 --
+ .../event/cnxk/deq/cn9k/deq_96_111_ca_seg.c   |  12 --
+ .../cnxk/deq/cn9k/deq_96_111_ca_seg_burst.c   |  14 --
+ .../event/cnxk/deq/cn9k/deq_96_111_ca_tmo.c   |  12 --
+ .../cnxk/deq/cn9k/deq_96_111_ca_tmo_burst.c   |  14 --
+ .../cnxk/deq/cn9k/deq_96_111_ca_tmo_seg.c     |  13 --
+ .../deq/cn9k/deq_96_111_ca_tmo_seg_burst.c    |  14 --
+ .../event/cnxk/deq/cn9k/deq_96_111_dual_ca.c  |  12 --
+ .../cnxk/deq/cn9k/deq_96_111_dual_ca_burst.c  |  14 --
+ .../cnxk/deq/cn9k/deq_96_111_dual_ca_seg.c    |  13 --
+ .../deq/cn9k/deq_96_111_dual_ca_seg_burst.c   |  14 --
+ .../cnxk/deq/cn9k/deq_96_111_dual_ca_tmo.c    |  13 --
+ .../deq/cn9k/deq_96_111_dual_ca_tmo_burst.c   |  14 --
+ .../deq/cn9k/deq_96_111_dual_ca_tmo_seg.c     |  13 --
+ .../cn9k/deq_96_111_dual_ca_tmo_seg_burst.c   |  14 --
+ drivers/event/cnxk/meson.build                | 192 ------------------
+ drivers/net/cnxk/cn10k_rx.h                   |   1 -
+ drivers/net/cnxk/cn9k_rx.h                    |   1 -
+ 200 files changed, 6 insertions(+), 3359 deletions(-)
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_0_15_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_0_15_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_0_15_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_0_15_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_112_127_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_112_127_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_112_127_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_112_127_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_16_31_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_16_31_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_16_31_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_16_31_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_32_47_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_32_47_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_32_47_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_32_47_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_48_63_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_48_63_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_48_63_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_48_63_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_64_79_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_64_79_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_64_79_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_64_79_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_80_95_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_80_95_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_80_95_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_80_95_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_96_111_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_96_111_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_96_111_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_96_111_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_seg_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_burst.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_seg.c
+ delete mode 100644 drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_seg_burst.c
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index 3193fe4cb04c4..086c38e78f5f5 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -139,9 +139,7 @@ cn10k_sso_hws_flush_events(void *hws, uint8_t queue_id, uintptr_t base,
+ 	while (aq_cnt || cq_ds_cnt || ds_cnt) {
+ 		plt_write64(req, ws->base + SSOW_LF_GWS_OP_GET_WORK0);
+ 		cn10k_sso_hws_get_work_empty(
+-			ws, &ev,
+-			(NIX_RX_OFFLOAD_MAX - 1) | NIX_RX_REAS_F |
+-				NIX_RX_MULTI_SEG_F | CPT_RX_WQE_F);
++			ws, &ev, (NIX_RX_OFFLOAD_MAX - 1) | NIX_RX_REAS_F | NIX_RX_MULTI_SEG_F);
+ 		if (fn != NULL && ev.u64 != 0)
+ 			fn(arg, ev);
+ 		if (ev.sched_type != SSO_TT_EMPTY)
+@@ -323,30 +321,6 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ #undef R
+ 	};
+ 
+-	const event_dequeue_t sso_hws_deq_ca[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_deq_ca_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_deq_ca_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_deq_ca_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_t sso_hws_deq_tmo_ca[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_deq_tmo_ca_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_deq_tmo_ca_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_deq_tmo_ca_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+ 	const event_dequeue_t sso_hws_deq_seg[NIX_RX_OFFLOAD_MAX] = {
+ #define R(name, flags)[flags] = cn10k_sso_hws_deq_seg_##name,
+ 
+@@ -372,30 +346,6 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ #undef R
+ 	};
+ 
+-	const event_dequeue_t sso_hws_deq_ca_seg[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_deq_ca_seg_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_deq_ca_seg_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_deq_ca_seg_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_t sso_hws_deq_tmo_ca_seg[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_deq_tmo_ca_seg_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_deq_tmo_ca_seg_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_deq_tmo_ca_seg_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+ 	const event_dequeue_t sso_hws_reas_deq[NIX_RX_OFFLOAD_MAX] = {
+ #define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_##name,
+ 		NIX_RX_FASTPATH_MODES
+@@ -420,30 +370,6 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ #undef R
+ 	};
+ 
+-	const event_dequeue_t sso_hws_reas_deq_ca[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_ca_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_reas_deq_ca_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_ca_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_t sso_hws_reas_deq_tmo_ca[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_tmo_ca_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_reas_deq_tmo_ca_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_tmo_ca_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+ 	const event_dequeue_t sso_hws_reas_deq_seg[NIX_RX_OFFLOAD_MAX] = {
+ #define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_seg_##name,
+ 
+@@ -469,30 +395,6 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ #undef R
+ 	};
+ 
+-	const event_dequeue_t sso_hws_reas_deq_ca_seg[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_ca_seg_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_reas_deq_ca_seg_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_ca_seg_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_t sso_hws_reas_deq_tmo_ca_seg[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_tmo_ca_seg_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_reas_deq_tmo_ca_seg_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn10k_sso_hws_reas_deq_tmo_ca_seg_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+ 	/* Tx modes */
+ 	const event_tx_adapter_enqueue_t sso_hws_tx_adptr_enq[NIX_TX_OFFLOAD_MAX] = {
+ #define T(name, sz, flags)[flags] = cn10k_sso_hws_tx_adptr_enq_##name,
+@@ -521,18 +423,6 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+ 						       sso_hws_reas_deq_tmo_seg_burst);
+ 			}
+-			if (dev->is_ca_internal_port) {
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-						       sso_hws_reas_deq_ca_seg);
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-						       sso_hws_reas_deq_ca_seg_burst);
+-			}
+-			if (dev->is_timeout_deq && dev->is_ca_internal_port) {
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-						       sso_hws_reas_deq_tmo_ca_seg);
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-						       sso_hws_reas_deq_tmo_ca_seg_burst);
+-			}
+ 		} else {
+ 			CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq_seg);
+ 			CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+@@ -544,17 +434,6 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+ 						       sso_hws_deq_tmo_seg_burst);
+ 			}
+-			if (dev->is_ca_internal_port) {
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq_ca_seg);
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-						       sso_hws_deq_ca_seg_burst);
+-			}
+-			if (dev->is_timeout_deq && dev->is_ca_internal_port) {
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-						       sso_hws_deq_tmo_ca_seg);
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-						       sso_hws_deq_tmo_ca_seg_burst);
+-			}
+ 		}
+ 	} else {
+ 		if (dev->rx_offloads & NIX_RX_REAS_F) {
+@@ -568,18 +447,6 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+ 						       sso_hws_reas_deq_tmo_burst);
+ 			}
+-			if (dev->is_ca_internal_port) {
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-						       sso_hws_reas_deq_ca);
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-						       sso_hws_reas_deq_ca_burst);
+-			}
+-			if (dev->is_timeout_deq && dev->is_ca_internal_port) {
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-						       sso_hws_reas_deq_tmo_ca);
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-						       sso_hws_reas_deq_tmo_ca_burst);
+-			}
+ 		} else {
+ 			CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq);
+ 			CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst, sso_hws_deq_burst);
+@@ -589,16 +456,6 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+ 						       sso_hws_deq_tmo_burst);
+ 			}
+-			if (dev->is_ca_internal_port) {
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq_ca);
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-						       sso_hws_deq_ca_burst);
+-			}
+-			if (dev->is_timeout_deq && dev->is_ca_internal_port) {
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq_tmo_ca);
+-				CN10K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-						       sso_hws_deq_tmo_ca_burst);
+-			}
+ 		}
+ 	}
+ 
+@@ -716,8 +573,7 @@ cn10k_sso_port_quiesce(struct rte_eventdev *event_dev, void *port,
+ 		 (BIT_ULL(62) | BIT_ULL(58) | BIT_ULL(56) | BIT_ULL(54)));
+ 
+ 	cn10k_sso_hws_get_work_empty(ws, &ev,
+-				     (NIX_RX_OFFLOAD_MAX - 1) | NIX_RX_REAS_F |
+-					     NIX_RX_MULTI_SEG_F | CPT_RX_WQE_F);
++				     (NIX_RX_OFFLOAD_MAX - 1) | NIX_RX_REAS_F | NIX_RX_MULTI_SEG_F);
+ 	if (is_pend && ev.u64) {
+ 		if (flush_cb)
+ 			flush_cb(event_dev->data->dev_id, ev, args);
+@@ -742,9 +598,7 @@ cn10k_sso_port_quiesce(struct rte_eventdev *event_dev, void *port,
+ 		plt_write64(BIT_ULL(16) | 1,
+ 			    ws->base + SSOW_LF_GWS_OP_GET_WORK0);
+ 		cn10k_sso_hws_get_work_empty(
+-			ws, &ev,
+-			(NIX_RX_OFFLOAD_MAX - 1) | NIX_RX_REAS_F |
+-				NIX_RX_MULTI_SEG_F | CPT_RX_WQE_F);
++			ws, &ev, (NIX_RX_OFFLOAD_MAX - 1) | NIX_RX_REAS_F | NIX_RX_MULTI_SEG_F);
+ 		if (ev.u64) {
+ 			if (flush_cb)
+ 				flush_cb(event_dev->data->dev_id, ev, args);
+@@ -1065,13 +919,11 @@ cn10k_crypto_adapter_qp_add(const struct rte_eventdev *event_dev,
+ 			    int32_t queue_pair_id,
+ 			    const struct rte_event_crypto_adapter_queue_conf *conf)
+ {
+-	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	int ret;
+ 
+ 	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn10k");
+ 	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn10k");
+ 
+-	dev->is_ca_internal_port = 1;
+ 	cn10k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
+ 
+ 	ret = cnxk_crypto_adapter_qp_add(event_dev, cdev, queue_pair_id, conf);
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index 589b84bbdcbdb..98bb8355f4cd5 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -161,11 +161,9 @@ cn10k_sso_hws_post_process(struct cn10k_sso_hws *ws, uint64_t *u64,
+ {
+ 	u64[0] = (u64[0] & (0x3ull << 32)) << 6 |
+ 		 (u64[0] & (0x3FFull << 36)) << 4 | (u64[0] & 0xffffffff);
+-	if ((flags & CPT_RX_WQE_F) &&
+-	    (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_CRYPTODEV)) {
++	if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_CRYPTODEV) {
+ 		u64[1] = cn10k_cpt_crypto_adapter_dequeue(u64[1]);
+-	} else if ((flags & CPT_RX_WQE_F) &&
+-		   (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_CRYPTODEV_VECTOR)) {
++	} else if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_CRYPTODEV_VECTOR) {
+ 		u64[1] = cn10k_cpt_crypto_adapter_vector_dequeue(u64[1]);
+ 	} else if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_ETHDEV) {
+ 		uint8_t port = CNXK_SUB_EVENT_FROM_TAG(u64[0]);
+@@ -432,8 +430,6 @@ NIX_RX_FASTPATH_MODES
+ 	}
+ 
+ #define SSO_DEQ_SEG(fn, flags)	  SSO_DEQ(fn, flags | NIX_RX_MULTI_SEG_F)
+-#define SSO_DEQ_CA(fn, flags)	  SSO_DEQ(fn, flags | CPT_RX_WQE_F)
+-#define SSO_DEQ_CA_SEG(fn, flags) SSO_DEQ_SEG(fn, flags | CPT_RX_WQE_F)
+ 
+ #define SSO_DEQ_TMO(fn, flags)                                                 \
+ 	uint16_t __rte_hot fn(void *port, struct rte_event *ev,                \
+@@ -455,8 +451,6 @@ NIX_RX_FASTPATH_MODES
+ 	}
+ 
+ #define SSO_DEQ_TMO_SEG(fn, flags)    SSO_DEQ_TMO(fn, flags | NIX_RX_MULTI_SEG_F)
+-#define SSO_DEQ_TMO_CA(fn, flags)     SSO_DEQ_TMO(fn, flags | CPT_RX_WQE_F)
+-#define SSO_DEQ_TMO_CA_SEG(fn, flags) SSO_DEQ_TMO_SEG(fn, flags | CPT_RX_WQE_F)
+ 
+ #define SSO_CMN_DEQ_BURST(fnb, fn, flags)                                      \
+ 	uint16_t __rte_hot fnb(void *port, struct rte_event ev[],              \
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 9f048d64d04b3..3f94bdacdb49c 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -335,30 +335,6 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ #undef R
+ 	};
+ 
+-	const event_dequeue_t sso_hws_deq_ca[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_deq_ca_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_deq_ca_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_deq_ca_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_t sso_hws_deq_tmo_ca[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_deq_tmo_ca_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_deq_tmo_ca_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_deq_tmo_ca_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+ 	const event_dequeue_t sso_hws_deq_seg[NIX_RX_OFFLOAD_MAX] = {
+ #define R(name, flags)[flags] = cn9k_sso_hws_deq_seg_##name,
+ 		NIX_RX_FASTPATH_MODES
+@@ -383,30 +359,6 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ #undef R
+ 	};
+ 
+-	const event_dequeue_t sso_hws_deq_ca_seg[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_deq_ca_seg_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_deq_ca_seg_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_deq_ca_seg_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_t sso_hws_deq_tmo_ca_seg[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_deq_tmo_ca_seg_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_deq_tmo_ca_seg_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_deq_tmo_ca_seg_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+ 	/* Dual WS modes */
+ 	const event_dequeue_t sso_hws_dual_deq[NIX_RX_OFFLOAD_MAX] = {
+ #define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_##name,
+@@ -432,30 +384,6 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ #undef R
+ 	};
+ 
+-	const event_dequeue_t sso_hws_dual_deq_ca[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_ca_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_dual_deq_ca_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_ca_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_t sso_hws_dual_deq_tmo_ca[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_tmo_ca_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_dual_deq_tmo_ca_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_tmo_ca_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+ 	const event_dequeue_t sso_hws_dual_deq_seg[NIX_RX_OFFLOAD_MAX] = {
+ #define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_seg_##name,
+ 		NIX_RX_FASTPATH_MODES
+@@ -480,30 +408,6 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ #undef R
+ 	};
+ 
+-	const event_dequeue_t sso_hws_dual_deq_ca_seg[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_ca_seg_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_dual_deq_ca_seg_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_ca_seg_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_t sso_hws_dual_deq_tmo_ca_seg[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_tmo_ca_seg_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+-	const event_dequeue_burst_t sso_hws_dual_deq_tmo_ca_seg_burst[NIX_RX_OFFLOAD_MAX] = {
+-#define R(name, flags)[flags] = cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name,
+-		NIX_RX_FASTPATH_MODES
+-#undef R
+-	};
+-
+ 	/* Tx modes */
+ 	const event_tx_adapter_enqueue_t sso_hws_tx_adptr_enq[NIX_TX_OFFLOAD_MAX] = {
+ #define T(name, sz, flags)[flags] = cn9k_sso_hws_tx_adptr_enq_##name,
+@@ -543,19 +447,6 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+ 					      sso_hws_deq_tmo_seg_burst);
+ 		}
+-		if (dev->is_ca_internal_port) {
+-			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-					      sso_hws_deq_ca_seg);
+-			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-					      sso_hws_deq_ca_seg_burst);
+-		}
+-
+-		if (dev->is_ca_internal_port && dev->is_timeout_deq) {
+-			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-					      sso_hws_deq_tmo_ca_seg);
+-			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-					      sso_hws_deq_tmo_ca_seg_burst);
+-		}
+ 	} else {
+ 		CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq);
+ 		CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+@@ -566,19 +457,6 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+ 					      sso_hws_deq_tmo_burst);
+ 		}
+-		if (dev->is_ca_internal_port) {
+-			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-					      sso_hws_deq_ca);
+-			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-					      sso_hws_deq_ca_burst);
+-		}
+-
+-		if (dev->is_ca_internal_port && dev->is_timeout_deq) {
+-			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-					      sso_hws_deq_tmo_ca);
+-			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+-					      sso_hws_deq_tmo_ca_burst);
+-		}
+ 	}
+ 	event_dev->ca_enqueue = cn9k_sso_hws_ca_enq;
+ 
+@@ -609,21 +487,6 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 					dev, event_dev->dequeue_burst,
+ 					sso_hws_dual_deq_tmo_seg_burst);
+ 			}
+-			if (dev->is_ca_internal_port) {
+-				CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-						      sso_hws_dual_deq_ca_seg);
+-				CN9K_SET_EVDEV_DEQ_OP(
+-					dev, event_dev->dequeue_burst,
+-					sso_hws_dual_deq_ca_seg_burst);
+-			}
+-			if (dev->is_ca_internal_port && dev->is_timeout_deq) {
+-				CN9K_SET_EVDEV_DEQ_OP(
+-					dev, event_dev->dequeue,
+-					sso_hws_dual_deq_tmo_ca_seg);
+-				CN9K_SET_EVDEV_DEQ_OP(
+-					dev, event_dev->dequeue_burst,
+-					sso_hws_dual_deq_tmo_ca_seg_burst);
+-			}
+ 		} else {
+ 			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+ 					      sso_hws_dual_deq);
+@@ -636,20 +499,6 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 					dev, event_dev->dequeue_burst,
+ 					sso_hws_dual_deq_tmo_burst);
+ 			}
+-			if (dev->is_ca_internal_port) {
+-				CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-						      sso_hws_dual_deq_ca);
+-				CN9K_SET_EVDEV_DEQ_OP(
+-					dev, event_dev->dequeue_burst,
+-					sso_hws_dual_deq_ca_burst);
+-			}
+-			if (dev->is_ca_internal_port && dev->is_timeout_deq) {
+-				CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+-						      sso_hws_dual_deq_tmo_ca);
+-				CN9K_SET_EVDEV_DEQ_OP(
+-					dev, event_dev->dequeue_burst,
+-					sso_hws_dual_deq_tmo_ca_burst);
+-			}
+ 		}
+ 
+ 		if (dev->tx_offloads & NIX_TX_MULTI_SEG_F)
+@@ -1107,13 +956,11 @@ cn9k_crypto_adapter_qp_add(const struct rte_eventdev *event_dev,
+ 			   int32_t queue_pair_id,
+ 			   const struct rte_event_crypto_adapter_queue_conf *conf)
+ {
+-	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	int ret;
+ 
+ 	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn9k");
+ 	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn9k");
+ 
+-	dev->is_ca_internal_port = 1;
+ 	cn9k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
+ 
+ 	ret = cnxk_crypto_adapter_qp_add(event_dev, cdev, queue_pair_id, conf);
+diff --git a/drivers/event/cnxk/cn9k_worker.h b/drivers/event/cnxk/cn9k_worker.h
+index 462f59d2010bb..f4a59a38fe64c 100644
+--- a/drivers/event/cnxk/cn9k_worker.h
++++ b/drivers/event/cnxk/cn9k_worker.h
+@@ -203,8 +203,7 @@ cn9k_sso_hws_post_process(uint64_t *u64, uint64_t mbuf, const uint32_t flags,
+ {
+ 	u64[0] = (u64[0] & (0x3ull << 32)) << 6 |
+ 		 (u64[0] & (0x3FFull << 36)) << 4 | (u64[0] & 0xffffffff);
+-	if ((flags & CPT_RX_WQE_F) &&
+-	    (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_CRYPTODEV)) {
++	if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_CRYPTODEV) {
+ 		u64[1] = cn9k_cpt_crypto_adapter_dequeue(u64[1]);
+ 	} else if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_ETHDEV) {
+ 		uint8_t port = CNXK_SUB_EVENT_FROM_TAG(u64[0]);
+@@ -405,16 +404,6 @@ uint16_t __rte_hot cn9k_sso_hws_dual_ca_enq(void *port, struct rte_event ev[],
+ 	uint16_t __rte_hot cn9k_sso_hws_deq_tmo_burst_##name(                  \
+ 		void *port, struct rte_event ev[], uint16_t nb_events,         \
+ 		uint64_t timeout_ticks);                                       \
+-	uint16_t __rte_hot cn9k_sso_hws_deq_ca_##name(                         \
+-		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+-	uint16_t __rte_hot cn9k_sso_hws_deq_ca_burst_##name(                   \
+-		void *port, struct rte_event ev[], uint16_t nb_events,         \
+-		uint64_t timeout_ticks);                                       \
+-	uint16_t __rte_hot cn9k_sso_hws_deq_tmo_ca_##name(                     \
+-		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+-	uint16_t __rte_hot cn9k_sso_hws_deq_tmo_ca_burst_##name(               \
+-		void *port, struct rte_event ev[], uint16_t nb_events,         \
+-		uint64_t timeout_ticks);                                       \
+ 	uint16_t __rte_hot cn9k_sso_hws_deq_seg_##name(                        \
+ 		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+ 	uint16_t __rte_hot cn9k_sso_hws_deq_seg_burst_##name(                  \
+@@ -423,16 +412,6 @@ uint16_t __rte_hot cn9k_sso_hws_dual_ca_enq(void *port, struct rte_event ev[],
+ 	uint16_t __rte_hot cn9k_sso_hws_deq_tmo_seg_##name(                    \
+ 		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+ 	uint16_t __rte_hot cn9k_sso_hws_deq_tmo_seg_burst_##name(              \
+-		void *port, struct rte_event ev[], uint16_t nb_events,         \
+-		uint64_t timeout_ticks);                                       \
+-	uint16_t __rte_hot cn9k_sso_hws_deq_ca_seg_##name(                     \
+-		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+-	uint16_t __rte_hot cn9k_sso_hws_deq_ca_seg_burst_##name(               \
+-		void *port, struct rte_event ev[], uint16_t nb_events,         \
+-		uint64_t timeout_ticks);                                       \
+-	uint16_t __rte_hot cn9k_sso_hws_deq_tmo_ca_seg_##name(                 \
+-		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+-	uint16_t __rte_hot cn9k_sso_hws_deq_tmo_ca_seg_burst_##name(           \
+ 		void *port, struct rte_event ev[], uint16_t nb_events,         \
+ 		uint64_t timeout_ticks);
+ 
+@@ -454,8 +433,6 @@ NIX_RX_FASTPATH_MODES
+ 	}
+ 
+ #define SSO_DEQ_SEG(fn, flags)	  SSO_DEQ(fn, flags | NIX_RX_MULTI_SEG_F)
+-#define SSO_DEQ_CA(fn, flags)	  SSO_DEQ(fn, flags | CPT_RX_WQE_F)
+-#define SSO_DEQ_CA_SEG(fn, flags) SSO_DEQ_SEG(fn, flags | CPT_RX_WQE_F)
+ 
+ #define SSO_DEQ_TMO(fn, flags)                                                 \
+ 	uint16_t __rte_hot fn(void *port, struct rte_event *ev,                \
+@@ -477,8 +454,6 @@ NIX_RX_FASTPATH_MODES
+ 	}
+ 
+ #define SSO_DEQ_TMO_SEG(fn, flags)    SSO_DEQ_TMO(fn, flags | NIX_RX_MULTI_SEG_F)
+-#define SSO_DEQ_TMO_CA(fn, flags)     SSO_DEQ_TMO(fn, flags | CPT_RX_WQE_F)
+-#define SSO_DEQ_TMO_CA_SEG(fn, flags) SSO_DEQ_TMO_SEG(fn, flags | CPT_RX_WQE_F)
+ 
+ #define R(name, flags)                                                         \
+ 	uint16_t __rte_hot cn9k_sso_hws_dual_deq_##name(                       \
+@@ -491,16 +466,6 @@ NIX_RX_FASTPATH_MODES
+ 	uint16_t __rte_hot cn9k_sso_hws_dual_deq_tmo_burst_##name(             \
+ 		void *port, struct rte_event ev[], uint16_t nb_events,         \
+ 		uint64_t timeout_ticks);                                       \
+-	uint16_t __rte_hot cn9k_sso_hws_dual_deq_ca_##name(                    \
+-		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+-	uint16_t __rte_hot cn9k_sso_hws_dual_deq_ca_burst_##name(              \
+-		void *port, struct rte_event ev[], uint16_t nb_events,         \
+-		uint64_t timeout_ticks);                                       \
+-	uint16_t __rte_hot cn9k_sso_hws_dual_deq_tmo_ca_##name(                \
+-		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+-	uint16_t __rte_hot cn9k_sso_hws_dual_deq_tmo_ca_burst_##name(          \
+-		void *port, struct rte_event ev[], uint16_t nb_events,         \
+-		uint64_t timeout_ticks);                                       \
+ 	uint16_t __rte_hot cn9k_sso_hws_dual_deq_seg_##name(                   \
+ 		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+ 	uint16_t __rte_hot cn9k_sso_hws_dual_deq_seg_burst_##name(             \
+@@ -509,16 +474,6 @@ NIX_RX_FASTPATH_MODES
+ 	uint16_t __rte_hot cn9k_sso_hws_dual_deq_tmo_seg_##name(               \
+ 		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+ 	uint16_t __rte_hot cn9k_sso_hws_dual_deq_tmo_seg_burst_##name(         \
+-		void *port, struct rte_event ev[], uint16_t nb_events,         \
+-		uint64_t timeout_ticks);                                       \
+-	uint16_t __rte_hot cn9k_sso_hws_dual_deq_ca_seg_##name(                \
+-		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+-	uint16_t __rte_hot cn9k_sso_hws_dual_deq_ca_seg_burst_##name(          \
+-		void *port, struct rte_event ev[], uint16_t nb_events,         \
+-		uint64_t timeout_ticks);                                       \
+-	uint16_t __rte_hot cn9k_sso_hws_dual_deq_tmo_ca_seg_##name(            \
+-		void *port, struct rte_event *ev, uint64_t timeout_ticks);     \
+-	uint16_t __rte_hot cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name(      \
+ 		void *port, struct rte_event ev[], uint16_t nb_events,         \
+ 		uint64_t timeout_ticks);
+ 
+@@ -546,9 +501,6 @@ NIX_RX_FASTPATH_MODES
+ 	}
+ 
+ #define SSO_DUAL_DEQ_SEG(fn, flags) SSO_DUAL_DEQ(fn, flags | NIX_RX_MULTI_SEG_F)
+-#define SSO_DUAL_DEQ_CA(fn, flags)  SSO_DUAL_DEQ(fn, flags | CPT_RX_WQE_F)
+-#define SSO_DUAL_DEQ_CA_SEG(fn, flags)                                         \
+-	SSO_DUAL_DEQ_SEG(fn, flags | CPT_RX_WQE_F)
+ 
+ #define SSO_DUAL_DEQ_TMO(fn, flags)                                            \
+ 	uint16_t __rte_hot fn(void *port, struct rte_event *ev,                \
+@@ -578,10 +530,6 @@ NIX_RX_FASTPATH_MODES
+ 
+ #define SSO_DUAL_DEQ_TMO_SEG(fn, flags)                                        \
+ 	SSO_DUAL_DEQ_TMO(fn, flags | NIX_RX_MULTI_SEG_F)
+-#define SSO_DUAL_DEQ_TMO_CA(fn, flags)                                         \
+-	SSO_DUAL_DEQ_TMO(fn, flags | CPT_RX_WQE_F)
+-#define SSO_DUAL_DEQ_TMO_CA_SEG(fn, flags)                                     \
+-	SSO_DUAL_DEQ_TMO_SEG(fn, flags | CPT_RX_WQE_F)
+ 
+ #define SSO_CMN_DEQ_BURST(fnb, fn, flags)                                      \
+ 	uint16_t __rte_hot fnb(void *port, struct rte_event ev[],              \
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index ff695cb551043..4f05d9bcc4269 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -120,8 +120,6 @@ struct cnxk_sso_evdev {
+ 	uint8_t gw_mode;
+ 	uint16_t stash_cnt;
+ 	struct cnxk_sso_stash *stash_parse_data;
+-	/* Crypto adapter */
+-	uint8_t is_ca_internal_port;
+ } __rte_cache_aligned;
+ 
+ /* Event port a.k.a GWS */
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca.c b/drivers/event/cnxk/deq/cn10k/deq_0_15_ca.c
+deleted file mode 100644
+index 7d27c5a082a9b..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_deq_ca_##name, flags)                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_burst.c b/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_burst.c
+deleted file mode 100644
+index 56fd16c4043c9..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_burst_##name,                   \
+-			  cn10k_sso_hws_deq_ca_##name, flags)                  \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_burst_##name,              \
+-			  cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_seg.c b/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_seg.c
+deleted file mode 100644
+index e01b2a38bc14f..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_seg.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_deq_ca_seg_##name, flags)                 \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_seg_burst.c
+deleted file mode 100644
+index 509da881d40b5..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_seg_burst_##name,               \
+-			  cn10k_sso_hws_deq_ca_seg_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_seg_burst_##name,          \
+-			 cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo.c b/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo.c
+deleted file mode 100644
+index 9851bd51b8265..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_deq_tmo_ca_##name, flags)                 \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_burst.c
+deleted file mode 100644
+index f28690229783f..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_burst_##name,               \
+-			  cn10k_sso_hws_deq_tmo_ca_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_burst_##name,          \
+-			cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_seg.c
+deleted file mode 100644
+index d1252c7984d06..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_reas_deq_tmo_ca_seg_##name,           \
+-			   flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 0769b89f7629f..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_0_15_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_seg_burst_##name,           \
+-			  cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)          \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_seg_burst_##name,      \
+-		  cn10k_sso_hws_reas_deq_tmo_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca.c b/drivers/event/cnxk/deq/cn10k/deq_112_127_ca.c
+deleted file mode 100644
+index 7d200af3ae11b..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_deq_ca_##name, flags)                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_burst.c b/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_burst.c
+deleted file mode 100644
+index ff09b0c2f7e3a..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_burst_##name,                   \
+-			  cn10k_sso_hws_deq_ca_##name, flags)                  \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_burst_##name,              \
+-			  cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_seg.c b/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_seg.c
+deleted file mode 100644
+index 3250f627cfaf4..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_seg.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_deq_ca_seg_##name, flags)                 \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_seg_burst.c
+deleted file mode 100644
+index e74a77ae8c705..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_seg_burst_##name,               \
+-			  cn10k_sso_hws_deq_ca_seg_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_seg_burst_##name,          \
+-			cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo.c b/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo.c
+deleted file mode 100644
+index 8474c2dcbe26b..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_deq_tmo_ca_##name, flags)                 \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_burst.c
+deleted file mode 100644
+index b5ce875657399..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_burst_##name,               \
+-			  cn10k_sso_hws_deq_tmo_ca_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_burst_##name,          \
+-			  cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_seg.c
+deleted file mode 100644
+index 1552cbbb156c6..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_reas_deq_tmo_ca_seg_##name,           \
+-			   flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 88b89f1927c91..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_112_127_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_seg_burst_##name,           \
+-			  cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)          \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_seg_burst_##name,      \
+-		cn10k_sso_hws_reas_deq_tmo_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca.c b/drivers/event/cnxk/deq/cn10k/deq_16_31_ca.c
+deleted file mode 100644
+index 7ad43889bcca3..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_deq_ca_##name, flags)                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_burst.c b/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_burst.c
+deleted file mode 100644
+index 55e815c282fbf..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_burst_##name,                   \
+-			  cn10k_sso_hws_deq_ca_##name, flags)                  \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_burst_##name,              \
+-			cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_seg.c b/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_seg.c
+deleted file mode 100644
+index 435f5dbe43734..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_deq_ca_seg_##name, flags)                 \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_reas_deq_ca_seg_##name,                   \
+-			flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_seg_burst.c
+deleted file mode 100644
+index 0a3cad73e7e11..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_seg_burst_##name,               \
+-			  cn10k_sso_hws_deq_ca_seg_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_seg_burst_##name,          \
+-		cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo.c b/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo.c
+deleted file mode 100644
+index dede5836e23f3..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_deq_tmo_ca_##name, flags)                 \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_reas_deq_tmo_ca_##name,                   \
+-			flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_burst.c
+deleted file mode 100644
+index 15fa9b0fba7e9..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_burst_##name,               \
+-			  cn10k_sso_hws_deq_tmo_ca_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_burst_##name,          \
+-		cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_seg.c
+deleted file mode 100644
+index dd045da34f9b4..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_reas_deq_tmo_ca_seg_##name,           \
+-			flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 3b1ebacc5fdab..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_16_31_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_seg_burst_##name,           \
+-			  cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)          \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_seg_burst_##name,      \
+-		cn10k_sso_hws_reas_deq_tmo_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca.c b/drivers/event/cnxk/deq/cn10k/deq_32_47_ca.c
+deleted file mode 100644
+index c130c511b649a..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_deq_ca_##name, flags)                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_burst.c b/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_burst.c
+deleted file mode 100644
+index ed511c5459f87..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_burst_##name,                   \
+-			  cn10k_sso_hws_deq_ca_##name, flags)                  \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_burst_##name,              \
+-			cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_seg.c b/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_seg.c
+deleted file mode 100644
+index 6b6305e7fd701..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_deq_ca_seg_##name, flags)                 \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_reas_deq_ca_seg_##name,                   \
+-			flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_seg_burst.c
+deleted file mode 100644
+index 42cdcab4f8c69..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_seg_burst_##name,               \
+-			  cn10k_sso_hws_deq_ca_seg_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_seg_burst_##name,          \
+-		cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo.c b/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo.c
+deleted file mode 100644
+index afabd8987ac4a..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_deq_tmo_ca_##name, flags)                 \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_reas_deq_tmo_ca_##name,                   \
+-			flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_burst.c
+deleted file mode 100644
+index d3ef670aface9..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_burst_##name,               \
+-			  cn10k_sso_hws_deq_tmo_ca_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_burst_##name,          \
+-		cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_seg.c
+deleted file mode 100644
+index 1dfda1408b408..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_reas_deq_tmo_ca_seg_##name,           \
+-			flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 3ac31df9a6b05..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_32_47_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_seg_burst_##name,           \
+-			  cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)          \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_seg_burst_##name,      \
+-		cn10k_sso_hws_reas_deq_tmo_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca.c b/drivers/event/cnxk/deq/cn10k/deq_48_63_ca.c
+deleted file mode 100644
+index e96a0469006ba..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_deq_ca_##name, flags)                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_burst.c b/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_burst.c
+deleted file mode 100644
+index c3762e50024a2..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_burst_##name,                   \
+-			  cn10k_sso_hws_deq_ca_##name, flags)                  \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_burst_##name,              \
+-			cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_seg.c b/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_seg.c
+deleted file mode 100644
+index 1e3a56b02b97e..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_deq_ca_seg_##name, flags)                 \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_reas_deq_ca_seg_##name,                   \
+-			flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_seg_burst.c
+deleted file mode 100644
+index 3811cba348c0d..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_seg_burst_##name,               \
+-			  cn10k_sso_hws_deq_ca_seg_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_seg_burst_##name,          \
+-		cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo.c b/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo.c
+deleted file mode 100644
+index 03067463047ea..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_deq_tmo_ca_##name, flags)                 \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_reas_deq_tmo_ca_##name,                   \
+-			flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_burst.c
+deleted file mode 100644
+index 42bf8a1dde8ad..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_burst_##name,               \
+-			  cn10k_sso_hws_deq_tmo_ca_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_burst_##name,          \
+-		cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_seg.c
+deleted file mode 100644
+index 791e129711e79..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_reas_deq_tmo_ca_seg_##name,           \
+-			flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_seg_burst.c
+deleted file mode 100644
+index ca1c127b68bd0..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_48_63_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_seg_burst_##name,           \
+-			  cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)          \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_seg_burst_##name,      \
+-		cn10k_sso_hws_reas_deq_tmo_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca.c b/drivers/event/cnxk/deq/cn10k/deq_64_79_ca.c
+deleted file mode 100644
+index e1def2b05841c..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_deq_ca_##name, flags)                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_burst.c b/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_burst.c
+deleted file mode 100644
+index 59ab7fc960232..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_burst_##name,                   \
+-			  cn10k_sso_hws_deq_ca_##name, flags)                  \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_burst_##name,              \
+-			  cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_seg.c b/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_seg.c
+deleted file mode 100644
+index 5bed2e4a94595..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_seg.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_deq_ca_seg_##name, flags)                 \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_seg_burst.c
+deleted file mode 100644
+index 05b4b39595240..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_seg_burst_##name,               \
+-			  cn10k_sso_hws_deq_ca_seg_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_seg_burst_##name,          \
+-			cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo.c b/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo.c
+deleted file mode 100644
+index d962e7f1466b2..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_deq_tmo_ca_##name, flags)                 \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_burst.c
+deleted file mode 100644
+index 905b6afd8c049..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_burst_##name,               \
+-			  cn10k_sso_hws_deq_tmo_ca_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_burst_##name,          \
+-			cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_seg.c
+deleted file mode 100644
+index 1f8e58f82c067..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_reas_deq_tmo_ca_seg_##name,           \
+-			   flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_seg_burst.c
+deleted file mode 100644
+index a639f56874d2e..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_64_79_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_seg_burst_##name,           \
+-			  cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)          \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_seg_burst_##name,      \
+-		cn10k_sso_hws_reas_deq_tmo_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca.c b/drivers/event/cnxk/deq/cn10k/deq_80_95_ca.c
+deleted file mode 100644
+index 1d32173aaf749..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_deq_ca_##name, flags)                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_burst.c b/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_burst.c
+deleted file mode 100644
+index 0e5b20e39119b..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_burst_##name,                   \
+-			  cn10k_sso_hws_deq_ca_##name, flags)                  \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_burst_##name,              \
+-			  cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_seg.c b/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_seg.c
+deleted file mode 100644
+index 6d30b312417e6..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_seg.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_deq_ca_seg_##name, flags)                 \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_seg_burst.c
+deleted file mode 100644
+index b87de757b34ec..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_seg_burst_##name,               \
+-			  cn10k_sso_hws_deq_ca_seg_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_seg_burst_##name,          \
+-			cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo.c b/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo.c
+deleted file mode 100644
+index 48f03d87c634b..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_deq_tmo_ca_##name, flags)                 \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_burst.c
+deleted file mode 100644
+index 0e1cecfc43d12..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_burst_##name,               \
+-			  cn10k_sso_hws_deq_tmo_ca_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_burst_##name,          \
+-			cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_seg.c
+deleted file mode 100644
+index 5ee30c3247f1f..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_reas_deq_tmo_ca_seg_##name,           \
+-			   flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_seg_burst.c
+deleted file mode 100644
+index f7d15bda9eb89..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_80_95_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_seg_burst_##name,           \
+-			  cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)          \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_seg_burst_##name,      \
+-		cn10k_sso_hws_reas_deq_tmo_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca.c b/drivers/event/cnxk/deq/cn10k/deq_96_111_ca.c
+deleted file mode 100644
+index 43ad26720391f..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_deq_ca_##name, flags)                         \
+-	SSO_DEQ_CA(cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_burst.c b/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_burst.c
+deleted file mode 100644
+index a74d1a1386aa7..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_burst_##name,                   \
+-			  cn10k_sso_hws_deq_ca_##name, flags)                  \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_burst_##name,              \
+-			  cn10k_sso_hws_reas_deq_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_seg.c b/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_seg.c
+deleted file mode 100644
+index 8dd8e30acd759..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_seg.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_deq_ca_seg_##name, flags)                 \
+-	SSO_DEQ_CA_SEG(cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_seg_burst.c
+deleted file mode 100644
+index d6f2d8fe44e54..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_ca_seg_burst_##name,               \
+-			  cn10k_sso_hws_deq_ca_seg_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_ca_seg_burst_##name,          \
+-			 cn10k_sso_hws_reas_deq_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo.c b/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo.c
+deleted file mode 100644
+index 08bc4ebcc5269..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_deq_tmo_ca_##name, flags)                 \
+-	SSO_DEQ_TMO_CA(cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_burst.c
+deleted file mode 100644
+index b23bc42842212..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_burst_##name,               \
+-			  cn10k_sso_hws_deq_tmo_ca_##name, flags)              \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_burst_##name,          \
+-			 cn10k_sso_hws_reas_deq_tmo_ca_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_seg.c
+deleted file mode 100644
+index 040f9c2bfb36e..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_seg.c
++++ /dev/null
+@@ -1,17 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)         \
+-	SSO_DEQ_TMO_CA_SEG(cn10k_sso_hws_reas_deq_tmo_ca_seg_##name,           \
+-			   flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_seg_burst.c
+deleted file mode 100644
+index dcd7ce4dea82e..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_96_111_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,18 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_deq_tmo_ca_seg_burst_##name,           \
+-			  cn10k_sso_hws_deq_tmo_ca_seg_##name, flags)          \
+-	SSO_CMN_DEQ_BURST(cn10k_sso_hws_reas_deq_tmo_ca_seg_burst_##name,      \
+-		cn10k_sso_hws_reas_deq_tmo_ca_seg_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_ca.c
+deleted file mode 100644
+index ce4e57723988a..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA(cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_burst.c
+deleted file mode 100644
+index 4f36ae2eee6a5..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_burst_##name,                    \
+-			  cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_seg.c
+deleted file mode 100644
+index 0d64fa1f468fb..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_seg.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA_SEG(cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_seg_burst.c
+deleted file mode 100644
+index 23e21c29c5d6e..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_seg_burst_##name,                \
+-			  cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo.c
+deleted file mode 100644
+index eba487394fcad..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_TMO_CA(cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_burst.c
+deleted file mode 100644
+index 1bd7ae530c2ce..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_burst_##name,                \
+-			  cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_seg.c
+deleted file mode 100644
+index ff004823de523..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_seg_burst.c
+deleted file mode 100644
+index e4905b36b6fa3..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_seg_burst_##name,            \
+-			  cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca.c
+deleted file mode 100644
+index 2f74cc105e7b1..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DUAL_DEQ_CA(cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_burst.c
+deleted file mode 100644
+index dcf127de92942..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_burst_##name,               \
+-			  cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_seg.c
+deleted file mode 100644
+index b06a6bc6a4d42..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_CA_SEG(cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_seg_burst.c
+deleted file mode 100644
+index 378a70bd95d97..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_seg_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo.c
+deleted file mode 100644
+index 8d734beee45c5..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA(cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_burst.c
+deleted file mode 100644
+index f6c02719d8611..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_seg.c
+deleted file mode 100644
+index ed89253c6ed60..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA_SEG(cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_seg_burst.c
+deleted file mode 100644
+index af72ed944c1b5..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_0_15_dual_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name,       \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_ca.c
+deleted file mode 100644
+index 3ef8f438eee71..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA(cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_burst.c
+deleted file mode 100644
+index 81d12dc553d1e..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_burst_##name,                    \
+-			  cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_seg.c
+deleted file mode 100644
+index 7f5e9da9eb181..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_seg.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA_SEG(cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_seg_burst.c
+deleted file mode 100644
+index a476064ae5486..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_seg_burst_##name,                \
+-			  cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo.c
+deleted file mode 100644
+index 14305ff0f08a9..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_TMO_CA(cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_burst.c
+deleted file mode 100644
+index 8d5b19a9b40d0..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_burst_##name,                \
+-			  cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_seg.c
+deleted file mode 100644
+index 35004a8ac42cf..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 29f1341a32254..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_seg_burst_##name,            \
+-			  cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca.c
+deleted file mode 100644
+index 333920acb22b0..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DUAL_DEQ_CA(cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_burst.c
+deleted file mode 100644
+index 6ba41b81040e3..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_burst_##name,               \
+-			  cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_seg.c
+deleted file mode 100644
+index bd1643e8bb91f..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_CA_SEG(cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_seg_burst.c
+deleted file mode 100644
+index ffc571942f74d..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_seg_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo.c
+deleted file mode 100644
+index ec47a20be058a..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA(cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_burst.c
+deleted file mode 100644
+index 58aa93f85a27a..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_seg.c
+deleted file mode 100644
+index 88e4b92b0224f..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA_SEG(cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 737a24332e3e1..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_112_127_dual_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name,       \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_ca.c
+deleted file mode 100644
+index b260fdadf0c1c..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA(cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_burst.c
+deleted file mode 100644
+index ae2e48a272b4c..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_burst_##name,                    \
+-			  cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_seg.c
+deleted file mode 100644
+index 2258d53a4df20..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_seg.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA_SEG(cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_seg_burst.c
+deleted file mode 100644
+index 206e03ce807b4..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_seg_burst_##name,                \
+-			  cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo.c
+deleted file mode 100644
+index 9c6b6dd2e68c6..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_TMO_CA(cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_burst.c
+deleted file mode 100644
+index 8318627a3d164..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_burst_##name,                \
+-			  cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_seg.c
+deleted file mode 100644
+index b6d00400f66fc..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_seg_burst.c
+deleted file mode 100644
+index a1cad96f70a03..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_seg_burst_##name,            \
+-			  cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca.c
+deleted file mode 100644
+index 42de2be8897b0..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DUAL_DEQ_CA(cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_burst.c
+deleted file mode 100644
+index 8fb19a8d3319b..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_burst_##name,               \
+-			  cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_seg.c
+deleted file mode 100644
+index 6904d3c742c41..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_CA_SEG(cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_seg_burst.c
+deleted file mode 100644
+index de0e91e8bd21d..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_seg_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo.c
+deleted file mode 100644
+index 8a0bf384f8dfe..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA(cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_burst.c
+deleted file mode 100644
+index ccf9a3f00e7ef..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_seg.c
+deleted file mode 100644
+index af4f900987c5d..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA_SEG(cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 6dd99f72d7884..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_16_31_dual_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name,       \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_ca.c
+deleted file mode 100644
+index f2ef6cc6b81ee..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA(cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_burst.c
+deleted file mode 100644
+index 313ecc7390117..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_burst_##name,                    \
+-			  cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_seg.c
+deleted file mode 100644
+index ae8cd5be6f304..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_seg.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA_SEG(cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_seg_burst.c
+deleted file mode 100644
+index 40ecba623187f..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_seg_burst_##name,                \
+-			  cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo.c
+deleted file mode 100644
+index 10a2b6a75209a..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_TMO_CA(cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_burst.c
+deleted file mode 100644
+index fbe3a7338a0cd..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_burst_##name,                \
+-			  cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_seg.c
+deleted file mode 100644
+index 6366b500917bd..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 5749a3c08f6f5..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_seg_burst_##name,            \
+-			  cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca.c
+deleted file mode 100644
+index 2ba290970e4b6..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DUAL_DEQ_CA(cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_burst.c
+deleted file mode 100644
+index b2f7d142b7eb1..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_burst_##name,               \
+-			  cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_seg.c
+deleted file mode 100644
+index abb7093e38f57..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_CA_SEG(cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_seg_burst.c
+deleted file mode 100644
+index 086398937af8b..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_seg_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo.c
+deleted file mode 100644
+index 11e03c41c6fd5..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA(cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_burst.c
+deleted file mode 100644
+index 64daa1c5af193..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_seg.c
+deleted file mode 100644
+index 5ef0cbfc270e9..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA_SEG(cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_seg_burst.c
+deleted file mode 100644
+index fc604c7e3a4da..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_32_47_dual_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name,       \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_ca.c
+deleted file mode 100644
+index 0033b7ac8de67..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA(cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_burst.c
+deleted file mode 100644
+index 939811ac865ef..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_burst_##name,                    \
+-			  cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_seg.c
+deleted file mode 100644
+index 16ddbbaa6d4ca..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_seg.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA_SEG(cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_seg_burst.c
+deleted file mode 100644
+index 6c2aeddb0a133..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_seg_burst_##name,                \
+-			  cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo.c
+deleted file mode 100644
+index 66adc2a6c737b..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_TMO_CA(cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_burst.c
+deleted file mode 100644
+index 7337e071c0a78..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_burst_##name,                \
+-			  cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_seg.c
+deleted file mode 100644
+index eaa7bdd39d48f..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 89b42c63b8c76..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_seg_burst_##name,            \
+-			  cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca.c
+deleted file mode 100644
+index e92ada449b3e2..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DUAL_DEQ_CA(cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_burst.c
+deleted file mode 100644
+index a72d7e7dcff7a..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_burst_##name,               \
+-			  cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_seg.c
+deleted file mode 100644
+index d299c4f2fd771..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_CA_SEG(cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_seg_burst.c
+deleted file mode 100644
+index decf0bfcc1fdf..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_seg_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo.c
+deleted file mode 100644
+index 218f72aeeca21..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA(cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_burst.c
+deleted file mode 100644
+index 8232bbdd1cdf8..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_seg.c
+deleted file mode 100644
+index 4f03ca514b962..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA_SEG(cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_seg_burst.c
+deleted file mode 100644
+index fdd8a05520129..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_48_63_dual_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name,       \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_ca.c
+deleted file mode 100644
+index ad76b572dd251..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA(cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_burst.c
+deleted file mode 100644
+index 7c98aeaff7dda..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_burst_##name,                    \
+-			  cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_seg.c
+deleted file mode 100644
+index 28ce2dda66e90..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_seg.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA_SEG(cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_seg_burst.c
+deleted file mode 100644
+index 183984ca86fa7..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_seg_burst_##name,                \
+-			  cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo.c
+deleted file mode 100644
+index 1d89f9db5db64..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_TMO_CA(cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_burst.c
+deleted file mode 100644
+index f83435b818feb..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_burst_##name,                \
+-			  cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_seg.c
+deleted file mode 100644
+index 7e721ba3d9728..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_seg_burst.c
+deleted file mode 100644
+index b767416d9aced..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_seg_burst_##name,            \
+-			  cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca.c
+deleted file mode 100644
+index 22d12943100e4..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DUAL_DEQ_CA(cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_burst.c
+deleted file mode 100644
+index 4ef92f7d656fe..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_burst_##name,               \
+-			  cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_seg.c
+deleted file mode 100644
+index 6132f83d51c92..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_CA_SEG(cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_seg_burst.c
+deleted file mode 100644
+index 2017f3fa87aca..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_seg_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo.c
+deleted file mode 100644
+index f72d6bcc93a42..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA(cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_burst.c
+deleted file mode 100644
+index 6d646d8c4e988..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_seg.c
+deleted file mode 100644
+index 310fd3c948950..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA_SEG(cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 9e7afaf2ca009..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_64_79_dual_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name,       \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_ca.c
+deleted file mode 100644
+index 67c527b143dd2..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA(cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_burst.c
+deleted file mode 100644
+index 97d826458f0a0..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_burst_##name,                    \
+-			  cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_seg.c
+deleted file mode 100644
+index 38769c473eb83..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_seg.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA_SEG(cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_seg_burst.c
+deleted file mode 100644
+index 77d857b3d659f..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_seg_burst_##name,                \
+-			  cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo.c
+deleted file mode 100644
+index d48f314d3b455..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_TMO_CA(cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_burst.c
+deleted file mode 100644
+index 894546b0bccb8..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_burst_##name,                \
+-			  cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_seg.c
+deleted file mode 100644
+index e704ee256b309..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_seg_burst.c
+deleted file mode 100644
+index b1fac5c5fd138..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_seg_burst_##name,            \
+-			  cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca.c
+deleted file mode 100644
+index 5c4548752b218..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DUAL_DEQ_CA(cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_burst.c
+deleted file mode 100644
+index 8c4e17f2eb03c..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_burst_##name,               \
+-			  cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_seg.c
+deleted file mode 100644
+index b18af8f8b5ce4..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_CA_SEG(cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_seg_burst.c
+deleted file mode 100644
+index ba58284bfff85..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_seg_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo.c
+deleted file mode 100644
+index 3f8fa2de06e24..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA(cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_burst.c
+deleted file mode 100644
+index 03027f809a0b5..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_seg.c
+deleted file mode 100644
+index 27bb4f00fa781..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA_SEG(cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 8cb3a07508a02..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_80_95_dual_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name,       \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_ca.c
+deleted file mode 100644
+index 8424824de12d2..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA(cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_burst.c
+deleted file mode 100644
+index 1cb92b3db195b..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_burst_##name,                    \
+-			  cn9k_sso_hws_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_seg.c
+deleted file mode 100644
+index ef3248cdf0335..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_seg.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_CA_SEG(cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_seg_burst.c
+deleted file mode 100644
+index 1faf9ead39557..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_ca_seg_burst_##name,                \
+-			  cn9k_sso_hws_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo.c
+deleted file mode 100644
+index 5df139ecc2e6c..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DEQ_TMO_CA(cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_burst.c
+deleted file mode 100644
+index 1ce5f30c1c5b7..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_burst_##name,                \
+-			  cn9k_sso_hws_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_seg.c
+deleted file mode 100644
+index def241f0dc390..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DEQ_TMO_CA_SEG(cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 10f2821f63bd2..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_deq_tmo_ca_seg_burst_##name,            \
+-			  cn9k_sso_hws_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca.c
+deleted file mode 100644
+index d1b4378ad735a..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca.c
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags) SSO_DUAL_DEQ_CA(cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_burst.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_burst.c
+deleted file mode 100644
+index c3060bdf6c8f1..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_burst_##name,               \
+-			  cn9k_sso_hws_dual_deq_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_seg.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_seg.c
+deleted file mode 100644
+index 2d6e44c3e36b2..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_CA_SEG(cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_seg_burst.c
+deleted file mode 100644
+index 57923eb6157ab..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_ca_seg_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo.c
+deleted file mode 100644
+index a448618adf428..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA(cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_burst.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_burst.c
+deleted file mode 100644
+index b6d19737677d6..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_burst_##name,           \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_seg.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_seg.c
+deleted file mode 100644
+index b0b78b1be7137..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_seg.c
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ_TMO_CA_SEG(cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_seg_burst.c b/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_seg_burst.c
+deleted file mode 100644
+index 1e95e2755d4c7..0000000000000
+--- a/drivers/event/cnxk/deq/cn9k/deq_96_111_dual_ca_tmo_seg_burst.c
++++ /dev/null
+@@ -1,14 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn9k_worker.h"
+-#include "cnxk_eventdev.h"
+-#include "cnxk_worker.h"
+-
+-#define R(name, flags)                                                         \
+-	SSO_CMN_DEQ_BURST(cn9k_sso_hws_dual_deq_tmo_ca_seg_burst_##name,       \
+-			  cn9k_sso_hws_dual_deq_tmo_ca_seg_##name, flags)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+diff --git a/drivers/event/cnxk/meson.build b/drivers/event/cnxk/meson.build
+index 227c6ae7a80e3..82ee1bab7c8d3 100644
+--- a/drivers/event/cnxk/meson.build
++++ b/drivers/event/cnxk/meson.build
+@@ -95,70 +95,6 @@ sources += files(
+         'deq/cn9k/deq_80_95_tmo_seg_burst.c',
+         'deq/cn9k/deq_96_111_tmo_seg_burst.c',
+         'deq/cn9k/deq_112_127_tmo_seg_burst.c',
+-        'deq/cn9k/deq_0_15_ca.c',
+-        'deq/cn9k/deq_16_31_ca.c',
+-        'deq/cn9k/deq_32_47_ca.c',
+-        'deq/cn9k/deq_48_63_ca.c',
+-        'deq/cn9k/deq_64_79_ca.c',
+-        'deq/cn9k/deq_80_95_ca.c',
+-        'deq/cn9k/deq_96_111_ca.c',
+-        'deq/cn9k/deq_112_127_ca.c',
+-        'deq/cn9k/deq_0_15_ca_burst.c',
+-        'deq/cn9k/deq_16_31_ca_burst.c',
+-        'deq/cn9k/deq_32_47_ca_burst.c',
+-        'deq/cn9k/deq_48_63_ca_burst.c',
+-        'deq/cn9k/deq_64_79_ca_burst.c',
+-        'deq/cn9k/deq_80_95_ca_burst.c',
+-        'deq/cn9k/deq_96_111_ca_burst.c',
+-        'deq/cn9k/deq_112_127_ca_burst.c',
+-        'deq/cn9k/deq_0_15_ca_seg.c',
+-        'deq/cn9k/deq_16_31_ca_seg.c',
+-        'deq/cn9k/deq_32_47_ca_seg.c',
+-        'deq/cn9k/deq_48_63_ca_seg.c',
+-        'deq/cn9k/deq_64_79_ca_seg.c',
+-        'deq/cn9k/deq_80_95_ca_seg.c',
+-        'deq/cn9k/deq_96_111_ca_seg.c',
+-        'deq/cn9k/deq_112_127_ca_seg.c',
+-        'deq/cn9k/deq_0_15_ca_seg_burst.c',
+-        'deq/cn9k/deq_16_31_ca_seg_burst.c',
+-        'deq/cn9k/deq_32_47_ca_seg_burst.c',
+-        'deq/cn9k/deq_48_63_ca_seg_burst.c',
+-        'deq/cn9k/deq_64_79_ca_seg_burst.c',
+-        'deq/cn9k/deq_80_95_ca_seg_burst.c',
+-        'deq/cn9k/deq_96_111_ca_seg_burst.c',
+-        'deq/cn9k/deq_112_127_ca_seg_burst.c',
+-        'deq/cn9k/deq_0_15_ca_tmo.c',
+-        'deq/cn9k/deq_16_31_ca_tmo.c',
+-        'deq/cn9k/deq_32_47_ca_tmo.c',
+-        'deq/cn9k/deq_48_63_ca_tmo.c',
+-        'deq/cn9k/deq_64_79_ca_tmo.c',
+-        'deq/cn9k/deq_80_95_ca_tmo.c',
+-        'deq/cn9k/deq_96_111_ca_tmo.c',
+-        'deq/cn9k/deq_112_127_ca_tmo.c',
+-        'deq/cn9k/deq_0_15_ca_tmo_burst.c',
+-        'deq/cn9k/deq_16_31_ca_tmo_burst.c',
+-        'deq/cn9k/deq_32_47_ca_tmo_burst.c',
+-        'deq/cn9k/deq_48_63_ca_tmo_burst.c',
+-        'deq/cn9k/deq_64_79_ca_tmo_burst.c',
+-        'deq/cn9k/deq_80_95_ca_tmo_burst.c',
+-        'deq/cn9k/deq_96_111_ca_tmo_burst.c',
+-        'deq/cn9k/deq_112_127_ca_tmo_burst.c',
+-        'deq/cn9k/deq_0_15_ca_tmo_seg.c',
+-        'deq/cn9k/deq_16_31_ca_tmo_seg.c',
+-        'deq/cn9k/deq_32_47_ca_tmo_seg.c',
+-        'deq/cn9k/deq_48_63_ca_tmo_seg.c',
+-        'deq/cn9k/deq_64_79_ca_tmo_seg.c',
+-        'deq/cn9k/deq_80_95_ca_tmo_seg.c',
+-        'deq/cn9k/deq_96_111_ca_tmo_seg.c',
+-        'deq/cn9k/deq_112_127_ca_tmo_seg.c',
+-        'deq/cn9k/deq_0_15_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_16_31_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_32_47_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_48_63_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_64_79_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_80_95_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_96_111_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_112_127_ca_tmo_seg_burst.c',
+ )
+ 
+ sources += files(
+@@ -226,70 +162,6 @@ sources += files(
+         'deq/cn9k/deq_80_95_dual_tmo_seg_burst.c',
+         'deq/cn9k/deq_96_111_dual_tmo_seg_burst.c',
+         'deq/cn9k/deq_112_127_dual_tmo_seg_burst.c',
+-        'deq/cn9k/deq_0_15_dual_ca.c',
+-        'deq/cn9k/deq_16_31_dual_ca.c',
+-        'deq/cn9k/deq_32_47_dual_ca.c',
+-        'deq/cn9k/deq_48_63_dual_ca.c',
+-        'deq/cn9k/deq_64_79_dual_ca.c',
+-        'deq/cn9k/deq_80_95_dual_ca.c',
+-        'deq/cn9k/deq_96_111_dual_ca.c',
+-        'deq/cn9k/deq_112_127_dual_ca.c',
+-        'deq/cn9k/deq_0_15_dual_ca_burst.c',
+-        'deq/cn9k/deq_16_31_dual_ca_burst.c',
+-        'deq/cn9k/deq_32_47_dual_ca_burst.c',
+-        'deq/cn9k/deq_48_63_dual_ca_burst.c',
+-        'deq/cn9k/deq_64_79_dual_ca_burst.c',
+-        'deq/cn9k/deq_80_95_dual_ca_burst.c',
+-        'deq/cn9k/deq_96_111_dual_ca_burst.c',
+-        'deq/cn9k/deq_112_127_dual_ca_burst.c',
+-        'deq/cn9k/deq_0_15_dual_ca_seg.c',
+-        'deq/cn9k/deq_16_31_dual_ca_seg.c',
+-        'deq/cn9k/deq_32_47_dual_ca_seg.c',
+-        'deq/cn9k/deq_48_63_dual_ca_seg.c',
+-        'deq/cn9k/deq_64_79_dual_ca_seg.c',
+-        'deq/cn9k/deq_80_95_dual_ca_seg.c',
+-        'deq/cn9k/deq_96_111_dual_ca_seg.c',
+-        'deq/cn9k/deq_112_127_dual_ca_seg.c',
+-        'deq/cn9k/deq_0_15_dual_ca_seg_burst.c',
+-        'deq/cn9k/deq_16_31_dual_ca_seg_burst.c',
+-        'deq/cn9k/deq_32_47_dual_ca_seg_burst.c',
+-        'deq/cn9k/deq_48_63_dual_ca_seg_burst.c',
+-        'deq/cn9k/deq_64_79_dual_ca_seg_burst.c',
+-        'deq/cn9k/deq_80_95_dual_ca_seg_burst.c',
+-        'deq/cn9k/deq_96_111_dual_ca_seg_burst.c',
+-        'deq/cn9k/deq_112_127_dual_ca_seg_burst.c',
+-        'deq/cn9k/deq_0_15_dual_ca_tmo.c',
+-        'deq/cn9k/deq_16_31_dual_ca_tmo.c',
+-        'deq/cn9k/deq_32_47_dual_ca_tmo.c',
+-        'deq/cn9k/deq_48_63_dual_ca_tmo.c',
+-        'deq/cn9k/deq_64_79_dual_ca_tmo.c',
+-        'deq/cn9k/deq_80_95_dual_ca_tmo.c',
+-        'deq/cn9k/deq_96_111_dual_ca_tmo.c',
+-        'deq/cn9k/deq_112_127_dual_ca_tmo.c',
+-        'deq/cn9k/deq_0_15_dual_ca_tmo_burst.c',
+-        'deq/cn9k/deq_16_31_dual_ca_tmo_burst.c',
+-        'deq/cn9k/deq_32_47_dual_ca_tmo_burst.c',
+-        'deq/cn9k/deq_48_63_dual_ca_tmo_burst.c',
+-        'deq/cn9k/deq_64_79_dual_ca_tmo_burst.c',
+-        'deq/cn9k/deq_80_95_dual_ca_tmo_burst.c',
+-        'deq/cn9k/deq_96_111_dual_ca_tmo_burst.c',
+-        'deq/cn9k/deq_112_127_dual_ca_tmo_burst.c',
+-        'deq/cn9k/deq_0_15_dual_ca_tmo_seg.c',
+-        'deq/cn9k/deq_16_31_dual_ca_tmo_seg.c',
+-        'deq/cn9k/deq_32_47_dual_ca_tmo_seg.c',
+-        'deq/cn9k/deq_48_63_dual_ca_tmo_seg.c',
+-        'deq/cn9k/deq_64_79_dual_ca_tmo_seg.c',
+-        'deq/cn9k/deq_80_95_dual_ca_tmo_seg.c',
+-        'deq/cn9k/deq_96_111_dual_ca_tmo_seg.c',
+-        'deq/cn9k/deq_112_127_dual_ca_tmo_seg.c',
+-        'deq/cn9k/deq_0_15_dual_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_16_31_dual_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_32_47_dual_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_48_63_dual_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_64_79_dual_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_80_95_dual_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_96_111_dual_ca_tmo_seg_burst.c',
+-        'deq/cn9k/deq_112_127_dual_ca_tmo_seg_burst.c',
+ )
+ 
+ sources += files(
+@@ -399,70 +271,6 @@ sources += files(
+         'deq/cn10k/deq_80_95_tmo_seg_burst.c',
+         'deq/cn10k/deq_96_111_tmo_seg_burst.c',
+         'deq/cn10k/deq_112_127_tmo_seg_burst.c',
+-        'deq/cn10k/deq_0_15_ca.c',
+-        'deq/cn10k/deq_16_31_ca.c',
+-        'deq/cn10k/deq_32_47_ca.c',
+-        'deq/cn10k/deq_48_63_ca.c',
+-        'deq/cn10k/deq_64_79_ca.c',
+-        'deq/cn10k/deq_80_95_ca.c',
+-        'deq/cn10k/deq_96_111_ca.c',
+-        'deq/cn10k/deq_112_127_ca.c',
+-        'deq/cn10k/deq_0_15_ca_burst.c',
+-        'deq/cn10k/deq_16_31_ca_burst.c',
+-        'deq/cn10k/deq_32_47_ca_burst.c',
+-        'deq/cn10k/deq_48_63_ca_burst.c',
+-        'deq/cn10k/deq_64_79_ca_burst.c',
+-        'deq/cn10k/deq_80_95_ca_burst.c',
+-        'deq/cn10k/deq_96_111_ca_burst.c',
+-        'deq/cn10k/deq_112_127_ca_burst.c',
+-        'deq/cn10k/deq_0_15_ca_seg.c',
+-        'deq/cn10k/deq_16_31_ca_seg.c',
+-        'deq/cn10k/deq_32_47_ca_seg.c',
+-        'deq/cn10k/deq_48_63_ca_seg.c',
+-        'deq/cn10k/deq_64_79_ca_seg.c',
+-        'deq/cn10k/deq_80_95_ca_seg.c',
+-        'deq/cn10k/deq_96_111_ca_seg.c',
+-        'deq/cn10k/deq_112_127_ca_seg.c',
+-        'deq/cn10k/deq_0_15_ca_seg_burst.c',
+-        'deq/cn10k/deq_16_31_ca_seg_burst.c',
+-        'deq/cn10k/deq_32_47_ca_seg_burst.c',
+-        'deq/cn10k/deq_48_63_ca_seg_burst.c',
+-        'deq/cn10k/deq_64_79_ca_seg_burst.c',
+-        'deq/cn10k/deq_80_95_ca_seg_burst.c',
+-        'deq/cn10k/deq_96_111_ca_seg_burst.c',
+-        'deq/cn10k/deq_112_127_ca_seg_burst.c',
+-        'deq/cn10k/deq_0_15_ca_tmo.c',
+-        'deq/cn10k/deq_16_31_ca_tmo.c',
+-        'deq/cn10k/deq_32_47_ca_tmo.c',
+-        'deq/cn10k/deq_48_63_ca_tmo.c',
+-        'deq/cn10k/deq_64_79_ca_tmo.c',
+-        'deq/cn10k/deq_80_95_ca_tmo.c',
+-        'deq/cn10k/deq_96_111_ca_tmo.c',
+-        'deq/cn10k/deq_112_127_ca_tmo.c',
+-        'deq/cn10k/deq_0_15_ca_tmo_burst.c',
+-        'deq/cn10k/deq_16_31_ca_tmo_burst.c',
+-        'deq/cn10k/deq_32_47_ca_tmo_burst.c',
+-        'deq/cn10k/deq_48_63_ca_tmo_burst.c',
+-        'deq/cn10k/deq_64_79_ca_tmo_burst.c',
+-        'deq/cn10k/deq_80_95_ca_tmo_burst.c',
+-        'deq/cn10k/deq_96_111_ca_tmo_burst.c',
+-        'deq/cn10k/deq_112_127_ca_tmo_burst.c',
+-        'deq/cn10k/deq_0_15_ca_tmo_seg.c',
+-        'deq/cn10k/deq_16_31_ca_tmo_seg.c',
+-        'deq/cn10k/deq_32_47_ca_tmo_seg.c',
+-        'deq/cn10k/deq_48_63_ca_tmo_seg.c',
+-        'deq/cn10k/deq_64_79_ca_tmo_seg.c',
+-        'deq/cn10k/deq_80_95_ca_tmo_seg.c',
+-        'deq/cn10k/deq_96_111_ca_tmo_seg.c',
+-        'deq/cn10k/deq_112_127_ca_tmo_seg.c',
+-        'deq/cn10k/deq_0_15_ca_tmo_seg_burst.c',
+-        'deq/cn10k/deq_16_31_ca_tmo_seg_burst.c',
+-        'deq/cn10k/deq_32_47_ca_tmo_seg_burst.c',
+-        'deq/cn10k/deq_48_63_ca_tmo_seg_burst.c',
+-        'deq/cn10k/deq_64_79_ca_tmo_seg_burst.c',
+-        'deq/cn10k/deq_80_95_ca_tmo_seg_burst.c',
+-        'deq/cn10k/deq_96_111_ca_tmo_seg_burst.c',
+-        'deq/cn10k/deq_112_127_ca_tmo_seg_burst.c',
+ )
+ 
+ sources += files(
+diff --git a/drivers/net/cnxk/cn10k_rx.h b/drivers/net/cnxk/cn10k_rx.h
+index 27330a8a53629..fe521138e01d7 100644
+--- a/drivers/net/cnxk/cn10k_rx.h
++++ b/drivers/net/cnxk/cn10k_rx.h
+@@ -27,7 +27,6 @@
+ #define NIX_RX_REAS_F	   BIT(12)
+ #define NIX_RX_VWQE_F	   BIT(13)
+ #define NIX_RX_MULTI_SEG_F BIT(14)
+-#define CPT_RX_WQE_F	   BIT(15)
+ 
+ #define CNXK_NIX_CQ_ENTRY_SZ 128
+ #define NIX_DESCS_PER_LOOP   4
+diff --git a/drivers/net/cnxk/cn9k_rx.h b/drivers/net/cnxk/cn9k_rx.h
+index 0e23609df5727..4d476d0a02fa8 100644
+--- a/drivers/net/cnxk/cn9k_rx.h
++++ b/drivers/net/cnxk/cn9k_rx.h
+@@ -25,7 +25,6 @@
+  * not used as offload flags to pick function
+  */
+ #define NIX_RX_MULTI_SEG_F BIT(14)
+-#define CPT_RX_WQE_F	   BIT(15)
+ 
+ #define CNXK_NIX_CQ_ENTRY_SZ 128
+ #define NIX_DESCS_PER_LOOP   4
+-- 
+2.25.1
+

@@ -1,0 +1,37 @@
+From 3b9cc9fff02053241d4190b1d1197622f82728a3 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 29 Nov 2022 16:48:22 +0530
+Subject: [PATCH 005/955] ci: ensure that build.sh works with different meson
+ versions
+
+Ensure that build.sh works with different meson versions.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I1956629ae932fa59cfa2e93bf1d19cba64e0d903
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91473
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/build/build.sh | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/marvell-ci/build/build.sh b/marvell-ci/build/build.sh
+index 463dceba55167..cc7ea95c215b8 100755
+--- a/marvell-ci/build/build.sh
++++ b/marvell-ci/build/build.sh
+@@ -91,7 +91,11 @@ cd $PROJECT_ROOT
+ # Do any pre-build stuff
+ ${BUILD_SETUP_CMD:-}
+ 
+-meson $BUILD_DIR --prefix $PREFIX_DIR $EXTRA_ARGS
++meson $BUILD_DIR \
++	--prefix $PREFIX_DIR \
++	$EXTRA_ARGS \
++	-Dc_args="${CFLAGS:-}" \
++	-Dc_link_args="${LDFLAGS:-}"
+ 
+ ninja -C $BUILD_DIR -j $MAKE_J $VERBOSE
+ ninja -C $BUILD_DIR -j $MAKE_J $VERBOSE install
+-- 
+2.25.1
+

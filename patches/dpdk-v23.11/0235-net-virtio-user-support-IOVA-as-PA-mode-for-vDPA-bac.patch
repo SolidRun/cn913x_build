@@ -1,0 +1,296 @@
+From 8c9def7e38af56d2e50552c5cc96b23dfedf59ca Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Tue, 13 Feb 2024 22:54:17 +0530
+Subject: [PATCH 235/513] net/virtio-user: support IOVA as PA mode for vDPA
+ backend
+
+Disable use_va flag for VDPA backend type and fixes the issues
+with shadow control command processing, when it is disabled.
+This will help to make virtio user driver works in IOVA
+as PA mode for vDPA backend.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I3f3455dea85712b1ed43cd305021fa9c3ddadb63
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121846
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/virtio/virtio_ring.h              | 12 ++-
+ .../net/virtio/virtio_user/virtio_user_dev.c  | 86 ++++++++++---------
+ drivers/net/virtio/virtio_user_ethdev.c       | 10 ++-
+ drivers/net/virtio/virtqueue.c                |  4 +-
+ 4 files changed, 65 insertions(+), 47 deletions(-)
+
+diff --git a/drivers/net/virtio/virtio_ring.h b/drivers/net/virtio/virtio_ring.h
+index e848c0b73b3db..998605dbb5b90 100644
+--- a/drivers/net/virtio/virtio_ring.h
++++ b/drivers/net/virtio/virtio_ring.h
+@@ -83,6 +83,7 @@ struct vring_packed_desc_event {
+ 
+ struct vring_packed {
+ 	unsigned int num;
++	rte_iova_t desc_iova;
+ 	struct vring_packed_desc *desc;
+ 	struct vring_packed_desc_event *driver;
+ 	struct vring_packed_desc_event *device;
+@@ -90,6 +91,7 @@ struct vring_packed {
+ 
+ struct vring {
+ 	unsigned int num;
++	rte_iova_t desc_iova;
+ 	struct vring_desc  *desc;
+ 	struct vring_avail *avail;
+ 	struct vring_used  *used;
+@@ -149,11 +151,12 @@ vring_size(struct virtio_hw *hw, unsigned int num, unsigned long align)
+ 	return size;
+ }
+ static inline void
+-vring_init_split(struct vring *vr, uint8_t *p, unsigned long align,
+-	 unsigned int num)
++vring_init_split(struct vring *vr, uint8_t *p, rte_iova_t iova,
++		 unsigned long align, unsigned int num)
+ {
+ 	vr->num = num;
+ 	vr->desc = (struct vring_desc *) p;
++	vr->desc_iova = iova;
+ 	vr->avail = (struct vring_avail *) (p +
+ 		num * sizeof(struct vring_desc));
+ 	vr->used = (void *)
+@@ -161,11 +164,12 @@ vring_init_split(struct vring *vr, uint8_t *p, unsigned long align,
+ }
+ 
+ static inline void
+-vring_init_packed(struct vring_packed *vr, uint8_t *p, unsigned long align,
+-		 unsigned int num)
++vring_init_packed(struct vring_packed *vr, uint8_t *p, rte_iova_t iova,
++		  unsigned long align, unsigned int num)
+ {
+ 	vr->num = num;
+ 	vr->desc = (struct vring_packed_desc *)p;
++	vr->desc_iova = iova;
+ 	vr->driver = (struct vring_packed_desc_event *)(p +
+ 			vr->num * sizeof(struct vring_packed_desc));
+ 	vr->device = (struct vring_packed_desc_event *)
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.c b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+index bac702d76f9d3..d5f6c389013be 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.c
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+@@ -62,6 +62,7 @@ virtio_user_kick_queue(struct virtio_user_dev *dev, uint32_t queue_sel)
+ 	struct vhost_vring_state state;
+ 	struct vring *vring = &dev->vrings.split[queue_sel];
+ 	struct vring_packed *pq_vring = &dev->vrings.packed[queue_sel];
++	uint64_t desc_addr, avail_addr, used_addr;
+ 	struct vhost_vring_addr addr = {
+ 		.index = queue_sel,
+ 		.log_guest_addr = 0,
+@@ -81,16 +82,23 @@ virtio_user_kick_queue(struct virtio_user_dev *dev, uint32_t queue_sel)
+ 	}
+ 
+ 	if (dev->features & (1ULL << VIRTIO_F_RING_PACKED)) {
+-		addr.desc_user_addr =
+-			(uint64_t)(uintptr_t)pq_vring->desc;
+-		addr.avail_user_addr =
+-			(uint64_t)(uintptr_t)pq_vring->driver;
+-		addr.used_user_addr =
+-			(uint64_t)(uintptr_t)pq_vring->device;
++		desc_addr = pq_vring->desc_iova;
++		avail_addr = desc_addr + pq_vring->num * sizeof(struct vring_packed_desc);
++		used_addr =  RTE_ALIGN_CEIL(avail_addr + sizeof(struct vring_packed_desc_event),
++					    VIRTIO_VRING_ALIGN);
++
++		addr.desc_user_addr = desc_addr;
++		addr.avail_user_addr = avail_addr;
++		addr.used_user_addr = used_addr;
+ 	} else {
+-		addr.desc_user_addr = (uint64_t)(uintptr_t)vring->desc;
+-		addr.avail_user_addr = (uint64_t)(uintptr_t)vring->avail;
+-		addr.used_user_addr = (uint64_t)(uintptr_t)vring->used;
++		desc_addr = vring->desc_iova;
++		avail_addr = desc_addr + vring->num * sizeof(struct vring_desc);
++		used_addr = RTE_ALIGN_CEIL((uintptr_t)(&vring->avail->ring[vring->num]),
++					   VIRTIO_VRING_ALIGN);
++
++		addr.desc_user_addr = desc_addr;
++		addr.avail_user_addr = avail_addr;
++		addr.used_user_addr = used_addr;
+ 	}
+ 
+ 	state.index = queue_sel;
+@@ -895,11 +903,11 @@ static uint32_t
+ virtio_user_handle_ctrl_msg_split(struct virtio_user_dev *dev, struct vring *vring,
+ 			    uint16_t idx_hdr)
+ {
+-	struct virtio_net_ctrl_hdr *hdr;
+ 	virtio_net_ctrl_ack status = ~0;
+-	uint16_t i, idx_data, idx_status;
++	uint16_t i, idx_data;
+ 	uint32_t n_descs = 0;
+ 	int dlen[CVQ_MAX_DATA_DESCS], nb_dlen = 0;
++	struct virtio_pmd_ctrl *ctrl;
+ 
+ 	/* locate desc for header, data, and status */
+ 	idx_data = vring->desc[idx_hdr].next;
+@@ -912,34 +920,33 @@ virtio_user_handle_ctrl_msg_split(struct virtio_user_dev *dev, struct vring *vri
+ 		n_descs++;
+ 	}
+ 
+-	/* locate desc for status */
+-	idx_status = i;
+ 	n_descs++;
+ 
+-	hdr = (void *)(uintptr_t)vring->desc[idx_hdr].addr;
+-	if (hdr->class == VIRTIO_NET_CTRL_MQ &&
+-	    hdr->cmd == VIRTIO_NET_CTRL_MQ_VQ_PAIRS_SET) {
++	/* Access control command via VA from CVQ */
++	ctrl = (struct virtio_pmd_ctrl *)dev->hw.cvq->hdr_mz->addr;
++	if (ctrl->hdr.class == VIRTIO_NET_CTRL_MQ &&
++	    ctrl->hdr.cmd == VIRTIO_NET_CTRL_MQ_VQ_PAIRS_SET) {
+ 		uint16_t queues;
+ 
+-		queues = *(uint16_t *)(uintptr_t)vring->desc[idx_data].addr;
++		queues = *(uint16_t *)(uintptr_t)ctrl->data;
+ 		status = virtio_user_handle_mq(dev, queues);
+-	} else if (hdr->class == VIRTIO_NET_CTRL_MQ && hdr->cmd == VIRTIO_NET_CTRL_MQ_RSS_CONFIG) {
++	} else if (ctrl->hdr.class == VIRTIO_NET_CTRL_MQ &&
++		   ctrl->hdr.cmd == VIRTIO_NET_CTRL_MQ_RSS_CONFIG) {
+ 		struct virtio_net_ctrl_rss *rss;
+ 
+-		rss = (struct virtio_net_ctrl_rss *)vring->desc[idx_data].addr;
++		rss = (struct virtio_net_ctrl_rss *)ctrl->data;
+ 		status = virtio_user_handle_mq(dev, rss->max_tx_vq);
+-	} else if (hdr->class == VIRTIO_NET_CTRL_RX  ||
+-		   hdr->class == VIRTIO_NET_CTRL_MAC ||
+-		   hdr->class == VIRTIO_NET_CTRL_VLAN) {
++	} else if (ctrl->hdr.class == VIRTIO_NET_CTRL_RX  ||
++		   ctrl->hdr.class == VIRTIO_NET_CTRL_MAC ||
++		   ctrl->hdr.class == VIRTIO_NET_CTRL_VLAN) {
+ 		status = 0;
+ 	}
+ 
+ 	if (!status && dev->scvq)
+-		status = virtio_send_command(&dev->scvq->cq,
+-				(struct virtio_pmd_ctrl *)hdr, dlen, nb_dlen);
++		status = virtio_send_command(&dev->scvq->cq, ctrl, dlen, nb_dlen);
+ 
+ 	/* Update status */
+-	*(virtio_net_ctrl_ack *)(uintptr_t)vring->desc[idx_status].addr = status;
++	ctrl->status = status;
+ 
+ 	return n_descs;
+ }
+@@ -958,7 +965,7 @@ virtio_user_handle_ctrl_msg_packed(struct virtio_user_dev *dev,
+ 				   struct vring_packed *vring,
+ 				   uint16_t idx_hdr)
+ {
+-	struct virtio_net_ctrl_hdr *hdr;
++	struct virtio_pmd_ctrl *ctrl;
+ 	virtio_net_ctrl_ack status = ~0;
+ 	uint16_t idx_data, idx_status;
+ 	/* initialize to one, header is first */
+@@ -981,32 +988,31 @@ virtio_user_handle_ctrl_msg_packed(struct virtio_user_dev *dev,
+ 		n_descs++;
+ 	}
+ 
+-	hdr = (void *)(uintptr_t)vring->desc[idx_hdr].addr;
+-	if (hdr->class == VIRTIO_NET_CTRL_MQ &&
+-	    hdr->cmd == VIRTIO_NET_CTRL_MQ_VQ_PAIRS_SET) {
++	/* Access control command via VA from CVQ */
++	ctrl = (struct virtio_pmd_ctrl *)dev->hw.cvq->hdr_mz->addr;
++	if (ctrl->hdr.class == VIRTIO_NET_CTRL_MQ &&
++	    ctrl->hdr.cmd == VIRTIO_NET_CTRL_MQ_VQ_PAIRS_SET) {
+ 		uint16_t queues;
+ 
+-		queues = *(uint16_t *)(uintptr_t)
+-				vring->desc[idx_data].addr;
++		queues = *(uint16_t *)(uintptr_t)ctrl->data;
+ 		status = virtio_user_handle_mq(dev, queues);
+-	} else if (hdr->class == VIRTIO_NET_CTRL_MQ && hdr->cmd == VIRTIO_NET_CTRL_MQ_RSS_CONFIG) {
++	} else if (ctrl->hdr.class == VIRTIO_NET_CTRL_MQ &&
++		   ctrl->hdr.cmd == VIRTIO_NET_CTRL_MQ_RSS_CONFIG) {
+ 		struct virtio_net_ctrl_rss *rss;
+ 
+-		rss = (struct virtio_net_ctrl_rss *)vring->desc[idx_data].addr;
++		rss = (struct virtio_net_ctrl_rss *)ctrl->data;
+ 		status = virtio_user_handle_mq(dev, rss->max_tx_vq);
+-	} else if (hdr->class == VIRTIO_NET_CTRL_RX  ||
+-		   hdr->class == VIRTIO_NET_CTRL_MAC ||
+-		   hdr->class == VIRTIO_NET_CTRL_VLAN) {
++	} else if (ctrl->hdr.class == VIRTIO_NET_CTRL_RX  ||
++		   ctrl->hdr.class == VIRTIO_NET_CTRL_MAC ||
++		   ctrl->hdr.class == VIRTIO_NET_CTRL_VLAN) {
+ 		status = 0;
+ 	}
+ 
+ 	if (!status && dev->scvq)
+-		status = virtio_send_command(&dev->scvq->cq,
+-				(struct virtio_pmd_ctrl *)hdr, dlen, nb_dlen);
++		status = virtio_send_command(&dev->scvq->cq, ctrl, dlen, nb_dlen);
+ 
+ 	/* Update status */
+-	*(virtio_net_ctrl_ack *)(uintptr_t)
+-		vring->desc[idx_status].addr = status;
++	ctrl->status = status;
+ 
+ 	/* Update used descriptor */
+ 	vring->desc[idx_hdr].id = vring->desc[idx_status].id;
+diff --git a/drivers/net/virtio/virtio_user_ethdev.c b/drivers/net/virtio/virtio_user_ethdev.c
+index 8ac7ff1ab2600..5d249a47a53de 100644
+--- a/drivers/net/virtio/virtio_user_ethdev.c
++++ b/drivers/net/virtio/virtio_user_ethdev.c
+@@ -198,6 +198,7 @@ virtio_user_setup_queue_packed(struct virtqueue *vq,
+ 			   sizeof(struct vring_packed_desc_event),
+ 			   VIRTIO_VRING_ALIGN);
+ 	vring->num = vq->vq_nentries;
++	vring->desc_iova = vq->vq_ring_mem;
+ 	vring->desc = (void *)(uintptr_t)desc_addr;
+ 	vring->driver = (void *)(uintptr_t)avail_addr;
+ 	vring->device = (void *)(uintptr_t)used_addr;
+@@ -221,6 +222,7 @@ virtio_user_setup_queue_split(struct virtqueue *vq, struct virtio_user_dev *dev)
+ 				   VIRTIO_VRING_ALIGN);
+ 
+ 	dev->vrings.split[queue_idx].num = vq->vq_nentries;
++	dev->vrings.split[queue_idx].desc_iova = vq->vq_ring_mem;
+ 	dev->vrings.split[queue_idx].desc = (void *)(uintptr_t)desc_addr;
+ 	dev->vrings.split[queue_idx].avail = (void *)(uintptr_t)avail_addr;
+ 	dev->vrings.split[queue_idx].used = (void *)(uintptr_t)used_addr;
+@@ -697,7 +699,13 @@ virtio_user_pmd_probe(struct rte_vdev_device *vdev)
+ 	 * Virtio-user requires using virtual addresses for the descriptors
+ 	 * buffers, whatever other devices require
+ 	 */
+-	hw->use_va = true;
++	if (backend_type == VIRTIO_USER_BACKEND_VHOST_VDPA)
++		/* VDPA backend requires using iova for the buffers to make it
++		 * work in IOVA as PA mode also.
++		 */
++		hw->use_va = false;
++	else
++		hw->use_va = true;
+ 
+ 	/* previously called by pci probing for physical dev */
+ 	if (eth_virtio_dev_init(eth_dev) < 0) {
+diff --git a/drivers/net/virtio/virtqueue.c b/drivers/net/virtio/virtqueue.c
+index 6f419665f1f74..cf46abfd0681e 100644
+--- a/drivers/net/virtio/virtqueue.c
++++ b/drivers/net/virtio/virtqueue.c
+@@ -282,13 +282,13 @@ virtio_init_vring(struct virtqueue *vq)
+ 	vq->vq_free_cnt = vq->vq_nentries;
+ 	memset(vq->vq_descx, 0, sizeof(struct vq_desc_extra) * vq->vq_nentries);
+ 	if (virtio_with_packed_queue(vq->hw)) {
+-		vring_init_packed(&vq->vq_packed.ring, ring_mem,
++		vring_init_packed(&vq->vq_packed.ring, ring_mem, vq->vq_ring_mem,
+ 				  VIRTIO_VRING_ALIGN, size);
+ 		vring_desc_init_packed(vq, size);
+ 	} else {
+ 		struct vring *vr = &vq->vq_split.ring;
+ 
+-		vring_init_split(vr, ring_mem, VIRTIO_VRING_ALIGN, size);
++		vring_init_split(vr, ring_mem, vq->vq_ring_mem, VIRTIO_VRING_ALIGN, size);
+ 		vring_desc_init_split(vr->desc, size);
+ 	}
+ 	/*
+-- 
+2.25.1
+

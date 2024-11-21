@@ -1,0 +1,825 @@
+From b0295d7c3eb393f84989c845abcb62d264bb6e3c Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Mon, 17 Jul 2023 11:50:47 +0530
+Subject: [PATCH 650/955] ci: add cn10k endpoint test infra
+
+Added cn10k endpoint test infra.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: Ia93121e75ede9d1fc8d1a13c1c224e738ed1bd29
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113223
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 649e18f34d5d41b4d7579d332d5deac264280f8d)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113797
+---
+ marvell-ci/build/config/x86_linux_gcc         |  19 ++
+ marvell-ci/build/env/cn9k-gcc-marvell.env     |   2 +-
+ marvell-ci/build/env/x86-ep-gcc.env           |   6 +
+ marvell-ci/test/board/cnxk-ep-setup.sh        | 133 ++++++++++++
+ marvell-ci/test/board/ep_test_run.sh          | 197 ++++++++++++++++++
+ marvell-ci/test/cnxk-tests/common/meson.build |   1 +
+ .../test/cnxk-tests/common/remote/command.env | 103 +++++++++
+ .../test/cnxk-tests/common/remote/meson.build |  16 ++
+ marvell-ci/test/cnxk-tests/ep_test/ep_test.sh |  62 ++++++
+ marvell-ci/test/cnxk-tests/ep_test/in.pcap    | Bin 0 -> 824 bytes
+ .../test/cnxk-tests/ep_test/meson.build       |  33 +++
+ marvell-ci/test/cnxk-tests/meson.build        |  18 +-
+ marvell-ci/test/common/exe_wrapper.sh         |   6 +-
+ marvell-ci/test/env/cn10k-ep.env              |  14 ++
+ marvell-ci/test/test.sh                       |   8 +-
+ 15 files changed, 609 insertions(+), 9 deletions(-)
+ create mode 100644 marvell-ci/build/config/x86_linux_gcc
+ create mode 100644 marvell-ci/build/env/x86-ep-gcc.env
+ create mode 100755 marvell-ci/test/board/cnxk-ep-setup.sh
+ create mode 100755 marvell-ci/test/board/ep_test_run.sh
+ create mode 100644 marvell-ci/test/cnxk-tests/common/remote/command.env
+ create mode 100644 marvell-ci/test/cnxk-tests/common/remote/meson.build
+ create mode 100755 marvell-ci/test/cnxk-tests/ep_test/ep_test.sh
+ create mode 100644 marvell-ci/test/cnxk-tests/ep_test/in.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/ep_test/meson.build
+ create mode 100644 marvell-ci/test/env/cn10k-ep.env
+
+diff --git a/marvell-ci/build/config/x86_linux_gcc b/marvell-ci/build/config/x86_linux_gcc
+new file mode 100644
+index 0000000000000..5afe9476ebc83
+--- /dev/null
++++ b/marvell-ci/build/config/x86_linux_gcc
+@@ -0,0 +1,19 @@
++[binaries]
++c = 'gcc'
++cpp = 'g++'
++ar = 'ar'
++strip = 'strip'
++pkgconfig = 'pkg-config'
++#exe_wrapper = '/tmp/exe_wrapper.sh'
++
++[host_machine]
++system = 'linux'
++cpu_family = 'x86_64'
++cpu = 'native'
++endian = 'little'
++
++[properties]
++platform = 'generic'
++needs_exe_wrapper = true
++
++[built-in options]
+diff --git a/marvell-ci/build/env/cn9k-gcc-marvell.env b/marvell-ci/build/env/cn9k-gcc-marvell.env
+index 2e001480f223c..3741c011c9995 100644
+--- a/marvell-ci/build/env/cn9k-gcc-marvell.env
++++ b/marvell-ci/build/env/cn9k-gcc-marvell.env
+@@ -1,7 +1,7 @@
+ # SPDX-License-Identifier: BSD-3-Clause
+ # Copyright (C) 2021 Marvell.
+ 
+-export CC=gcc
++CC=gcc
+ CROSSFILE="$PROJECT_ROOT/marvell-ci/build/config/arm64_cn9k_linux_gcc-marvell"
+ EXE_WRAPPER=$BUILD_DIR/exe_wrapper.sh
+ NEWCROSSFILE=$BUILD_DIR/crossconfig
+diff --git a/marvell-ci/build/env/x86-ep-gcc.env b/marvell-ci/build/env/x86-ep-gcc.env
+new file mode 100644
+index 0000000000000..c4c5b75e08953
+--- /dev/null
++++ b/marvell-ci/build/env/x86-ep-gcc.env
+@@ -0,0 +1,6 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++source "$PROJECT_ROOT/marvell-ci/build/env/cn9k-gcc-marvell.env"
++
++CROSSFILE="$PROJECT_ROOT/marvell-ci/build/config/x86_linux_gcc"
+diff --git a/marvell-ci/test/board/cnxk-ep-setup.sh b/marvell-ci/test/board/cnxk-ep-setup.sh
+new file mode 100755
+index 0000000000000..ddcd66c467436
+--- /dev/null
++++ b/marvell-ci/test/board/cnxk-ep-setup.sh
+@@ -0,0 +1,133 @@
++#!/bin/bash -x
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++# Script syntax:
++# cnxk-ep-setup.sh
++#
++# Optional environment variables:
++# HP How many hugepages of default size to enable.
++# VFIO_DEVBIND - Alternative location of oxk-devbind-basic.sh script.
++# TARGET_URL   - Optional SSH URL for the endpoint host/board to setup. If not
++#                given, all commands are run locally. If it is given, the script
++#                is copied to REMOTE_DIR on the host/board and run from there.
++# AGENT_PATH   - Path to octep_cp_agent and conf files.
++# MODULE_PATH  - Path to pcie-marvell-cnxk-ep.ko/octeon_ep.ko module path.
++#
++# Below options are used only when TARGET_BOARD is set.
++#
++# TARGET_SSH_CMD ssh cmd used to connect to target. Default is "ssh"
++# TARGET_SCP_CMD scp cmd used to connect to target. Default is "scp"
++# REMOTE_DIR Directory where build dir is located on the remote target.
++#            It is used to find oxk-devbind-basic.sh script.
++# SUDO This is used only when the command is to run as sudo on the
++#      remote target. Default set to "sudo" i.e. to run as SUDO.
++#
++# Script will:
++# 1. Mount hugetlbfs and enable HP hugepages of default size.
++# 2. The script prepares either the host or the board by performing the
++#    following tasks: inserting the necessary modules, creating Virtual
++#    Functions (VFs), and binding each PCI device using the VFIO_DEVBIND
++#    script.
++
++
++set -euo pipefail
++
++HP=${HP:-8}
++AGENT_PATH=${AGENT_PATH:-/usr/bin}
++MODULE_PATH=${MODULE_PATH:-/usr/lib/modules/`uname -r`}
++
++setup_hp() {
++	if ! mount | grep -q hugepages; then
++		mount -t hugetlbfs none /dev/hugepages/
++	fi
++
++	echo $HP > /proc/sys/vm/nr_hugepages
++}
++
++setup_host()
++{
++	local host_pf
++	local host_vf
++
++	VFIO_DEVBIND=${VFIO_DEVBIND:-$(command -v oxk-devbind-basic.sh)}
++	if [[ ! -x $VFIO_DEVBIND ]]; then
++		echo "Set VFIO_DEVBIND to a valid oxk-devbind-basic.sh script."
++		exit 1
++	fi
++
++	if [[ ! -e /sys/module/octeon_ep ]]; then
++		if [[ -e $MODULE_PATH/octeon_ep.ko ]]; then
++			insmod $MODULE_PATH/octeon_ep.ko
++		elif modinfo octeon_ep &> /dev/null; then
++			modprobe octeon_ep
++		else
++			echo "Set MODULE_PATH to a valid octeon_ep.ko location"
++			exit 1
++		fi
++
++		# Wait for driver load
++		timeout 15m bash -c '
++			while ! (dmesg | grep -q "octeon_ep .* Device setup successful"); do
++				sleep 1;
++			done
++		'
++	fi
++
++	host_pf=$(lspci -Dd :ba00 | head -1 | awk '{ print $1 }')
++	echo 2 > /sys/bus/pci/devices/${host_pf}/sriov_numvfs
++
++	host_vf=$(lspci -Dd :ba03 | head -1 | awk '{ print $1 }')
++	echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
++	$VFIO_DEVBIND -b vfio-pci $host_vf
++}
++
++setup_board()
++{
++	local sdp_vf1
++	local sdp_vf1_if
++	local sdp_vf2
++
++	if [[ ! -e /sys/module/pcie_marvell_cnxk_ep ]]; then
++		if [[ -e $MODULE_PATH/pcie-marvell-cnxk-ep.ko ]]; then
++			insmod $MODULE_PATH/pcie-marvell-cnxk-ep.ko
++		elif modinfo pcie-marvell_cnxk_ep &> /dev/null; then
++			modprobe pcie-marvell_cnxk_ep
++		else
++			echo "Set MODULE_PATH to a valid pcie-marvell-cnxk-ep.ko location"
++			exit 1
++		fi
++	fi
++
++	sdp_vf1=$(lspci -d :a0f7 | head -1 | awk -e '{ print $1 }')
++	sdp_vf1_if=$(ls /sys/bus/pci/devices/${sdp_vf1}/net)
++	ifconfig $sdp_vf1_if up
++	$AGENT_PATH/octep_cp_agent $AGENT_PATH/cnf105xx.cfg &> /tmp/octep_cp_agent_log.txt &
++
++	sdp_vf2=$(lspci -Dd :a0f7 | head -2 | tail -1 | awk -e '{ print $1 }')
++	$VFIO_DEVBIND -b vfio-pci $sdp_vf2
++}
++
++if [[ -n ${TARGET_URL:-} ]]; then
++	# Run on remote by copying this script to the target URL
++	SCRIPTPATH="$(cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
++	SCRIPTNAME="$(basename $0)"
++	SUDO=${SUDO:-"sudo"}
++	SSH_CMD=${TARGET_SSH_CMD:-"ssh"}
++	SCP_CMD=${TARGET_SCP_CMD:-"scp"}
++	REMOTE_DIR=${REMOTE_DIR:-/tmp/dpdk}
++	$SSH_CMD $TARGET_URL mkdir -p $REMOTE_DIR
++	$SCP_CMD $SCRIPTPATH/$SCRIPTNAME $TARGET_URL:$REMOTE_DIR/cnxk-ep-setup.sh
++	VFIO_DEVBIND=${VFIO_DEVBIND:-$REMOTE_DIR/marvell-ci/test/board/oxk-devbind-basic.sh}
++	$SSH_CMD $TARGET_URL "$SUDO VFIO_DEVBIND=$VFIO_DEVBIND HP=$HP \
++		AGENT_PATH=$AGENT_PATH MODULE_PATH=$MODULE_PATH $REMOTE_DIR/cnxk-ep-setup.sh"
++	exit 0
++fi
++
++setup_hp
++
++if grep -qi "vendor_id\s*:.*genuineintel" /proc/cpuinfo; then
++	setup_host
++else
++	setup_board
++fi
+diff --git a/marvell-ci/test/board/ep_test_run.sh b/marvell-ci/test/board/ep_test_run.sh
+new file mode 100755
+index 0000000000000..791505615d82d
+--- /dev/null
++++ b/marvell-ci/test/board/ep_test_run.sh
+@@ -0,0 +1,197 @@
++#!/bin/bash
++
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++set -euo pipefail
++
++source $TEST_ENV_CONF
++
++SKIP_SYNC=${SKIP_SYNC:-}
++SKIP_TARGET_SETUP=${SKIP_TARGET_SETUP:-}
++EP_HOST=${EP_HOST:-?}
++EP_BOARD=${EP_BOARD:-?}
++EP_FILES=${EP_FILES:-/tmp/ep_files}
++TARGET_SSH_CMD=${TARGET_SSH_CMD:-"ssh"}
++TARGET_SCP_CMD=${TARGET_SCP_CMD:-"scp"}
++REMOTE_HOST="$TARGET_SSH_CMD $EP_HOST -n"
++REMOTE_BOARD="$TARGET_SSH_CMD $EP_BOARD -n"
++REMOTE_DIR=${REMOTE_DIR:-/tmp/dpdk}
++PROJECT_ROOT=${PROJECT_ROOT:-$PWD}
++BUILD_DIR_HOST=${BUILD_DIR:-$PWD/build}
++BUILD_DIR_BOARD=${EP_BUILD_DIR:-$PWD/build}
++
++function save_log()
++{
++	local logfile=$1
++	local save_name=${2:-}
++
++	if [[ -z $RUN_DIR ]] || [[ ! -d $RUN_DIR ]]; then
++		return
++	fi
++
++	if [[ -n $save_name ]]; then
++		cp $logfile $RUN_DIR/$save_name 2>/dev/null || true
++	else
++		cp $logfile $RUN_DIR/ 2>/dev/null || true
++	fi
++}
++
++function copy_build_files()
++{
++	local sync="rsync -azzh --delete"
++	if [[ -n $SKIP_SYNC ]]; then
++		return
++	fi
++
++	$REMOTE_HOST "rm -rf $REMOTE_DIR"
++	$REMOTE_HOST "mkdir -p $REMOTE_DIR"
++	$sync -e "$TARGET_SSH_CMD" -r $BUILD_DIR_HOST/* $EP_HOST:$REMOTE_DIR
++	$sync -e "$TARGET_SSH_CMD" -r --exclude "marvell-ci/test/cnxk-tests/*" \
++		$PROJECT_ROOT/marvell-ci $EP_HOST:$REMOTE_DIR
++
++	$REMOTE_BOARD "rm -rf $REMOTE_DIR"
++	$REMOTE_BOARD "mkdir -p $REMOTE_DIR"
++	$sync -e "$TARGET_SSH_CMD" -r $BUILD_DIR_BOARD/* $EP_BOARD:$REMOTE_DIR
++	$sync -e "$TARGET_SSH_CMD" -r --exclude "marvell-ci/test/cnxk-tests/*" \
++		$PROJECT_ROOT/marvell-ci $EP_BOARD:$REMOTE_DIR
++}
++
++function ep_setup()
++{
++	export TARGET_SSH_CMD
++	export TARGET_SCP_CMD
++	export REMOTE_DIR
++
++	if [[ -n $SKIP_TARGET_SETUP ]]; then
++		return
++	fi
++
++	TARGET_URL=$EP_BOARD AGENT_PATH=$EP_FILES MODULE_PATH=$EP_FILES \
++		$PROJECT_ROOT/marvell-ci/test/board/cnxk-ep-setup.sh
++	TARGET_URL=$EP_HOST HP=1024 $PROJECT_ROOT/marvell-ci/test/board/cnxk-ep-setup.sh
++}
++
++function run_test()
++{
++	local name=$1
++	local tmo
++	local cmd
++	local curtime
++	local exec_bin
++	local res
++
++	exec_bin=$(get_test_exec_bin $name)
++	binary_name=$(basename $exec_bin)
++	tmo=$(get_test_timeout $name)
++
++	# Update sig handlers to pass in test name also.
++	trap "sig_handler INT $binary_name" INT
++	trap "sig_handler TERM $binary_name" TERM
++	trap "sig_handler QUIT $binary_name" QUIT
++
++	test_info_print $name
++	cmd=$(get_test_command $name)
++
++	curtime=$SECONDS
++	timeout --foreground -v -k 30 -s 3 $tmo $REMOTE_HOST "$cmd"
++	res=$?
++	echo -en "\n$name completed in $((SECONDS - curtime)) seconds ... "
++	if [[ $res -eq 0 ]]; then
++		echo "TEST SUCCESS (ret = $res)"
++	elif [[ $res -eq 77 ]]; then
++		echo "TEST SKIPPED (ret = $res)"
++	else
++		echo "TEST FAILURE (ret = $res)"
++	fi
++
++	return $res
++}
++
++function run_all_tests()
++{
++	local tst
++	local res
++	local test_num=0
++
++	# Errors will be handled inline. No need for sig handler
++	set +e
++	trap - ERR
++
++	# Read the tests info one by one from the test list created by meson test
++	while [[ true ]]; do
++		test_num=$((test_num + 1))
++		test_enabled $test_num
++		res=$?
++		if [[ $res == 77 ]]; then
++			continue
++		fi
++		if [[ $res -ne 0 ]]; then
++			break
++		fi
++
++		tst=$(get_test_name $test_num)
++
++		# Run the tests
++		run_test $tst
++		res=$?
++		if [[ $res -ne 0 ]] && [[ $res -ne 77 ]] ; then
++			test_exit -1 "FAILURE: Test $tst failed"
++		fi
++	done
++}
++
++function test_exit()
++{
++	local result=$1
++	local msg=$2
++
++	set +e
++	trap - INT
++	trap - TERM
++	trap - ERR
++	trap - QUIT
++
++	$REMOTE_HOST 'dmesg; uptime; cat /proc/uptime' > remote_dmesg.log
++	save_log remote_dmesg.log
++
++	echo "###########################################################"
++	echo "Run time: $((SECONDS / 60)) mins $((SECONDS % 60)) secs"
++	echo "$msg"
++	echo "###########################################################"
++
++	exit $result
++}
++
++function sig_handler()
++{
++	local signame=$1
++	local binary_name=$2
++
++	# Make sure that sig_handler is fully executed.
++	set +e
++	trap - INT
++	trap - TERM
++	trap - ERR
++	trap - QUIT
++
++	$REMOTE_HOST "sudo killall -SIGINT $binary_name" 2>/dev/null
++
++	test_exit 1 "Error: Caught signal $signame in $0"
++}
++
++trap "sig_handler INT NONE" INT
++trap "sig_handler TERM NONE" TERM
++trap "sig_handler ERR NONE" ERR
++trap "sig_handler QUIT NONE" QUIT
++
++echo "Copying files to EP host/board"
++copy_build_files
++
++echo "Setting up EP host/board"
++ep_setup
++
++echo "Running tests on EP host/board"
++run_all_tests
++
++test_exit 0 "SUCCESS: Tests Completed"
+diff --git a/marvell-ci/test/cnxk-tests/common/meson.build b/marvell-ci/test/cnxk-tests/common/meson.build
+index bbc1b6271128b..bd47a0f2cc94b 100644
+--- a/marvell-ci/test/cnxk-tests/common/meson.build
++++ b/marvell-ci/test/cnxk-tests/common/meson.build
+@@ -34,3 +34,4 @@ dpdk_test_deps = test_dep_objs + ext_deps
+ subdir('scapy')
+ subdir('pcap')
+ subdir('testpmd')
++subdir('remote')
+diff --git a/marvell-ci/test/cnxk-tests/common/remote/command.env b/marvell-ci/test/cnxk-tests/common/remote/command.env
+new file mode 100644
+index 0000000000000..f78177684746f
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/common/remote/command.env
+@@ -0,0 +1,103 @@
++#!/bin/bash
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2023 Marvell.
++
++SSH=${TARGET_SSH_CMD:-"ssh -o LogLevel=ERROR -o ServerAliveInterval=30 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"}
++
++run_bin()
++{
++	local remote
++	local bin
++	local bin_args
++	local in_file
++	local out_file
++	local bg_ena=0
++	local ssh_cmd
++
++	while [[ "$#" -gt 0 ]]
++	do
++		case $1 in
++			--remote)
++				remote="$2"
++				;;
++			--bin)
++				bin="$2"
++				;;
++			--bin_args)
++				bin_args="$2"
++				;;
++			--in_file)
++				in_file="$2"
++				;;
++			--out_file)
++				out_file="$2"
++				;;
++			--bg_ena)
++				bg_ena=1
++				;;
++		esac
++		shift
++	done
++
++	if [ -n "$in_file" ]; then
++		ssh_cmd+="tail -f $in_file |"
++	fi
++
++	ssh_cmd+=" $bin"
++
++	if [ -n "$bin_args" ]; then
++		ssh_cmd+=" $bin_args"
++	fi
++
++	if [ -n "$out_file" ]; then
++		ssh_cmd+=" &> $out_file"
++	fi
++
++	if [ $bg_ena -eq 1 ]; then
++		ssh_cmd+=" &"
++	fi
++
++	$SSH $remote "$ssh_cmd"
++}
++
++find_bin()
++{
++	local remote="$1"
++	local bin="$2"
++	local location="$3"
++
++	$SSH $remote "sudo find $location -type f -executable -iname $bin"
++}
++
++write_file()
++{
++	local remote="$1"
++	local in_file="$2"
++	local cmd="$3"
++
++	$SSH $remote "echo "$cmd" >> $in_file"
++}
++
++read_file()
++{
++	local remote="$1"
++	local out_file="$2"
++
++	$SSH $remote "cat $out_file"
++}
++
++wait_for_prompt()
++{
++	local remote="$1"
++	local out_file="$2"
++	local pattern="$3"
++
++	while ! ($SSH $remote test -f $out_file); do
++		continue
++	done
++
++	while ! ($SSH $remote tail -n1 $out_file | grep -q "$pattern"); do
++		continue
++	done
++}
++
+diff --git a/marvell-ci/test/cnxk-tests/common/remote/meson.build b/marvell-ci/test/cnxk-tests/common/remote/meson.build
+new file mode 100644
+index 0000000000000..33c23f76608e2
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/common/remote/meson.build
+@@ -0,0 +1,16 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(c) 2023, Marvell
++
++# env files
++env_files = [
++        'command.env',
++]
++
++foreach env : env_files
++    run_command(copy_data, env)
++    install_data(
++        env,
++        install_mode : 'rw-r--r--',
++        install_dir : 'bin/cnxk/common/remote')
++endforeach
++
+diff --git a/marvell-ci/test/cnxk-tests/ep_test/ep_test.sh b/marvell-ci/test/cnxk-tests/ep_test/ep_test.sh
+new file mode 100755
+index 0000000000000..5488409a2ec1f
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ep_test/ep_test.sh
+@@ -0,0 +1,62 @@
++#!/bin/bash
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++set -e
++
++CNXKTESTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
++source $CNXKTESTPATH/../common/testpmd/common.env
++source $CNXKTESTPATH/../common/remote/command.env
++LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-"/tmp/dpdk/deps/lib"}
++REMOTE_DIR=${REMOTE_DIR:-/tmp/dpdk}
++TPMD_PROMPT="^testpmd> $"
++TPMD_PFIX="endpoint"
++EP_BOARD=${EP_BOARD:?}
++EP_HOST_IF=${EP_HOST_IF:-$(lspci -d :ba03 | head -1 | awk '{ print $1 }')}
++EP_BOARD_IF=${EP_BOARD_IF:-0002:20:00.2}
++
++# Start testpmd in EP board
++bin=$(find_bin $EP_BOARD dpdk-testpmd $REMOTE_DIR)
++bin_args="-l 1-3 -a $EP_BOARD_IF -- -i --port-topology=loop"
++board_in_file=$(run_bin --remote $EP_BOARD --bin mktemp)
++board_out_file=$(run_bin --remote $EP_BOARD --bin mktemp)
++(run_bin --remote $EP_BOARD --bin "sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH stdbuf -o0 $bin" \
++	--bin_args "$bin_args" --in_file $board_in_file --out_file $board_out_file --bg_ena) &
++
++wait_for_prompt $EP_BOARD $board_out_file "$TPMD_PROMPT"
++write_file $EP_BOARD $board_in_file "start"
++
++# Start testpmd in EP host
++testpmd_launch $TPMD_PFIX "-l 0-3 -a $EP_HOST_IF --vdev eth_pcap0,rx_pcap=in.pcap,tx_pcap=out.pcap" \
++	"--port-topology=paired --no-flush-rx"
++testpmd_cmd $TPMD_PFIX "start"
++
++# Wait for packets
++timeout 60 bash -c "
++	while [ ! -s out.pcap ]; do
++		continue
++	done
++"
++
++set +e
++# Compare pcap files
++diff <(tcpdump -r in.pcap -Xvt) <(tcpdump -r out.pcap -Xvt)
++match=$?
++set -e
++
++if [ $match -eq 1 ]; then
++	echo "Transmitted and received packets checksum do not match."
++	testpmd_log $TPMD_PFIX
++	write_file $EP_BOARD $board_in_file "show port stats all"
++	read_file $EP_BOARD $board_out_file
++else
++	echo "Transmitted and received packets checksum match."
++fi
++
++# Cleanup
++testpmd_quit $TPMD_PFIX
++testpmd_cleanup $TPMD_PFIX
++write_file $EP_BOARD $board_in_file "quit"
++run_bin --remote $EP_BOARD --bin rm --bin_args "$board_in_file $board_out_file"
++
++exit $match
+diff --git a/marvell-ci/test/cnxk-tests/ep_test/in.pcap b/marvell-ci/test/cnxk-tests/ep_test/in.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..6b72527cb13680fd7dc4273f7ea43adb3c1c5bc0
+GIT binary patch
+literal 824
+zcmca|c+)~A1{MYw`2U}Qff2~jSQ3#CyO4vy0mug7|6l-Q009SsD+7ZONSOme&B=P8
+z1`vkG;UaZ_<{g~HNHz0xf#%({;-;E;dO-7LDDhFvJbj>f+Ha_5o*~dY-3mxtH~<5g
+m()cg}npZTNdgd7e&68b7J@ZU}=CyWG&pcD0d8hrTm;L~(G<{?M
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/ep_test/meson.build b/marvell-ci/test/cnxk-tests/ep_test/meson.build
+new file mode 100644
+index 0000000000000..2872ab3242e52
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ep_test/meson.build
+@@ -0,0 +1,33 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2023 Marvell.
++
++# Test script
++test_script = 'ep_test.sh'
++
++# Test name
++test_name = 'cnxk_dpdk_ep_test'
++
++# Test arguments
++test_args = ''
++
++# Test directory name relative to build directory.
++test_dir = meson.current_build_dir()
++
++# Copy the required scripts to build directory.
++run_command(copy_data, test_script)
++run_command(copy_data, 'in.pcap')
++
++# Add the meson test
++test(
++    test_name,
++    cnxk_test_script_wrapper,
++    env : ['DPDK_TEST=' + test_name, 'TEST_DIR=' + test_dir],
++    args : [test_script, test_args],
++    is_parallel : false,
++    suite : 'cnxk-tests')
++
++# Install the script
++install_data(
++    test_script,
++    install_mode : 'rwxr-xr-x',
++    install_dir : 'bin/cnxk/ep_test')
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index 0fae956eac13b..c9f737f3da5c6 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -5,10 +5,6 @@ if not get_option('tests')
+     subdir_done()
+ endif
+ 
+-if not host_machine.cpu_family().startswith('aarch')
+-    subdir_done()
+-endif
+-
+ subdir('common')
+ 
+ # The developer is expected to add new scripts in subdirectories and add it to
+@@ -38,7 +34,7 @@ subdir('common')
+ # These will be skipped when run without the exe_wrapper.
+ 
+ # Add cnxk test script subdirectories to the below list.
+-test_subdirs = [
++test_subdirs_arm = [
+         'ptp_test',
+         'fwd_perf',
+         'crypto_perf',
+@@ -88,6 +84,18 @@ test_subdirs = [
+         'flow_aging',
+ ]
+ 
++test_subdirs_x86 = [
++        'ep_test',
++]
++
++if host_machine.cpu_family().startswith('aarch')
++    test_subdirs = test_subdirs_arm
++elif host_machine.cpu_family().startswith('x86')
++    test_subdirs = test_subdirs_x86
++else
++    subdir_done()
++endif
++
+ foreach dir:test_subdirs
+     subdir(dir)
+ endforeach
+diff --git a/marvell-ci/test/common/exe_wrapper.sh b/marvell-ci/test/common/exe_wrapper.sh
+index aaa0fe734499e..a67a0f155637a 100755
+--- a/marvell-ci/test/common/exe_wrapper.sh
++++ b/marvell-ci/test/common/exe_wrapper.sh
+@@ -29,7 +29,11 @@ TEST_ARGS=$@
+ source $TEST_ENV_CONF
+ 
+ TEST_ENV_VARS="DPDK_TEST=$DPDK_TEST LD_LIBRARY_PATH=$TARGET_RUN_DIR/deps/lib PLAT=$PLAT"
+-TEST_ENV_VARS="$TEST_ENV_VARS TARGET_BOARD=$TARGET_BOARD GENERATOR_BOARD=$GENERATOR_BOARD"
++if [[ $PLAT == cn10k-ep ]]; then
++	TEST_ENV_VARS="$TEST_ENV_VARS EP_BOARD=$EP_BOARD"
++else
++	TEST_ENV_VARS="$TEST_ENV_VARS TARGET_BOARD=$TARGET_BOARD GENERATOR_BOARD=$GENERATOR_BOARD"
++fi
+ 
+ add_test "$DPDK_TEST" "$TEST_BINARY" "$TEST_DIR" "$TEST_ARGS" "$TEST_ENV_VARS"
+ 
+diff --git a/marvell-ci/test/env/cn10k-ep.env b/marvell-ci/test/env/cn10k-ep.env
+new file mode 100644
+index 0000000000000..17a79eb3a51e2
+--- /dev/null
++++ b/marvell-ci/test/env/cn10k-ep.env
+@@ -0,0 +1,14 @@
++#!/bin/bash
++
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
++
++# Override some env variables to match endpoint
++PLAT="cn10k-ep"
++TEST_RUN_CMD=$PROJECT_ROOT/marvell-ci/test/board/ep_test_run.sh
++RUN_TESTS="cnxk_dpdk_ep_test"
++
++# Export the path to this conf so that other scripts can source this conf.
++export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn10k-ep.env
+diff --git a/marvell-ci/test/test.sh b/marvell-ci/test/test.sh
+index 6ea0ff1495052..66e83aee955c9 100755
+--- a/marvell-ci/test/test.sh
++++ b/marvell-ci/test/test.sh
+@@ -21,6 +21,7 @@ function help() {
+ 	echo ""
+ 	echo "Optional Arguments"
+ 	echo "==================="
++	echo "--ep-build-root | -e         : Endpoint build root directory"
+ 	echo "--run-dir | -d               : Run directory [Default=Build Root]"
+ 	echo "--project-root | -p          : DPDK Project root [Default: PWD]"
+ 	echo "--run-only                   : Only run the tests "
+@@ -31,8 +32,8 @@ function help() {
+ 
+ SCRIPT_NAME="$(basename "$0")"
+ if ! OPTS=$(getopt \
+-	-o "r:d:t:p:h" \
+-	-l "build-root:,run-dir:,test-env:,project-root:,run-only,list-only,help" \
++	-o "r:e:d:t:p:h" \
++	-l "build-root:,ep-build-root:,run-dir:,test-env:,project-root:,run-only,list-only,help" \
+ 	-n "$SCRIPT_NAME" \
+ 	-- "$@"); then
+ 	help
+@@ -40,6 +41,7 @@ if ! OPTS=$(getopt \
+ fi
+ 
+ BUILD_ROOT=
++EP_BUILD_ROOT=
+ TEST_ENV_CONF=
+ EXTRA_ARGS=
+ PROJECT_ROOT="$PWD"
+@@ -51,6 +53,7 @@ unset OPTS
+ while [[ $# -gt 1 ]]; do
+ 	case $1 in
+ 		-r|--build-root) shift; BUILD_ROOT=$1;;
++		-e|--ep-build-root) shift; EP_BUILD_ROOT=$1;;
+ 		-d|--run-dir) shift; RUN_DIR=$1;;
+ 		-t|--test-env) shift; TEST_ENV_CONF=$(realpath $1);;
+ 		-p|--project-root) shift; PROJECT_ROOT=$1;;
+@@ -72,6 +75,7 @@ export PROJECT_ROOT=$(realpath $PROJECT_ROOT)
+ mkdir -p $BUILD_ROOT
+ export BUILD_ROOT=$(realpath $BUILD_ROOT)
+ export BUILD_DIR=$BUILD_ROOT/build
++export EP_BUILD_DIR=$EP_BUILD_ROOT/build
+ export RUN_DIR=${RUN_DIR:-$BUILD_DIR}
+ mkdir -p $RUN_DIR
+ 
+-- 
+2.25.1
+

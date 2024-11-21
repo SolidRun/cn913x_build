@@ -1,0 +1,1156 @@
+From 45f8fabf185a1ec83ba88991843153902668bddd Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Wed, 18 Oct 2023 02:22:14 -0700
+Subject: [PATCH 662/955] net/octeon_ep: add new fp routines
+
+Adds new fastpath routines for cn10k hardwares and
+assigns the FP routines based on offload flags.
+
+Patch also adds misc changes to improve performance
+and code-readability.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: I4cd0c333714fa47ba5f54feabfefd4ee1c05bc13
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/111844
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_rx.c    | 309 ++++++++++++++++++++++++++
+ drivers/net/octeon_ep/cnxk_ep_tx.c    | 209 +++++++++++++++++
+ drivers/net/octeon_ep/cnxk_ep_vf.c    |   2 +
+ drivers/net/octeon_ep/cnxk_ep_vf.h    |  13 ++
+ drivers/net/octeon_ep/meson.build     |   2 +
+ drivers/net/octeon_ep/otx2_ep_vf.h    |  11 -
+ drivers/net/octeon_ep/otx_ep_common.h | 123 +++++-----
+ drivers/net/octeon_ep/otx_ep_ethdev.c |  69 +++++-
+ drivers/net/octeon_ep/otx_ep_rxtx.c   |  95 +-------
+ drivers/net/octeon_ep/otx_ep_rxtx.h   |  36 ++-
+ 10 files changed, 700 insertions(+), 169 deletions(-)
+ create mode 100644 drivers/net/octeon_ep/cnxk_ep_rx.c
+ create mode 100644 drivers/net/octeon_ep/cnxk_ep_tx.c
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx.c b/drivers/net/octeon_ep/cnxk_ep_rx.c
+new file mode 100644
+index 0000000000000..74f0011283494
+--- /dev/null
++++ b/drivers/net/octeon_ep/cnxk_ep_rx.c
+@@ -0,0 +1,309 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include "otx_ep_common.h"
++#include "otx2_ep_vf.h"
++#include "otx_ep_rxtx.h"
++
++static inline int
++cnxk_ep_rx_refill_mbuf(struct otx_ep_droq *droq, uint32_t count)
++{
++	struct otx_ep_droq_desc *desc_ring = droq->desc_ring;
++	struct rte_mbuf **recv_buf_list = droq->recv_buf_list;
++	uint32_t refill_idx = droq->refill_idx;
++	struct rte_mbuf *buf;
++	uint32_t i;
++	int rc;
++
++	rc = rte_pktmbuf_alloc_bulk(droq->mpool, &recv_buf_list[refill_idx], count);
++	if (unlikely(rc)) {
++		droq->stats.rx_alloc_failure++;
++		return rc;
++	}
++
++	for (i = 0; i < count; i++) {
++		buf = recv_buf_list[refill_idx];
++		desc_ring[refill_idx].buffer_ptr = rte_mbuf_data_iova_default(buf);
++		refill_idx++;
++	}
++
++	droq->refill_idx = otx_ep_incr_index(droq->refill_idx, count, droq->nb_desc);
++	droq->refill_count -= count;
++
++	return 0;
++}
++
++static inline void
++cnxk_ep_rx_refill(struct otx_ep_droq *droq)
++{
++	uint32_t desc_refilled = 0, count;
++	uint32_t nb_desc = droq->nb_desc;
++	uint32_t refill_idx = droq->refill_idx;
++	int rc;
++
++	if (unlikely(droq->read_idx == refill_idx))
++		return;
++
++	if (refill_idx < droq->read_idx) {
++		count = droq->read_idx - refill_idx;
++		rc = cnxk_ep_rx_refill_mbuf(droq, count);
++		if (unlikely(rc)) {
++			droq->stats.rx_alloc_failure++;
++			return;
++		}
++		desc_refilled = count;
++	} else {
++		count = nb_desc - refill_idx;
++		rc = cnxk_ep_rx_refill_mbuf(droq, count);
++		if (unlikely(rc)) {
++			droq->stats.rx_alloc_failure++;
++			return;
++		}
++
++		desc_refilled = count;
++		count = droq->read_idx;
++		rc = cnxk_ep_rx_refill_mbuf(droq, count);
++		if (unlikely(rc)) {
++			droq->stats.rx_alloc_failure++;
++			return;
++		}
++		desc_refilled += count;
++	}
++
++	/* Flush the droq descriptor data to memory to be sure
++	 * that when we update the credits the data in memory is
++	 * accurate.
++	 */
++	rte_io_wmb();
++	rte_write32(desc_refilled, droq->pkts_credit_reg);
++}
++
++static inline uint32_t
++cnxk_ep_check_rx_pkts(struct otx_ep_droq *droq)
++{
++	uint32_t new_pkts;
++	uint32_t val;
++
++	/* Batch subtractions from the HW counter to reduce PCIe traffic
++	 * This adds an extra local variable, but almost halves the
++	 * number of PCIe writes.
++	 */
++	val = __atomic_load_n(droq->pkts_sent_ism, __ATOMIC_RELAXED);
++	new_pkts = val - droq->pkts_sent_ism_prev;
++	droq->pkts_sent_ism_prev = val;
++
++	if (val > (uint32_t)(1 << 31)) {
++		/* Only subtract the packet count in the HW counter
++		 * when count above halfway to saturation.
++		 */
++		rte_write64((uint64_t)val, droq->pkts_sent_reg);
++		rte_mb();
++
++		rte_write64(OTX2_SDP_REQUEST_ISM, droq->pkts_sent_reg);
++		while (__atomic_load_n(droq->pkts_sent_ism, __ATOMIC_RELAXED) >= val) {
++			rte_write64(OTX2_SDP_REQUEST_ISM, droq->pkts_sent_reg);
++			rte_mb();
++		}
++
++		droq->pkts_sent_ism_prev = 0;
++	}
++	rte_write64(OTX2_SDP_REQUEST_ISM, droq->pkts_sent_reg);
++	droq->pkts_pending += new_pkts;
++
++	return new_pkts;
++}
++
++static inline int16_t __rte_hot
++cnxk_ep_rx_pkts_to_process(struct otx_ep_droq *droq, uint16_t nb_pkts)
++{
++	if (droq->pkts_pending < nb_pkts)
++		cnxk_ep_check_rx_pkts(droq);
++
++	return RTE_MIN(nb_pkts, droq->pkts_pending);
++}
++
++static __rte_always_inline void
++cnxk_ep_process_pkts_scalar(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq, uint16_t new_pkts)
++{
++	struct rte_mbuf **recv_buf_list = droq->recv_buf_list;
++	uint32_t bytes_rsvd = 0, read_idx = droq->read_idx;
++	uint16_t port_id = droq->otx_ep_dev->port_id;
++	uint16_t nb_desc = droq->nb_desc;
++	uint16_t pkts;
++
++	for (pkts = 0; pkts < new_pkts; pkts++) {
++		struct otx_ep_droq_info *info;
++		struct rte_mbuf *mbuf;
++		uint16_t pkt_len;
++
++		mbuf = recv_buf_list[read_idx];
++		info = rte_pktmbuf_mtod(mbuf, struct otx_ep_droq_info *);
++		read_idx = otx_ep_incr_index(read_idx, 1, nb_desc);
++		pkt_len = rte_bswap16(info->length >> 48);
++		mbuf->data_off += OTX_EP_INFO_SIZE;
++		mbuf->pkt_len = pkt_len;
++		mbuf->data_len = pkt_len;
++		mbuf->port = port_id;
++		rx_pkts[pkts] = mbuf;
++		bytes_rsvd += pkt_len;
++	}
++	droq->read_idx = read_idx;
++
++	droq->refill_count += new_pkts;
++	droq->pkts_pending -= new_pkts;
++	/* Stats */
++	droq->stats.pkts_received += new_pkts;
++	droq->stats.bytes_received += bytes_rsvd;
++}
++
++static __rte_always_inline void
++cnxk_ep_process_pkts_scalar_mseg(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq,
++				 uint16_t new_pkts)
++{
++	struct rte_mbuf **recv_buf_list = droq->recv_buf_list;
++	uint32_t total_pkt_len, bytes_rsvd = 0;
++	uint16_t port_id = droq->otx_ep_dev->port_id;
++	uint16_t nb_desc = droq->nb_desc;
++	uint16_t pkts;
++
++	for (pkts = 0; pkts < new_pkts; pkts++) {
++		struct otx_ep_droq_info *info;
++		struct rte_mbuf *first_buf = NULL;
++		struct rte_mbuf *last_buf = NULL;
++		struct rte_mbuf *mbuf;
++		uint32_t pkt_len = 0;
++
++		mbuf = recv_buf_list[droq->read_idx];
++		info = rte_pktmbuf_mtod(mbuf, struct otx_ep_droq_info *);
++
++		total_pkt_len = rte_bswap16(info->length >> 48) + OTX_EP_INFO_SIZE;
++
++		while (pkt_len < total_pkt_len) {
++			int cpy_len;
++
++			cpy_len = ((pkt_len + droq->buffer_size) > total_pkt_len)
++					? ((uint32_t)total_pkt_len - pkt_len) : droq->buffer_size;
++
++			mbuf = droq->recv_buf_list[droq->read_idx];
++
++			if (!pkt_len) {
++				/* Note the first seg */
++				first_buf = mbuf;
++				mbuf->data_off += OTX_EP_INFO_SIZE;
++				mbuf->pkt_len = cpy_len - OTX_EP_INFO_SIZE;
++				mbuf->data_len = cpy_len - OTX_EP_INFO_SIZE;
++			} else {
++				mbuf->pkt_len = cpy_len;
++				mbuf->data_len = cpy_len;
++				first_buf->nb_segs++;
++				first_buf->pkt_len += mbuf->pkt_len;
++			}
++
++			if (last_buf)
++				last_buf->next = mbuf;
++
++			last_buf = mbuf;
++
++			pkt_len += cpy_len;
++			droq->read_idx = otx_ep_incr_index(droq->read_idx, 1, nb_desc);
++			droq->refill_count++;
++		}
++		mbuf = first_buf;
++		mbuf->port = port_id;
++		rx_pkts[pkts] = mbuf;
++		bytes_rsvd += pkt_len;
++	}
++
++	droq->refill_count += new_pkts;
++	droq->pkts_pending -= pkts;
++	/* Stats */
++	droq->stats.pkts_received += pkts;
++	droq->stats.bytes_received += bytes_rsvd;
++}
++
++uint16_t __rte_noinline __rte_hot
++cnxk_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
++	uint16_t new_pkts;
++
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	cnxk_ep_process_pkts_scalar(rx_pkts, droq, new_pkts);
++
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD)
++		cnxk_ep_rx_refill(droq);
++
++	return new_pkts;
++}
++
++uint16_t __rte_noinline __rte_hot
++cn9k_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
++	uint16_t new_pkts;
++
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	cnxk_ep_process_pkts_scalar(rx_pkts, droq, new_pkts);
++
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD) {
++		cnxk_ep_rx_refill(droq);
++	} else {
++		/* SDP output goes into DROP state when output doorbell count
++		 * goes below drop count. When door bell count is written with
++		 * a value greater than drop count SDP output should come out
++		 * of DROP state. Due to a race condition this is not happening.
++		 * Writing doorbell register with 0 again may make SDP output
++		 * come out of this state.
++		 */
++
++		rte_write32(0, droq->pkts_credit_reg);
++	}
++
++	return new_pkts;
++}
++
++uint16_t __rte_noinline __rte_hot
++cnxk_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
++	uint16_t new_pkts;
++
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	cnxk_ep_process_pkts_scalar_mseg(rx_pkts, droq, new_pkts);
++
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD)
++		cnxk_ep_rx_refill(droq);
++
++	return new_pkts;
++}
++
++uint16_t __rte_noinline __rte_hot
++cn9k_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_droq *droq = (struct otx_ep_droq *)rx_queue;
++	uint16_t new_pkts;
++
++	new_pkts = cnxk_ep_rx_pkts_to_process(droq, nb_pkts);
++	cnxk_ep_process_pkts_scalar_mseg(rx_pkts, droq, new_pkts);
++
++	/* Refill RX buffers */
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD) {
++		cnxk_ep_rx_refill(droq);
++	} else {
++		/* SDP output goes into DROP state when output doorbell count
++		 * goes below drop count. When door bell count is written with
++		 * a value greater than drop count SDP output should come out
++		 * of DROP state. Due to a race condition this is not happening.
++		 * Writing doorbell register with 0 again may make SDP output
++		 * come out of this state.
++		 */
++
++		rte_write32(0, droq->pkts_credit_reg);
++	}
++
++	return new_pkts;
++}
+diff --git a/drivers/net/octeon_ep/cnxk_ep_tx.c b/drivers/net/octeon_ep/cnxk_ep_tx.c
+new file mode 100644
+index 0000000000000..9f11a2f317d31
+--- /dev/null
++++ b/drivers/net/octeon_ep/cnxk_ep_tx.c
+@@ -0,0 +1,209 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include "cnxk_ep_vf.h"
++#include "otx_ep_rxtx.h"
++
++static uint32_t
++cnxk_vf_update_read_index(struct otx_ep_instr_queue *iq)
++{
++	uint32_t val;
++
++	/* Batch subtractions from the HW counter to reduce PCIe traffic
++	 * This adds an extra local variable, but almost halves the
++	 * number of PCIe writes.
++	 */
++	val = __atomic_load_n(iq->inst_cnt_ism, __ATOMIC_RELAXED);
++	iq->inst_cnt += val - iq->inst_cnt_ism_prev;
++	iq->inst_cnt_ism_prev = val;
++
++	if (val > (uint32_t)(1 << 31)) {
++		/* Only subtract the packet count in the HW counter
++		 * when count above halfway to saturation.
++		 */
++		rte_write64((uint64_t)val, iq->inst_cnt_reg);
++		rte_mb();
++
++		rte_write64(OTX2_SDP_REQUEST_ISM, iq->inst_cnt_reg);
++		while (__atomic_load_n(iq->inst_cnt_ism, __ATOMIC_RELAXED) >= val) {
++			rte_write64(OTX2_SDP_REQUEST_ISM, iq->inst_cnt_reg);
++			rte_mb();
++		}
++
++		iq->inst_cnt_ism_prev = 0;
++	}
++	rte_write64(OTX2_SDP_REQUEST_ISM, iq->inst_cnt_reg);
++
++	/* Modulo of the new index with the IQ size will give us
++	 * the new index.
++	 */
++	return iq->inst_cnt & (iq->nb_desc - 1);
++}
++
++static inline void
++cnxk_ep_flush_iq(struct otx_ep_instr_queue *iq)
++{
++	uint32_t instr_processed = 0;
++	uint32_t cnt = 0;
++
++	iq->otx_read_index = cnxk_vf_update_read_index(iq);
++
++	if (unlikely(iq->flush_index == iq->otx_read_index))
++		return;
++
++	if (iq->flush_index < iq->otx_read_index) {
++		instr_processed = iq->otx_read_index - iq->flush_index;
++		rte_pktmbuf_free_bulk(&iq->mbuf_list[iq->flush_index], instr_processed);
++		iq->flush_index = otx_ep_incr_index(iq->flush_index, instr_processed, iq->nb_desc);
++	} else {
++		cnt = iq->nb_desc - iq->flush_index;
++		rte_pktmbuf_free_bulk(&iq->mbuf_list[iq->flush_index], cnt);
++		iq->flush_index = otx_ep_incr_index(iq->flush_index, cnt, iq->nb_desc);
++
++		instr_processed = iq->otx_read_index;
++		rte_pktmbuf_free_bulk(&iq->mbuf_list[iq->flush_index], instr_processed);
++		iq->flush_index = otx_ep_incr_index(iq->flush_index, instr_processed, iq->nb_desc);
++
++		instr_processed += cnt;
++	}
++
++	iq->stats.instr_processed = instr_processed;
++	iq->instr_pending -= instr_processed;
++}
++
++static inline void
++set_sg_size(struct otx_ep_sg_entry *sg_entry, uint16_t size, uint32_t pos)
++{
++#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
++	sg_entry->u.size[pos] = size;
++#elif RTE_BYTE_ORDER == RTE_LITTLE_ENDIAN
++	sg_entry->u.size[(OTX_EP_NUM_SG_PTRS - 1) - pos] = size;
++#endif
++}
++
++static __rte_always_inline void
++cnxk_ep_xmit_pkts_scalar(struct rte_mbuf **tx_pkts, struct otx_ep_instr_queue *iq, uint16_t nb_pkts)
++{
++	struct cnxk_ep_instr_32B *iqcmd;
++	struct rte_mbuf *m;
++	uint32_t pkt_len;
++	uint32_t tx_bytes = 0;
++	uint32_t write_idx = iq->host_write_index;
++	uint16_t pkts, nb_desc = iq->nb_desc;
++	uint8_t desc_size = iq->desc_size;
++
++	for (pkts = 0; pkts < nb_pkts; pkts++) {
++		m = tx_pkts[pkts];
++		iq->mbuf_list[write_idx] = m;
++		pkt_len = rte_pktmbuf_data_len(m);
++
++		iqcmd = (struct cnxk_ep_instr_32B *)(iq->base_addr + (write_idx * desc_size));
++		iqcmd->ih.u64 = iq->partial_ih | pkt_len;
++		iqcmd->dptr = rte_mbuf_data_iova(m); /*dptr*/
++		tx_bytes += pkt_len;
++
++		/* Increment the host write index */
++		write_idx = otx_ep_incr_index(write_idx, 1, nb_desc);
++	}
++	iq->host_write_index = write_idx;
++
++	/* ring dbell */
++	rte_io_wmb();
++	rte_write64(pkts, iq->doorbell_reg);
++	iq->instr_pending += pkts;
++	iq->stats.tx_pkts += pkts;
++	iq->stats.tx_bytes += tx_bytes;
++}
++
++static __rte_always_inline uint16_t
++cnxk_ep_xmit_pkts_scalar_mseg(struct rte_mbuf **tx_pkts, struct otx_ep_instr_queue *iq,
++			      uint16_t nb_pkts)
++{
++	uint16_t frags, num_sg, mask = OTX_EP_NUM_SG_PTRS - 1;
++	struct otx_ep_buf_free_info *finfo;
++	struct cnxk_ep_instr_32B *iqcmd;
++	struct rte_mbuf *m;
++	uint32_t pkt_len, tx_bytes = 0;
++	uint32_t write_idx = iq->host_write_index;
++	uint16_t pkts, nb_desc = iq->nb_desc;
++	uint8_t desc_size = iq->desc_size;
++
++	for (pkts = 0; pkts < nb_pkts; pkts++) {
++		uint16_t j = 0;
++
++		m = tx_pkts[pkts];
++		frags = m->nb_segs;
++
++		pkt_len = rte_pktmbuf_pkt_len(m);
++		num_sg = (frags + mask) / OTX_EP_NUM_SG_PTRS;
++
++		if (unlikely(pkt_len > OTX_EP_MAX_PKT_SZ && num_sg > OTX_EP_MAX_SG_LISTS)) {
++			otx_ep_err("Failed to xmit the pkt, pkt_len is higher or pkt has more segments\n");
++			goto exit;
++		}
++
++		finfo = &iq->req_list[write_idx].finfo;
++
++		iq->mbuf_list[write_idx] = m;
++		iqcmd = (struct cnxk_ep_instr_32B *)(iq->base_addr + (write_idx * desc_size));
++		iqcmd->dptr = rte_mem_virt2iova(finfo->g.sg);
++		iqcmd->ih.u64 = iq->partial_ih | (1ULL << 62) | ((uint64_t)frags << 48) | pkt_len;
++
++		while (frags--) {
++			finfo->g.sg[(j >> 2)].ptr[(j & mask)] = rte_mbuf_data_iova(m);
++			set_sg_size(&finfo->g.sg[(j >> 2)], m->data_len, (j & mask));
++			j++;
++			m = m->next;
++		}
++
++		/* Increment the host write index */
++		write_idx = otx_ep_incr_index(write_idx, 1, nb_desc);
++		tx_bytes += pkt_len;
++	}
++exit:
++	iq->host_write_index = write_idx;
++
++	/* ring dbell */
++	rte_io_wmb();
++	rte_write64(pkts, iq->doorbell_reg);
++	iq->instr_pending += pkts;
++	iq->stats.tx_pkts += pkts;
++	iq->stats.tx_bytes += tx_bytes;
++
++	return pkts;
++}
++
++uint16_t __rte_noinline __rte_hot
++cnxk_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_instr_queue *iq = (struct otx_ep_instr_queue *)tx_queue;
++	uint16_t pkts;
++
++	pkts = RTE_MIN(nb_pkts, iq->nb_desc - iq->instr_pending);
++
++	cnxk_ep_xmit_pkts_scalar(tx_pkts, iq, pkts);
++
++	if (iq->instr_pending >= OTX_EP_MAX_INSTR)
++		cnxk_ep_flush_iq(iq);
++
++	/* Return no# of instructions posted successfully. */
++	return pkts;
++}
++
++uint16_t __rte_noinline __rte_hot
++cnxk_ep_xmit_pkts_mseg(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
++{
++	struct otx_ep_instr_queue *iq = (struct otx_ep_instr_queue *)tx_queue;
++	uint16_t pkts;
++
++	pkts = RTE_MIN(nb_pkts, iq->nb_desc - iq->instr_pending);
++
++	pkts = cnxk_ep_xmit_pkts_scalar_mseg(tx_pkts, iq, pkts);
++
++	if (iq->instr_pending >= OTX_EP_MAX_INSTR)
++		cnxk_ep_flush_iq(iq);
++
++	/* Return no# of instructions posted successfully. */
++	return pkts;
++}
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.c b/drivers/net/octeon_ep/cnxk_ep_vf.c
+index 7b3669fe0c2b9..ef275703c3b2f 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.c
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.c
+@@ -156,6 +156,8 @@ cnxk_ep_vf_setup_iq_regs(struct otx_ep_device *otx_ep, uint32_t iq_no)
+ 		   (void *)iq->inst_cnt_ism, ism_addr);
+ 	*iq->inst_cnt_ism = 0;
+ 	iq->inst_cnt_ism_prev = 0;
++	iq->partial_ih = ((uint64_t)otx_ep->pkind) << 36;
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.h b/drivers/net/octeon_ep/cnxk_ep_vf.h
+index 86277449eae8f..41d8fbbb3aadb 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.h
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.h
+@@ -6,6 +6,8 @@
+ 
+ #include <rte_io.h>
+ 
++#include "otx_ep_common.h"
++
+ #define CNXK_CONFIG_XPANSION_BAR             0x38
+ #define CNXK_CONFIG_PCIE_CAP                 0x70
+ #define CNXK_CONFIG_PCIE_DEVCAP              0x74
+@@ -178,6 +180,17 @@ struct cnxk_ep_instr_64B {
+ 	uint64_t exhdr[4];
+ };
+ 
++struct cnxk_ep_instr_32B {
++	/* Pointer where the input data is available. */
++	uint64_t dptr;
++
++	/* OTX_EP Instruction Header. */
++	union otx_ep_instr_ih ih;
++
++	/* Misc data bytes that can be passed as front data */
++	uint64_t rsvd[2];
++};
++
+ #define CNXK_EP_IQ_ISM_OFFSET(queue)    (RTE_CACHE_LINE_SIZE * (queue) + 4)
+ #define CNXK_EP_OQ_ISM_OFFSET(queue)    (RTE_CACHE_LINE_SIZE * (queue))
+ #define CNXK_EP_ISM_EN                  (0x1)
+diff --git a/drivers/net/octeon_ep/meson.build b/drivers/net/octeon_ep/meson.build
+index e698bf9792208..749776d70c815 100644
+--- a/drivers/net/octeon_ep/meson.build
++++ b/drivers/net/octeon_ep/meson.build
+@@ -9,4 +9,6 @@ sources = files(
+         'otx2_ep_vf.c',
+         'cnxk_ep_vf.c',
+         'otx_ep_mbox.c',
++        'cnxk_ep_rx.c',
++        'cnxk_ep_tx.c',
+ )
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.h b/drivers/net/octeon_ep/otx2_ep_vf.h
+index d11a39cb095ec..7c799475abb93 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.h
++++ b/drivers/net/octeon_ep/otx2_ep_vf.h
+@@ -151,17 +151,6 @@ struct otx2_ep_instr_64B {
+ 	uint64_t exhdr[4];
+ };
+ 
+-struct otx2_ep_instr_32B {
+-	/* Pointer where the input data is available. */
+-	uint64_t dptr;
+-
+-	/* OTX_EP Instruction Header. */
+-	union otx_ep_instr_ih ih;
+-
+-	/* Misc data bytes that can be passed as front data */
+-	uint64_t rsvd[2];
+-};
+-
+ #define OTX2_EP_IQ_ISM_OFFSET(queue)   (RTE_CACHE_LINE_SIZE * (queue) + 4)
+ #define OTX2_EP_OQ_ISM_OFFSET(queue)   (RTE_CACHE_LINE_SIZE * (queue))
+ #define OTX2_EP_ISM_EN                 (0x1)
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 60d16016e82c8..82e57520d38d2 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -4,7 +4,20 @@
+ #ifndef _OTX_EP_COMMON_H_
+ #define _OTX_EP_COMMON_H_
+ 
++#include <rte_bitops.h>
+ #include <rte_spinlock.h>
++#include <unistd.h>
++#include <assert.h>
++#include <rte_eal.h>
++#include <rte_mempool.h>
++#include <rte_mbuf.h>
++#include <rte_io.h>
++#include <rte_net.h>
++#include <ethdev_pci.h>
++
++#define OTX_EP_CN8XX  RTE_BIT32(0)
++#define OTX_EP_CN9XX  RTE_BIT32(1)
++#define OTX_EP_CN10XX RTE_BIT32(2)
+ 
+ #define OTX_EP_NW_PKT_OP               0x1220
+ #define OTX_EP_NW_CMD_OP               0x1221
+@@ -203,6 +216,38 @@ struct otx_ep_iq_config {
+  *  such structure to represent it.
+  */
+ struct otx_ep_instr_queue {
++	/* Location in memory updated by SDP ISM */
++	uint32_t *inst_cnt_ism;
++	struct rte_mbuf **mbuf_list;
++	/* Pointer to the Virtual Base addr of the input ring. */
++	uint8_t *base_addr;
++
++	/* track inst count locally to consolidate HW counter updates */
++	uint32_t inst_cnt_ism_prev;
++
++	/* Input ring index, where the driver should write the next packet */
++	uint32_t host_write_index;
++
++	/* Input ring index, where the OCTEON 9 should read the next packet */
++	uint32_t otx_read_index;
++	/** This index aids in finding the window in the queue where OCTEON 9
++	 *  has read the commands.
++	 */
++	uint32_t flush_index;
++	/* This keeps track of the instructions pending in this queue. */
++	uint64_t instr_pending;
++
++	/* Memory zone */
++	const struct rte_memzone *iq_mz;
++	/* OTX_EP doorbell register for the ring. */
++	void *doorbell_reg;
++
++	/* OTX_EP instruction count register for this ring. */
++	void *inst_cnt_reg;
++
++	/* Number of instructions pending to be posted to OCTEON 9. */
++	uint32_t fill_cnt;
++
+ 	struct otx_ep_device *otx_ep_dev;
+ 
+ 	uint32_t q_no;
+@@ -219,56 +264,21 @@ struct otx_ep_instr_queue {
+ 	/* Size of the descriptor. */
+ 	uint8_t desc_size;
+ 
+-	/* Input ring index, where the driver should write the next packet */
+-	uint32_t host_write_index;
+-
+-	/* Input ring index, where the OCTEON 9 should read the next packet */
+-	uint32_t otx_read_index;
+-
+ 	uint32_t reset_instr_cnt;
+ 
+-	/** This index aids in finding the window in the queue where OCTEON 9
+-	 *  has read the commands.
+-	 */
+-	uint32_t flush_index;
+-
+ 	/* Free-running/wrapping instruction counter for IQ. */
+ 	uint32_t inst_cnt;
+ 
+-	/* This keeps track of the instructions pending in this queue. */
+-	uint64_t instr_pending;
+-
+ 	uint64_t partial_ih;
+ 
+-	/* Pointer to the Virtual Base addr of the input ring. */
+-	uint8_t *base_addr;
+-
+ 	/* This IQ request list */
+ 	struct otx_ep_instr_list *req_list;
+ 
+-	/* OTX_EP doorbell register for the ring. */
+-	void *doorbell_reg;
+-
+-	/* OTX_EP instruction count register for this ring. */
+-	void *inst_cnt_reg;
+-
+-	/* Number of instructions pending to be posted to OCTEON 9. */
+-	uint32_t fill_cnt;
+-
+ 	/* Statistics for this input queue. */
+ 	struct otx_ep_iq_stats stats;
+ 
+ 	/* DMA mapped base address of the input descriptor ring. */
+ 	uint64_t base_addr_dma;
+-
+-	/* Memory zone */
+-	const struct rte_memzone *iq_mz;
+-
+-	/* Location in memory updated by SDP ISM */
+-	uint32_t *inst_cnt_ism;
+-
+-	/* track inst count locally to consolidate HW counter updates */
+-	uint32_t inst_cnt_ism_prev;
+ };
+ 
+ /** Descriptor format.
+@@ -346,14 +356,17 @@ struct otx_ep_oq_config {
+ 
+ /* The Descriptor Ring Output Queue(DROQ) structure. */
+ struct otx_ep_droq {
+-	struct otx_ep_device *otx_ep_dev;
+ 	/* The 8B aligned descriptor ring starts at this address. */
+ 	struct otx_ep_droq_desc *desc_ring;
+ 
+-	uint32_t q_no;
+-	uint64_t last_pkt_count;
++	/* The 8B aligned info ptrs begin from this address. */
++	struct otx_ep_droq_info *info_list;
+ 
+-	struct rte_mempool *mpool;
++	/* receive buffer list contains mbuf ptr list */
++	struct rte_mbuf **recv_buf_list;
++
++	/* Packets pending to be processed */
++	uint64_t pkts_pending;
+ 
+ 	/* Driver should read the next packet at this index */
+ 	uint32_t read_idx;
+@@ -364,22 +377,17 @@ struct otx_ep_droq {
+ 	/* At this index, the driver will refill the descriptor's buffer */
+ 	uint32_t refill_idx;
+ 
+-	/* Packets pending to be processed */
+-	uint64_t pkts_pending;
++	/* The number of descriptors pending to refill. */
++	uint32_t refill_count;
+ 
+ 	/* Number of descriptors in this ring. */
+ 	uint32_t nb_desc;
+ 
+-	/* The number of descriptors pending to refill. */
+-	uint32_t refill_count;
+-
+ 	uint32_t refill_threshold;
+ 
+-	/* The 8B aligned info ptrs begin from this address. */
+-	struct otx_ep_droq_info *info_list;
++	uint64_t last_pkt_count;
+ 
+-	/* receive buffer list contains mbuf ptr list */
+-	struct rte_mbuf **recv_buf_list;
++	struct rte_mempool *mpool;
+ 
+ 	/* The size of each buffer pointed by the buffer pointer. */
+ 	uint32_t buffer_size;
+@@ -394,6 +402,13 @@ struct otx_ep_droq {
+ 	 */
+ 	void *pkts_sent_reg;
+ 
++	/* Pointer to host memory copy of output packet count, set by ISM */
++	uint32_t *pkts_sent_ism;
++	uint32_t pkts_sent_ism_prev;
++
++	/* Statistics for this DROQ. */
++	struct otx_ep_droq_stats stats;
++
+ 	/** Handle DMA incompletion during pkt reads.
+ 	 * This variable is used to initiate a sent_reg_read
+ 	 * that completes pending dma
+@@ -402,8 +417,9 @@ struct otx_ep_droq {
+ 	 */
+ 	uint32_t sent_reg_val;
+ 
+-	/* Statistics for this DROQ. */
+-	struct otx_ep_droq_stats stats;
++	uint32_t q_no;
++
++	struct otx_ep_device *otx_ep_dev;
+ 
+ 	/* DMA mapped address of the DROQ descriptor ring. */
+ 	size_t desc_ring_dma;
+@@ -421,10 +437,6 @@ struct otx_ep_droq {
+ 	const struct rte_memzone *desc_ring_mz;
+ 
+ 	const struct rte_memzone *info_mz;
+-
+-	/* Pointer to host memory copy of output packet count, set by ISM */
+-	uint32_t *pkts_sent_ism;
+-	uint32_t pkts_sent_ism_prev;
+ };
+ #define OTX_EP_DROQ_SIZE		(sizeof(struct otx_ep_droq))
+ 
+@@ -547,6 +559,9 @@ struct otx_ep_device {
+ 
+ 	/* Negotiated Mbox version */
+ 	uint32_t mbox_neg_ver;
++
++	/* Generation */
++	uint32_t chip_gen;
+ };
+ 
+ int otx_ep_setup_iqs(struct otx_ep_device *otx_ep, uint32_t iq_no,
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 57b965ad06701..e965cbaa167bd 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -27,6 +27,46 @@ static const struct rte_eth_desc_lim otx_ep_tx_desc_lim = {
+ 	.nb_align	= OTX_EP_TXD_ALIGN,
+ };
+ 
++static void
++otx_ep_set_tx_func(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_epvf = OTX_EP_DEV(eth_dev);
++
++	if (otx_epvf->chip_gen == OTX_EP_CN10XX || otx_epvf->chip_gen == OTX_EP_CN9XX) {
++		eth_dev->tx_pkt_burst = &cnxk_ep_xmit_pkts;
++		if (otx_epvf->tx_offloads & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
++			eth_dev->tx_pkt_burst = &cnxk_ep_xmit_pkts_mseg;
++	} else {
++		eth_dev->tx_pkt_burst = &otx_ep_xmit_pkts;
++	}
++
++	if (eth_dev->data->dev_started)
++		rte_eth_fp_ops[eth_dev->data->port_id].tx_pkt_burst =
++			eth_dev->tx_pkt_burst;
++}
++
++static void
++otx_ep_set_rx_func(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_epvf = OTX_EP_DEV(eth_dev);
++
++	if (otx_epvf->chip_gen == OTX_EP_CN10XX) {
++		eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts;
++		if (otx_epvf->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)
++			eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts_mseg;
++	} else if (otx_epvf->chip_gen == OTX_EP_CN9XX) {
++		eth_dev->rx_pkt_burst = &cn9k_ep_recv_pkts;
++		if (otx_epvf->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)
++			eth_dev->rx_pkt_burst = &cn9k_ep_recv_pkts_mseg;
++	} else {
++		eth_dev->rx_pkt_burst = &otx_ep_recv_pkts;
++	}
++
++	if (eth_dev->data->dev_started)
++		rte_eth_fp_ops[eth_dev->data->port_id].rx_pkt_burst =
++			eth_dev->rx_pkt_burst;
++}
++
+ static int
+ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 		    struct rte_eth_dev_info *devinfo)
+@@ -154,6 +194,10 @@ otx_ep_dev_start(struct rte_eth_dev *eth_dev)
+ 	}
+ 
+ 	otx_ep_dev_link_update(eth_dev, 0);
++
++	otx_ep_set_tx_func(eth_dev);
++	otx_ep_set_rx_func(eth_dev);
++
+ 	otx_ep_info("dev started\n");
+ 
+ 	return 0;
+@@ -255,18 +299,23 @@ otx_epdev_init(struct otx_ep_device *otx_epvf)
+ 
+ 	otx_epvf->fn_list.setup_device_regs(otx_epvf);
+ 
++	otx_epvf->eth_dev->tx_pkt_burst = &cnxk_ep_xmit_pkts;
+ 	otx_epvf->eth_dev->rx_pkt_burst = &otx_ep_recv_pkts;
+-	if (otx_epvf->chip_id == PCI_DEVID_OCTEONTX_EP_VF)
++	if (otx_epvf->chip_id == PCI_DEVID_OCTEONTX_EP_VF) {
+ 		otx_epvf->eth_dev->tx_pkt_burst = &otx_ep_xmit_pkts;
+-	else if (otx_epvf->chip_id == PCI_DEVID_CN9K_EP_NET_VF ||
++		otx_epvf->chip_gen = OTX_EP_CN8XX;
++	} else if (otx_epvf->chip_id == PCI_DEVID_CN9K_EP_NET_VF ||
+ 		 otx_epvf->chip_id == PCI_DEVID_CN98XX_EP_NET_VF ||
+ 		 otx_epvf->chip_id == PCI_DEVID_CNF95N_EP_NET_VF ||
+-		 otx_epvf->chip_id == PCI_DEVID_CNF95O_EP_NET_VF ||
+-		 otx_epvf->chip_id == PCI_DEVID_CN10KA_EP_NET_VF ||
+-		 otx_epvf->chip_id == PCI_DEVID_CN10KB_EP_NET_VF ||
+-		 otx_epvf->chip_id == PCI_DEVID_CNF10KA_EP_NET_VF ||
+-		 otx_epvf->chip_id == PCI_DEVID_CNF10KB_EP_NET_VF) {
+-		otx_epvf->eth_dev->tx_pkt_burst = &otx2_ep_xmit_pkts;
++		 otx_epvf->chip_id == PCI_DEVID_CNF95O_EP_NET_VF) {
++		otx_epvf->eth_dev->rx_pkt_burst = &cn9k_ep_recv_pkts;
++		otx_epvf->chip_gen = OTX_EP_CN9XX;
++	} else if (otx_epvf->chip_id == PCI_DEVID_CN10KA_EP_NET_VF ||
++		   otx_epvf->chip_id == PCI_DEVID_CN10KB_EP_NET_VF ||
++		   otx_epvf->chip_id == PCI_DEVID_CNF10KA_EP_NET_VF ||
++		   otx_epvf->chip_id == PCI_DEVID_CNF10KB_EP_NET_VF) {
++		otx_epvf->eth_dev->rx_pkt_burst = &cnxk_ep_recv_pkts;
++		otx_epvf->chip_gen = OTX_EP_CN10XX;
+ 	} else {
+ 		otx_ep_err("Invalid chip_id\n");
+ 		ret = -EINVAL;
+@@ -656,8 +705,8 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	/* Single process support */
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+ 		eth_dev->dev_ops = &otx_ep_eth_dev_ops;
+-		eth_dev->rx_pkt_burst = &otx_ep_recv_pkts;
+-		eth_dev->tx_pkt_burst = &otx2_ep_xmit_pkts;
++		otx_ep_set_tx_func(eth_dev);
++		otx_ep_set_rx_func(eth_dev);
+ 		return 0;
+ 	}
+ 
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 18203cb679222..2fa41710dcfd2 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -13,15 +13,8 @@
+ 
+ #include "otx_ep_common.h"
+ #include "otx_ep_vf.h"
+-#include "otx2_ep_vf.h"
+ #include "otx_ep_rxtx.h"
+ 
+-/* SDP_LENGTH_S specifies packet length and is of 8-byte size */
+-#define OTX_EP_INFO_SIZE 8
+-#define OTX_EP_FSZ_FS0 0
+-#define DROQ_REFILL_THRESHOLD 16
+-#define OTX2_SDP_REQUEST_ISM   (0x1ULL << 63)
+-
+ static void
+ otx_ep_dmazone_free(const struct rte_memzone *mz)
+ {
+@@ -144,6 +137,13 @@ otx_ep_init_instr_queue(struct otx_ep_device *otx_ep, int iq_no, int num_descs,
+ 		     iq_no, iq->base_addr, (unsigned long)iq->base_addr_dma,
+ 		     iq->nb_desc);
+ 
++	iq->mbuf_list = rte_zmalloc_socket("mbuf_list",	(iq->nb_desc * sizeof(struct rte_mbuf *)),
++					   RTE_CACHE_LINE_SIZE, rte_socket_id());
++	if (!iq->mbuf_list) {
++		otx_ep_err("IQ[%d] mbuf_list alloc failed\n", iq_no);
++		goto iq_init_fail;
++	}
++
+ 	iq->otx_ep_dev = otx_ep;
+ 	iq->q_no = iq_no;
+ 	iq->fill_cnt = 0;
+@@ -479,25 +479,6 @@ otx_ep_flush_iq(struct otx_ep_instr_queue *iq)
+ 	iq->instr_pending -= instr_processed;
+ }
+ 
+-static void
+-otx2_ep_flush_iq(struct otx_ep_instr_queue *iq)
+-{
+-	uint32_t instr_processed = 0;
+-
+-	iq->otx_read_index = otx_vf_update_read_index(iq);
+-	while (iq->flush_index != iq->otx_read_index) {
+-		/* Free the IQ data buffer to the pool */
+-		rte_pktmbuf_free(iq->req_list[iq->flush_index].finfo.mbuf);
+-		iq->flush_index =
+-			otx_ep_incr_index(iq->flush_index, 1, iq->nb_desc);
+-
+-		instr_processed++;
+-	}
+-
+-	iq->stats.instr_processed = instr_processed;
+-	iq->instr_pending -= instr_processed;
+-}
+-
+ static inline void
+ otx_ep_ring_doorbell(struct otx_ep_device *otx_ep __rte_unused,
+ 		struct otx_ep_instr_queue *iq)
+@@ -692,68 +673,6 @@ otx_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ 	return count;
+ }
+ 
+-
+-/* Enqueue requests/packets to OTX_EP IQ queue.
+- * returns number of requests enqueued successfully
+- */
+-uint16_t
+-otx2_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
+-{
+-	struct otx_ep_instr_queue *iq = (struct otx_ep_instr_queue *)tx_queue;
+-	struct otx_ep_device *otx_ep = iq->otx_ep_dev;
+-	struct otx2_ep_instr_32B *iqcmd;
+-	struct rte_mbuf *m;
+-	uint32_t pkt_len;
+-	uint16_t count, tx_pkts;
+-
+-	tx_pkts = RTE_MIN(nb_pkts, iq->nb_desc - iq->instr_pending);
+-
+-	for (count = 0; count < tx_pkts; count++) {
+-		iqcmd = (struct otx2_ep_instr_32B *)(iq->base_addr + (iq->host_write_index *
+-						    iq->desc_size));
+-		iqcmd->ih.u64 = iq->partial_ih;
+-
+-		m = pkts[count];
+-		iq->req_list[iq->host_write_index].finfo.mbuf = m;
+-		if (m->nb_segs == 1) {
+-			pkt_len = rte_pktmbuf_data_len(m);
+-			iqcmd->ih.s.tlen = pkt_len;
+-			iqcmd->dptr = rte_mbuf_data_iova(m); /*dptr*/
+-		} else {
+-			if (unlikely(!(otx_ep->tx_offloads & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)))
+-				goto xmit_fail;
+-
+-			if (unlikely(prepare_xmit_gather_list(iq, m, &iqcmd->dptr, &iqcmd->ih) < 0))
+-				goto xmit_fail;
+-
+-			pkt_len = rte_pktmbuf_pkt_len(m);
+-		}
+-
+-#ifdef OTX_EP_IO_DEBUG
+-		otx_ep_dbg("Word0 [dptr]: 0x%016lx\n", (unsigned long)(iqcmd->dptr));
+-		otx_ep_dbg("Word1 [ihtx]: 0x%016lx\n", (unsigned long)(iqcmd->ih));
+-		otx_ep_dbg("Word2 [rsvd0]: 0x%016lx\n", (unsigned long)(iqcmd->rsvd[0]));
+-		otx_ep_dbg("Word3 [rsvd1]: 0x%016lx\n", (unsigned long)(iqcmd->rsvd[1]));
+-#endif
+-		/* Increment the host write index */
+-		iq->host_write_index = otx_ep_incr_index(iq->host_write_index, 1, iq->nb_desc);
+-		iq->stats.tx_bytes += pkt_len;
+-	}
+-
+-	/* ring dbell */
+-	rte_io_wmb();
+-	rte_write64(count, iq->doorbell_reg);
+-	iq->instr_pending += count;
+-	iq->stats.tx_pkts += count;
+-
+-xmit_fail:
+-	if (iq->instr_pending >= OTX_EP_MAX_INSTR)
+-		otx2_ep_flush_iq(iq);
+-
+-	/* Return no# of instructions posted successfully. */
+-	return count;
+-}
+-
+ static uint32_t
+ otx_ep_droq_refill(struct otx_ep_droq *droq)
+ {
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.h b/drivers/net/octeon_ep/otx_ep_rxtx.h
+index 2c555f8fe88e3..cb68ef3b41cb3 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.h
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.h
+@@ -7,8 +7,8 @@
+ 
+ #include <rte_byteorder.h>
+ 
+-#define OTX_EP_RXD_ALIGN 2
+-#define OTX_EP_TXD_ALIGN 2
++#define OTX_EP_RXD_ALIGN 8
++#define OTX_EP_TXD_ALIGN 8
+ 
+ #define OTX_EP_IQ_SEND_FAILED      (-1)
+ #define OTX_EP_IQ_SEND_SUCCESS     (0)
+@@ -17,19 +17,43 @@
+ 
+ #define OTX_EP_FSZ 28
+ #define OTX2_EP_FSZ 24
+-#define OTX_EP_MAX_INSTR 16
++#define OTX_EP_MAX_INSTR 128
++
++/* SDP_LENGTH_S specifies packet length and is of 8-byte size */
++#define OTX_EP_INFO_SIZE 8
++#define DROQ_REFILL_THRESHOLD 16
++#define OTX2_SDP_REQUEST_ISM   (0x1ULL << 63)
+ 
+ static inline uint32_t
+ otx_ep_incr_index(uint32_t index, uint32_t count, uint32_t max)
+ {
+ 	return ((index + count) & (max - 1));
+ }
++
+ uint16_t
+ otx_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts);
++
+ uint16_t
+ otx2_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts);
++
++uint16_t
++otx_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
++
++uint16_t
++cnxk_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts);
++
++uint16_t
++cnxk_ep_xmit_pkts_mseg(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts);
++
++uint16_t
++cnxk_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
++
++uint16_t
++cnxk_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
++
++uint16_t
++cn9k_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
++
+ uint16_t
+-otx_ep_recv_pkts(void *rx_queue,
+-		  struct rte_mbuf **rx_pkts,
+-		  uint16_t budget);
++cn9k_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ #endif /* _OTX_EP_RXTX_H_ */
+-- 
+2.25.1
+

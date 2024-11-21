@@ -1,0 +1,94 @@
+From 23007e660902d8b0aee523dc6306e0427010e56a Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 11 May 2023 07:32:36 +0000
+Subject: [PATCH 459/955] test/crypto: remove redundant code
+
+Code for registering raw API tests for various PMDs are repeated.
+Add common routine to avoid duplication of code.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Id90d7f6c97616be2ae64893668328b2763a05a9d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104130
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_cryptodev.c | 40 ++++++++++-----------------------------
+ 1 file changed, 10 insertions(+), 30 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index ebb7869a6e9b5..75e00d883f5e8 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -17039,13 +17039,11 @@ test_cryptodev_bcmfs(void)
+ }
+ 
+ static int
+-test_cryptodev_qat_raw_api(void)
++run_cryptodev_raw_testsuite(const char *pmd_name)
+ {
+-	static const char *pmd_name = RTE_STR(CRYPTODEV_NAME_QAT_SYM_PMD);
+ 	int ret;
+ 
+-	ret = require_feature_flag(pmd_name, RTE_CRYPTODEV_FF_SYM_RAW_DP,
+-			"RAW API");
++	ret = require_feature_flag(pmd_name, RTE_CRYPTODEV_FF_SYM_RAW_DP, "RAW API");
+ 	if (ret)
+ 		return ret;
+ 
+@@ -17056,6 +17054,12 @@ test_cryptodev_qat_raw_api(void)
+ 	return ret;
+ }
+ 
++static int
++test_cryptodev_qat_raw_api(void)
++{
++	return run_cryptodev_raw_testsuite(RTE_STR(CRYPTODEV_NAME_QAT_SYM_PMD));
++}
++
+ static int
+ test_cryptodev_cn9k(void)
+ {
+@@ -17071,37 +17075,13 @@ test_cryptodev_cn10k(void)
+ static int
+ test_cryptodev_dpaa2_sec_raw_api(void)
+ {
+-	static const char *pmd_name = RTE_STR(CRYPTODEV_NAME_DPAA2_SEC_PMD);
+-	int ret;
+-
+-	ret = require_feature_flag(pmd_name, RTE_CRYPTODEV_FF_SYM_RAW_DP,
+-			"RAW API");
+-	if (ret)
+-		return ret;
+-
+-	global_api_test_type = CRYPTODEV_RAW_API_TEST;
+-	ret = run_cryptodev_testsuite(pmd_name);
+-	global_api_test_type = CRYPTODEV_API_TEST;
+-
+-	return ret;
++	return run_cryptodev_raw_testsuite(RTE_STR(CRYPTODEV_NAME_DPAA2_SEC_PMD));
+ }
+ 
+ static int
+ test_cryptodev_dpaa_sec_raw_api(void)
+ {
+-	static const char *pmd_name = RTE_STR(CRYPTODEV_NAME_DPAA_SEC_PMD);
+-	int ret;
+-
+-	ret = require_feature_flag(pmd_name, RTE_CRYPTODEV_FF_SYM_RAW_DP,
+-			"RAW API");
+-	if (ret)
+-		return ret;
+-
+-	global_api_test_type = CRYPTODEV_RAW_API_TEST;
+-	ret = run_cryptodev_testsuite(pmd_name);
+-	global_api_test_type = CRYPTODEV_API_TEST;
+-
+-	return ret;
++	return run_cryptodev_raw_testsuite(RTE_STR(CRYPTODEV_NAME_DPAA_SEC_PMD));
+ }
+ 
+ REGISTER_TEST_COMMAND(cryptodev_dpaa2_sec_raw_api_autotest,
+-- 
+2.25.1
+

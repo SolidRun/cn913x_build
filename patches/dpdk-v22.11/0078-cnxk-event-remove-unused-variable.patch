@@ -1,0 +1,32 @@
+From cc2caba0386c3d553e826e1cc73543d93a1c5903 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 13 Dec 2022 22:29:48 +0530
+Subject: [PATCH 078/955] cnxk/event: remove unused variable
+
+Remove unused variable in event timer.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I9057a4d864c1b24c17937067f724a35e9619b852
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92512
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cnxk_tim_worker.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/event/cnxk/cnxk_tim_worker.h b/drivers/event/cnxk/cnxk_tim_worker.h
+index f4f0a1c946a84..87ac91f387e4a 100644
+--- a/drivers/event/cnxk/cnxk_tim_worker.h
++++ b/drivers/event/cnxk/cnxk_tim_worker.h
+@@ -460,7 +460,7 @@ cnxk_tim_add_entry_brst(struct cnxk_tim_ring *const tim_ring,
+ 	int16_t chunk_remainder;
+ 	uint16_t index = 0;
+ 	uint64_t lock_sema;
+-	int16_t rem, crem;
++	int16_t rem;
+ 	uint8_t lock_cnt;
+ 
+ __retry:
+-- 
+2.25.1
+

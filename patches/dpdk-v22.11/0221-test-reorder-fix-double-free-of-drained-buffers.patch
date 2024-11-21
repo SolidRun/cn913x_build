@@ -1,0 +1,45 @@
+From d4c11e1930531175eac4c1be68dc122f3deb2b99 Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Thu, 5 Jan 2023 12:19:34 +0100
+Subject: [PATCH 221/955] test/reorder: fix double free of drained buffers
+
+Set to zero array of drained buffers after free, to prevent freeing them
+one more time.
+Discovered with enabled `RTE_LIBRTE_MEMPOOL_DEBUG`.
+
+Fixes: ecd867faa860 ("test/reorder: fix freeing mbuf twice")
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: Ic9d7de50ded99f321ce70d2d542e1fb5907ce1c0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93894
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_reorder.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/app/test/test_reorder.c b/app/test/test_reorder.c
+index f0714a5c18a37..7b5e590bacecc 100644
+--- a/app/test/test_reorder.c
++++ b/app/test/test_reorder.c
+@@ -278,6 +278,7 @@ test_reorder_drain(void)
+ 		goto exit;
+ 	}
+ 	rte_pktmbuf_free(robufs[0]);
++	memset(robufs, 0, sizeof(robufs));
+ 
+ 	/* Insert more packets
+ 	 * RB[] = {NULL, NULL, NULL, NULL}
+@@ -313,6 +314,7 @@ test_reorder_drain(void)
+ 	for (i = 0; i < 3; i++) {
+ 		rte_pktmbuf_free(robufs[i]);
+ 	}
++	memset(robufs, 0, sizeof(robufs));
+ 
+ 	/*
+ 	 * RB[] = {NULL, NULL, NULL, NULL}
+-- 
+2.25.1
+

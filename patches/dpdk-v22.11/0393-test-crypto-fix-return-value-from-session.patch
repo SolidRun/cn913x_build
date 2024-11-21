@@ -1,0 +1,44 @@
+From 86939ec71b6baa86d82b808b0c855f9f3170908f Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Wed, 29 Mar 2023 09:13:13 +0530
+Subject: [PATCH 393/955] test/crypto: fix return value from session
+
+Fixing return value if session failure occurs
+due to unsupported feature.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I29304aeac29dcb218e47f02886ba0d1f6eca747e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100186
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 76c7f7cae232b..d739c24ea5dfa 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -8504,7 +8504,7 @@ test_authenticated_encryption(const struct aead_test_data *tdata)
+ 			tdata->key.data, tdata->key.len,
+ 			tdata->aad.len, tdata->auth_tag.len,
+ 			tdata->iv.len);
+-	if (retval < 0)
++	if (retval != TEST_SUCCESS)
+ 		return retval;
+ 
+ 	if (tdata->aad.len > MBUF_SIZE) {
+@@ -11208,7 +11208,7 @@ test_authenticated_decryption(const struct aead_test_data *tdata)
+ 			tdata->key.data, tdata->key.len,
+ 			tdata->aad.len, tdata->auth_tag.len,
+ 			tdata->iv.len);
+-	if (retval < 0)
++	if (retval != TEST_SUCCESS)
+ 		return retval;
+ 
+ 	/* alloc mbuf and set payload */
+-- 
+2.25.1
+

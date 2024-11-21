@@ -1,0 +1,122 @@
+From a9a0921c625bf3d144ee87ebd2a0d051fc7667db Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Thu, 1 Feb 2024 15:54:21 +0530
+Subject: [PATCH 219/513] test/security: add more DTLS anti-replay window sz
+
+Cover more window sizes in anti-replay tests for DTLS 1.2.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I6217617f0fc1c72a35d6e1162a59c5393761ae0f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121650
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c | 72 +++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 69 insertions(+), 3 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 307ba0a4e3801..d37ae82aedb63 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12307,12 +12307,12 @@ test_dtls_pkt_replay(const uint64_t seq_no[],
+ }
+ 
+ static int
+-test_dtls_1_2_record_proto_antireplay(void)
++test_dtls_1_2_record_proto_antireplay(uint64_t winsz)
+ {
+ 	struct tls_record_test_flags flags;
+-	uint64_t winsz = 64, seq_no[5];
+ 	uint32_t nb_pkts = 5;
+ 	bool replayed_pkt[5];
++	uint64_t seq_no[5];
+ 
+ 	memset(&flags, 0, sizeof(flags));
+ 
+@@ -12339,6 +12339,48 @@ test_dtls_1_2_record_proto_antireplay(void)
+ 	return test_dtls_pkt_replay(seq_no, replayed_pkt, nb_pkts, &flags);
+ }
+ 
++static int
++test_dtls_1_2_record_proto_antireplay64(void)
++{
++	return test_dtls_1_2_record_proto_antireplay(64);
++}
++
++static int
++test_dtls_1_2_record_proto_antireplay128(void)
++{
++	return test_dtls_1_2_record_proto_antireplay(128);
++}
++
++static int
++test_dtls_1_2_record_proto_antireplay256(void)
++{
++	return test_dtls_1_2_record_proto_antireplay(256);
++}
++
++static int
++test_dtls_1_2_record_proto_antireplay512(void)
++{
++	return test_dtls_1_2_record_proto_antireplay(512);
++}
++
++static int
++test_dtls_1_2_record_proto_antireplay1024(void)
++{
++	return test_dtls_1_2_record_proto_antireplay(1024);
++}
++
++static int
++test_dtls_1_2_record_proto_antireplay2048(void)
++{
++	return test_dtls_1_2_record_proto_antireplay(2048);
++}
++
++static int
++test_dtls_1_2_record_proto_antireplay4096(void)
++{
++	return test_dtls_1_2_record_proto_antireplay(4096);
++}
++
+ static int
+ test_dtls_1_2_record_proto_sgl(void)
+ {
+@@ -17637,7 +17679,31 @@ static struct unit_test_suite dtls12_record_proto_testsuite  = {
+ 		TEST_CASE_NAMED_ST(
+ 			"Antireplay with window size 64",
+ 			ut_setup_security, ut_teardown,
+-			test_dtls_1_2_record_proto_antireplay),
++			test_dtls_1_2_record_proto_antireplay64),
++		TEST_CASE_NAMED_ST(
++			"Antireplay with window size 128",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_antireplay128),
++		TEST_CASE_NAMED_ST(
++			"Antireplay with window size 256",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_antireplay256),
++		TEST_CASE_NAMED_ST(
++			"Antireplay with window size 512",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_antireplay512),
++		TEST_CASE_NAMED_ST(
++			"Antireplay with window size 1024",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_antireplay1024),
++		TEST_CASE_NAMED_ST(
++			"Antireplay with window size 2048",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_antireplay2048),
++		TEST_CASE_NAMED_ST(
++			"Antireplay with window size 4096",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_antireplay4096),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+-- 
+2.25.1
+

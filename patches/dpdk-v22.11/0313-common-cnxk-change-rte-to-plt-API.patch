@@ -1,0 +1,57 @@
+From 6aed7ea0a73514c8caa3032eb5b1c9bb296d5d9d Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 17 Mar 2023 13:32:39 +0530
+Subject: [PATCH 313/955] common/cnxk: change rte to plt API
+
+Also update comment.
+
+Change-Id: I83b263e84e86c50fbca32a5009f1c8ca43a46100
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99396
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index c36d15c7fb38a..67f8ce9aa074a 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -624,7 +624,7 @@ nix_inl_eng_caps_get(struct nix *nix)
+ 		return;
+ 	}
+ 
+-	/* Fill CPT_INST_S for WRITE_SA microcode op */
++	/* Fill CPT_INST_S for LOAD_FVC/HW_CRYPTO_SUPPORT microcode op */
+ 	memset(&inst, 0, sizeof(struct cpt_inst_s));
+ 	inst.res_addr = (uint64_t)hw_res;
+ 	inst.rptr = (uint64_t)rptr;
+@@ -639,7 +639,7 @@ nix_inl_eng_caps_get(struct nix *nix)
+ 		uint64_t lmt_status;
+ 
+ 		hw_res->cn9k.compcode = CPT_COMP_NOT_DONE;
+-		rte_io_wmb();
++		plt_io_wmb();
+ 
+ 		do {
+ 			roc_lmt_mov_seg((void *)lmt_base, &inst, 4);
+@@ -682,12 +682,12 @@ nix_inl_eng_caps_get(struct nix *nix)
+ 
+ 		if (res.cn10k.compcode != CPT_COMP_GOOD || res.cn10k.uc_compcode) {
+ 			plt_err("LOAD FVC operation timed out");
+-			return;
++			goto exit;
+ 		}
+ 	}
+ 
+ 	nix->cpt_eng_caps = plt_be_to_cpu_64(*rptr);
+-
++exit:
+ 	plt_free(rptr);
+ 	plt_free(hw_res);
+ }
+-- 
+2.25.1
+

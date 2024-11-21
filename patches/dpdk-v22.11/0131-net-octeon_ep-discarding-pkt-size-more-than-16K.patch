@@ -1,0 +1,104 @@
+From eb3eb018668eacd94ff7791ed6fd4695efad82a4 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Mon, 2 Jan 2023 00:55:42 -0800
+Subject: [PATCH 131/955] net/octeon_ep: discarding pkt size more than 16K
+
+discard received packets of size greater than 16KB.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I65bc828ba2ed02f6c16d06042b7cd16cd321fc0d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93493
+Tested-by: Satananda Burla <sburla@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/otx2_ep_vf.h  | 12 +++++++++++-
+ drivers/net/octeon_ep/otx_ep_rxtx.c | 24 ++++++++++++++++--------
+ 2 files changed, 27 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.h b/drivers/net/octeon_ep/otx2_ep_vf.h
+index 815cba4888834..59e67ad38e710 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.h
++++ b/drivers/net/octeon_ep/otx2_ep_vf.h
+@@ -117,6 +117,9 @@
+ #define PCI_DEVID_CN98XX_EP_NET_VF		0xB103
+ #define PCI_DEVID_CNF95N_EP_NET_VF		0xB403
+ #define PCI_DEVID_CNF95O_EP_NET_VF		0xB603
++#define PCI_DEVID_LIO3_EP_NET_VF		0x3383 /* LIO3 EP mode */
++
++#define OTX2_EP_MAX_RX_PKT_LEN			(16384)
+ 
+ int
+ otx2_ep_vf_setup_device(struct otx_ep_device *sdpvf);
+@@ -139,5 +142,12 @@ struct otx2_ep_instr_64B {
+ 	/* Additional headers available in a 64-byte instruction. */
+ 	uint64_t exhdr[4];
+ };
+-
++static inline int is_otx2_ep_vf(uint16_t chip_id)
++{
++	return (chip_id == PCI_DEVID_OCTEONTX2_EP_NET_VF ||
++		chip_id == PCI_DEVID_LIO3_EP_NET_VF ||
++		chip_id == PCI_DEVID_CNF95N_EP_NET_VF ||
++		chip_id == PCI_DEVID_CNF95O_EP_NET_VF ||
++		chip_id == PCI_DEVID_CN98XX_EP_NET_VF);
++}
+ #endif /*_OTX2_EP_VF_H_ */
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 3fe6c2761c2cd..ac0828c439efa 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -961,6 +961,13 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 	droq_pkt->l3_len = hdr_lens.l3_len;
+ 	droq_pkt->l4_len = hdr_lens.l4_len;
+ 
++	if (is_otx2_ep_vf(otx_ep->chip_id) &&
++		droq_pkt->pkt_len > OTX2_EP_MAX_RX_PKT_LEN) {
++		/* Due to hw errata NIX cannot send over 16K packets to SDP */
++		rte_pktmbuf_free(droq_pkt);
++		goto oq_read_fail;
++	}
++
+ 	if (droq_pkt->nb_segs > 1 &&
+ 	    !(otx_ep->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)) {
+ 		rte_pktmbuf_free(droq_pkt);
+@@ -1000,6 +1007,7 @@ otx_ep_recv_pkts(void *rx_queue,
+ 	struct rte_mbuf *oq_pkt;
+ 
+ 	uint32_t pkts = 0;
++	uint32_t valid_pkts = 0;
+ 	uint32_t new_pkts = 0;
+ 	int next_fetch;
+ 
+@@ -1027,14 +1035,15 @@ otx_ep_recv_pkts(void *rx_queue,
+ 				    "last_pkt_count %" PRIu64 "new_pkts %d.\n",
+ 				   droq->pkts_pending, droq->last_pkt_count,
+ 				   new_pkts);
+-			droq->pkts_pending -= pkts;
+ 			droq->stats.rx_err++;
+-			goto finish;
++			continue;
++		} else {
++			rx_pkts[valid_pkts] = oq_pkt;
++			valid_pkts++;
++			/* Stats */
++			droq->stats.pkts_received++;
++			droq->stats.bytes_received += oq_pkt->pkt_len;
+ 		}
+-		rx_pkts[pkts] = oq_pkt;
+-		/* Stats */
+-		droq->stats.pkts_received++;
+-		droq->stats.bytes_received += oq_pkt->pkt_len;
+ 	}
+ 	droq->pkts_pending -= pkts;
+ 
+@@ -1061,6 +1070,5 @@ otx_ep_recv_pkts(void *rx_queue,
+ 
+ 		rte_write32(0, droq->pkts_credit_reg);
+ 	}
+-finish:
+-	return pkts;
++	return valid_pkts;
+ }
+-- 
+2.25.1
+

@@ -1,0 +1,528 @@
+From 6ada9966449ac623e504ac04912f35841d7c1654 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Fri, 3 May 2024 10:20:49 +0530
+Subject: [PATCH 359/513] ci: added test cases to 103XX board
+
+Added
+
+cnxk_ipsec_msns
+cnxk_ipsec_loopback
+cnxk_ipsec_perf
+
+testcases to ci for 103XX board
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I6117ea88779743a16f57a2b1dc7891e37da05e3a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128755
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ .../cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh  | 48 ++++++++++++++-----
+ .../ipsec_perf/ipsec_perf_target.sh           | 47 +++++++++++++-----
+ .../test/cnxk-tests/ipsec_perf/meson.build    | 10 ++++
+ .../cn10k/rclk2500_sclk1100.103xx.ip.inb      | 10 ++++
+ .../cn10k/rclk2500_sclk1100.103xx.ip.outb     | 10 ++++
+ .../cn10k/rclk2500_sclk1100.103xx.ip_ev.inb   | 10 ++++
+ .../cn10k/rclk2500_sclk1100.103xx.ip_ev.outb  | 10 ++++
+ .../rclk2500_sclk1100.103xx.ip_ev_ss.inb      | 10 ++++
+ .../rclk2500_sclk1100.103xx.ip_ev_ss.outb     | 10 ++++
+ .../cn10k/rclk2500_sclk1100.103xx.ip_p.inb    | 10 ++++
+ .../cn10k/rclk2500_sclk1100.103xx.ip_p.outb   | 10 ++++
+ .../cn10k/rclk2500_sclk1100.103xx.ip_p_ss.inb | 10 ++++
+ .../rclk2500_sclk1100.103xx.ip_p_ss.outb      | 10 ++++
+ marvell-ci/test/env/cn103.env                 |  2 +
+ 14 files changed, 185 insertions(+), 22 deletions(-)
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.outb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.inb
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.outb
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+index 66dfc97966448..a51ce0adbbb5e 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+@@ -38,9 +38,18 @@ declare -A PASS_PPS_TABLE
+ 
+ ! $(cat /proc/device-tree/compatible | grep -q "cn10k")
+ IS_CN10K=$?
++DTC=$(tr -d '\0' </proc/device-tree/model | awk '{print $2}')
++CORE_NUM=16
++
+ 
+ if [[ $IS_CN10K -ne 0 ]]; then
+-	HW="106xx"
++	if [[ $DTC == "CN103XX" ]]; then
++		HW="103xx"
++		CORE_NUM=7
++		COREMASK="0x80"
++	else
++		HW="106xx"
++	fi
+ 	CDEV_VF=$(lspci -d :a0f3 | head -1 | awk -e '{ print $1 }')
+ 	INLINE_DEV=0002:1d:00.0
+ else
+@@ -315,7 +324,7 @@ function run_test()
+ 
+ function run_ipsec_secgw()
+ {
+-	local config="(0,0,16),(1,0,16)"
++	local config="(0,0,$CORE_NUM),(1,0,$CORE_NUM)"
+ 	local lookaside_env="$IPSECGW_BIN -c $COREMASK -a $CDEV_VF -a $LIF2,ipsec_in_max_spi=128 -a $LIF3,ipsec_in_max_spi=128 --file-prefix $IPSEC_PREFIX"
+ 	local lookaside="$lookaside_env -- -P -p 0x3 -f ${CFG[$Y]} --config=$config"
+ 	local lookaside_event="$lookaside_env -a $EVENT_VF -- -P -p 0x3 -f ${CFG[$Y]} --transfer-mode event --event-schedule-type parallel"
+@@ -350,7 +359,7 @@ function run_ipsec_secgw()
+ 				;;
+ 			ip_p)
+ 				# Inline Protocol Poll Mode
+-				run_test '$env -f ${CFG[$Y]} --transfer-mode poll --config="(0,0,16)" --cryptodev_mask 0 -l'
++				run_test '$env -f ${CFG[$Y]} --transfer-mode poll --config="(0,0,$CORE_NUM)" --cryptodev_mask 0 -l'
+ 				;;
+ 			ip_ev_ss)
+ 				# Inline Protocol Event Vector Perf Mode (Single-SA)
+@@ -358,7 +367,7 @@ function run_ipsec_secgw()
+ 				;;
+ 			ip_p_ss)
+ 				# Inline Protocol Poll Perf Mode (Single-SA)
+-				run_test '$env -f ${IP_PERF_CFG[$perf_cfg]} --transfer-mode poll --config="(0,0,16)" --cryptodev_mask 0 -l --single-sa 0'
++				run_test '$env -f ${IP_PERF_CFG[$perf_cfg]} --transfer-mode poll --config="(0,0,$CORE_NUM)" --cryptodev_mask 0 -l --single-sa 0'
+ 				;;
+ 		esac
+ 	else
+@@ -387,7 +396,7 @@ function run_ipsec_secgw()
+ 
+ function run_ipsec_secgw_inb()
+ {
+-	local config="(0,0,16),(1,0,16)"
++	local config="(0,0,$CORE_NUM),(1,0,$CORE_NUM)"
+ 	local lookaside_env="$IPSECGW_BIN -c $COREMASK -a $CDEV_VF -a $LIF2,ipsec_in_max_spi=128 -a $LIF3,ipsec_in_max_spi=128 --file-prefix $IPSEC_PREFIX"
+ 	local lookaside="$lookaside_env -- -P -p 0x3 -u 0x1 -f ${CFG[$Y]} --config=$config"
+ 	local lookaside_event="$lookaside_env -a $EVENT_VF -- -P -p 0x3 -u 0x1 -f ${CFG[$Y]} --transfer-mode event --event-schedule-type parallel"
+@@ -422,7 +431,7 @@ function run_ipsec_secgw_inb()
+ 				;;
+ 			ip_p)
+ 				# Inline Protocol Poll Mode
+-				run_test '$env -f ${IP_IB_CFG[$Y]} --transfer-mode poll --config="(0,0,16)" --cryptodev_mask 0 -l'
++				run_test '$env -f ${IP_IB_CFG[$Y]} --transfer-mode poll --config="(0,0,$CORE_NUM)" --cryptodev_mask 0 -l'
+ 				;;
+ 			ip_ev_ss)
+ 				# Inline Protocol Event Vector Perf Mode (Single-SA)
+@@ -430,7 +439,7 @@ function run_ipsec_secgw_inb()
+ 				;;
+ 			ip_p_ss)
+ 				# Inline Protocol Poll Perf Mode (Single-SA)
+-				run_test '$env -f ${IP_IB_CFG[$Y]} --transfer-mode poll --config="(0,0,16)" --cryptodev_mask 0 -l --single-sa 0'
++				run_test '$env -f ${IP_IB_CFG[$Y]} --transfer-mode poll --config="(0,0,$CORE_NUM)" --cryptodev_mask 0 -l --single-sa 0'
+ 				;;
+ 		esac
+ 	else
+@@ -516,11 +525,16 @@ exec_testpmd_cmd_gen()
+ 
+ function pmd_tx_launch()
+ {
++	if [[ $DTC == "CN103XX" ]]; then
++		C_MSK="0x38"
++	else
++		C_MSK="0x3800"
++	fi
+ 	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
+ 		exec_testpmd_cmd_gen "launch_tx_outb" $TPMD_TX_PREFIX $X
+ 	else
+ 		testpmd_launch "$TPMD_TX_PREFIX" \
+-			"-c 0x3800 -a $LIF1" \
++			"-c $C_MSK -a $LIF1" \
+ 			"--nb-cores=2 --forward-mode=txonly --tx-ip=192.168.$X.1,192.168.$X.2"
+ 		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl rx off 0"
+@@ -533,17 +547,24 @@ function pmd_tx_launch()
+ 
+ function pmd_tx_launch_for_inb()
+ {
++	if [[ $DTC == "CN103XX" ]]; then
++		C_MSK_I="0xF8"
++		C_MSK="0x38"
++	else
++		C_MSK_I="0xF800"
++		C_MSK="0x3800"
++	fi
+ 	local pcap=$CNXKTESTPATH/pcap/enc_$1_$2.pcap
+ 	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
+ 		exec_testpmd_cmd_gen "launch_tx_inb" $TPMD_TX_PREFIX $pcap
+ 	else
+ 		if is_single_sa_test; then
+ 			testpmd_launch "$TPMD_TX_PREFIX" \
+-			"-c 0xF800 --vdev net_pcap0,rx_pcap=$pcap,rx_pcap=$pcap,rx_pcap=$pcap,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
++			"-c $C_MSK_I --vdev net_pcap0,rx_pcap=$pcap,rx_pcap=$pcap,rx_pcap=$pcap,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
+ 			"--nb-cores=4 --txq=4 --rxq=4 --no-flush-rx"
+ 		else
+ 			testpmd_launch "$TPMD_TX_PREFIX" \
+-			"-c 0x3800 --vdev net_pcap0,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
++			"-c $C_MSK --vdev net_pcap0,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
+ 			"--nb-cores=2 --no-flush-rx"
+ 		fi
+ 		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+@@ -557,10 +578,15 @@ function pmd_tx_launch_for_inb()
+ 
+ function pmd_rx_launch()
+ {
++	if [[ $DTC == "CN103XX" ]]; then
++		C_MSK_RX="0x70"
++	else
++		C_MSK_RX="0x700"
++	fi
+ 	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then :
+ 	else
+ 		testpmd_launch "$TPMD_RX_PREFIX" \
+-			"-c 0x700 -a $LIF4" \
++			"-c $C_MSK_RX -a $LIF4" \
+ 			"--nb-cores=2 --forward-mode=rxonly"
+ 		testpmd_cmd $TPMD_RX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl rx off 0"
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ipsec_perf_target.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/ipsec_perf_target.sh
+index c32a5cc8fbb1c..05179e7a5b0d5 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ipsec_perf_target.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ipsec_perf_target.sh
+@@ -34,6 +34,8 @@ TPMD_TX_PREFIX="tpmd_tx"
+ 
+ ! $(cat /proc/device-tree/compatible | grep -q "cn10k")
+ IS_CN10K=$?
++DTC=$(tr -d '\0' </proc/device-tree/model | awk '{print $2}')
++CORE_NUM=16
+ 
+ function get_system_info()
+ {
+@@ -120,7 +122,12 @@ fi
+ get_system_info
+ 
+ if [[ $IS_CN10K -ne 0 ]]; then
+-	HW="106xx"
++	if [[ $DTC == "CN103XX" ]]; then
++		HW="103xx"
++		CORE_NUM=7
++	else
++		HW="106xx"
++	fi
+ 	CDEV_VF=$(lspci -d :a0f3 | head -1 | awk -e '{ print $1 }')
+ 	INLINE_DEV=0002:1d:00.0
+ 	mkdir -p ref_numbers/cn10k
+@@ -257,7 +264,7 @@ function run_test()
+ 
+ function run_ipsec_secgw()
+ {
+-	local config="(0,0,16),(1,0,16)"
++	local config="(0,0,$CORE_NUM),(1,0,$CORE_NUM)"
+ 
+ 	echo "ipsec-secgw outb"
+ 	if [[ $Y -ge 2 ]]; then
+@@ -275,7 +282,7 @@ function run_ipsec_secgw()
+ 					;;
+ 				4)
+ 					# Inline Protocol Poll Mode
+-					run_test '$env -f ${CFG[$Y]} --transfer-mode poll --config="(0,0,16)" --cryptodev_mask 0 -l'
++					run_test '$env -f ${CFG[$Y]} --transfer-mode poll --config="(0,0,$CORE_NUM)" --cryptodev_mask 0 -l'
+ 					;;
+ 				5)
+ 					# Inline Protocol Event Vector Perf Mode (Single-SA)
+@@ -283,7 +290,7 @@ function run_ipsec_secgw()
+ 					;;
+ 				6)
+ 					# Inline Protocol Poll Perf Mode (Single-SA)
+-					run_test '$env -f ${IP_PERF_CFG[$perf_cfg]} --transfer-mode poll --config="(0,0,16)" --cryptodev_mask 0 -l --single-sa 0'
++					run_test '$env -f ${IP_PERF_CFG[$perf_cfg]} --transfer-mode poll --config="(0,0,$CORE_NUM)" --cryptodev_mask 0 -l --single-sa 0'
+ 					;;
+ 			esac
+ 		else
+@@ -297,7 +304,7 @@ function run_ipsec_secgw()
+ 
+ function run_ipsec_secgw_inb()
+ {
+-	local config="(0,0,16),(1,0,16)"
++	local config="(0,0,$CORE_NUM),(1,0,$CORE_NUM)"
+ 
+ 	echo "ipsec-secgw inb"
+ 
+@@ -316,7 +323,7 @@ function run_ipsec_secgw_inb()
+ 					;;
+ 				4)
+ 					# Inline Protocol Poll Mode
+-					run_test '$env -f ${IP_IB_CFG[$Y]} --transfer-mode poll --config="(0,0,16)" --cryptodev_mask 0 -l'
++					run_test '$env -f ${IP_IB_CFG[$Y]} --transfer-mode poll --config="(0,0,$CORE_NUM)" --cryptodev_mask 0 -l'
+ 					;;
+ 				5)
+ 					# Inline Protocol Event Vector Perf Mode (Single-SA)
+@@ -324,7 +331,7 @@ function run_ipsec_secgw_inb()
+ 					;;
+ 				6)
+ 					# Inline Protocol Poll Perf Mode (Single-SA)
+-					run_test '$env -f ${IP_IB_CFG[$Y]} --transfer-mode poll --config="(0,0,16)" --cryptodev_mask 0 -l --single-sa 0'
++					run_test '$env -f ${IP_IB_CFG[$Y]} --transfer-mode poll --config="(0,0,$CORE_NUM)" --cryptodev_mask 0 -l --single-sa 0'
+ 					;;
+ 			esac
+ 		else
+@@ -379,11 +386,16 @@ exec_testpmd_cmd_gen()
+ 
+ function pmd_tx_launch()
+ {
++	if [[ $DTC == "CN103XX" ]]; then
++		CORE_MASK="0x38"
++	else
++		CORE_MASK="0x3800"
++	fi
+ 	if [[ $WITH_GEN_BOARD -eq 1 && $Y -ge 2 ]]; then
+ 		exec_testpmd_cmd_gen "launch_tx_outb" $TPMD_TX_PREFIX $X
+ 	else
+ 		testpmd_launch "$TPMD_TX_PREFIX" \
+-			"-c 0x3800 -a $LIF1" \
++			"-c $CORE_MASK -a $LIF1" \
+ 			"--nb-cores=2 --forward-mode=txonly --tx-ip=192.168.$X.1,192.168.$X.2"
+ 		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl rx off 0"
+@@ -396,17 +408,25 @@ function pmd_tx_launch()
+ 
+ function pmd_tx_launch_for_inb()
+ {
++	if [[ $DTC == "CN103XX" ]]; then
++		CORE_MASK1="0xF8"
++		CORE_MASK2="0x38"
++	else
++		CORE_MASK1="0xF800"
++		CORE_MASK2="0x3800"
++	fi
++
+ 	local pcap=$SCRIPTPATH/pcap/enc_$1_$2.pcap
+ 	if [[ $WITH_GEN_BOARD -eq 1 && $Y -ge 2 ]]; then
+ 		exec_testpmd_cmd_gen "launch_tx_inb" $TPMD_TX_PREFIX $pcap
+ 	else
+ 		if [[ $Y -gt 4 ]]; then
+ 			testpmd_launch "$TPMD_TX_PREFIX" \
+-			"-c 0xF800 --vdev net_pcap0,rx_pcap=$pcap,rx_pcap=$pcap,rx_pcap=$pcap,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
++			"-c $CORE_MASK1 --vdev net_pcap0,rx_pcap=$pcap,rx_pcap=$pcap,rx_pcap=$pcap,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
+ 			"--nb-cores=4 --txq=4 --rxq=4 --no-flush-rx"
+ 		else
+ 			testpmd_launch "$TPMD_TX_PREFIX" \
+-			"-c 0x3800 --vdev net_pcap0,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
++			"-c $CORE_MASK2 --vdev net_pcap0,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
+ 			"--nb-cores=2 --no-flush-rx"
+ 		fi
+ 		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+@@ -420,11 +440,16 @@ function pmd_tx_launch_for_inb()
+ 
+ function pmd_rx_launch()
+ {
++	if [[ $DTC == "CN103XX" ]]; then
++		C_MSK="0x70"
++	else
++		C_MSK="0x700"
++	fi
+ 	if [[ $WITH_GEN_BOARD -eq 1 && $Y -ge 2 ]]; then
+ 		exec_testpmd_cmd_gen "launch_rx" $TPMD_RX_PREFIX
+ 	else
+ 		testpmd_launch "$TPMD_RX_PREFIX" \
+-			"-c 0x700 -a $LIF4" \
++			"-c $C_MSK -a $LIF4" \
+ 			"--nb-cores=2 --forward-mode=rxonly"
+ 		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl rx off 0"
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build b/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
+index 9e6c7d26a274f..a0a571e7ee619 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
+@@ -64,6 +64,16 @@ run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.outb')
+ run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb')
+ run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb')
+ run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.outb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.inb')
+ run_command(copy_data, 'pcap/enc_aes-cbc_sha1-hmac_64.pcap')
+ run_command(copy_data, 'pcap/enc_aes-cbc_sha1-hmac_380.pcap')
+ run_command(copy_data, 'pcap/enc_aes-cbc_sha1-hmac_1410.pcap')
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb
+new file mode 100644
+index 0000000000000..2b6811e397061
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 5102561
++380: 5121262
++1410: 4161023
++<end>
++aes-gcm
++64: 5101840
++380: 5120769
++1410: 4194633
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb
+new file mode 100644
+index 0000000000000..f26e338455da6
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 5186596
++380: 5165938
++1410: 4161094
++<end>
++aes-gcm
++64: 5164575
++380: 5165459
++1410: 4194624
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.inb
+new file mode 100644
+index 0000000000000..ffdf12dc40238
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 15249508
++380: 13528295
++1410: 4161060
++<end>
++aes-gcm
++64: 15311353
++380: 13647004
++1410: 4194611
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.outb
+new file mode 100644
+index 0000000000000..3aa7d8ecd049c
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 15942164
++380: 13527980
++1410: 4161095
++<end>
++aes-gcm
++64: 15793424
++380: 13646209
++1410: 4194604
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.inb
+new file mode 100644
+index 0000000000000..23a30fe5aa8e3
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 16518720
++380: 13527900
++1410: 4161094
++<end>
++aes-gcm
++64: 19351540
++380: 13646266
++1410: 4194690
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.outb
+new file mode 100644
+index 0000000000000..90dc304160273
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_ev_ss.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 17810368
++380: 13528060
++1410: 4161102
++<end>
++aes-gcm
++64: 20085620
++380: 13646177
++1410: 4194611
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.inb
+new file mode 100644
+index 0000000000000..342c338e06124
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 15189510
++380: 13528096
++1410: 4161179
++<end>
++aes-gcm
++64: 15072300
++380: 13646180
++1410: 4194624
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.outb
+new file mode 100644
+index 0000000000000..7054d7cf15656
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 17190394
++380: 13528059
++1410: 4161092
++<end>
++aes-gcm
++64: 17078851
++380: 13646208
++1410: 4194608
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.inb
+new file mode 100644
+index 0000000000000..145a7b1898cba
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.inb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 16540318
++380: 13528219
++1410: 4161278
++<end>
++aes-gcm
++64: 19353501
++380: 13647162
++1410: 4194711
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.outb
+new file mode 100644
+index 0000000000000..2c2073e9e8f5a
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.outb
+@@ -0,0 +1,10 @@
++aes-cbc_sha1-hmac
++64: 17806697 
++380: 13528085
++1410: 4161090
++<end>
++aes-gcm
++64: 20141319
++380: 13646248
++1410: 4194596
++<end>
+diff --git a/marvell-ci/test/env/cn103.env b/marvell-ci/test/env/cn103.env
+index bffc8816974dd..3dbeb65baff03 100644
+--- a/marvell-ci/test/env/cn103.env
++++ b/marvell-ci/test/env/cn103.env
+@@ -28,6 +28,8 @@ RUN_TESTS="
+ 	cnxk_tm_test
+ 	cnxk_port_ctrl
+ 	cnxk_fwd_perf
++	cnxk_ipsec_msns
++	cnxk_ipsec_loopback
+ "
+ 
+ # Update command timeout
+-- 
+2.25.1
+

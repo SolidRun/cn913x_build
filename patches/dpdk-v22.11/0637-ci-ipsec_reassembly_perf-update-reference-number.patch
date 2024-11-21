@@ -1,0 +1,38 @@
+From a4872ea7d0fcdf10580e0b09700408f3707f3dae Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Wed, 27 Sep 2023 17:33:13 +0530
+Subject: [PATCH 637/955] ci/ipsec_reassembly_perf: update reference number
+
+Reference numbers sync for event non vector case from dpdk 21.11 branch.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: If8d6d916100596ae1ffa450b462808e5721091dc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/112677
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb      | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb
+index 3bf6d4d5e3ef1..cd02713c005ea 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip.inb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+-64: 3640000
+-380: 3650000
++64: 3410000
++380: 3550000
+ 1410: 3900000
+ <end>
+ aes-gcm
+-64: 3620000
+-380: 3620000
++64: 3410000
++380: 3520000
+ 1410: 3840000
+ <end>
+-- 
+2.25.1
+

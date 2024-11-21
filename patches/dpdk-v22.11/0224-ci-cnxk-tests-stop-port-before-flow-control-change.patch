@@ -1,0 +1,328 @@
+From cd019a0fbdfbaf4fe96064bb1cef80d5d7a22832 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 13 Feb 2023 07:28:38 +0530
+Subject: [PATCH 224/955] ci: cnxk-tests: stop port before flow control change
+
+Stop port before changing flow control.
+Also fix tm_test parsing errors.
+
+Change-Id: I31051533765b743c0a5042df7ea42cca4d5710ec
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96697
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satha Koteswara Rao Kottidi <skoteshwar@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../event_perf/cnxk_event_perf_gen.sh           |  2 ++
+ .../test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh   |  2 ++
+ .../test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh    |  4 ++++
+ .../test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh   |  4 ++++
+ .../cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh    |  6 ++++++
+ .../ipsec_perf/cnxk_ipsec_perf_gen.sh           |  6 ++++++
+ .../cnxk-tests/ipsec_perf/ipsec_perf_target.sh  |  6 ++++++
+ .../cnxk_ipsec_reassembly_perf.sh               |  4 ++++
+ .../test/cnxk-tests/tm_test/cnxk_tm_test.sh     | 17 ++++++++++++++++-
+ 9 files changed, 50 insertions(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh
+index 3d31d2a2beca0..aa0c71a4c9fdb 100755
+--- a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh
++++ b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh
+@@ -35,8 +35,10 @@ launch_testpmd()
+ 		--forward-mode=flowgen --flowgen-flows=100" \
+ 		</dev/null 2>/dev/null &
+ 	sleep 1
++	testpmd_cmd $PRFX "port stop 0"
+ 	testpmd_cmd $PRFX "set flow_ctrl rx off 0"
+ 	testpmd_cmd $PRFX "set flow_ctrl tx off 0"
++	testpmd_cmd $PRFX "port start 0"
+ 
+ }
+ 
+diff --git a/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh b/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
+index 3072bd4074ebc..124056fac89ec 100755
+--- a/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
++++ b/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
+@@ -133,6 +133,7 @@ testpmd_launch $PRFX \
+ # Test case - 1: Validate flow control default configuration. Must be enable
+ check_fc_state 1
+ 
++testpmd_cmd $PRFX "port stop all"
+ # Test case - 2: Validate flow control configuration after disabling
+ testpmd_cmd $PRFX "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
+ sleep 3
+@@ -182,6 +183,7 @@ sleep 1
+ testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 7 7 tx on 7 7 2047"
+ sleep 1
+ 
++testpmd_cmd $PRFX "port start all"
+ testpmd_cmd $PRFX "start"
+ sleep 1
+ 
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh
+index 00dc15f54f119..23dd3821583b7 100755
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh
+@@ -58,8 +58,10 @@ case $TEST_OP in
+ 			"--no-flush-rx --nb-cores=$fwd_cores --forward-mode=flowgen \
+ 			-i --txq=$fwd_cores --rxq=$fwd_cores \
+ 			--tx-ip 1.1.1.1,198.18.0.1" </dev/null 2>/dev/null
++		testpmd_cmd $PRFX "port stop 0"
+ 		testpmd_cmd $PRFX "set flow_ctrl rx off 0"
+ 		testpmd_cmd $PRFX "set flow_ctrl tx off 0"
++		testpmd_cmd $PRFX "port start 0"
+ 		;;
+ 	launch_basic)
+ 		$VFIO_DEVBIND -b vfio-pci $PORT0
+@@ -78,8 +80,10 @@ case $TEST_OP in
+ 			"-l 1-$num_cores -a $PORT0" \
+ 			"--no-flush-rx --nb-cores=$fwd_cores \
+ 			-i" </dev/null 2>/dev/null
++		testpmd_cmd $PRFX "port stop 0"
+ 		testpmd_cmd $PRFX "set flow_ctrl rx off 0"
+ 		testpmd_cmd $PRFX "set flow_ctrl tx off 0"
++		testpmd_cmd $PRFX "port start 0"
+ 		;;
+ 	start)
+ 		testpmd_cmd $PRFX "start tx_first 256"
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+index 82699184e6e09..4ab2aae59dc5e 100755
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+@@ -348,10 +348,14 @@ run_one() {
+ 			continue;
+ 		done
+ 		# Disable flow control
++		echo "port stop 0" >>$FWD_PERF_IN
++		echo "port stop 1" >>$FWD_PERF_IN
+ 		echo "set flow_ctrl rx off 0" >>$FWD_PERF_IN
+ 		echo "set flow_ctrl tx off 0" >>$FWD_PERF_IN
+ 		echo "set flow_ctrl rx off 1" >>$FWD_PERF_IN
+ 		echo "set flow_ctrl tx off 1" >>$FWD_PERF_IN
++		echo "port start 0" >>$FWD_PERF_IN
++		echo "port start 1" >>$FWD_PERF_IN
+ 
+ 		echo "start tx_first 256" >>$FWD_PERF_IN
+ 
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+index a5bdf5377b4d3..03fa6d01dfc27 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+@@ -522,8 +522,10 @@ function pmd_tx_launch()
+ 		testpmd_launch "$TPMD_TX_PREFIX" \
+ 			"-c 0x3800 -a $LIF1" \
+ 			"--nb-cores=2 --forward-mode=txonly --tx-ip=192.168.$X.1,192.168.$X.2"
++		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl rx off 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl tx off 0"
++		testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+ 		# Ratelimit Tx to 50Gbps on LBK
+ 		testpmd_cmd $TPMD_TX_PREFIX "set port 0 queue 0 rate 50000"
+ 	fi
+@@ -544,8 +546,10 @@ function pmd_tx_launch_for_inb()
+ 			"-c 0x3800 --vdev net_pcap0,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
+ 			"--nb-cores=2 --no-flush-rx"
+ 		fi
++		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl rx off 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl tx off 0"
++		testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+ 		# Ratelimit Tx to 50Gbps on LBK
+ 		testpmd_cmd $TPMD_TX_PREFIX "set port 0 queue 0 rate 50000"
+ 	fi
+@@ -558,8 +562,10 @@ function pmd_rx_launch()
+ 		testpmd_launch "$TPMD_RX_PREFIX" \
+ 			"-c 0x700 -a $LIF4" \
+ 			"--nb-cores=2 --forward-mode=rxonly"
++		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl rx off 0"
+ 		testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl tx off 0"
++		testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+ 	fi
+ }
+ 
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh
+index 9c1e24f133aaa..89b9d1db66dd6 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh
+@@ -40,8 +40,10 @@ launch_testpmd_rx()
+ 		"--nb-cores=1 --forward-mode=rxonly" \
+ 		</dev/null 2>/dev/null &
+ 	sleep 1
++	testpmd_cmd $1 "port stop 0"
+ 	testpmd_cmd $1 "set flow_ctrl rx off 0"
+ 	testpmd_cmd $1 "set flow_ctrl tx off 0"
++	testpmd_cmd $1 "port start 0"
+ }
+ 
+ launch_testpmd_tx_outb()
+@@ -51,8 +53,10 @@ launch_testpmd_tx_outb()
+ 		"--nb-cores=2 --forward-mode=txonly --tx-ip=192.168.$2.1,192.168.$2.2" \
+ 		</dev/null 2>/dev/null &
+ 	sleep 1
++	testpmd_cmd $1 "port stop 0"
+ 	testpmd_cmd $1 "set flow_ctrl rx off 0"
+ 	testpmd_cmd $1 "set flow_ctrl tx off 0"
++	testpmd_cmd $1 "port start 0"
+ }
+ 
+ launch_testpmd_tx_inb()
+@@ -62,8 +66,10 @@ launch_testpmd_tx_inb()
+ 		"--nb-cores=5 --txq=5 --rxq=5 --no-flush-rx" \
+ 		</dev/null 2>/dev/null &
+ 	sleep 1
++	testpmd_cmd $1 "port stop 0"
+ 	testpmd_cmd $1 "set flow_ctrl rx off 0"
+ 	testpmd_cmd $1 "set flow_ctrl tx off 0"
++	testpmd_cmd $1 "port start 0"
+ }
+ 
+ case $TESTPMD_OP in
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ipsec_perf_target.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/ipsec_perf_target.sh
+index a0e627aab50d0..c32a5cc8fbb1c 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ipsec_perf_target.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ipsec_perf_target.sh
+@@ -385,8 +385,10 @@ function pmd_tx_launch()
+ 		testpmd_launch "$TPMD_TX_PREFIX" \
+ 			"-c 0x3800 -a $LIF1" \
+ 			"--nb-cores=2 --forward-mode=txonly --tx-ip=192.168.$X.1,192.168.$X.2"
++		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl rx off 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl tx off 0"
++		testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+ 		# Ratelimit Tx to 50Gbps on LBK
+ 		testpmd_cmd $TPMD_TX_PREFIX "set port 0 queue 0 rate 50000"
+ 	fi
+@@ -407,8 +409,10 @@ function pmd_tx_launch_for_inb()
+ 			"-c 0x3800 --vdev net_pcap0,rx_pcap=$pcap,infinite_rx=1 -a $LIF1" \
+ 			"--nb-cores=2 --no-flush-rx"
+ 		fi
++		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl rx off 0"
+ 		testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl tx off 0"
++		testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+ 		# Ratelimit Tx to 50Gbps on LBK
+ 		testpmd_cmd $TPMD_TX_PREFIX "set port 0 queue 0 rate 50000"
+ 	fi
+@@ -422,8 +426,10 @@ function pmd_rx_launch()
+ 		testpmd_launch "$TPMD_RX_PREFIX" \
+ 			"-c 0x700 -a $LIF4" \
+ 			"--nb-cores=2 --forward-mode=rxonly"
++		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl rx off 0"
+ 		testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl tx off 0"
++		testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+ 	fi
+ }
+ 
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh
+index 9aa34ca61d5fc..56ae42835588f 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh
+@@ -229,8 +229,10 @@ function pmd_tx_launch_for_inb()
+ 		"-c 0x3800 --vdev net_pcap0,rx_pcap=$pcap1,infinite_rx=1 -a $LIF1" \
+ 		"--nb-cores=2 --no-flush-rx"
+ 	fi
++	testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+ 	testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl rx off 0"
+ 	testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl tx off 0"
++	testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+         # Ratelimit Tx to 50Gbps on LBK
+ 	testpmd_cmd $TPMD_TX_PREFIX "set port 0 queue 0 rate 50000"
+ }
+@@ -240,8 +242,10 @@ function pmd_rx_launch()
+ 	testpmd_launch "$TPMD_RX_PREFIX" \
+ 		"-c 0x700 -a $LIF4" \
+ 		"--nb-cores=2 --forward-mode=rxonly"
++	testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 	testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl rx off 0"
+ 	testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl tx off 0"
++	testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+ 
+ }
+ 
+diff --git a/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh b/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh
+index 562be05c903d1..22ff787f0ed45 100755
+--- a/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh
++++ b/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh
+@@ -85,8 +85,15 @@ function queue_stats()
+ 	a=$(($((3*$idx))+1))
+ #	testpmd_log_off $CAP_PRFX $OFF
+ 
++	# Wait until we have the output
++	val=$(testpmd_log_off $CAP_PRFX $OFF | grep "show fwd stats all") || true
++	while [[ "$val" == "" ]]
++	do
++		sleep 1
++		val=$(testpmd_log_off $CAP_PRFX $OFF | grep "show fwd stats all") || true
++	done
+ 	val=`testpmd_log_off $CAP_PRFX $OFF | head -$a | tail -1 | \
+-		grep -ao "TX-packets: [0-9]*" | cut -f 2 -d ":"`
++		grep -ao "TX-packets: [0-9]*" | awk -e '{print $2}'`
+ 	echo $val
+ }
+ 
+@@ -126,6 +133,7 @@ function port_stats_check()
+ function verify_case_1()
+ {
+ 	i=0
++	OFF=`testpmd_log_sz $CAP_PRFX`
+ 	port_stats_check $BPSX
+ 	while [[ $i -lt $retry_cnt ]]
+ 	do
+@@ -160,6 +168,7 @@ function verify_case_1()
+ function verify_case_2()
+ {
+ 	i=0
++	OFF=`testpmd_log_sz $CAP_PRFX`
+ 	port_stats_check $BPSX
+ 	while [[ $i -lt $retry_cnt ]]
+ 	do
+@@ -193,6 +202,7 @@ function verify_case_2()
+ function verify_case_3()
+ {
+ 	i=0
++	OFF=`testpmd_log_sz $CAP_PRFX`
+ 	port_stats_check $BPSX
+ 	while [[ $i -lt $retry_cnt ]]
+ 	do
+@@ -225,6 +235,7 @@ function verify_case_3()
+ function verify_case_4()
+ {
+ 	i=0
++	OFF=`testpmd_log_sz $CAP_PRFX`
+ 	port_stats_check $BPSX
+ 	while [[ $i -lt $retry_cnt ]]
+ 	do
+@@ -260,6 +271,7 @@ function verify_case_4()
+ function verify_case_5()
+ {
+ 	i=0
++	OFF=`testpmd_log_sz $CAP_PRFX`
+ 	port_stats_check $BPSY
+ 	while [[ $i -lt $retry_cnt ]]
+ 	do
+@@ -284,6 +296,7 @@ function verify_case_5()
+ function verify_case_6()
+ {
+ 	i=0
++	OFF=`testpmd_log_sz $CAP_PRFX`
+ 	port_stats_check $BPSX
+ 	while [[ $i -lt $retry_cnt ]]
+ 	do
+@@ -358,8 +371,10 @@ testpmd_cmd $CAP_PRFX "add port tm leaf node 0 6 506 0 100 4 0 0 0 0 0"
+ testpmd_cmd $CAP_PRFX "add port tm leaf node 0 7 507 0 100 4 0 0 0 0 0"
+ testpmd_cmd $CAP_PRFX "port tm hierarchy commit 0 yes"
+ 
++testpmd_cmd $CAP_PRFX "port stop 1"
+ testpmd_cmd $CAP_PRFX "set flow_ctrl rx off 1"
+ testpmd_cmd $CAP_PRFX "set flow_ctrl tx off 1"
++testpmd_cmd $CAP_PRFX "port start 1"
+ 
+ testpmd_cmd $CAP_PRFX "start"
+ 
+-- 
+2.25.1
+

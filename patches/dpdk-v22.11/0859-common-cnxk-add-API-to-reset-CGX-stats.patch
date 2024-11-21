@@ -1,0 +1,89 @@
+From ffc4f4a490693a1c3c1544bcacf97db40a72204f Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Tue, 7 May 2024 14:16:03 +0530
+Subject: [PATCH 859/955] common/cnxk: add API to reset CGX stats
+
+Similar to NIX stats reset API, adding API to reset
+CGX stats.
+
+When user requests to reset the stats then it clears
+if nix_lf is PF otherwise silently discard the request.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I9d339013e1d4600160c1bac154e5f3c06931440b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/127565
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h     |  1 +
+ drivers/common/cnxk/roc_nix_mac.c | 29 +++++++++++++++++++++++++++++
+ drivers/common/cnxk/version.map   |  1 +
+ 3 files changed, 31 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 63bcd5b25ee40..25cf261348867 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -849,6 +849,7 @@ int __roc_api roc_nix_mac_link_info_get_cb_register(
+ void __roc_api roc_nix_mac_link_info_get_cb_unregister(struct roc_nix *roc_nix);
+ int __roc_api roc_nix_q_err_cb_register(struct roc_nix *roc_nix, q_err_get_t sq_err_handle);
+ void __roc_api roc_nix_q_err_cb_unregister(struct roc_nix *roc_nix);
++int __roc_api roc_nix_mac_stats_reset(struct roc_nix *roc_nix);
+ 
+ /* Ops */
+ int __roc_api roc_nix_switch_hdr_set(struct roc_nix *roc_nix,
+diff --git a/drivers/common/cnxk/roc_nix_mac.c b/drivers/common/cnxk/roc_nix_mac.c
+index 2d1c29dd66438..f79aaec4a5e2f 100644
+--- a/drivers/common/cnxk/roc_nix_mac.c
++++ b/drivers/common/cnxk/roc_nix_mac.c
+@@ -354,6 +354,35 @@ roc_nix_mac_max_rx_len_set(struct roc_nix *roc_nix, uint16_t maxlen)
+ 	return rc;
+ }
+ 
++int
++roc_nix_mac_stats_reset(struct roc_nix *roc_nix)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct dev *dev = &nix->dev;
++	struct mbox *mbox = mbox_get(dev->mbox);
++	struct msg_req *req;
++	int rc = -ENOSPC;
++
++	if (roc_model_is_cn10k()) {
++		rc = 0;
++		goto exit;
++	}
++
++	if (roc_nix_is_vf_or_sdp(roc_nix)) {
++		rc = 0;
++		goto exit;
++	}
++
++	req = mbox_alloc_msg_cgx_stats_rst(mbox);
++	if (req == NULL)
++		goto exit;
++
++	rc = mbox_process(mbox);
++exit:
++	mbox_put(mbox);
++	return rc;
++}
++
+ int
+ roc_nix_mac_link_cb_register(struct roc_nix *roc_nix, link_status_t link_update)
+ {
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index c9b8524c27aca..d4c633db352ed 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -279,6 +279,7 @@ INTERNAL {
+ 	roc_nix_mac_mtu_set;
+ 	roc_nix_mac_promisc_mode_enable;
+ 	roc_nix_mac_rxtx_start_stop;
++	roc_nix_mac_stats_reset;
+ 	roc_nix_max_pkt_len;
+ 	roc_nix_mcast_list_free;
+ 	roc_nix_mcast_list_setup;
+-- 
+2.25.1
+

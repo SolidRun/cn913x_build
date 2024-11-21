@@ -1,0 +1,34 @@
+From 2e8cff4b5bc4a47bcd8b52b97dafe1395bdb716d Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 4 Dec 2023 07:12:44 +0000
+Subject: [PATCH 029/513] test/pdcp: limit max packet size
+
+Limit max packet size to be tested with PDCP.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I9e94888ee32a4095b5e2bd65f4cf56c994d5833a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117474
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_pdcp.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/app/test/test_pdcp.c b/app/test/test_pdcp.c
+index 0a2827f2ef17e..b885727691638 100644
+--- a/app/test/test_pdcp.c
++++ b/app/test/test_pdcp.c
+@@ -2069,8 +2069,8 @@ test_combined(struct pdcp_test_conf *ul_conf)
+ 	return ret;
+ }
+ 
+-#define MIN_DATA_LEN 0
+-#define MAX_DATA_LEN 9000
++#define MIN_DATA_LEN 32
++#define MAX_DATA_LEN 8100
+ 
+ static int
+ test_combined_data_walkthrough(struct pdcp_test_conf *test_conf)
+-- 
+2.25.1
+

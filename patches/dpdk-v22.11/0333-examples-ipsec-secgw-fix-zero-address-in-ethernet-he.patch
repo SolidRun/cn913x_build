@@ -1,0 +1,88 @@
+From ce1e0a3081f39dd6043a4ad3aed88cfaab0a0c7f Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 23 Mar 2023 16:35:09 +0530
+Subject: [PATCH 333/955] examples/ipsec-secgw: fix zero address in ethernet
+ header
+
+During port init, src address stored in ethaddr_tbl is typecast to
+struct rte_ether_addr ptr, which violates the stric-aliasing rule and
+not reflecting the updated source address in processed packets too.
+
+Fixes: 6eb3ba0399 ("examples/ipsec-secgw: support poll mode NEON LPM lookup")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I01fe3a9af73a69a35de0d45e50b9d9a5cbd0e563
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99785
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ examples/ipsec-secgw/ipsec-secgw.c | 20 ++++++++++----------
+ examples/ipsec-secgw/ipsec-secgw.h |  2 +-
+ 2 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/examples/ipsec-secgw/ipsec-secgw.c b/examples/ipsec-secgw/ipsec-secgw.c
+index a64a26c992284..ea662797a8e6a 100644
+--- a/examples/ipsec-secgw/ipsec-secgw.c
++++ b/examples/ipsec-secgw/ipsec-secgw.c
+@@ -99,10 +99,10 @@ uint32_t qp_desc_nb = 2048;
+ #define MTU_TO_FRAMELEN(x)	((x) + RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN)
+ 
+ struct ethaddr_info ethaddr_tbl[RTE_MAX_ETHPORTS] = {
+-	{ 0, ETHADDR(0x00, 0x16, 0x3e, 0x7e, 0x94, 0x9a) },
+-	{ 0, ETHADDR(0x00, 0x16, 0x3e, 0x22, 0xa1, 0xd9) },
+-	{ 0, ETHADDR(0x00, 0x16, 0x3e, 0x08, 0x69, 0x26) },
+-	{ 0, ETHADDR(0x00, 0x16, 0x3e, 0x49, 0x9e, 0xdd) }
++	{ {{0}}, {{0x00, 0x16, 0x3e, 0x7e, 0x94, 0x9a}} },
++	{ {{0}}, {{0x00, 0x16, 0x3e, 0x22, 0xa1, 0xd9}} },
++	{ {{0}}, {{0x00, 0x16, 0x3e, 0x08, 0x69, 0x26}} },
++	{ {{0}}, {{0x00, 0x16, 0x3e, 0x49, 0x9e, 0xdd}} }
+ };
+ 
+ struct offloads tx_offloads;
+@@ -1427,9 +1427,8 @@ add_dst_ethaddr(uint16_t port, const struct rte_ether_addr *addr)
+ 	if (port >= RTE_DIM(ethaddr_tbl))
+ 		return -EINVAL;
+ 
+-	ethaddr_tbl[port].dst = ETHADDR_TO_UINT64(addr);
+-	rte_ether_addr_copy((struct rte_ether_addr *)&ethaddr_tbl[port].dst,
+-			    (struct rte_ether_addr *)(val_eth + port));
++	rte_ether_addr_copy(addr, &ethaddr_tbl[port].dst);
++	rte_ether_addr_copy(addr, (struct rte_ether_addr *)(val_eth + port));
+ 	return 0;
+ }
+ 
+@@ -1907,11 +1906,12 @@ port_init(uint16_t portid, uint64_t req_rx_offloads, uint64_t req_tx_offloads,
+ 			"Error getting MAC address (port %u): %s\n",
+ 			portid, rte_strerror(-ret));
+ 
+-	ethaddr_tbl[portid].src = ETHADDR_TO_UINT64(&ethaddr);
++	rte_ether_addr_copy(&ethaddr, &ethaddr_tbl[portid].src);
+ 
+-	rte_ether_addr_copy((struct rte_ether_addr *)&ethaddr_tbl[portid].dst,
++	rte_ether_addr_copy(&ethaddr_tbl[portid].dst,
+ 			    (struct rte_ether_addr *)(val_eth + portid));
+-	rte_ether_addr_copy((struct rte_ether_addr *)&ethaddr_tbl[portid].src,
++
++	rte_ether_addr_copy(&ethaddr_tbl[portid].src,
+ 			    (struct rte_ether_addr *)(val_eth + portid) + 1);
+ 
+ 	print_ethaddr("Address: ", &ethaddr);
+diff --git a/examples/ipsec-secgw/ipsec-secgw.h b/examples/ipsec-secgw/ipsec-secgw.h
+index 0e0012d058899..53665adf0344e 100644
+--- a/examples/ipsec-secgw/ipsec-secgw.h
++++ b/examples/ipsec-secgw/ipsec-secgw.h
+@@ -84,7 +84,7 @@ struct ipsec_traffic_nb {
+ 
+ /* port/source ethernet addr and destination ethernet addr */
+ struct ethaddr_info {
+-	uint64_t src, dst;
++	struct rte_ether_addr src, dst;
+ };
+ 
+ struct ipsec_spd_stats {
+-- 
+2.25.1
+

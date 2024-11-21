@@ -1,0 +1,33 @@
+From 747ae90cb38d4ac1a5ed6cf85583c9393bb2e5dc Mon Sep 17 00:00:00 2001
+From: Tomasz Duszynski <tduszynski@marvell.com>
+Date: Wed, 29 Mar 2023 11:54:00 +0200
+Subject: [PATCH 341/955] common/cnxk: use wider mask to extract rpm id
+
+Each cnf10k platform supports up to 4 RPMs which means same
+bitmasks should be used to extract RPM ids.
+
+Signed-off-by: Tomasz Duszynski <tduszynski@marvell.com>
+Change-Id: Ie49a91712b563f68ff4c1599b1fc872844252e00
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100220
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_bphy_cgx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_bphy_cgx.c b/drivers/common/cnxk/roc_bphy_cgx.c
+index b2d35fee398a0..0edc83453ee9c 100644
+--- a/drivers/common/cnxk/roc_bphy_cgx.c
++++ b/drivers/common/cnxk/roc_bphy_cgx.c
+@@ -175,7 +175,7 @@ roc_bphy_cgx_dev_id(struct roc_bphy_cgx *roc_cgx)
+ {
+ 	uint64_t cgx_id;
+ 
+-	if (roc_model_is_cnf10kb())
++	if (roc_model_is_cnf10kb() || roc_model_is_cnf10ka())
+ 		cgx_id = GENMASK_ULL(27, 24);
+ 	else if (roc_model_is_cn10k())
+ 		cgx_id = GENMASK_ULL(26, 24);
+-- 
+2.25.1
+

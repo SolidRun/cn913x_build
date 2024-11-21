@@ -1,0 +1,49 @@
+From f9b7aed544baaa337d5c52342ed25cb8592642d5 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Wed, 15 Feb 2023 15:12:27 +0530
+Subject: [PATCH 296/955] ethdev: drop export of internal tracepoints
+
+The internal tracepoints are removed from the version.map file.
+Also, removed ethdev_trace.h from meson.build.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Acked-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Acked-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: Iff9b36c74e9f71b102f4753002581cd005289282
+---
+ lib/ethdev/meson.build | 1 -
+ lib/ethdev/version.map | 6 ------
+ 2 files changed, 7 deletions(-)
+
+diff --git a/lib/ethdev/meson.build b/lib/ethdev/meson.build
+index 7835c966010cf..9e97f05983db1 100644
+--- a/lib/ethdev/meson.build
++++ b/lib/ethdev/meson.build
+@@ -40,7 +40,6 @@ indirect_headers += files(
+ driver_sdk_headers += files(
+         'ethdev_driver.h',
+         'ethdev_pci.h',
+-        'ethdev_trace.h',
+         'ethdev_vdev.h',
+ )
+ 
+diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
+index 17201fbe0f2d9..d8e9941356e2f 100644
+--- a/lib/ethdev/version.map
++++ b/lib/ethdev/version.map
+@@ -177,12 +177,6 @@ EXPERIMENTAL {
+ 	rte_flow_dev_dump;
+ 
+ 	# added in 20.05
+-	__rte_ethdev_trace_configure;
+-	__rte_ethdev_trace_rxq_setup;
+-	__rte_ethdev_trace_txq_setup;
+-	__rte_ethdev_trace_start;
+-	__rte_ethdev_trace_stop;
+-	__rte_ethdev_trace_close;
+ 	__rte_ethdev_trace_rx_burst;
+ 	__rte_ethdev_trace_tx_burst;
+ 	rte_flow_get_aged_flows;
+-- 
+2.25.1
+

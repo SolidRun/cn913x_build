@@ -1,0 +1,218 @@
+From a29351bef7fed9ec2680a65e1cee48b506ffa503 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 15 Nov 2022 12:03:04 +0530
+Subject: [PATCH 032/955] crypto/octeontx: support truncated digest size
+
+Support truncated digest size for auth only mode.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I4c7c82a5ac41d141dc944708878e290906c62bef
+---
+ drivers/common/cpt/cpt_ucode.h                | 17 ++++---
+ .../octeontx/otx_cryptodev_capabilities.c     | 48 +++++++++----------
+ 2 files changed, 34 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/common/cpt/cpt_ucode.h b/drivers/common/cpt/cpt_ucode.h
+index 22aabab6ac539..b393be4cf6616 100644
+--- a/drivers/common/cpt/cpt_ucode.h
++++ b/drivers/common/cpt/cpt_ucode.h
+@@ -41,30 +41,33 @@ cpt_mac_len_verify(struct rte_crypto_auth_xform *auth)
+ 	uint16_t mac_len = auth->digest_length;
+ 	int ret;
+ 
++	if ((auth->algo != RTE_CRYPTO_AUTH_NULL) && (mac_len == 0))
++		return -1;
++
+ 	switch (auth->algo) {
+ 	case RTE_CRYPTO_AUTH_MD5:
+ 	case RTE_CRYPTO_AUTH_MD5_HMAC:
+-		ret = (mac_len == 16) ? 0 : -1;
++		ret = (mac_len <= 16) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA1:
+ 	case RTE_CRYPTO_AUTH_SHA1_HMAC:
+-		ret = (mac_len == 20) ? 0 : -1;
++		ret = (mac_len <= 20) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA224:
+ 	case RTE_CRYPTO_AUTH_SHA224_HMAC:
+-		ret = (mac_len == 28) ? 0 : -1;
++		ret = (mac_len <= 28) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA256:
+ 	case RTE_CRYPTO_AUTH_SHA256_HMAC:
+-		ret = (mac_len == 32) ? 0 : -1;
++		ret = (mac_len <= 32) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA384:
+ 	case RTE_CRYPTO_AUTH_SHA384_HMAC:
+-		ret = (mac_len == 48) ? 0 : -1;
++		ret = (mac_len <= 48) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_SHA512:
+ 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
+-		ret = (mac_len == 64) ? 0 : -1;
++		ret = (mac_len <= 64) ? 0 : -1;
+ 		break;
+ 	case RTE_CRYPTO_AUTH_NULL:
+ 		ret = 0;
+@@ -523,7 +526,7 @@ cpt_digest_gen_prep(uint32_t flags,
+ 
+ 	/*GP op header */
+ 	vq_cmd_w0.s.opcode.minor = 0;
+-	vq_cmd_w0.s.param2 = ((uint16_t)hash_type << 8);
++	vq_cmd_w0.s.param2 = ((uint16_t)hash_type << 8) | mac_len;
+ 	if (ctx->hmac) {
+ 		vq_cmd_w0.s.opcode.major = CPT_MAJOR_OP_HMAC | CPT_DMA_MODE;
+ 		vq_cmd_w0.s.param1 = key_len;
+diff --git a/drivers/crypto/octeontx/otx_cryptodev_capabilities.c b/drivers/crypto/octeontx/otx_cryptodev_capabilities.c
+index 3f734b232c602..80a9fe21235fe 100644
+--- a/drivers/crypto/octeontx/otx_cryptodev_capabilities.c
++++ b/drivers/crypto/octeontx/otx_cryptodev_capabilities.c
+@@ -86,9 +86,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 16,
++					.min = 1,
+ 					.max = 16,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -106,9 +106,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 8
+ 				},
+ 				.digest_size = {
+-					.min = 16,
++					.min = 1,
+ 					.max = 16,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -126,9 +126,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 20,
++					.min = 1,
+ 					.max = 20,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -146,9 +146,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 20,
++					.min = 1,
+ 					.max = 20,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -166,9 +166,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 28,
++					.min = 1,
+ 					.max = 28,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -186,9 +186,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 28,
++					.min = 1,
+ 					.max = 28,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -206,9 +206,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 32,
++					.min = 1,
+ 					.max = 32,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -226,9 +226,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 32,
++					.min = 1,
+ 					.max = 32,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -246,9 +246,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 48,
++					.min = 1,
+ 					.max = 48,
+-					.increment = 0
++					.increment = 1
+ 					},
+ 			}, }
+ 		}, }
+@@ -266,9 +266,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 48,
++					.min = 1,
+ 					.max = 48,
+-					.increment = 0
++					.increment = 1
+ 					},
+ 			}, }
+ 		}, }
+@@ -286,9 +286,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 0
+ 				},
+ 				.digest_size = {
+-					.min = 64,
++					.min = 1,
+ 					.max = 64,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+@@ -306,9 +306,9 @@ static const struct rte_cryptodev_capabilities otx_sym_capabilities[] = {
+ 					.increment = 1
+ 				},
+ 				.digest_size = {
+-					.min = 64,
++					.min = 1,
+ 					.max = 64,
+-					.increment = 0
++					.increment = 1
+ 				},
+ 			}, }
+ 		}, }
+-- 
+2.25.1
+

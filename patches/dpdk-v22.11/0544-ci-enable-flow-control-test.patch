@@ -1,0 +1,446 @@
+From 697c34148dee7e3a2d74d1dadd9198d026efc828 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 17 Jul 2023 11:53:44 +0530
+Subject: [PATCH 544/955] ci: enable flow control test
+
+Enable SRIOv when testing both PF & VF with DPDK. Fixed the token
+parsing to enable PF & VF together.
+
+Change-Id: Ifa419b5ce92b1e2f06cfc414fda20e96869321ed
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107594
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh | 304 ++++++------------
+ marvell-ci/test/env/cn10k.env                 |   1 -
+ marvell-ci/test/env/cn9k.env                  |   1 -
+ 3 files changed, 100 insertions(+), 206 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh b/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
+index 0c51346f40266..9b3e568df093e 100755
+--- a/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
++++ b/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
+@@ -26,182 +26,39 @@ else
+ 	fi
+ fi
+ 
+-function bind_interface()
++
++function bind_pf_interface()
+ {
+-	echo "port $TESTPMD_PORT is bound to VFIO"
+ 	$VFIO_DEVBIND -b vfio-pci $TESTPMD_PORT
+-	echo 1 > /sys/bus/pci/devices/$TESTPMD_PORT/sriov_numvfs
+-	sleep 1
+ }
+ 
+-function check_fc_state()
++function bind_vf_interface()
+ {
+-	local debug_dir
+-
+-	debug_dir="/sys/kernel/debug/octeontx2"
+-	if [[ -d /sys/kernel/debug/cn10k ]]; then
+-		debug_dir="/sys/kernel/debug/cn10k"
+-	fi
+-
+-	cq_ctx="$debug_dir/nix/cq_ctx"
+-	rsrc_alloc="$debug_dir/rsrc_alloc"
+-
+-	if $SUDO test -f "$rsrc_alloc"; then
+-		nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1" | awk '{print $3}' | head -1)
+-	else
+-		echo "$rsrc_alloc is not available"
+-		exit 1
+-	fi
+-
+-	if $SUDO test -f "$cq_ctx"; then
+-		$SUDO echo "$nix_lf 0" > $cq_ctx
+-		bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "bp_ena" | awk '{print $3}')
+-	else
+-		echo "$cq_ctx is not available"
+-		exit 1
+-	fi
+-
+-	if [[ $bp_ena -ne $1 ]]; then
+-		echo "flow control validation failed."
+-		exit 1
+-	fi
++	$VFIO_DEVBIND -b vfio-pci $TESTPMD_VF_PORT
+ }
+ 
+-function check_pfc_state()
++function release_pf_interface()
+ {
+-	local debug_dir
+-
+-	debug_dir="/sys/kernel/debug/octeontx2"
+-	if [[ -d /sys/kernel/debug/cn10k ]]; then
+-		debug_dir="/sys/kernel/debug/cn10k"
+-	fi
+-
+-	cq_id=0
+-	cq_ctx="$debug_dir/nix/cq_ctx"
+-	rsrc_alloc="$debug_dir/rsrc_alloc"
+-
+-	if $SUDO test -f "$rsrc_alloc"; then
+-		nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1" | awk '{print $3}' | head -1)
++	if [[ -d /sys/bus/pci/drivers/octeontx2-nicvf ]]; then
++		NICPF="octeontx2-nicpf"
+ 	else
+-		echo "$rsrc_alloc is not available"
+-		exit 1
++		NICPF="rvu_nicpf"
+ 	fi
+ 
+-	while [[ $cq_id -ne 8 ]]; do
+-		if $SUDO test -f "$cq_ctx"; then
+-			$SUDO echo "$nix_lf $cq_id" > $cq_ctx
+-			bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "bp_ena" | awk '{print $3}')
+-		else
+-			echo "$cq_ctx is not available"
+-			exit 1
+-		fi
+-
+-		if [[ $bp_ena -ne $1 ]]; then
+-			echo "priority flow control validation failed."
+-			exit 1
+-		fi
+-
+-		cq_id=`expr $cq_id + 1`
+-	done
++	$VFIO_DEVBIND -b $NICPF $TESTPMD_PORT
+ }
+ 
+-function sig_handler()
++function release_vf_interface()
+ {
+-	local status=$?
+-	set +e
+-	trap - ERR
+-	trap - INT
+-	trap - QUIT
+-	trap - EXIT
+-	if [[ $status -ne 0 ]]; then
+-		echo "$1 Handler"
++	if [[ -d /sys/bus/pci/drivers/octeontx2-nicvf ]]; then
++		NICVF="octeontx2-nicvf"
++	else
++		NICVF="rvu_nicvf"
+ 	fi
+ 
+-	testpmd_cleanup $PRFX
+-	exit $status
++	$VFIO_DEVBIND -b $NICVF $TESTPMD_VF_PORT
+ }
+ 
+-trap "sig_handler ERR" ERR
+-trap "sig_handler INT" INT
+-trap "sig_handler QUIT" QUIT
+-trap "sig_handler EXIT" EXIT
+-
+-bind_interface
+-
+-echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
+-testpmd_launch $PRFX \
+-	"-c $TESTPMD_COREMASK -a $TESTPMD_PORT,flow_max_priority=8" \
+-	"--no-flush-rx --rxq=8 --txq=8 --nb-cores=8"
+-
+-# Part - 1: Validate priority flow control (802.3x)
+-# Test case - 1: Validate flow control default configuration. Must be enable
+-check_fc_state 1
+-
+-testpmd_cmd $PRFX "port stop all"
+-# Test case - 2: Validate flow control configuration after disabling
+-testpmd_cmd $PRFX "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
+-sleep 3
+-check_fc_state 0
+-
+-# Test case - 3: Validate flow control configuration after re-enable
+-testpmd_cmd $PRFX "set flow_ctrl rx on tx on 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
+-sleep 3
+-check_fc_state 1
+-
+-# Part - 2: Validate priority flow control (802.1Qbb)
+-# Test case - 4: Validate priority flow control
+-testpmd_cmd $PRFX "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
+-sleep 1
+-
+-testpmd_cmd $PRFX "flow create 0 priority 7 ingress pattern vlan pcp is 0 / end actions queue index 0 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 6 ingress pattern vlan pcp is 1 / end actions queue index 1 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 5 ingress pattern vlan pcp is 2 / end actions queue index 2 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 4 ingress pattern vlan pcp is 3 / end actions queue index 3 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 3 ingress pattern vlan pcp is 4 / end actions queue index 4 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 2 ingress pattern vlan pcp is 5 / end actions queue index 5 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 1 ingress pattern vlan pcp is 6 / end actions queue index 6 / end"
+-sleep 1
+-testpmd_cmd $PRFX "flow create 0 priority 0 ingress pattern vlan pcp is 7 / end actions queue index 7 / end"
+-sleep 1
+-
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 0 0 tx on 0 0 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 1 1 tx on 1 1 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 2 2 tx on 2 2 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 3 3 tx on 3 3 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 4 4 tx on 4 4 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 5 5 tx on 5 5 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 6 6 tx on 6 6 2047"
+-sleep 1
+-testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on 7 7 tx on 7 7 2047"
+-sleep 1
+-
+-testpmd_cmd $PRFX "port start all"
+-testpmd_cmd $PRFX "start"
+-sleep 1
+-
+-check_pfc_state 1
+-
+-testpmd_quit $PRFX
+-sleep 1
+-testpmd_cleanup $PRFX
+-sleep 1
+-
+-testpmd_log $PRFX
+-
+-echo "SUCCESS: testpmd flow control configuration test suit completed"
+-
+ function verify_fc_state()
+ {
+ 	local debug_dir
+@@ -228,7 +85,7 @@ function verify_fc_state()
+ 
+ 	if $SUDO test -f "$cq_ctx"; then
+ 		$SUDO echo "$nix_lf 0" > $cq_ctx
+-		bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "bp_ena" | awk '{print $3}')
++		bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "W1: bp_ena" | awk '{print $3}')
+ 	else
+ 		echo "$cq_ctx is not available"
+ 		exit 1
+@@ -249,7 +106,6 @@ function verify_pfc_state()
+ 		debug_dir="/sys/kernel/debug/cn10k"
+ 	fi
+ 
+-	cq_id=0
+ 	cq_ctx="$debug_dir/nix/cq_ctx"
+ 	rsrc_alloc="$debug_dir/rsrc_alloc"
+ 
+@@ -266,8 +122,8 @@ function verify_pfc_state()
+ 	fi
+ 
+ 	if $SUDO test -f "$cq_ctx"; then
+-		$SUDO echo "$nix_lf $cq_id" > $cq_ctx
+-		bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "bp_ena" | awk '{print $3}')
++		$SUDO echo "$nix_lf $3" > $cq_ctx
++		bp_ena=$(echo "`$SUDO cat $cq_ctx`" | grep "W1: bp_ena" | awk '{print $3}')
+ 	else
+ 		echo "$cq_ctx is not available"
+ 		exit 1
+@@ -310,9 +166,9 @@ function configure_pfc()
+ 	sleep 1
+ 	testpmd_cmd $PRFX_VF "set pfc_queue_ctrl 0 rx on 0 0 tx on 0 0 2047"
+ 	sleep 1
+-	verify_pfc_state pf 1
++	verify_pfc_state pf 1 0
+ 	sleep 1
+-	verify_pfc_state vf 1
++	verify_pfc_state vf 1 0
+ 	sleep 1
+ 	echo "PF and VF Priority flow control configuration Success"
+ }
+@@ -322,7 +178,7 @@ function configure_pf_vf()
+ 	echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
+ 	testpmd_launch $PRFX \
+ 		"-c $TESTPMD_COREMASK -a $TESTPMD_PORT,flow_max_priority=8 \
+-		--vfio-vf-token=b9d20911-e43f-4115-83f5-dfa0181277fb --file-prefix=pf" \
++		--vfio-vf-token=$TOKEN --file-prefix=pf" \
+ 		"--no-flush-rx --rxq=1 --txq=1 --nb-cores=1"
+ 	sleep 1
+ 	testpmd_cmd $PRFX "port stop all"
+@@ -332,7 +188,7 @@ function configure_pf_vf()
+ 	echo "Testpmd running with $TESTPMD_VF_PORT, Coremask=$TESTPMD_COREMASK"
+ 	testpmd_launch $PRFX_VF \
+ 		"-c $TESTPMD_COREMASK -a $TESTPMD_VF_PORT,flow_max_priority=8 \
+-		--vfio-vf-token=b9d20911-e43f-4115-83f5-dfa0181277fb --file-prefix=vf" \
++		--vfio-vf-token=$TOKEN --file-prefix=vf" \
+ 		"--no-flush-rx --rxq=1 --txq=1 --nb-cores=1"
+ 	testpmd_cmd $PRFX_VF "port stop all"
+ 	sleep 1
+@@ -340,46 +196,34 @@ function configure_pf_vf()
+ 	sleep 1
+ }
+ 
+-function configure_pf_dpdk()
++function sig_handler()
+ {
+-	set +x
+-	echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
+-	testpmd_launch $PRFX \
+-		"-c $TESTPMD_COREMASK -a $TESTPMD_PORT,flow_max_priority=8 \
+-		--vfio-vf-token=b9d20911-e43f-4115-83f5-dfa0181277fb --file-prefix=pf" \
+-		"--no-flush-rx --rxq=1 --txq=1 --nb-cores=1"
+-	sleep 1
+-	testpmd_cmd $PRFX "port stop all"
+-	sleep 1
+-	testpmd_cmd $PRFX "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
+-	sleep 1
+-
++	local status=$?
++	set +e
++	trap - ERR
++	trap - INT
++	trap - QUIT
++	trap - EXIT
++	if [[ $status -ne 0 ]]; then
++		echo "$1 Handler"
++	fi
+ 
+-	echo $TESTPMD_VF_PORT > /sys/bus/pci/devices/$TESTPMD_VF_PORT/driver/unbind
+-	sleep 2
+-	echo rvu_nicvf > /sys/bus/pci/devices/$TESTPMD_VF_PORT/driver_override
+-	sleep 2
+-	echo $TESTPMD_VF_PORT > /sys/bus/pci/drivers/rvu_nicvf/bind
+-	sleep 2
++	testpmd_cleanup $PRFX
++	exit $status
+ }
+ 
+-function configure_fc_dpdk_kernel()
+-{
+-	local intf=`ls /sys/bus/pci/devices/$TESTPMD_VF_PORT/net/`
+-	local status
++trap "sig_handler ERR" ERR
++trap "sig_handler INT" INT
++trap "sig_handler QUIT" QUIT
++trap "sig_handler EXIT" EXIT
+ 
+-	testpmd_cmd $PRFX "set flow_ctrl rx on tx on 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
+-	sleep 1
+-	verify_fc_state pf 1
+-	sleep 2
+-	status=`ethtool -a $intf | grep RX | awk '{print $2}'`
+-	if [[ $status == "on" ]]; then
+-		echo "flow control validation success."
+-	else
+-		echo "flow control validation failed."
+-		exit 1;
+-	fi
+-}
++# Enable SRIOv
++echo 1 | sudo tee /sys/module/vfio_pci/parameters/enable_sriov
++TOKEN=$(uuidgen)
++echo $TOKEN
++bind_pf_interface
++echo 1 > /sys/bus/pci/devices/$TESTPMD_PORT/sriov_numvfs
++bind_vf_interface
+ 
+ echo "Starting PFC & FC Test for PF and VF with DPDK"
+ 
+@@ -395,12 +239,64 @@ configure_pfc
+ 
+ stop_testpmd
+ 
+-echo "Starting FC Test for PF DPDK and VF with kernel"
+-configure_pf_dpdk
++release_vf_interface
++
++echo "Starting FC and PFC Test for PF DPDK and VF with kernel"
++
++echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
++testpmd_launch $PRFX \
++	"-c $TESTPMD_COREMASK -a $TESTPMD_PORT,flow_max_priority=8" \
++	"--no-flush-rx --rxq=8 --txq=8 --nb-cores=8"
++
++# Part - 1: Validate priority flow control (802.3x)
++# Test case - 1: Validate flow control default configuration. Must be enable
++verify_fc_state pf 1
++
++testpmd_cmd $PRFX "port stop all"
++# Test case - 2: Validate flow control configuration after disabling
++testpmd_cmd $PRFX "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
++sleep 3
++verify_fc_state pf 0
++
++# Test case - 3: Validate flow control configuration after re-enable
++testpmd_cmd $PRFX "set flow_ctrl rx on tx on 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
++sleep 3
++verify_fc_state pf 1
+ 
+-configure_fc_dpdk_kernel
++# Part - 2: Validate priority flow control (802.1Qbb)
++# Test case - 4: Validate priority flow control
++testpmd_cmd $PRFX "set flow_ctrl rx off tx off 0 0 0 0 mac_ctrl_frame_fwd off autoneg off 0"
++sleep 1
++
++txq=0
++prio=7
++while [[ $txq -ne 8 ]]; do
++	testpmd_cmd $PRFX "flow create 0 priority $prio ingress pattern vlan pcp is $txq / end actions queue index $txq / end"
++	sleep 1
++	testpmd_cmd $PRFX "set pfc_queue_ctrl 0 rx on $txq $txq tx on $txq $txq 2047"
++	sleep 1
++	txq=`expr $txq + 1`
++	prio=$((prio-1))
++done
++
++testpmd_cmd $PRFX "port start all"
++testpmd_cmd $PRFX "start"
++sleep 1
++
++cq=0
++while [[ $cq -ne 8 ]]; do
++	verify_pfc_state pf 1 $cq
++	cq=`expr $cq + 1`
++done
+ 
+ testpmd_quit $PRFX
+ sleep 1
+ testpmd_cleanup $PRFX
++sleep 1
++
++#testpmd_log $PRFX
++
++echo "SUCCESS: testpmd flow control configuration test suit completed"
++
++release_pf_interface
+ 
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 8f354007d9095..fa11655e2293d 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -72,7 +72,6 @@ CONTINUE_ON_FAILURE=${CONTINUE_ON_FAILURE:-}
+ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
+-	cnxk_fc_test_config
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index cc30187594606..40b64e2e3d91f 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -71,7 +71,6 @@ CONTINUE_ON_FAILURE=${CONTINUE_ON_FAILURE:-}
+ TM_SETUP=${TM_SETUP:-1}
+ 
+ FIXME_SKIP_TESTS="
+-        cnxk_fc_test_config
+ "
+ 
+ 
+-- 
+2.25.1
+

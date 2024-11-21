@@ -1,0 +1,71 @@
+From 5350377659f3c01a43efa6e1466aa98e9f50e2a1 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 22 Jun 2023 17:45:31 +0530
+Subject: [PATCH 514/955] ci: moved mac_test to perf list
+
+moved mac_test to perf list because to
+pass CI link should be active
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I9c668325f31207d9806db3ae79110365c5e10697
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106145
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn106-perf.env | 1 +
+ marvell-ci/test/env/cn10k.env      | 1 +
+ marvell-ci/test/env/cn96-perf.env  | 1 +
+ marvell-ci/test/env/cn9k.env       | 1 +
+ 4 files changed, 4 insertions(+)
+
+diff --git a/marvell-ci/test/env/cn106-perf.env b/marvell-ci/test/env/cn106-perf.env
+index 031657193b0c5..a7e7c16135271 100644
+--- a/marvell-ci/test/env/cn106-perf.env
++++ b/marvell-ci/test/env/cn106-perf.env
+@@ -14,6 +14,7 @@ RUN_TESTS="
+ 	cnxk_ipsec_reassembly_perf
+ 	cnxk_mempool_perf
+ 	cnxk_fwd_perf
++	cnxk_mac_test
+ "
+ 
+ # Update command timeout
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 78f1d4b6bafc9..301ed497748b8 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -213,6 +213,7 @@ DEFAULT_SKIP_TESTS="
+ 	vdev_autotest
+ 	rawdev_autotest
+ 	telemetry_all
++	cnxk_mac_test
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+diff --git a/marvell-ci/test/env/cn96-perf.env b/marvell-ci/test/env/cn96-perf.env
+index 7fc2fbd24d9a7..7bcad29eea012 100644
+--- a/marvell-ci/test/env/cn96-perf.env
++++ b/marvell-ci/test/env/cn96-perf.env
+@@ -15,6 +15,7 @@ RUN_TESTS="
+ 	cnxk_event_perf
+ 	cnxk_mempool_perf
+ 	flow_perf
++	cnxk_mac_test
+ "
+ 
+ # Update command timeout
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index dd57040053b25..ce23b0bd0c19c 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -217,6 +217,7 @@ DEFAULT_SKIP_TESTS="
+ 	vdev_autotest
+ 	rawdev_autotest
+ 	telemetry_all
++	cnxk_mac_test
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+-- 
+2.25.1
+

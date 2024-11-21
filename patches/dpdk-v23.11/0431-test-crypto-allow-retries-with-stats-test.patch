@@ -1,0 +1,74 @@
+From 11f112fd59903aabdb432b7c62514a9a160f749e Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 19 Jul 2024 06:49:34 +0000
+Subject: [PATCH 431/513] test/crypto: allow retries with stats test
+
+Stats need not be reflected instantly after the operation. Relax the
+test case to have retries to allow slower updates.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ief1389ff764a7748c5c26873821fde0123826036
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131690
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133609
+---
+ app/test/test_cryptodev.h                |  1 +
+ app/test/test_cryptodev_security_ipsec.c | 12 +++++++++++-
+ 2 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_cryptodev.h b/app/test/test_cryptodev.h
+index 7d877ddfe58b7..c85529a44ceb7 100644
+--- a/app/test/test_cryptodev.h
++++ b/app/test/test_cryptodev.h
+@@ -17,6 +17,7 @@
+ #define MAX_NUM_OPS_INFLIGHT            (4096)
+ #define MIN_NUM_OPS_INFLIGHT            (128)
+ #define DEFAULT_NUM_OPS_INFLIGHT        (128)
++#define TEST_STATS_RETRIES              (100)
+ 
+ #define MAX_NUM_QPS_PER_QAT_DEVICE      (2)
+ #define DEFAULT_NUM_QPS_PER_QAT_DEVICE  (2)
+diff --git a/app/test/test_cryptodev_security_ipsec.c b/app/test/test_cryptodev_security_ipsec.c
+index 5fb590747331b..ac6f3615b9c9d 100644
+--- a/app/test/test_cryptodev_security_ipsec.c
++++ b/app/test/test_cryptodev_security_ipsec.c
+@@ -11,6 +11,7 @@
+ #include <rte_udp.h>
+ 
+ #include "test.h"
++#include "test_cryptodev.h"
+ #include "test_cryptodev_security_ipsec.h"
+ 
+ #define IV_LEN_MAX 16
+@@ -1104,9 +1105,12 @@ test_ipsec_stats_verify(void *ctx,
+ 			enum rte_security_ipsec_sa_direction dir)
+ {
+ 	struct rte_security_stats stats = {0};
+-	int ret = TEST_SUCCESS;
++	int retries = 0, ret = TEST_SUCCESS;
+ 
+ 	if (flags->stats_success) {
++stats_get:
++		ret = TEST_SUCCESS;
++
+ 		if (rte_security_session_stats_get(ctx, sess, &stats) < 0)
+ 			return TEST_FAILED;
+ 
+@@ -1119,6 +1123,12 @@ test_ipsec_stats_verify(void *ctx,
+ 			    stats.ipsec.ierrors != 0)
+ 				ret = TEST_FAILED;
+ 		}
++
++		if (ret == TEST_FAILED && retries < TEST_STATS_RETRIES) {
++			retries++;
++			rte_delay_ms(1);
++			goto stats_get;
++		}
+ 	}
+ 
+ 	return ret;
+-- 
+2.25.1
+

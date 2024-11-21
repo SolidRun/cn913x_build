@@ -1,0 +1,82 @@
+From 6ca10ed6016c71b2179dd2f92bcc79e1c6d8f972 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Fri, 6 Jan 2023 16:16:29 +0530
+Subject: [PATCH 174/955] ci: add fwd perf reference numbers for cn10k
+
+Adds cn10k fwd perf reference numbers for rclk 2500MHz
+and sclk 1100MHz.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I87d7704a575aa664ac75b38a5350f699013e474c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93984
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/fwd_perf/meson.build               | 3 +++
+ .../fwd_perf/ref_numbers/rclk2500_sclk1000.cn106.l2fwd        | 2 +-
+ .../fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l2fwd        | 4 ++++
+ .../fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l3fwd        | 4 ++++
+ .../fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.testpmd      | 4 ++++
+ 5 files changed, 16 insertions(+), 1 deletion(-)
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l2fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l3fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.testpmd
+
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/meson.build b/marvell-ci/test/cnxk-tests/fwd_perf/meson.build
+index 570af3e00206a..1cb149dc5f106 100644
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/meson.build
+@@ -23,6 +23,9 @@ run_command(copy_data, 'ref_numbers/rclk2200_sclk1000.cn106.l3fwd')
+ run_command(copy_data, 'ref_numbers/rclk2500_sclk1000.cn106.testpmd')
+ run_command(copy_data, 'ref_numbers/rclk2500_sclk1000.cn106.l2fwd')
+ run_command(copy_data, 'ref_numbers/rclk2500_sclk1000.cn106.l3fwd')
++run_command(copy_data, 'ref_numbers/rclk2500_sclk1100.cn106.testpmd')
++run_command(copy_data, 'ref_numbers/rclk2500_sclk1100.cn106.l2fwd')
++run_command(copy_data, 'ref_numbers/rclk2500_sclk1100.cn106.l3fwd')
+ # Add the meson test
+ test(test_name,
+     cnxk_test_script_wrapper,
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn106.l2fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn106.l2fwd
+index 7c2227151d0c7..080ce97dabb16 100644
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn106.l2fwd
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn106.l2fwd
+@@ -1,4 +1,4 @@
+ PPS of tests on 106xx and multiple RCLK
+ ---------------------------------------
+ 
+-L2FWD_1C 49800000
++L2FWD_1C 72200000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l2fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l2fwd
+new file mode 100644
+index 0000000000000..95dd824196e16
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l2fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L2FWD_1C 73100000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l3fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l3fwd
+new file mode 100644
+index 0000000000000..0343bc2d58386
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.l3fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L3FWD_1C 43600000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.testpmd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.testpmd
+new file mode 100644
+index 0000000000000..24ceaefd4790f
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.testpmd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++TESTPMD_NO_OFFLOAD 99900000
+-- 
+2.25.1
+

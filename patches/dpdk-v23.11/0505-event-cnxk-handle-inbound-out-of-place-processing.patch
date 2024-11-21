@@ -1,0 +1,68 @@
+From 6a990f6bbb223e3660027b481f09b3f980ea5bdd Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Mon, 23 Sep 2024 12:12:16 +0530
+Subject: [PATCH 505/513] event/cnxk: handle inbound out of place processing
+
+update event device with NIX_RX_REAS_F to handle
+out of place processing for boards that does not
+support reassembly as cn10k driver process OOP
+with NIX_RX_REAS_F enabled.
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I8bec7a1f51d91a9aaa6fed5188f118db2f8e1c25
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/135802
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_eventdev.c | 18 ++++++++++++++++--
+ 1 file changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index 061179934e5f7..217b7deb92f96 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -708,7 +708,7 @@ cn10k_sso_set_priv_mem(const struct rte_eventdev *event_dev, void *lookup_mem)
+ }
+ 
+ static void
+-eventdev_fops_tstamp_update(struct rte_eventdev *event_dev)
++eventdev_fops_update(struct rte_eventdev *event_dev)
+ {
+ 	struct rte_event_fp_ops *fp_op =
+ 		rte_event_fp_ops + event_dev->data->dev_id;
+@@ -731,7 +731,20 @@ cn10k_sso_tstamp_hdl_update(uint16_t port_id, uint16_t flags, bool ptp_en)
+ 	else
+ 		evdev->tstamp[port_id] = NULL;
+ 	cn10k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
+-	eventdev_fops_tstamp_update(event_dev);
++	eventdev_fops_update(event_dev);
++}
++
++static void
++cn10k_sso_rx_offload_cb(uint16_t port_id, uint64_t flags)
++{
++	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
++	struct cnxk_eth_dev *cnxk_eth_dev = dev->data->dev_private;
++	struct rte_eventdev *event_dev = cnxk_eth_dev->evdev_priv;
++	struct cnxk_sso_evdev *evdev = cnxk_sso_pmd_priv(event_dev);
++
++	evdev->rx_offloads |= flags;
++	cn10k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
++	eventdev_fops_update(event_dev);
+ }
+ 
+ static int
+@@ -1106,6 +1119,7 @@ cn10k_sso_init(struct rte_eventdev *event_dev)
+ 		return rc;
+ 	}
+ 
++	cnxk_ethdev_rx_offload_cb_register(cn10k_sso_rx_offload_cb);
+ 	event_dev->dev_ops = &cn10k_sso_dev_ops;
+ 	/* For secondary processes, the primary has done all the work */
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+-- 
+2.25.1
+

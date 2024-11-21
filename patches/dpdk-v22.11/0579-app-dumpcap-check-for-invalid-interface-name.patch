@@ -1,0 +1,30 @@
+From 56335f46ae6d6a65df06de8fec07c8f6400607f2 Mon Sep 17 00:00:00 2001
+From: Stephen Hemminger <stephen@networkplumber.org>
+Date: Tue, 3 Jan 2023 19:38:12 -0800
+Subject: [PATCH 579/955] app/dumpcap: check for invalid interface name
+
+Avoid any possible issue with ridiculously long name.
+
+Signed-off-by: Stephen Hemminger <stephen@networkplumber.org>
+Change-Id: I048b5806ea4be6c703bef4e8892d3a4c0bbcf4c1
+---
+ app/dumpcap/main.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/app/dumpcap/main.c b/app/dumpcap/main.c
+index 1c47ff8512520..a7aec021204af 100644
+--- a/app/dumpcap/main.c
++++ b/app/dumpcap/main.c
+@@ -196,6 +196,9 @@ static void add_interface(uint16_t port, const char *name)
+ {
+ 	struct interface *intf;
+ 
++	if (strlen(name) >= RTE_ETH_NAME_MAX_LEN)
++		rte_exit(EXIT_FAILURE, "invalid name for interface: '%s'\n", name);
++
+ 	intf = malloc(sizeof(*intf));
+ 	if (!intf)
+ 		rte_exit(EXIT_FAILURE, "no memory for interface\n");
+-- 
+2.25.1
+

@@ -1,0 +1,72 @@
+From f5b0c1d6e1b297c310ba5c88dc45eed823383586 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 14 Apr 2023 11:26:09 +0530
+Subject: [PATCH 351/955] examples/ipsec-secgw: avoid error pkt prints in fast
+ path
+
+Avoid printing errors due to bad packets in fast path as it
+effects performance. Make them RTE_LOG_DP() instead.
+Also print the actual ptype that is used to classify the pkt.
+
+Change-Id: Iedab1a95e9e63fca696e640d497fd2dcda402d70
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101370
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit d113267159e609c012d783194d02f39f33e56249)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101606
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ examples/ipsec-secgw/ipsec_worker.c | 2 +-
+ examples/ipsec-secgw/ipsec_worker.h | 5 +----
+ 2 files changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/examples/ipsec-secgw/ipsec_worker.c b/examples/ipsec-secgw/ipsec_worker.c
+index 2f02946f867c3..58c80c73f029c 100644
+--- a/examples/ipsec-secgw/ipsec_worker.c
++++ b/examples/ipsec-secgw/ipsec_worker.c
+@@ -578,7 +578,7 @@ process_ipsec_ev_outbound(struct ipsec_ctx *ctx, struct route_table *rt,
+ 		 * Only plain IPv4 & IPv6 packets are allowed
+ 		 * on protected port. Drop the rest.
+ 		 */
+-		RTE_LOG(ERR, IPSEC, "Unsupported packet type = %d\n", type);
++		RTE_LOG_DP(DEBUG, IPSEC, "Unsupported packet type = %d\n", type);
+ 		goto drop_pkt_and_exit;
+ 	}
+ 
+diff --git a/examples/ipsec-secgw/ipsec_worker.h b/examples/ipsec-secgw/ipsec_worker.h
+index d5a68d91fac61..cf59b9b5ab43a 100644
+--- a/examples/ipsec-secgw/ipsec_worker.h
++++ b/examples/ipsec-secgw/ipsec_worker.h
+@@ -123,7 +123,6 @@ prepare_one_packet(struct rte_security_ctx *ctx, struct rte_mbuf *pkt,
+ 		   struct ipsec_traffic *t)
+ {
+ 	uint32_t ptype = pkt->packet_type;
+-	const struct rte_ether_hdr *eth;
+ 	const struct rte_ipv4_hdr *iph4;
+ 	const struct rte_ipv6_hdr *iph6;
+ 	uint32_t tun_type, l3_type;
+@@ -138,7 +137,6 @@ prepare_one_packet(struct rte_security_ctx *ctx, struct rte_mbuf *pkt,
+ 	tun_type = ptype & RTE_PTYPE_TUNNEL_MASK;
+ 	l3_type = ptype & RTE_PTYPE_L3_MASK;
+ 
+-	eth = rte_pktmbuf_mtod(pkt, const struct rte_ether_hdr *);
+ 	if (RTE_ETH_IS_IPV4_HDR(l3_type)) {
+ 		iph4 = (const struct rte_ipv4_hdr *)rte_pktmbuf_adj(pkt,
+ 			RTE_ETHER_HDR_LEN);
+@@ -192,8 +190,7 @@ prepare_one_packet(struct rte_security_ctx *ctx, struct rte_mbuf *pkt,
+ 		tx_offload = l3len << RTE_MBUF_L2_LEN_BITS;
+ 	} else {
+ 		/* Unknown/Unsupported type, drop the packet */
+-		RTE_LOG(ERR, IPSEC, "Unsupported packet type 0x%x\n",
+-			rte_be_to_cpu_16(eth->ether_type));
++		RTE_LOG_DP(DEBUG, IPSEC, "Unsupported packet type 0x%x\n", ptype);
+ 		free_pkts(&pkt, 1);
+ 		return;
+ 	}
+-- 
+2.25.1
+

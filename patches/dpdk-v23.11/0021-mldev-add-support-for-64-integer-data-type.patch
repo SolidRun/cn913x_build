@@ -1,0 +1,618 @@
+From a62fe010ccf7d0d92b3e628858b989c5f6070675 Mon Sep 17 00:00:00 2001
+From: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Date: Fri, 27 Oct 2023 00:53:28 -0700
+Subject: [PATCH 021/513] mldev: add support for 64-integer data type
+
+Added support in mldev spec for 64-bit integer types. Added
+routines to convert data from 64-bit integer type to float32_t
+and vice-versa.
+
+Signed-off-by: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Change-Id: Idc132e79f91a681ded0fa84e48b7eb6a7c704203
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117169
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ lib/mldev/mldev_utils.c        |   4 +
+ lib/mldev/mldev_utils.h        |  92 ++++++++++
+ lib/mldev/mldev_utils_neon.c   | 324 +++++++++++++++++++++++++++++++++
+ lib/mldev/mldev_utils_scalar.c |  98 ++++++++++
+ lib/mldev/rte_mldev.h          |   4 +
+ lib/mldev/version.map          |   4 +
+ 6 files changed, 526 insertions(+)
+
+diff --git a/lib/mldev/mldev_utils.c b/lib/mldev/mldev_utils.c
+index ccd2c39ca8946..13ac615e9fc80 100644
+--- a/lib/mldev/mldev_utils.c
++++ b/lib/mldev/mldev_utils.c
+@@ -32,6 +32,10 @@ rte_ml_io_type_size_get(enum rte_ml_io_type type)
+ 		return sizeof(int32_t);
+ 	case RTE_ML_IO_TYPE_UINT32:
+ 		return sizeof(uint32_t);
++	case RTE_ML_IO_TYPE_INT64:
++		return sizeof(int64_t);
++	case RTE_ML_IO_TYPE_UINT64:
++		return sizeof(uint64_t);
+ 	case RTE_ML_IO_TYPE_FP8:
+ 		return sizeof(uint8_t);
+ 	case RTE_ML_IO_TYPE_FP16:
+diff --git a/lib/mldev/mldev_utils.h b/lib/mldev/mldev_utils.h
+index 1d041531b43b1..6daae6d0a1cc4 100644
+--- a/lib/mldev/mldev_utils.h
++++ b/lib/mldev/mldev_utils.h
+@@ -328,6 +328,98 @@ __rte_internal
+ int
+ rte_ml_io_uint32_to_float32(float scale, uint64_t nb_elements, void *input, void *output);
+ 
++/**
++ * @internal
++ *
++ * Convert a buffer containing numbers in single precision floating format (float32) to signed
++ * 64-bit integer format (INT64).
++ *
++ * @param[in] scale
++ *      Scale factor for conversion.
++ * @param[in] nb_elements
++ *	Number of elements in the buffer.
++ * @param[in] input
++ *	Input buffer containing float32 numbers. Size of buffer is equal to (nb_elements * 4) bytes.
++ * @param[out] output
++ *	Output buffer to store INT64 numbers. Size of buffer is equal to (nb_elements * 8) bytes.
++ *
++ * @return
++ *	- 0, Success.
++ *	- < 0, Error code on failure.
++ */
++__rte_internal
++int
++rte_ml_io_float32_to_int64(float scale, uint64_t nb_elements, void *input, void *output);
++
++/**
++ * @internal
++ *
++ * Convert a buffer containing numbers in signed 64-bit integer format (INT64) to single precision
++ * floating format (float32).
++ *
++ * @param[in] scale
++ *      Scale factor for conversion.
++ * @param[in] nb_elements
++ *	Number of elements in the buffer.
++ * @param[in] input
++ *	Input buffer containing INT64 numbers. Size of buffer is equal to (nb_elements * 8) bytes.
++ * @param[out] output
++ *	Output buffer to store float32 numbers. Size of buffer is equal to (nb_elements * 4) bytes.
++ *
++ * @return
++ *	- 0, Success.
++ *	- < 0, Error code on failure.
++ */
++__rte_internal
++int
++rte_ml_io_int64_to_float32(float scale, uint64_t nb_elements, void *input, void *output);
++
++/**
++ * @internal
++ *
++ * Convert a buffer containing numbers in single precision floating format (float32) to unsigned
++ * 64-bit integer format (UINT64).
++ *
++ * @param[in] scale
++ *      Scale factor for conversion.
++ * @param[in] nb_elements
++ *	Number of elements in the buffer.
++ * @param[in] input
++ *	Input buffer containing float32 numbers. Size of buffer is equal to (nb_elements * 4) bytes.
++ * @param[out] output
++ *	Output buffer to store UINT64 numbers. Size of buffer is equal to (nb_elements * 8) bytes.
++ *
++ * @return
++ *	- 0, Success.
++ *	- < 0, Error code on failure.
++ */
++__rte_internal
++int
++rte_ml_io_float32_to_uint64(float scale, uint64_t nb_elements, void *input, void *output);
++
++/**
++ * @internal
++ *
++ * Convert a buffer containing numbers in unsigned 64-bit integer format (UINT64) to single
++ * precision floating format (float32).
++ *
++ * @param[in] scale
++ *      Scale factor for conversion.
++ * @param[in] nb_elements
++ *	Number of elements in the buffer.
++ * @param[in] input
++ *	Input buffer containing UINT64 numbers. Size of buffer is equal to (nb_elements * 8) bytes.
++ * @param[out] output
++ *	Output buffer to store float32 numbers. Size of buffer is equal to (nb_elements * 4) bytes.
++ *
++ * @return
++ *	- 0, Success.
++ *	- < 0, Error code on failure.
++ */
++__rte_internal
++int
++rte_ml_io_uint64_to_float32(float scale, uint64_t nb_elements, void *input, void *output);
++
+ /**
+  * @internal
+  *
+diff --git a/lib/mldev/mldev_utils_neon.c b/lib/mldev/mldev_utils_neon.c
+index 250fa43fa73b4..4cde2ebabd354 100644
+--- a/lib/mldev/mldev_utils_neon.c
++++ b/lib/mldev/mldev_utils_neon.c
+@@ -842,6 +842,330 @@ rte_ml_io_uint32_to_float32(float scale, uint64_t nb_elements, void *input, void
+ 	return 0;
+ }
+ 
++static inline void
++__float32_to_int64_neon_s64x2(float scale, float *input, int64_t *output)
++{
++	float32x2_t f32x2;
++	float64x2_t f64x2;
++	int64x2_t s64x2;
++
++	/* load 2 x float elements */
++	f32x2 = vld1_f32(input);
++
++	/* scale */
++	f32x2 = vmul_n_f32(f32x2, scale);
++
++	/* convert to float64x2_t */
++	f64x2 = vcvt_f64_f32(f32x2);
++
++	/* convert to int64x2_t */
++	s64x2 = vcvtaq_s64_f64(f64x2);
++
++	/* store 2 elements */
++	vst1q_s64(output, s64x2);
++}
++
++static inline void
++__float32_to_int64_neon_s64x1(float scale, float *input, int64_t *output)
++{
++	float32x2_t f32x2;
++	float64x2_t f64x2;
++	int64x2_t s64x2;
++
++	/* load 1 x float element */
++	f32x2 = vdup_n_f32(*input);
++
++	/* scale */
++	f32x2 = vmul_n_f32(f32x2, scale);
++
++	/* convert to float64x2_t */
++	f64x2 = vcvt_f64_f32(f32x2);
++
++	/* convert to int64x2_t */
++	s64x2 = vcvtaq_s64_f64(f64x2);
++
++	/* store lane 0 of int64x2_t */
++	vst1q_lane_s64(output, s64x2, 0);
++}
++
++int
++rte_ml_io_float32_to_int64(float scale, uint64_t nb_elements, void *input, void *output)
++{
++	float *input_buffer;
++	int64_t *output_buffer;
++	uint64_t nb_iterations;
++	uint32_t vlen;
++	uint64_t i;
++
++	if ((scale == 0) || (nb_elements == 0) || (input == NULL) || (output == NULL))
++		return -EINVAL;
++
++	input_buffer = (float *)input;
++	output_buffer = (int64_t *)output;
++	vlen = 4 * sizeof(float) / sizeof(int64_t);
++	nb_iterations = nb_elements / vlen;
++
++	/* convert vlen elements in each iteration */
++	for (i = 0; i < nb_iterations; i++) {
++		__float32_to_int64_neon_s64x2(scale, input_buffer, output_buffer);
++		input_buffer += vlen;
++		output_buffer += vlen;
++	}
++
++	/* convert leftover elements */
++	i = i * vlen;
++	for (; i < nb_elements; i++) {
++		__float32_to_int64_neon_s64x1(scale, input_buffer, output_buffer);
++		input_buffer++;
++		output_buffer++;
++	}
++
++	return 0;
++}
++
++static inline void
++__int64_to_float32_neon_f32x2(float scale, int64_t *input, float *output)
++{
++	int64x2_t s64x2;
++	float64x2_t f64x2;
++	float32x2_t f32x2;
++
++	/* load 2 x int64_t elements */
++	s64x2 = vld1q_s64(input);
++
++	/* convert int64x2_t to float64x2_t */
++	f64x2 = vcvtq_f64_s64(s64x2);
++
++	/* convert float64x2_t to float32x2_t */
++	f32x2 = vcvt_f32_f64(f64x2);
++
++	/* scale */
++	f32x2 = vmul_n_f32(f32x2, scale);
++
++	/* store float32x2_t */
++	vst1_f32(output, f32x2);
++}
++
++static inline void
++__int64_to_float32_neon_f32x1(float scale, int64_t *input, float *output)
++{
++	int64x2_t s64x2;
++	float64x2_t f64x2;
++	float32x2_t f32x2;
++
++	/* load 2 x int64_t elements */
++	s64x2 = vld1q_lane_s64(input, vdupq_n_s64(0), 0);
++
++	/* convert int64x2_t to float64x2_t */
++	f64x2 = vcvtq_f64_s64(s64x2);
++
++	/* convert float64x2_t to float32x2_t */
++	f32x2 = vcvt_f32_f64(f64x2);
++
++	/* scale */
++	f32x2 = vmul_n_f32(f32x2, scale);
++
++	/* store float32x2_t */
++	vst1_lane_f32(output, f32x2, 0);
++}
++
++int
++rte_ml_io_int64_to_float32(float scale, uint64_t nb_elements, void *input, void *output)
++{
++	int64_t *input_buffer;
++	float *output_buffer;
++	uint64_t nb_iterations;
++	uint32_t vlen;
++	uint64_t i;
++
++	if ((scale == 0) || (nb_elements == 0) || (input == NULL) || (output == NULL))
++		return -EINVAL;
++
++	input_buffer = (int64_t *)input;
++	output_buffer = (float *)output;
++	vlen = 4 * sizeof(float) / sizeof(int64_t);
++	nb_iterations = nb_elements / vlen;
++
++	/* convert vlen elements in each iteration */
++	for (i = 0; i < nb_iterations; i++) {
++		__int64_to_float32_neon_f32x2(scale, input_buffer, output_buffer);
++		input_buffer += vlen;
++		output_buffer += vlen;
++	}
++
++	/* convert leftover elements */
++	i = i * vlen;
++	for (; i < nb_elements; i++) {
++		__int64_to_float32_neon_f32x1(scale, input_buffer, output_buffer);
++		input_buffer++;
++		output_buffer++;
++	}
++
++	return 0;
++}
++
++static inline void
++__float32_to_uint64_neon_u64x2(float scale, float *input, uint64_t *output)
++{
++	float32x2_t f32x2;
++	float64x2_t f64x2;
++	uint64x2_t u64x2;
++
++	/* load 2 x float elements */
++	f32x2 = vld1_f32(input);
++
++	/* scale */
++	f32x2 = vmul_n_f32(f32x2, scale);
++
++	/* convert to float64x2_t */
++	f64x2 = vcvt_f64_f32(f32x2);
++
++	/* convert to int64x2_t */
++	u64x2 = vcvtaq_u64_f64(f64x2);
++
++	/* store 2 elements */
++	vst1q_u64(output, u64x2);
++}
++
++static inline void
++__float32_to_uint64_neon_u64x1(float scale, float *input, uint64_t *output)
++{
++	float32x2_t f32x2;
++	float64x2_t f64x2;
++	uint64x2_t u64x2;
++
++	/* load 1 x float element */
++	f32x2 = vld1_lane_f32(input, vdup_n_f32(0), 0);
++
++	/* scale */
++	f32x2 = vmul_n_f32(f32x2, scale);
++
++	/* convert to float64x2_t */
++	f64x2 = vcvt_f64_f32(f32x2);
++
++	/* convert to int64x2_t */
++	u64x2 = vcvtaq_u64_f64(f64x2);
++
++	/* store 2 elements */
++	vst1q_lane_u64(output, u64x2, 0);
++}
++
++int
++rte_ml_io_float32_to_uint64(float scale, uint64_t nb_elements, void *input, void *output)
++{
++	float *input_buffer;
++	uint64_t *output_buffer;
++	uint64_t nb_iterations;
++	uint32_t vlen;
++	uint64_t i;
++
++	if ((scale == 0) || (nb_elements == 0) || (input == NULL) || (output == NULL))
++		return -EINVAL;
++
++	input_buffer = (float *)input;
++	output_buffer = (uint64_t *)output;
++	vlen = 4 * sizeof(float) / sizeof(uint64_t);
++	nb_iterations = nb_elements / vlen;
++
++	/* convert vlen elements in each iteration */
++	for (i = 0; i < nb_iterations; i++) {
++		__float32_to_uint64_neon_u64x2(scale, input_buffer, output_buffer);
++		input_buffer += vlen;
++		output_buffer += vlen;
++	}
++
++	/* convert leftover elements */
++	i = i * vlen;
++	for (; i < nb_elements; i++) {
++		__float32_to_uint64_neon_u64x1(scale, input_buffer, output_buffer);
++		input_buffer++;
++		output_buffer++;
++	}
++
++	return 0;
++}
++
++static inline void
++__uint64_to_float32_neon_f32x2(float scale, uint64_t *input, float *output)
++{
++	uint64x2_t u64x2;
++	float64x2_t f64x2;
++	float32x2_t f32x2;
++
++	/* load 2 x int64_t elements */
++	u64x2 = vld1q_u64(input);
++
++	/* convert int64x2_t to float64x2_t */
++	f64x2 = vcvtq_f64_u64(u64x2);
++
++	/* convert float64x2_t to float32x2_t */
++	f32x2 = vcvt_f32_f64(f64x2);
++
++	/* scale */
++	f32x2 = vmul_n_f32(f32x2, scale);
++
++	/* store float32x2_t */
++	vst1_f32(output, f32x2);
++}
++
++static inline void
++__uint64_to_float32_neon_f32x1(float scale, uint64_t *input, float *output)
++{
++	uint64x2_t u64x2;
++	float64x2_t f64x2;
++	float32x2_t f32x2;
++
++	/* load 2 x int64_t elements */
++	u64x2 = vld1q_lane_u64(input, vdupq_n_u64(0), 0);
++
++	/* convert int64x2_t to float64x2_t */
++	f64x2 = vcvtq_f64_u64(u64x2);
++
++	/* convert float64x2_t to float32x2_t */
++	f32x2 = vcvt_f32_f64(f64x2);
++
++	/* scale */
++	f32x2 = vmul_n_f32(f32x2, scale);
++
++	/* store float32x2_t */
++	vst1_lane_f32(output, f32x2, 0);
++}
++
++int
++rte_ml_io_uint64_to_float32(float scale, uint64_t nb_elements, void *input, void *output)
++{
++	uint64_t *input_buffer;
++	float *output_buffer;
++	uint64_t nb_iterations;
++	uint32_t vlen;
++	uint64_t i;
++
++	if ((scale == 0) || (nb_elements == 0) || (input == NULL) || (output == NULL))
++		return -EINVAL;
++
++	input_buffer = (uint64_t *)input;
++	output_buffer = (float *)output;
++	vlen = 4 * sizeof(float) / sizeof(uint64_t);
++	nb_iterations = nb_elements / vlen;
++
++	/* convert vlen elements in each iteration */
++	for (i = 0; i < nb_iterations; i++) {
++		__uint64_to_float32_neon_f32x2(scale, input_buffer, output_buffer);
++		input_buffer += vlen;
++		output_buffer += vlen;
++	}
++
++	/* convert leftover elements */
++	i = i * vlen;
++	for (; i < nb_elements; i++) {
++		__uint64_to_float32_neon_f32x1(scale, input_buffer, output_buffer);
++		input_buffer++;
++		output_buffer++;
++	}
++
++	return 0;
++}
++
+ static inline void
+ __float32_to_float16_neon_f16x4(float32_t *input, float16_t *output)
+ {
+diff --git a/lib/mldev/mldev_utils_scalar.c b/lib/mldev/mldev_utils_scalar.c
+index af1a3a103b26b..63a9900cc8cab 100644
+--- a/lib/mldev/mldev_utils_scalar.c
++++ b/lib/mldev/mldev_utils_scalar.c
+@@ -327,6 +327,104 @@ rte_ml_io_uint32_to_float32(float scale, uint64_t nb_elements, void *input, void
+ 	return 0;
+ }
+ 
++int
++rte_ml_io_float32_to_int64(float scale, uint64_t nb_elements, void *input, void *output)
++{
++	float *input_buffer;
++	int64_t *output_buffer;
++	uint64_t i;
++
++	if ((scale == 0) || (nb_elements == 0) || (input == NULL) || (output == NULL))
++		return -EINVAL;
++
++	input_buffer = (float *)input;
++	output_buffer = (int64_t *)output;
++
++	for (i = 0; i < nb_elements; i++) {
++		*output_buffer = (int64_t)round((*input_buffer) * scale);
++
++		input_buffer++;
++		output_buffer++;
++	}
++
++	return 0;
++}
++
++int
++rte_ml_io_int64_to_float32(float scale, uint64_t nb_elements, void *input, void *output)
++{
++	int64_t *input_buffer;
++	float *output_buffer;
++	uint64_t i;
++
++	if ((scale == 0) || (nb_elements == 0) || (input == NULL) || (output == NULL))
++		return -EINVAL;
++
++	input_buffer = (int64_t *)input;
++	output_buffer = (float *)output;
++
++	for (i = 0; i < nb_elements; i++) {
++		*output_buffer = scale * (float)(*input_buffer);
++
++		input_buffer++;
++		output_buffer++;
++	}
++
++	return 0;
++}
++
++int
++rte_ml_io_float32_to_uint64(float scale, uint64_t nb_elements, void *input, void *output)
++{
++	float *input_buffer;
++	uint64_t *output_buffer;
++	int64_t i64;
++	uint64_t i;
++
++	if ((scale == 0) || (nb_elements == 0) || (input == NULL) || (output == NULL))
++		return -EINVAL;
++
++	input_buffer = (float *)input;
++	output_buffer = (uint64_t *)output;
++
++	for (i = 0; i < nb_elements; i++) {
++		i64 = (int64_t)round((*input_buffer) * scale);
++
++		if (i64 < 0)
++			i64 = 0;
++
++		*output_buffer = (uint64_t)i64;
++
++		input_buffer++;
++		output_buffer++;
++	}
++
++	return 0;
++}
++
++int
++rte_ml_io_uint64_to_float32(float scale, uint64_t nb_elements, void *input, void *output)
++{
++	uint64_t *input_buffer;
++	float *output_buffer;
++	uint64_t i;
++
++	if ((scale == 0) || (nb_elements == 0) || (input == NULL) || (output == NULL))
++		return -EINVAL;
++
++	input_buffer = (uint64_t *)input;
++	output_buffer = (float *)output;
++
++	for (i = 0; i < nb_elements; i++) {
++		*output_buffer = scale * (float)(*input_buffer);
++
++		input_buffer++;
++		output_buffer++;
++	}
++
++	return 0;
++}
++
+ /* Convert a single precision floating point number (float32) into a half precision
+  * floating point number (float16) using round to nearest rounding mode.
+  */
+diff --git a/lib/mldev/rte_mldev.h b/lib/mldev/rte_mldev.h
+index 63b2670bb0480..d4c752a5d708d 100644
+--- a/lib/mldev/rte_mldev.h
++++ b/lib/mldev/rte_mldev.h
+@@ -873,6 +873,10 @@ enum rte_ml_io_type {
+ 	/**< 32-bit integer */
+ 	RTE_ML_IO_TYPE_UINT32,
+ 	/**< 32-bit unsigned integer */
++	RTE_ML_IO_TYPE_INT64,
++	/**< 32-bit integer */
++	RTE_ML_IO_TYPE_UINT64,
++	/**< 32-bit unsigned integer */
+ 	RTE_ML_IO_TYPE_FP8,
+ 	/**< 8-bit floating point number */
+ 	RTE_ML_IO_TYPE_FP16,
+diff --git a/lib/mldev/version.map b/lib/mldev/version.map
+index 2e8f1555225fe..1978695314ef9 100644
+--- a/lib/mldev/version.map
++++ b/lib/mldev/version.map
+@@ -61,6 +61,10 @@ INTERNAL {
+ 	rte_ml_io_int32_to_float32;
+ 	rte_ml_io_float32_to_uint32;
+ 	rte_ml_io_uint32_to_float32;
++	rte_ml_io_float32_to_int64;
++	rte_ml_io_int64_to_float32;
++	rte_ml_io_float32_to_uint64;
++	rte_ml_io_uint64_to_float32;
+ 	rte_ml_io_float32_to_float16;
+ 	rte_ml_io_float16_to_float32;
+ 	rte_ml_io_float32_to_bfloat16;
+-- 
+2.25.1
+

@@ -1,0 +1,122 @@
+From 03352632b82835d6108cc7ea3ba8f76871acb50b Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Fri, 1 Sep 2023 03:16:57 +0530
+Subject: [PATCH 621/955] cnxk/dma: sync from upstream
+
+Sync upstream changes.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I8fd6e06295e5fe49ebf3552be7add6c8b2ce503f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110988
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.h    |  2 +-
+ drivers/dma/cnxk/cnxk_dmadev_fp.c | 50 +++++++++++++++----------------
+ drivers/dma/cnxk/meson.build      |  7 +++++
+ 3 files changed, 33 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.h b/drivers/dma/cnxk/cnxk_dmadev.h
+index 5025f107fd2b3..c9032de7795b1 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.h
++++ b/drivers/dma/cnxk/cnxk_dmadev.h
+@@ -22,7 +22,7 @@
+ #define DPI_MAX_POINTER	       15
+ #define STRM_INC(s, var)       ((s).var = ((s).var + 1) & (s).max_cnt)
+ #define STRM_DEC(s, var)       ((s).var = ((s).var - 1) == -1 ? (s).max_cnt : ((s).var - 1))
+-#define DPI_MAX_DESC	       32768
++#define DPI_MAX_DESC	       2048
+ #define DPI_MIN_DESC	       2
+ #define MAX_VCHANS_PER_QUEUE   4
+ #define DPI_CMD_QUEUE_BUF_SIZE 4096
+diff --git a/drivers/dma/cnxk/cnxk_dmadev_fp.c b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+index db1e57bf51c61..d1f27ba2a6afa 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev_fp.c
++++ b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+@@ -19,31 +19,6 @@ __dpi_cpy_scalar(uint64_t *src, uint64_t *dst, uint8_t n)
+ 		dst[i] = src[i];
+ }
+ 
+-static __plt_always_inline void
+-__dpi_cpy_scalar_sg(const struct rte_dma_sge *src, uint64_t *dst, uint16_t n)
+-{
+-	uint8_t i;
+-
+-	for (i = 0; i < n; i++) {
+-		*dst++ = src[i].length;
+-		*dst++ = src[i].addr;
+-	}
+-}
+-
+-static __plt_always_inline uint8_t
+-__dpi_cpy_scalar_sg_lmt(const struct rte_dma_sge *src, uint64_t *dst, uint16_t n, uint16_t lmt)
+-{
+-	uint8_t i;
+-
+-	for (i = 0; i < n && lmt; i++) {
+-		*dst++ = src[i].length;
+-		*dst++ = src[i].addr;
+-		lmt -= 2;
+-	}
+-
+-	return i;
+-}
+-
+ #if defined(RTE_ARCH_ARM64)
+ static __plt_always_inline void
+ __dpi_cpy_vector(uint64_t *src, uint64_t *dst, uint8_t n)
+@@ -91,6 +66,31 @@ __dpi_cpy_vector_sg_lmt(const struct rte_dma_sge *src, uint64_t *dst, uint16_t n
+ 
+ 	return i;
+ }
++#else
++static __plt_always_inline void
++__dpi_cpy_scalar_sg(const struct rte_dma_sge *src, uint64_t *dst, uint16_t n)
++{
++	uint8_t i;
++
++	for (i = 0; i < n; i++) {
++		*dst++ = src[i].length;
++		*dst++ = src[i].addr;
++	}
++}
++
++static __plt_always_inline uint8_t
++__dpi_cpy_scalar_sg_lmt(const struct rte_dma_sge *src, uint64_t *dst, uint16_t n, uint16_t lmt)
++{
++	uint8_t i;
++
++	for (i = 0; i < n && lmt; i++) {
++		*dst++ = src[i].length;
++		*dst++ = src[i].addr;
++		lmt -= 2;
++	}
++
++	return i;
++}
+ #endif
+ 
+ static __plt_always_inline void
+diff --git a/drivers/dma/cnxk/meson.build b/drivers/dma/cnxk/meson.build
+index a4c9250335265..8f0b1751d86a8 100644
+--- a/drivers/dma/cnxk/meson.build
++++ b/drivers/dma/cnxk/meson.build
+@@ -1,6 +1,13 @@
+ # SPDX-License-Identifier: BSD-3-Clause
+ # Copyright(C) 2021 Marvell International Ltd.
+ 
++error_cflags = ['-Wno-uninitialized']
++foreach flag: error_cflags
++    if cc.has_argument(flag)
++        cflags += flag
++    endif
++endforeach
++
+ deps += ['bus_pci', 'common_cnxk', 'dmadev']
+ sources = files('cnxk_dmadev.c', 'cnxk_dmadev_fp.c')
+ pmd_supports_disable_iova_as_pa = true
+-- 
+2.25.1
+

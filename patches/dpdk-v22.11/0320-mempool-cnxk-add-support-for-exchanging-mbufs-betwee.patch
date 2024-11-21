@@ -1,0 +1,219 @@
+From cc6c31db1f67b911b1d94ddf96c0f4687a060903 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Mon, 20 Feb 2023 16:47:53 +0530
+Subject: [PATCH 320/955] mempool/cnxk: add support for exchanging mbufs
+ between pools
+
+Add the following cnxk mempool PMD APIs to facilitate exchanging mbufs
+between pools.
+ * rte_pmd_cnxk_mempool_is_hwpool() - Allows user to check whether a pool
+   is hwpool or not.
+ * rte_pmd_cnxk_mempool_range_check_disable() - Disables range checking on
+   any rte_mempool.
+ * rte_pmd_cnxk_mempool_mbuf_exchange() - Exchanges mbufs between any two
+   rte_mempool where the range check is disabled.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I2bc3f0a8c98b514c95444a4a1cdf3a1b92169c89
+---
+ drivers/mempool/cnxk/cn10k_hwpool_ops.c     | 63 ++++++++++++++++++++-
+ drivers/mempool/cnxk/cnxk_mempool.h         |  4 ++
+ drivers/mempool/cnxk/meson.build            |  1 +
+ drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h | 56 ++++++++++++++++++
+ drivers/mempool/cnxk/version.map            | 10 ++++
+ 5 files changed, 133 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h
+ create mode 100644 drivers/mempool/cnxk/version.map
+
+diff --git a/drivers/mempool/cnxk/cn10k_hwpool_ops.c b/drivers/mempool/cnxk/cn10k_hwpool_ops.c
+index 9238765155a81..b234481ec136b 100644
+--- a/drivers/mempool/cnxk/cn10k_hwpool_ops.c
++++ b/drivers/mempool/cnxk/cn10k_hwpool_ops.c
+@@ -3,11 +3,14 @@
+  */
+ 
+ #include <rte_mempool.h>
++#include <rte_pmd_cnxk_mempool.h>
+ 
+ #include "roc_api.h"
+ #include "cnxk_mempool.h"
+ 
+-#define CN10K_HWPOOL_MEM_SIZE 128
++#define CN10K_HWPOOL_MEM_SIZE	 128
++#define CN10K_NPA_IOVA_RANGE_MIN 0x0
++#define CN10K_NPA_IOVA_RANGE_MAX 0x1fffffffffff80
+ 
+ static int __rte_hot
+ cn10k_hwpool_enq(struct rte_mempool *hp, void *const *obj_table, unsigned int n)
+@@ -197,6 +200,64 @@ cn10k_hwpool_populate(struct rte_mempool *hp, unsigned int max_objs,
+ 	return hp->size;
+ }
+ 
++int
++rte_pmd_cnxk_mempool_mbuf_exchange(struct rte_mbuf *m1, struct rte_mbuf *m2)
++{
++	struct rte_mempool_objhdr *hdr;
++
++#ifdef RTE_LIBRTE_MEMPOOL_DEBUG
++	if (!(CNXK_MEMPOOL_FLAGS(m1->pool) & CNXK_MEMPOOL_F_NO_RANGE_CHECK) ||
++	    !(CNXK_MEMPOOL_FLAGS(m2->pool) & CNXK_MEMPOOL_F_NO_RANGE_CHECK)) {
++		plt_err("Pools must have range check disabled");
++		return -EINVAL;
++	}
++	if (m1->pool->elt_size != m2->pool->elt_size ||
++	    m1->pool->header_size != m2->pool->header_size ||
++	    m1->pool->trailer_size != m2->pool->trailer_size ||
++	    m1->pool->size != m2->pool->size) {
++		plt_err("Parameters of pools involved in exchange does not match");
++		return -EINVAL;
++	}
++#endif
++	RTE_SWAP(m1->pool, m2->pool);
++	hdr = rte_mempool_get_header(m1);
++	hdr->mp = m1->pool;
++	hdr = rte_mempool_get_header(m2);
++	hdr->mp = m2->pool;
++	return 0;
++}
++
++int
++rte_pmd_cnxk_mempool_is_hwpool(struct rte_mempool *mp)
++{
++	return !!(CNXK_MEMPOOL_FLAGS(mp) & CNXK_MEMPOOL_F_IS_HWPOOL);
++}
++
++int
++rte_pmd_cnxk_mempool_range_check_disable(struct rte_mempool *mp)
++{
++	if (rte_pmd_cnxk_mempool_is_hwpool(mp)) {
++		/* Disable only aura range check for hardware pools */
++		roc_npa_aura_op_range_set(mp->pool_id, CN10K_NPA_IOVA_RANGE_MIN,
++					  CN10K_NPA_IOVA_RANGE_MAX);
++		CNXK_MEMPOOL_SET_FLAGS(mp, CNXK_MEMPOOL_F_NO_RANGE_CHECK);
++		mp = CNXK_MEMPOOL_CONFIG(mp);
++	}
++
++	/* No need to disable again if already disabled */
++	if (CNXK_MEMPOOL_FLAGS(mp) & CNXK_MEMPOOL_F_NO_RANGE_CHECK)
++		return 0;
++
++	/* Disable aura/pool range check */
++	roc_npa_pool_op_range_set(mp->pool_id, CN10K_NPA_IOVA_RANGE_MIN,
++				  CN10K_NPA_IOVA_RANGE_MAX);
++	if (roc_npa_pool_range_update_check(mp->pool_id) < 0)
++		return -EBUSY;
++
++	CNXK_MEMPOOL_SET_FLAGS(mp, CNXK_MEMPOOL_F_NO_RANGE_CHECK);
++	return 0;
++}
++
+ static struct rte_mempool_ops cn10k_hwpool_ops = {
+ 	.name = "cn10k_hwpool_ops",
+ 	.alloc = cn10k_hwpool_alloc,
+diff --git a/drivers/mempool/cnxk/cnxk_mempool.h b/drivers/mempool/cnxk/cnxk_mempool.h
+index 4ca05d53e1aba..669e617952c87 100644
+--- a/drivers/mempool/cnxk/cnxk_mempool.h
++++ b/drivers/mempool/cnxk/cnxk_mempool.h
+@@ -20,6 +20,10 @@ enum cnxk_mempool_flags {
+ 	 * This flag is set by the driver.
+ 	 */
+ 	CNXK_MEMPOOL_F_IS_HWPOOL = RTE_BIT64(2),
++	/* This flag indicates whether range check has been disabled for
++	 * the pool. This flag is set by the driver.
++	 */
++	CNXK_MEMPOOL_F_NO_RANGE_CHECK = RTE_BIT64(3),
+ };
+ 
+ #define CNXK_MEMPOOL_F_MASK 0xFUL
+diff --git a/drivers/mempool/cnxk/meson.build b/drivers/mempool/cnxk/meson.build
+index ac65fd973b6cd..642e0acae3f79 100644
+--- a/drivers/mempool/cnxk/meson.build
++++ b/drivers/mempool/cnxk/meson.build
+@@ -17,5 +17,6 @@ sources = files(
+         'cn10k_hwpool_ops.c',
+ )
+ 
++headers = files('rte_pmd_cnxk_mempool.h')
+ deps += ['eal', 'mbuf', 'kvargs', 'bus_pci', 'common_cnxk', 'mempool']
+ pmd_supports_disable_iova_as_pa = true
+diff --git a/drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h b/drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h
+new file mode 100644
+index 0000000000000..b040d0414fea4
+--- /dev/null
++++ b/drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h
+@@ -0,0 +1,56 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++/**
++ * @file rte_pmd_cnxk.h
++ * Marvell CNXK Mempool PMD specific functions.
++ *
++ **/
++
++#ifndef _PMD_CNXK_MEMPOOL_H_
++#define _PMD_CNXK_MEMPOOL_H_
++
++#include <rte_mbuf.h>
++#include <rte_mempool.h>
++
++/**
++ * Exchange mbufs between two mempools.
++ *
++ * @param m1
++ *   First mbuf
++ * @param m2
++ *   Second mbuf
++ *
++ * @return
++ *   0 on success, a negative errno value otherwise.
++ */
++__rte_experimental
++int rte_pmd_cnxk_mempool_mbuf_exchange(struct rte_mbuf *m1,
++				       struct rte_mbuf *m2);
++
++/**
++ * Check whether a mempool is a hwpool.
++ *
++ * @param mp
++ *   Mempool to check.
++ *
++ * @return
++ *   1 if mp is a hwpool, 0 otherwise.
++ */
++__rte_experimental
++int rte_pmd_cnxk_mempool_is_hwpool(struct rte_mempool *mp);
++
++/**
++ * Disable buffer address range check on a mempool.
++ *
++ * @param mp
++ *   Mempool to disable range check on.
++ *
++ * @return
++ *   0 on success, a negative errno value otherwise.
++ */
++__rte_experimental
++int rte_pmd_cnxk_mempool_range_check_disable(struct rte_mempool *mp);
++
++#endif /* _PMD_CNXK_MEMPOOL_H_ */
+diff --git a/drivers/mempool/cnxk/version.map b/drivers/mempool/cnxk/version.map
+new file mode 100644
+index 0000000000000..755731e3b5db9
+--- /dev/null
++++ b/drivers/mempool/cnxk/version.map
+@@ -0,0 +1,10 @@
++ DPDK_23 {
++	local: *;
++ };
++
++ EXPERIMENTAL {
++	global:
++	rte_pmd_cnxk_mempool_is_hwpool;
++	rte_pmd_cnxk_mempool_mbuf_exchange;
++	rte_pmd_cnxk_mempool_range_check_disable;
++ };
+-- 
+2.25.1
+

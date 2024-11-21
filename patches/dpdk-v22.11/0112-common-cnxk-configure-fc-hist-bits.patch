@@ -1,0 +1,50 @@
+From 10594332d14f6c8e829e788fe1ce45a872f7e733 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 25 Nov 2022 00:30:07 -0500
+Subject: [PATCH 112/955] common/cnxk: configure fc hist bits
+
+New parameter added inside SQ structure to control the fc_hyst_bits.
+Instead of count on all updates each SQ can tune his own hysteresis
+level.
+
+Change-Id: Ib615c8d0fb0bef1c21c1e8f28b834e3f0add7798
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92596
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h       | 1 +
+ drivers/common/cnxk/roc_nix_queue.c | 5 ++---
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 47ee078c2e492..96756b1a2bd2f 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -354,6 +354,7 @@ struct roc_nix_sq {
+ 	uint16_t cq_drop_thresh;
+ 	bool sso_ena;
+ 	bool cq_ena;
++	uint8_t fc_hyst_bits;
+ 	/* End of Input parameters */
+ 	uint16_t sqes_per_sqb_log2;
+ 	struct roc_nix *roc_nix;
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 385f1ba04e775..287a489e7f954 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -1025,9 +1025,8 @@ sqb_pool_populate(struct roc_nix *roc_nix, struct roc_nix_sq *sq)
+ 	else
+ 		aura.fc_stype = 0x3; /* STSTP */
+ 	aura.fc_addr = (uint64_t)sq->fc;
+-	aura.fc_hyst_bits = 1; /* Store count on all updates */
+-	rc = roc_npa_pool_create(&sq->aura_handle, blk_sz, nb_sqb_bufs, &aura,
+-				 &pool, 0);
++	aura.fc_hyst_bits = sq->fc_hyst_bits & 0xF;
++	rc = roc_npa_pool_create(&sq->aura_handle, blk_sz, nb_sqb_bufs, &aura, &pool, 0);
+ 	if (rc)
+ 		goto fail;
+ 
+-- 
+2.25.1
+

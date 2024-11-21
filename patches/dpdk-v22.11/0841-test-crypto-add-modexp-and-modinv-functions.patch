@@ -1,0 +1,362 @@
+From bbcc89eaf08ac061d432bb799274b93e74cf8abd Mon Sep 17 00:00:00 2001
+From: Arkadiusz Kusztal <arkadiuszx.kusztal@intel.com>
+Date: Tue, 20 Jun 2023 10:32:34 +0000
+Subject: [PATCH 841/955] test/crypto: add modexp and modinv functions
+
+Added modular exponentiation and modular inverse
+tests to the asymmetric crypto testsuite.
+
+Signed-off-by: Arkadiusz Kusztal <arkadiuszx.kusztal@intel.com>
+Acked-by: Ciara Power <ciara.power@intel.com>
+Acked-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I1617bd85b1952b9e461de2c4e3a60866f3922c30
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123927
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev_asym.c             | 152 +++++++++++++++++++--
+ app/test/test_cryptodev_mod_test_vectors.h | 123 +++++++++++++++++
+ 2 files changed, 263 insertions(+), 12 deletions(-)
+
+diff --git a/app/test/test_cryptodev_asym.c b/app/test/test_cryptodev_asym.c
+index a93a005ee4961..5240979fc9db2 100644
+--- a/app/test/test_cryptodev_asym.c
++++ b/app/test/test_cryptodev_asym.c
+@@ -32,28 +32,23 @@
+ #endif
+ #define ASYM_TEST_MSG_LEN 256
+ #define TEST_VECTOR_SIZE 256
++#define DEQ_TIMEOUT 50
+ 
+ static int gbl_driver_id;
+-struct crypto_testsuite_params_asym {
++static struct crypto_testsuite_params_asym {
+ 	struct rte_mempool *op_mpool;
+ 	struct rte_mempool *session_mpool;
+ 	struct rte_cryptodev_config conf;
+ 	struct rte_cryptodev_qp_conf qp_conf;
+ 	uint8_t valid_devs[RTE_CRYPTO_MAX_DEVS];
+ 	uint8_t valid_dev_count;
+-};
++} testsuite_params, *params = &testsuite_params;
+ 
+-struct crypto_unittest_params {
++static struct ut_args {
+ 	void *sess;
+ 	struct rte_crypto_op *op;
+-};
+-
+-union test_case_structure {
+-	struct modex_test_data modex;
+-	struct modinv_test_data modinv;
+-};
+-
+-static struct crypto_testsuite_params_asym testsuite_params = { NULL };
++	struct rte_crypto_op *result_op;
++} _args, *self = &_args;
+ 
+ static int
+ queue_ops_rsa_sign_verify(void *sess)
+@@ -524,9 +519,15 @@ static int
+ ut_setup_asym(void)
+ {
+ 	struct crypto_testsuite_params_asym *ts_params = &testsuite_params;
+-
+ 	uint16_t qp_id;
+ 
++	memset(self, 0, sizeof(*self));
++	self->op = rte_crypto_op_alloc(params->op_mpool,
++			RTE_CRYPTO_OP_TYPE_ASYMMETRIC);
++	TEST_ASSERT_NOT_NULL(self->op,
++		"Failed to allocate asymmetric crypto operation struct"
++	);
++
+ 	/* Reconfigure device to default parameters */
+ 	ts_params->conf.socket_id = SOCKET_ID_ANY;
+ 
+@@ -559,6 +560,15 @@ ut_teardown_asym(void)
+ {
+ 	struct crypto_testsuite_params_asym *ts_params = &testsuite_params;
+ 	struct rte_cryptodev_stats stats;
++	uint8_t dev_id = ts_params->valid_devs[0];
++
++	if (self->sess != NULL)
++		rte_cryptodev_asym_session_free(dev_id, self->sess);
++	if (self->op != NULL)
++		rte_crypto_op_free(self->op);
++	self->sess = NULL;
++	self->op = NULL;
++	self->result_op = NULL;
+ 
+ 	rte_cryptodev_stats_get(ts_params->valid_devs[0], &stats);
+ 
+@@ -1800,6 +1810,115 @@ test_ecpm_all_curve(void)
+ 	return overall_status;
+ }
+ 
++static int send_one(void)
++{
++	int ticks = 0;
++
++	if (rte_cryptodev_enqueue_burst(params->valid_devs[0], 0,
++			&self->op, 1) != 1) {
++		RTE_LOG(ERR, USER1,
++			"line %u FAILED: Error sending packet for operation on device %d",
++			__LINE__, params->valid_devs[0]);
++		return TEST_FAILED;
++	}
++	while (rte_cryptodev_dequeue_burst(params->valid_devs[0], 0,
++			&self->result_op, 1) == 0) {
++		rte_delay_ms(1);
++		ticks++;
++		if (ticks >= DEQ_TIMEOUT) {
++			RTE_LOG(ERR, USER1,
++				"line %u FAILED: Cannot dequeue the crypto op on device %d",
++				__LINE__, params->valid_devs[0]);
++			return TEST_FAILED;
++		}
++	}
++	TEST_ASSERT_NOT_NULL(self->result_op,
++		"Failed to process asym crypto op");
++	TEST_ASSERT_SUCCESS(self->result_op->status,
++		"Failed to process asym crypto op, error status received");
++	return TEST_SUCCESS;
++}
++
++static int
++modular_exponentiation(const void *test_data)
++{
++	const struct modex_test_data *vector = test_data;
++	uint8_t input[TEST_DATA_SIZE] = { 0 };
++	uint8_t exponent[TEST_DATA_SIZE] = { 0 };
++	uint8_t modulus[TEST_DATA_SIZE] = { 0 };
++	uint8_t result[TEST_DATA_SIZE] = { 0 };
++	struct rte_crypto_asym_xform xform = { };
++	const uint8_t dev_id = params->valid_devs[0];
++
++	memcpy(input, vector->base.data, vector->base.len);
++	memcpy(exponent, vector->exponent.data, vector->exponent.len);
++	memcpy(modulus, vector->modulus.data, vector->modulus.len);
++
++	xform.xform_type = RTE_CRYPTO_ASYM_XFORM_MODEX;
++	xform.modex.exponent.data = exponent;
++	xform.modex.exponent.length = vector->exponent.len;
++	xform.modex.modulus.data = modulus;
++	xform.modex.modulus.length = vector->modulus.len;
++
++	if (rte_cryptodev_asym_session_create(dev_id, &xform,
++			params->session_mpool, &self->sess) < 0) {
++		RTE_LOG(ERR, USER1, "line %u FAILED: Session creation failed",
++			__LINE__);
++		return TEST_FAILED;
++	}
++	rte_crypto_op_attach_asym_session(self->op, self->sess);
++	self->op->asym->modex.base.data = input;
++	self->op->asym->modex.base.length = vector->base.len;
++	self->op->asym->modex.result.data = result;
++
++	TEST_ASSERT_SUCCESS(send_one(),
++		"Failed to process crypto op");
++	TEST_ASSERT_BUFFERS_ARE_EQUAL(vector->reminder.data,
++			self->result_op->asym->modex.result.data,
++			self->result_op->asym->modex.result.length,
++			"operation verification failed\n");
++
++	return TEST_SUCCESS;
++}
++
++static int
++modular_multiplicative_inverse(const void *test_data)
++{
++	const struct modinv_test_data *vector = test_data;
++	uint8_t input[TEST_DATA_SIZE] = { 0 };
++	uint8_t modulus[TEST_DATA_SIZE] = { 0 };
++	uint8_t result[TEST_DATA_SIZE] = { 0 };
++	struct rte_crypto_asym_xform xform = { };
++	const uint8_t dev_id = params->valid_devs[0];
++
++	memcpy(input, vector->base.data, vector->base.len);
++	memcpy(modulus, vector->modulus.data, vector->modulus.len);
++	xform.xform_type = RTE_CRYPTO_ASYM_XFORM_MODINV;
++	xform.modex.modulus.data = modulus;
++	xform.modex.modulus.length = vector->modulus.len;
++	if (rte_cryptodev_asym_session_create(dev_id, &xform,
++			params->session_mpool, &self->sess) < 0) {
++		RTE_LOG(ERR, USER1, "line %u FAILED: Session creation failed",
++			__LINE__);
++		return TEST_FAILED;
++	}
++	rte_crypto_op_attach_asym_session(self->op, self->sess);
++
++	self->op->asym->modinv.base.data = input;
++	self->op->asym->modinv.base.length = vector->base.len;
++	self->op->asym->modinv.result.data = result;
++	self->op->asym->modinv.result.length = vector->modulus.len;
++
++	TEST_ASSERT_SUCCESS(send_one(),
++		"Failed to process crypto op");
++	TEST_ASSERT_BUFFERS_ARE_EQUAL(vector->inverse.data,
++		self->result_op->asym->modinv.result.data,
++		self->result_op->asym->modinv.result.length,
++		"Incorrect reminder\n");
++
++	return TEST_SUCCESS;
++}
++
+ static struct unit_test_suite cryptodev_openssl_asym_testsuite  = {
+ 	.suite_name = "Crypto Device OPENSSL ASYM Unit Test Suite",
+ 	.setup = testsuite_setup,
+@@ -1827,6 +1946,15 @@ static struct unit_test_suite cryptodev_qat_asym_testsuite  = {
+ 	.setup = testsuite_setup,
+ 	.teardown = testsuite_teardown,
+ 	.unit_test_cases = {
++		TEST_CASE_NAMED_WITH_DATA(
++			"Modular Exponentiation (mod=128, base=20, exp=3, res=128)",
++			ut_setup_asym, ut_teardown_asym,
++			modular_exponentiation, &modex_test_case_m128_b20_e3),
++		/* Modular Multiplicative Inverse */
++		TEST_CASE_NAMED_WITH_DATA(
++			"Modular Inverse (mod=128, base=20, exp=3, inv=128)",
++			ut_setup_asym, ut_teardown_asym,
++			modular_multiplicative_inverse, &modinv_test_case),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev_mod_test_vectors.h b/app/test/test_cryptodev_mod_test_vectors.h
+index 7763377110054..0ffc958037254 100644
+--- a/app/test/test_cryptodev_mod_test_vectors.h
++++ b/app/test/test_cryptodev_mod_test_vectors.h
+@@ -47,6 +47,129 @@ struct modinv_test_data {
+ 	uint16_t result_len;
+ };
+ 
++/* ModExp #1 */
++static const struct
++modex_test_data modex_test_case_m128_b20_e3 = {
++	.description =
++		"Modular Exponentiation (mod=128, base=20, exp=3, res=128)",
++	.xform_type = RTE_CRYPTO_ASYM_XFORM_MODEX,
++	.base = {
++		.data = {
++			0xF8, 0xBA, 0x1A, 0x55, 0xD0, 0x2F, 0x85,
++			0xAE, 0x96, 0x7B, 0xB6, 0x2F, 0xB6, 0xCD,
++			0xA8, 0xEB, 0x7E, 0x78, 0xA0, 0x50
++		},
++		.len = 20
++	},
++	.exponent = {
++		.data = {
++			0x01, 0x00, 0x01
++		},
++		.len = 3
++	},
++	.reminder = {
++		.data = {
++			0x2C, 0x60, 0x75, 0x45, 0x98, 0x9D, 0xE0, 0x72,
++			0xA0, 0x9D, 0x3A, 0x9E, 0x03, 0x38, 0x73, 0x3C,
++			0x31, 0x83, 0x04, 0xFE, 0x75, 0x43, 0xE6, 0x17,
++			0x5C, 0x01, 0x29, 0x51, 0x69, 0x33, 0x62, 0x2D,
++			0x78, 0xBE, 0xAE, 0xC4, 0xBC, 0xDE, 0x7E, 0x2C,
++			0x77, 0x84, 0xF2, 0xC5, 0x14, 0xB5, 0x2F, 0xF7,
++			0xC5, 0x94, 0xEF, 0x86, 0x75, 0x75, 0xB5, 0x11,
++			0xE5, 0x0E, 0x0A, 0x29, 0x76, 0xE2, 0xEA, 0x32,
++			0x0E, 0x43, 0x77, 0x7E, 0x2C, 0x27, 0xAC, 0x3B,
++			0x86, 0xA5, 0xDB, 0xC9, 0x48, 0x40, 0xE8, 0x99,
++			0x9A, 0x0A, 0x3D, 0xD6, 0x74, 0xFA, 0x2E, 0x2E,
++			0x5B, 0xAF, 0x8C, 0x99, 0x44, 0x2A, 0x67, 0x38,
++			0x27, 0x41, 0x59, 0x9D, 0xB8, 0x51, 0xC9, 0xF7,
++			0x43, 0x61, 0x31, 0x6E, 0xF1, 0x25, 0x38, 0x7F,
++			0xAE, 0xC6, 0xD0, 0xBB, 0x29, 0x76, 0x3F, 0x46,
++			0x2E, 0x1B, 0xE4, 0x67, 0x71, 0xE3, 0x87, 0x5A
++		},
++		.len = 128
++	},
++	.modulus = {
++		.data = {
++			0xb3, 0xa1, 0xaf, 0xb7, 0x13, 0x08, 0x00, 0x0a,
++			0x35, 0xdc, 0x2b, 0x20, 0x8d, 0xa1, 0xb5, 0xce,
++			0x47, 0x8a, 0xc3, 0x80, 0xf4, 0x7d, 0x4a, 0xa2,
++			0x62, 0xfd, 0x61, 0x7f, 0xb5, 0xa8, 0xde, 0x0a,
++			0x17, 0x97, 0xa0, 0xbf, 0xdf, 0x56, 0x5a, 0x3d,
++			0x51, 0x56, 0x4f, 0x70, 0x70, 0x3f, 0x63, 0x6a,
++			0x44, 0x5b, 0xad, 0x84, 0x0d, 0x3f, 0x27, 0x6e,
++			0x3b, 0x34, 0x91, 0x60, 0x14, 0xb9, 0xaa, 0x72,
++			0xfd, 0xa3, 0x64, 0xd2, 0x03, 0xa7, 0x53, 0x87,
++			0x9e, 0x88, 0x0b, 0xc1, 0x14, 0x93, 0x1a, 0x62,
++			0xff, 0xb1, 0x5d, 0x74, 0xcd, 0x59, 0x63, 0x18,
++			0x11, 0x3d, 0x4f, 0xba, 0x75, 0xd4, 0x33, 0x4e,
++			0x23, 0x6b, 0x7b, 0x57, 0x44, 0xe1, 0xd3, 0x03,
++			0x13, 0xa6, 0xf0, 0x8b, 0x60, 0xb0, 0x9e, 0xee,
++			0x75, 0x08, 0x9d, 0x71, 0x63, 0x13, 0xcb, 0xa6,
++			0x81, 0x92, 0x14, 0x03, 0x22, 0x2d, 0xde, 0x55
++		},
++		.len = 128
++	},
++	.result_len = 128
++};
++
++/* ModInv #1 */
++static const struct
++modinv_test_data modinv_test_case = {
++	.description = "Modular Inverse (mod=128, base=20, exp=3, inv=128)",
++	.xform_type = RTE_CRYPTO_ASYM_XFORM_MODINV,
++	.base = {
++		.data = {
++			0xF8, 0xBA, 0x1A, 0x55, 0xD0, 0x2F, 0x85,
++			0xAE, 0x96, 0x7B, 0xB6, 0x2F, 0xB6, 0xCD,
++			0xA8, 0xEB, 0x7E, 0x78, 0xA0, 0x50
++		},
++		.len = 20
++	},
++	.inverse = {
++		.data = {
++			0x52, 0xb1, 0xa3, 0x8c, 0xc5, 0x8a, 0xb9, 0x1f,
++			0xb6, 0x82, 0xf5, 0x6a, 0x9a, 0xde, 0x8d, 0x2e,
++			0x62, 0x4b, 0xac, 0x49, 0x21, 0x1d, 0x30, 0x4d,
++			0x32, 0xac, 0x1f, 0x40, 0x6d, 0x52, 0xc7, 0x9b,
++			0x6c, 0x0a, 0x82, 0x3a, 0x2c, 0xaf, 0x6b, 0x6d,
++			0x17, 0xbe, 0x43, 0xed, 0x97, 0x78, 0xeb, 0x4c,
++			0x92, 0x6f, 0xcf, 0xed, 0xb1, 0x09, 0xcb, 0x27,
++			0xc2, 0xde, 0x62, 0xfd, 0x21, 0xe6, 0xbd, 0x4f,
++			0xfe, 0x7a, 0x1b, 0x50, 0xfe, 0x10, 0x4a, 0xb0,
++			0xb7, 0xcf, 0xdb, 0x7d, 0xca, 0xc2, 0xf0, 0x1c,
++			0x39, 0x48, 0x6a, 0xb5, 0x4d, 0x8c, 0xfe, 0x63,
++			0x91, 0x9c, 0x21, 0xc3, 0x0e, 0x76, 0xad, 0x44,
++			0x8d, 0x54, 0x33, 0x99, 0xe1, 0x80, 0x19, 0xba,
++			0xb5, 0xac, 0x7d, 0x9c, 0xce, 0x91, 0x2a, 0xd9,
++			0x2c, 0xe1, 0x16, 0xd6, 0xd7, 0xcf, 0x9d, 0x05,
++			0x9a, 0x66, 0x9a, 0x3a, 0xc1, 0xb8, 0x4b, 0xc3
++		},
++		.len = 128
++	},
++	.modulus = {
++		.data = {
++			0xb3, 0xa1, 0xaf, 0xb7, 0x13, 0x08, 0x00, 0x0a,
++			0x35, 0xdc, 0x2b, 0x20, 0x8d, 0xa1, 0xb5, 0xce,
++			0x47, 0x8a, 0xc3, 0x80, 0xf4, 0x7d, 0x4a, 0xa2,
++			0x62, 0xfd, 0x61, 0x7f, 0xb5, 0xa8, 0xde, 0x0a,
++			0x17, 0x97, 0xa0, 0xbf, 0xdf, 0x56, 0x5a, 0x3d,
++			0x51, 0x56, 0x4f, 0x70, 0x70, 0x3f, 0x63, 0x6a,
++			0x44, 0x5b, 0xad, 0x84, 0x0d, 0x3f, 0x27, 0x6e,
++			0x3b, 0x34, 0x91, 0x60, 0x14, 0xb9, 0xaa, 0x72,
++			0xfd, 0xa3, 0x64, 0xd2, 0x03, 0xa7, 0x53, 0x87,
++			0x9e, 0x88, 0x0b, 0xc1, 0x14, 0x93, 0x1a, 0x62,
++			0xff, 0xb1, 0x5d, 0x74, 0xcd, 0x59, 0x63, 0x18,
++			0x11, 0x3d, 0x4f, 0xba, 0x75, 0xd4, 0x33, 0x4e,
++			0x23, 0x6b, 0x7b, 0x57, 0x44, 0xe1, 0xd3, 0x03,
++			0x13, 0xa6, 0xf0, 0x8b, 0x60, 0xb0, 0x9e, 0xee,
++			0x75, 0x08, 0x9d, 0x71, 0x63, 0x13, 0xcb, 0xa6,
++			0x81, 0x92, 0x14, 0x03, 0x22, 0x2d, 0xde, 0x55
++		},
++		.len = 128
++	},
++	.result_len = 128
++};
++
+ /* modular operation test data */
+ uint8_t base[] = {
+ 	0xF8, 0xBA, 0x1A, 0x55, 0xD0, 0x2F, 0x85,
+-- 
+2.25.1
+

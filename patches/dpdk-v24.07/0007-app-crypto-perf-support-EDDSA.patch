@@ -1,0 +1,327 @@
+From 8aa369e8546346a6aeba33d682d2897d4d115da2 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Sat, 31 Aug 2024 13:09:30 +0530
+Subject: [PATCH 07/12] app/crypto-perf: support EDDSA
+
+Added support for EDDSA 25519 curve SIGN and VERIFY operations.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Ie6d10a86f7895390dcc0a9b9cd57686815a456ba
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134691
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test-crypto-perf/cperf_ops.c             | 52 ++++++++++++++++++++
+ app/test-crypto-perf/cperf_options.h         |  2 +
+ app/test-crypto-perf/cperf_options_parsing.c |  9 +++-
+ app/test-crypto-perf/cperf_test_common.c     |  1 +
+ app/test-crypto-perf/cperf_test_vectors.c    | 52 ++++++++++++++++++++
+ app/test-crypto-perf/cperf_test_vectors.h    | 10 ++++
+ app/test-crypto-perf/main.c                  | 13 +++++
+ doc/guides/tools/cryptoperf.rst              |  1 +
+ 8 files changed, 138 insertions(+), 2 deletions(-)
+
+diff --git a/app/test-crypto-perf/cperf_ops.c b/app/test-crypto-perf/cperf_ops.c
+index f139ec5331874..220c3acac7285 100644
+--- a/app/test-crypto-perf/cperf_ops.c
++++ b/app/test-crypto-perf/cperf_ops.c
+@@ -67,6 +67,36 @@ cperf_set_ops_asym_ecdsa(struct rte_crypto_op **ops,
+ 	}
+ }
+ 
++static void
++cperf_set_ops_asym_eddsa(struct rte_crypto_op **ops,
++		   uint32_t src_buf_offset __rte_unused,
++		   uint32_t dst_buf_offset __rte_unused, uint16_t nb_ops,
++		   void *sess,
++		   const struct cperf_options *options,
++		   const struct cperf_test_vector *test_vector __rte_unused,
++		   uint16_t iv_offset __rte_unused,
++		   uint32_t *imix_idx __rte_unused,
++		   uint64_t *tsc_start __rte_unused)
++{
++	uint16_t i;
++
++	for (i = 0; i < nb_ops; i++) {
++		struct rte_crypto_asym_op *asym_op = ops[i]->asym;
++
++		ops[i]->status = RTE_CRYPTO_OP_STATUS_NOT_PROCESSED;
++		rte_crypto_op_attach_asym_session(ops[i], sess);
++
++		asym_op->eddsa.op_type = options->asym_op_type;
++		asym_op->eddsa.message.data = options->eddsa_data->message.data;
++		asym_op->eddsa.message.length = options->eddsa_data->message.length;
++
++		asym_op->eddsa.instance = options->eddsa_data->instance;
++
++		asym_op->eddsa.sign.data = options->eddsa_data->sign.data;
++		asym_op->eddsa.sign.length = options->eddsa_data->sign.length;
++	}
++}
++
+ static void
+ cperf_set_ops_asym_sm2(struct rte_crypto_op **ops,
+ 		   uint32_t src_buf_offset __rte_unused,
+@@ -1031,6 +1061,25 @@ cperf_create_session(struct rte_mempool *sess_mp,
+ 		return asym_sess;
+ 	}
+ 
++	if (options->op_type == CPERF_ASYM_ED25519) {
++		xform.next = NULL;
++		xform.xform_type = RTE_CRYPTO_ASYM_XFORM_EDDSA;
++		xform.ec.curve_id = options->eddsa_data->curve;
++		xform.ec.pkey.data = options->eddsa_data->pkey.data;
++		xform.ec.pkey.length = options->eddsa_data->pkey.length;
++		xform.ec.q.x.data = options->eddsa_data->pubkey.data;
++		xform.ec.q.x.length = options->eddsa_data->pubkey.length;
++
++		ret = rte_cryptodev_asym_session_create(dev_id, &xform,
++				sess_mp, &asym_sess);
++		if (ret < 0) {
++			RTE_LOG(ERR, USER1, "EDDSA Asym session create failed\n");
++			return NULL;
++		}
++
++		return asym_sess;
++	}
++
+ 	if (options->op_type == CPERF_ASYM_SM2) {
+ 		xform.next = NULL;
+ 		xform.xform_type = RTE_CRYPTO_ASYM_XFORM_SM2;
+@@ -1354,6 +1403,9 @@ cperf_get_op_functions(const struct cperf_options *options,
+ 	case CPERF_ASYM_SECP256R1:
+ 		op_fns->populate_ops = cperf_set_ops_asym_ecdsa;
+ 		break;
++	case CPERF_ASYM_ED25519:
++		op_fns->populate_ops = cperf_set_ops_asym_eddsa;
++		break;
+ 	case CPERF_ASYM_SM2:
+ 		op_fns->populate_ops = cperf_set_ops_asym_sm2;
+ 		break;
+diff --git a/app/test-crypto-perf/cperf_options.h b/app/test-crypto-perf/cperf_options.h
+index 131ecfdffb7a8..dbc9f5a97b82b 100644
+--- a/app/test-crypto-perf/cperf_options.h
++++ b/app/test-crypto-perf/cperf_options.h
+@@ -89,6 +89,7 @@ enum cperf_op_type {
+ 	CPERF_IPSEC,
+ 	CPERF_ASYM_MODEX,
+ 	CPERF_ASYM_SECP256R1,
++	CPERF_ASYM_ED25519,
+ 	CPERF_ASYM_SM2,
+ 	CPERF_TLS,
+ };
+@@ -169,6 +170,7 @@ struct cperf_options {
+ 	struct cperf_modex_test_data *modex_data;
+ 	uint16_t modex_len;
+ 	struct cperf_ecdsa_test_data *secp256r1_data;
++	struct cperf_eddsa_test_data *eddsa_data;
+ 	struct cperf_sm2_test_data *sm2_data;
+ 	enum rte_crypto_asym_op_type asym_op_type;
+ 	enum rte_crypto_auth_algorithm asym_hash_alg;
+diff --git a/app/test-crypto-perf/cperf_options_parsing.c b/app/test-crypto-perf/cperf_options_parsing.c
+index c91fcf0479fbc..59ea66c06dfc8 100644
+--- a/app/test-crypto-perf/cperf_options_parsing.c
++++ b/app/test-crypto-perf/cperf_options_parsing.c
+@@ -38,7 +38,7 @@ usage(char *progname)
+ 		" --desc-nb N: set number of descriptors for each crypto device\n"
+ 		" --devtype TYPE: set crypto device type to use\n"
+ 		" --optype cipher-only / auth-only / cipher-then-auth / auth-then-cipher /\n"
+-		"        aead / pdcp / docsis / ipsec / modex / secp256r1 / sm2 / tls-record : set operation type\n"
++		"        aead / pdcp / docsis / ipsec / modex / secp256r1 / eddsa / sm2 / tls-record : set operation type\n"
+ 		" --sessionless: enable session-less crypto operations\n"
+ 		" --shared-session: share 1 session across all queue pairs on crypto device\n"
+ 		" --out-of-place: enable out-of-place crypto operations\n"
+@@ -489,6 +489,10 @@ parse_op_type(struct cperf_options *opts, const char *arg)
+ 			cperf_op_type_strs[CPERF_ASYM_SECP256R1],
+ 			CPERF_ASYM_SECP256R1
+ 		},
++		{
++			cperf_op_type_strs[CPERF_ASYM_ED25519],
++			CPERF_ASYM_ED25519
++		},
+ 		{
+ 			cperf_op_type_strs[CPERF_ASYM_SM2],
+ 			CPERF_ASYM_SM2
+@@ -1080,6 +1084,7 @@ cperf_options_default(struct cperf_options *opts)
+ 	opts->modex_data = (struct cperf_modex_test_data *)&modex_perf_data[0];
+ 
+ 	opts->secp256r1_data = &secp256r1_perf_data;
++	opts->eddsa_data = &ed25519_perf_data;
+ 	opts->sm2_data = &sm2_perf_data;
+ 	opts->asym_op_type = RTE_CRYPTO_ASYM_OP_SIGN;
+ }
+@@ -1513,7 +1518,7 @@ cperf_options_dump(struct cperf_options *opts)
+ 	printf("#\n");
+ 	printf("# number of queue pairs per device: %u\n", opts->nb_qps);
+ 	printf("# crypto operation: %s\n", cperf_op_type_strs[opts->op_type]);
+-	if (opts->op_type == CPERF_ASYM_SM2 || opts->op_type == CPERF_ASYM_SECP256R1)
++	if (cperf_is_asym_test(opts))
+ 		printf("# asym operation type: %s\n",
+ 				rte_crypto_asym_op_strings[opts->asym_op_type]);
+ 	printf("# sessionless: %s\n", opts->sessionless ? "yes" : "no");
+diff --git a/app/test-crypto-perf/cperf_test_common.c b/app/test-crypto-perf/cperf_test_common.c
+index 33bee43c93dfa..9c287665a4672 100644
+--- a/app/test-crypto-perf/cperf_test_common.c
++++ b/app/test-crypto-perf/cperf_test_common.c
+@@ -307,6 +307,7 @@ cperf_is_asym_test(const struct cperf_options *options)
+ {
+ 	if (options->op_type == CPERF_ASYM_MODEX ||
+ 	    options->op_type == CPERF_ASYM_SECP256R1 ||
++	    options->op_type == CPERF_ASYM_ED25519 ||
+ 	    options->op_type == CPERF_ASYM_SM2)
+ 		return true;
+ 
+diff --git a/app/test-crypto-perf/cperf_test_vectors.c b/app/test-crypto-perf/cperf_test_vectors.c
+index 19c56b46bdef6..64720d50c3f85 100644
+--- a/app/test-crypto-perf/cperf_test_vectors.c
++++ b/app/test-crypto-perf/cperf_test_vectors.c
+@@ -853,6 +853,35 @@ static uint8_t secp256r1_message[] = {
+ 	0xdb, 0xc4, 0xe7, 0xa6, 0xa1, 0x33, 0xec, 0x56
+ };
+ 
++static uint8_t ed25519_pkey[] = {
++	0x4c, 0xcd, 0x08, 0x9b, 0x28, 0xff, 0x96, 0xda,
++	0x9d, 0xb6, 0xc3, 0x46, 0xec, 0x11, 0x4e, 0x0f,
++	0x5b, 0x8a, 0x31, 0x9f, 0x35, 0xab, 0xa6, 0x24,
++	0xda, 0x8c, 0xf6, 0xed, 0x4f, 0xb8, 0xa6, 0xfb,
++};
++
++static uint8_t ed25519_pubkey[] = {
++	0x3d, 0x40, 0x17, 0xc3, 0xe8, 0x43, 0x89, 0x5a,
++	0x92, 0xb7, 0x0a, 0xa7, 0x4d, 0x1b, 0x7e, 0xbc,
++	0x9c, 0x98, 0x2c, 0xcf, 0x2e, 0xc4, 0x96, 0x8c,
++	0xc0, 0xcd, 0x55, 0xf1, 0x2a, 0xf4, 0x66, 0x0c,
++};
++
++static uint8_t ed25519_sign[] = {
++	0x92, 0xa0, 0x09, 0xa9, 0xf0, 0xd4, 0xca, 0xb8,
++	0x72, 0x0e, 0x82, 0x0b, 0x5f, 0x64, 0x25, 0x40,
++	0xa2, 0xb2, 0x7b, 0x54, 0x16, 0x50, 0x3f, 0x8f,
++	0xb3, 0x76, 0x22, 0x23, 0xeb, 0xdb, 0x69, 0xda,
++	0x08, 0x5a, 0xc1, 0xe4, 0x3e, 0x15, 0x99, 0x6e,
++	0x45, 0x8f, 0x36, 0x13, 0xd0, 0xf1, 0x1d, 0x8c,
++	0x38, 0x7b, 0x2e, 0xae, 0xb4, 0x30, 0x2a, 0xee,
++	0xb0, 0x0d, 0x29, 0x16, 0x12, 0xbb, 0x0c, 0x00,
++};
++
++static uint8_t ed25519_message[] = {
++	0x72
++};
++
+ static uint8_t fp256_pkey[] = {
+ 	0x77, 0x84, 0x35, 0x65, 0x4c, 0x7a, 0x6d, 0xb1,
+ 	0x1e, 0x63, 0x0b, 0x41, 0x97, 0x36, 0x04, 0xf4,
+@@ -1365,6 +1394,29 @@ cperf_ecdsa_test_data secp256r1_perf_data = {
+ 	.curve = RTE_CRYPTO_EC_GROUP_SECP256R1
+ };
+ 
++/** EDDSA 25519 elliptic curve test params */
++struct
++cperf_eddsa_test_data ed25519_perf_data = {
++	.pubkey = {
++		.data = ed25519_pubkey,
++		.length = sizeof(ed25519_pubkey),
++	},
++	.pkey = {
++		.data = ed25519_pkey,
++		.length = sizeof(ed25519_pkey),
++	},
++	.sign = {
++		.data = ed25519_sign,
++		.length = sizeof(ed25519_sign),
++	},
++	.message = {
++		.data = ed25519_message,
++		.length = sizeof(ed25519_message),
++	},
++	.curve = RTE_CRYPTO_EC_GROUP_ED25519,
++	.instance = RTE_CRYPTO_EDCURVE_25519
++};
++
+ /** SM2 Fp256 elliptic curve test params */
+ struct
+ cperf_sm2_test_data sm2_perf_data = {
+diff --git a/app/test-crypto-perf/cperf_test_vectors.h b/app/test-crypto-perf/cperf_test_vectors.h
+index d46cbbc2c82f2..f83a17c17614c 100644
+--- a/app/test-crypto-perf/cperf_test_vectors.h
++++ b/app/test-crypto-perf/cperf_test_vectors.h
+@@ -118,6 +118,15 @@ struct cperf_ecdsa_test_data {
+ 	int curve;
+ };
+ 
++struct cperf_eddsa_test_data {
++	rte_crypto_param pubkey;
++	rte_crypto_param pkey;
++	rte_crypto_param sign;
++	rte_crypto_param message;
++	int curve;
++	int instance;
++};
++
+ struct cperf_sm2_test_data {
+ 	rte_crypto_param pubkey_qx;
+ 	rte_crypto_param pubkey_qy;
+@@ -147,6 +156,7 @@ extern uint8_t digest[2048];
+ 
+ extern struct cperf_modex_test_data modex_perf_data[10];
+ extern struct cperf_ecdsa_test_data secp256r1_perf_data;
++extern struct cperf_eddsa_test_data ed25519_perf_data;
+ extern struct cperf_sm2_test_data sm2_perf_data;
+ 
+ #endif
+diff --git a/app/test-crypto-perf/main.c b/app/test-crypto-perf/main.c
+index 75810dbf0b560..d93b30bcaae87 100644
+--- a/app/test-crypto-perf/main.c
++++ b/app/test-crypto-perf/main.c
+@@ -46,6 +46,7 @@ const char *cperf_op_type_strs[] = {
+ 	[CPERF_IPSEC] = "ipsec",
+ 	[CPERF_ASYM_MODEX] = "modex",
+ 	[CPERF_ASYM_SECP256R1] = "ecdsa_p256r1",
++	[CPERF_ASYM_ED25519] = "eddsa_25519",
+ 	[CPERF_ASYM_SM2] = "sm2",
+ 	[CPERF_TLS] = "tls-record"
+ };
+@@ -227,6 +228,7 @@ cperf_initialize_cryptodev(struct cperf_options *opts, uint8_t *enabled_cdevs)
+ 
+ 		switch (opts->op_type) {
+ 		case CPERF_ASYM_SECP256R1:
++		case CPERF_ASYM_ED25519:
+ 		case CPERF_ASYM_SM2:
+ 		case CPERF_ASYM_MODEX:
+ 			conf.ff_disable |= (RTE_CRYPTODEV_FF_SECURITY |
+@@ -382,6 +384,17 @@ cperf_verify_devices_capabilities(struct cperf_options *opts,
+ 			}
+ 		}
+ 
++		if (opts->op_type == CPERF_ASYM_ED25519) {
++			asym_cap_idx.type = RTE_CRYPTO_ASYM_XFORM_EDDSA;
++			asym_capability = rte_cryptodev_asym_capability_get(cdev_id, &asym_cap_idx);
++			if (asym_capability == NULL)
++				return -1;
++
++			if (!rte_cryptodev_asym_xform_capability_check_optype(asym_capability,
++						opts->asym_op_type))
++				return -1;
++		}
++
+ 		if (opts->op_type == CPERF_ASYM_SM2) {
+ 			asym_cap_idx.type = RTE_CRYPTO_ASYM_XFORM_SM2;
+ 			asym_capability = rte_cryptodev_asym_capability_get(cdev_id, &asym_cap_idx);
+diff --git a/doc/guides/tools/cryptoperf.rst b/doc/guides/tools/cryptoperf.rst
+index 0510a3bb89569..9a20a73f030df 100644
+--- a/doc/guides/tools/cryptoperf.rst
++++ b/doc/guides/tools/cryptoperf.rst
+@@ -176,6 +176,7 @@ The following are the application command-line options:
+            docsis
+            modex
+            ecdsa_p256r1
++           eddsa_25519
+            sm2
+            ipsec
+            tls-record
+-- 
+2.25.1
+

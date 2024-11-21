@@ -1,0 +1,30 @@
+From fd851cc628166bdb9917f1e576bc1b866a6ca868 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 3 Jan 2023 11:04:42 +0530
+Subject: [PATCH 120/955] common/cnxk: remove blank line
+
+Remove extra blank line.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I105cc65e270bcb166a9cb54affb2ffd032c2b138
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93532
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_se.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index 6f0a81b22c18f..5a894013a6357 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -499,7 +499,6 @@ roc_se_auth_key_set(struct roc_se_ctx *se_ctx, roc_se_auth_type type,
+ int
+ roc_se_ciph_key_set(struct roc_se_ctx *se_ctx, roc_se_cipher_type type, const uint8_t *key,
+ 		    uint16_t key_len)
+-
+ {
+ 	bool chained_op = se_ctx->ciph_then_auth || se_ctx->auth_then_ciph;
+ 	struct roc_se_zuc_snow3g_ctx *zs_ctx = &se_ctx->se_ctx.zs_ctx;
+-- 
+2.25.1
+

@@ -1,0 +1,574 @@
+From 4b5cef5fdff97a7d1dda5ce9c849bbbc274e5f8f Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Mon, 6 Feb 2023 10:16:44 +0530
+Subject: [PATCH 207/955] common/cnxk: support IPv6 field hash in RTE Flow
+
+CN103xx has the field hash feature which can hash 128 bit values
+to 32 bit values. The hashed value can be used in MCAM keys thereby
+freeing up space in the key. This patch adds support to make use of
+this hardware feature to hash IPv6 addresses and put them in
+the MCAM keys.
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I7b526861ee4365cb128a48af79e0cfca384eeb5e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95907
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+---
+ drivers/common/cnxk/roc_constants.h |   2 +
+ drivers/common/cnxk/roc_mbox.h      |  21 ++-
+ drivers/common/cnxk/roc_npc.c       |   4 +
+ drivers/common/cnxk/roc_npc.h       |   2 +-
+ drivers/common/cnxk/roc_npc_mcam.c  |  23 +++
+ drivers/common/cnxk/roc_npc_parse.c |  53 +++++--
+ drivers/common/cnxk/roc_npc_priv.h  |  31 ++--
+ drivers/common/cnxk/roc_npc_utils.c | 230 +++++++++++++++++++++++++++-
+ 8 files changed, 337 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_constants.h b/drivers/common/cnxk/roc_constants.h
+index d1e849a6fdd16..0c4fcdc2ba0b6 100644
+--- a/drivers/common/cnxk/roc_constants.h
++++ b/drivers/common/cnxk/roc_constants.h
+@@ -4,6 +4,8 @@
+ #ifndef _ROC_CONSTANTS_H_
+ #define _ROC_CONSTANTS_H_
+ 
++#define ROC_IPV6_ADDR_LEN 16
++
+ /* ROC Cache */
+ #define ROC_CACHE_LINE_SZ 128
+ #define ROC_ALIGN	  ROC_CACHE_LINE_SZ
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index ca2f845ec6f7e..af3c10b0b0749 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -210,6 +210,8 @@ struct mbox_msghdr {
+ 	  npc_mcam_read_base_rule_rsp)                                         \
+ 	M(NPC_MCAM_GET_STATS, 0x6012, npc_mcam_entry_stats,                    \
+ 	  npc_mcam_get_stats_req, npc_mcam_get_stats_rsp)                      \
++	M(NPC_GET_FIELD_HASH_INFO, 0x6013, npc_get_field_hash_info,            \
++	  npc_get_field_hash_info_req, npc_get_field_hash_info_rsp)            \
+ 	/* NIX mbox IDs (range 0x8000 - 0xFFFF) */                             \
+ 	M(NIX_LF_ALLOC, 0x8000, nix_lf_alloc, nix_lf_alloc_req,                \
+ 	  nix_lf_alloc_rsp)                                                    \
+@@ -1939,6 +1941,22 @@ enum tim_gpio_edge {
+ 	TIM_GPIO_INVALID,
+ };
+ 
++struct npc_get_field_hash_info_req {
++	struct mbox_msghdr hdr;
++	uint8_t intf;
++};
++
++struct npc_get_field_hash_info_rsp {
++	struct mbox_msghdr hdr;
++	uint64_t __io secret_key[3];
++#define NPC_MAX_HASH	  2
++#define NPC_MAX_HASH_MASK 2
++	/* NPC_AF_INTF(0..1)_HASH(0..1)_MASK(0..1) */
++	uint64_t __io hash_mask[NPC_MAX_INTF][NPC_MAX_HASH][NPC_MAX_HASH_MASK];
++	/* NPC_AF_INTF(0..1)_HASH(0..1)_RESULT_CTRL */
++	uint64_t __io hash_ctrl[NPC_MAX_INTF][NPC_MAX_HASH];
++};
++
+ enum ptp_op {
+ 	PTP_OP_ADJFINE = 0,   /* adjfine(req.scaled_ppm); */
+ 	PTP_OP_GET_CLOCK = 1, /* rsp.clk = get_clock() */
+@@ -1961,7 +1979,8 @@ struct get_hw_cap_rsp {
+ 	struct mbox_msghdr hdr;
+ 	/* Schq mapping fixed or flexible */
+ 	uint8_t __io nix_fixed_txschq_mapping;
+-	uint8_t __io nix_shaping; /* Is shaping and coloring supported */
++	uint8_t __io nix_shaping;      /* Is shaping and coloring supported */
++	uint8_t __io npc_hash_extract; /* Is hash extract supported */
+ };
+ 
+ struct ndc_sync_op {
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 7ce4614735fe1..46fa8cae50e22 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -247,6 +247,10 @@ roc_npc_init(struct roc_npc *roc_npc)
+ 	if (rc)
+ 		goto done;
+ 
++	rc = npc_mcam_fetch_hw_cap(npc, &npc->hash_extract_cap);
++	if (rc)
++		goto done;
++
+ 	roc_npc->kex_capability = npc_get_kex_capability(npc);
+ 	roc_npc->rx_parse_nibble = npc->keyx_supp_nmask[NPC_MCAM_RX];
+ 
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index c7e8b4ac92a9d..cea627e16cfbb 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -337,7 +337,7 @@ struct roc_npc {
+ 	uint16_t sdp_channel;
+ 	uint16_t sdp_channel_mask;
+ 
+-#define ROC_NPC_MEM_SZ (5 * 1024)
++#define ROC_NPC_MEM_SZ (6 * 1024)
+ 	uint8_t reserved[ROC_NPC_MEM_SZ];
+ } __plt_cache_aligned;
+ 
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index fd6859f8d0875..72892be300a4f 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -309,6 +309,7 @@ npc_get_kex_capability(struct npc *npc)
+ static void
+ npc_update_kex_info(struct npc_xtract_info *xtract_info, uint64_t val)
+ {
++	xtract_info->use_hash = ((val >> 20) & 0x1);
+ 	xtract_info->len = ((val >> BYTESM1_SHIFT) & 0xf) + 1;
+ 	xtract_info->hdr_off = (val >> HDR_OFF_SHIFT) & 0xff;
+ 	xtract_info->key_off = val & 0x3f;
+@@ -502,6 +503,28 @@ npc_mcam_process_mkex_cfg(struct npc *npc, struct npc_get_kex_cfg_rsp *kex_rsp)
+ 	npc->prx_lfcfg[1].i = kex_rsp->kex_ld_flags[1];
+ }
+ 
++int
++npc_mcam_fetch_hw_cap(struct npc *npc, uint8_t *npc_hw_cap)
++{
++	struct get_hw_cap_rsp *hw_cap_rsp;
++	struct mbox *mbox = mbox_get(npc->mbox);
++	int rc = 0;
++
++	*npc_hw_cap = 0;
++
++	mbox_alloc_msg_get_hw_cap(mbox);
++	rc = mbox_process_msg(mbox, (void *)&hw_cap_rsp);
++	if (rc) {
++		plt_err("Failed to fetch NPC HW capability");
++		goto done;
++	}
++
++	*npc_hw_cap = hw_cap_rsp->npc_hash_extract;
++done:
++	mbox_put(mbox);
++	return rc;
++}
++
+ int
+ npc_mcam_fetch_kex_cfg(struct npc *npc)
+ {
+diff --git a/drivers/common/cnxk/roc_npc_parse.c b/drivers/common/cnxk/roc_npc_parse.c
+index d8f9271fa874f..085fb4618f707 100644
+--- a/drivers/common/cnxk/roc_npc_parse.c
++++ b/drivers/common/cnxk/roc_npc_parse.c
+@@ -663,10 +663,50 @@ npc_handle_ipv6ext_attr(const struct roc_npc_flow_item_ipv6 *ipv6_spec,
+ 	return 0;
+ }
+ 
++static int
++npc_process_ipv6_item(const struct roc_npc_flow_item_ipv6 *ipv6_spec,
++		      const struct roc_npc_flow_item_ipv6 *ipv6_mask, struct npc_parse_state *pst)
++{
++	uint8_t hw_mask[NPC_MAX_EXTRACT_HW_LEN];
++	struct npc_parse_item_info info;
++	int rc, lid, lt;
++	uint8_t flags = 0;
++
++	info.def_mask = NULL;
++	info.hw_mask = &hw_mask;
++	info.spec = NULL;
++	info.mask = NULL;
++	info.hw_hdr_len = 0;
++	lid = NPC_LID_LC;
++
++	lt = NPC_LT_LC_IP6;
++	if (ipv6_spec) {
++		rc = npc_handle_ipv6ext_attr(ipv6_spec, pst, &flags);
++		if (rc)
++			return rc;
++	}
++	info.len = sizeof(ipv6_spec->hdr);
++
++	npc_get_hw_supp_mask(pst, &info, lid, lt);
++	rc = npc_parse_item_basic(pst->pattern, &info);
++
++	if (rc != 0)
++		return rc;
++
++	rc = npc_update_parse_state(pst, &info, lid, lt, flags);
++	if (rc)
++		return rc;
++
++	if (pst->npc->hash_extract_cap)
++		return npc_process_ipv6_field_hash(ipv6_spec, ipv6_mask, pst);
++
++	return 0;
++}
++
+ int
+ npc_parse_lc(struct npc_parse_state *pst)
+ {
+-	const struct roc_npc_flow_item_ipv6 *ipv6_spec;
++	const struct roc_npc_flow_item_ipv6 *ipv6_spec, *ipv6_mask;
+ 	const struct roc_npc_flow_item_raw *raw_spec;
+ 	uint8_t raw_spec_buf[NPC_MAX_RAW_ITEM_LEN];
+ 	uint8_t raw_mask_buf[NPC_MAX_RAW_ITEM_LEN];
+@@ -692,15 +732,8 @@ npc_parse_lc(struct npc_parse_state *pst)
+ 		break;
+ 	case ROC_NPC_ITEM_TYPE_IPV6:
+ 		ipv6_spec = pst->pattern->spec;
+-		lid = NPC_LID_LC;
+-		lt = NPC_LT_LC_IP6;
+-		if (ipv6_spec) {
+-			rc = npc_handle_ipv6ext_attr(ipv6_spec, pst, &flags);
+-			if (rc)
+-				return rc;
+-		}
+-		info.len = sizeof(ipv6_spec->hdr);
+-		break;
++		ipv6_mask = pst->pattern->mask;
++		return npc_process_ipv6_item(ipv6_spec, ipv6_mask, pst);
+ 	case ROC_NPC_ITEM_TYPE_ARP_ETH_IPV4:
+ 		lt = NPC_LT_LC_ARP;
+ 		info.len = pst->pattern->size;
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index aa27228354b9e..9c21934add8d4 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -326,6 +326,7 @@ struct npc_xtract_info {
+ 	uint8_t key_off;      /* Byte offset in MCAM key where data is placed */
+ 	uint8_t enable;	      /* Extraction enabled or disabled */
+ 	uint8_t flags_enable; /* Flags extraction enabled */
++	uint8_t use_hash;     /* Use field hash */
+ };
+ 
+ /* Information for a given {LAYER, LTYPE} */
+@@ -378,6 +379,7 @@ TAILQ_HEAD(npc_prio_flow_list_head, npc_prio_flow_entry);
+ struct npc {
+ 	struct mbox *mbox;			/* Mbox */
+ 	uint32_t keyx_supp_nmask[NPC_MAX_INTF]; /* nibble mask */
++	uint8_t hash_extract_cap;		/* hash extract support */
+ 	uint8_t profile_name[MKEX_NAME_LEN];	/* KEX profile name */
+ 	uint32_t keyx_len[NPC_MAX_INTF];	/* per intf key len in bits */
+ 	uint32_t datax_len[NPC_MAX_INTF];	/* per intf data len in bits */
+@@ -402,6 +404,16 @@ struct npc {
+ 	struct npc_flow_list ipsec_list;
+ };
+ 
++#define NPC_HASH_FIELD_LEN 16
++
++struct npc_hash_cfg {
++	uint64_t secret_key[3];
++	/* NPC_AF_INTF(0..1)_HASH(0..1)_MASK(0..1) */
++	uint64_t hash_mask[NPC_MAX_INTF][NPC_MAX_HASH][NPC_MAX_HASH_MASK];
++	/* NPC_AF_INTF(0..1)_HASH(0..1)_RESULT_CTRL */
++	uint64_t hash_ctrl[NPC_MAX_INTF][NPC_MAX_HASH];
++};
++
+ static inline struct npc *
+ roc_npc_to_npc_priv(struct roc_npc *npc)
+ {
+@@ -444,22 +456,21 @@ int npc_parse_lf(struct npc_parse_state *pst);
+ int npc_parse_lg(struct npc_parse_state *pst);
+ int npc_parse_lh(struct npc_parse_state *pst);
+ int npc_mcam_fetch_kex_cfg(struct npc *npc);
+-int npc_get_free_mcam_entry(struct mbox *mbox, struct roc_npc_flow *flow,
+-			    struct npc *npc);
++int npc_mcam_fetch_hw_cap(struct npc *npc, uint8_t *npc_hw_cap);
++int npc_get_free_mcam_entry(struct mbox *mbox, struct roc_npc_flow *flow, struct npc *npc);
+ void npc_delete_prio_list_entry(struct npc *npc, struct roc_npc_flow *flow);
+ int npc_flow_free_all_resources(struct npc *npc);
+ const struct roc_npc_item_info *
+ npc_parse_skip_void_and_any_items(const struct roc_npc_item_info *pattern);
+-int npc_program_mcam(struct npc *npc, struct npc_parse_state *pst,
+-		     bool mcam_alloc);
++int npc_program_mcam(struct npc *npc, struct npc_parse_state *pst, bool mcam_alloc);
+ uint64_t npc_get_kex_capability(struct npc *npc);
++int npc_process_ipv6_field_hash(const struct roc_npc_flow_item_ipv6 *ipv6_spec,
++				const struct roc_npc_flow_item_ipv6 *ipv6_mask,
++				struct npc_parse_state *pst);
+ int npc_rss_free_grp_get(struct npc *npc, uint32_t *grp);
+-int npc_rss_action_configure(struct roc_npc *roc_npc,
+-			     const struct roc_npc_action_rss *rss,
+-			     uint8_t *alg_idx, uint32_t *rss_grp,
+-			     uint32_t mcam_id);
+-int npc_rss_action_program(struct roc_npc *roc_npc,
+-			   const struct roc_npc_action actions[],
++int npc_rss_action_configure(struct roc_npc *roc_npc, const struct roc_npc_action_rss *rss,
++			     uint8_t *alg_idx, uint32_t *rss_grp, uint32_t mcam_id);
++int npc_rss_action_program(struct roc_npc *roc_npc, const struct roc_npc_action actions[],
+ 			   struct roc_npc_flow *flow);
+ int npc_rss_group_free(struct npc *npc, struct roc_npc_flow *flow);
+ int npc_mcam_init(struct npc *npc, struct roc_npc_flow *flow, int mcam_id);
+diff --git a/drivers/common/cnxk/roc_npc_utils.c b/drivers/common/cnxk/roc_npc_utils.c
+index 54e5079e0cd99..f4f9cc0916b5f 100644
+--- a/drivers/common/cnxk/roc_npc_utils.c
++++ b/drivers/common/cnxk/roc_npc_utils.c
+@@ -57,9 +57,18 @@ npc_set_hw_mask(struct npc_parse_item_info *info, struct npc_xtract_info *xinfo,
+ 		hw_mask[j] = 0xff;
+ }
+ 
++static void
++npc_ipv6_hash_mask_get(struct npc_xtract_info *xinfo, struct npc_parse_item_info *info)
++{
++	int offset = 0;
++	uint8_t *hw_mask = info->hw_mask;
++
++	offset = xinfo->hdr_off - info->hw_hdr_len;
++	memset(&hw_mask[offset], 0xFF, NPC_HASH_FIELD_LEN);
++}
++
+ void
+-npc_get_hw_supp_mask(struct npc_parse_state *pst,
+-		     struct npc_parse_item_info *info, int lid, int lt)
++npc_get_hw_supp_mask(struct npc_parse_state *pst, struct npc_parse_item_info *info, int lid, int lt)
+ {
+ 	struct npc_xtract_info *xinfo, *lfinfo;
+ 	char *hw_mask = info->hw_mask;
+@@ -71,8 +80,12 @@ npc_get_hw_supp_mask(struct npc_parse_state *pst,
+ 	xinfo = pst->npc->prx_dxcfg[intf][lid][lt].xtract;
+ 	memset(hw_mask, 0, info->len);
+ 
+-	for (i = 0; i < NPC_MAX_LD; i++)
+-		npc_set_hw_mask(info, &xinfo[i], hw_mask);
++	for (i = 0; i < NPC_MAX_LD; i++) {
++		if (pst->npc->hash_extract_cap && xinfo[i].use_hash)
++			npc_ipv6_hash_mask_get(&xinfo[i], info);
++		else
++			npc_set_hw_mask(info, &xinfo[i], hw_mask);
++	}
+ 
+ 	for (i = 0; i < NPC_MAX_LD; i++) {
+ 		if (xinfo[i].flags_enable == 0)
+@@ -208,10 +221,209 @@ npc_update_extraction_data(struct npc_parse_state *pst,
+ 	return 0;
+ }
+ 
++static int
++npc_field_hash_secret_get(struct npc *npc, struct npc_hash_cfg *hash_cfg)
++{
++	struct npc_get_field_hash_info_req *req;
++	struct npc_get_field_hash_info_rsp *rsp;
++	struct mbox *mbox = mbox_get(npc->mbox);
++	int rc = 0;
++
++	req = mbox_alloc_msg_npc_get_field_hash_info(mbox);
++	if (req == NULL)
++		return -ENOSPC;
++	rc = mbox_process_msg(mbox, (void *)&rsp);
++	if (rc) {
++		plt_err("Failed to fetch field hash secret key");
++		goto done;
++	}
++
++	mbox_memcpy(hash_cfg->secret_key, rsp->secret_key, sizeof(rsp->secret_key));
++	mbox_memcpy(hash_cfg->hash_mask, rsp->hash_mask, sizeof(rsp->hash_mask));
++	mbox_memcpy(hash_cfg->hash_ctrl, rsp->hash_ctrl, sizeof(rsp->hash_ctrl));
++
++done:
++	mbox_put(mbox);
++	return rc;
++}
++
++static inline void
++be32_to_cpu_array(uint32_t *dst, const uint32_t *src, size_t len)
++{
++	size_t i;
++
++	for (i = 0; i < len; i++)
++		dst[i] = plt_be_to_cpu_32(src[i]);
++}
++
++static uint64_t
++npc_wide_extract(const uint64_t input[], size_t start_bit, size_t width_bits)
++{
++	const uint64_t mask = ~(uint64_t)((~(__uint128_t)0) << width_bits);
++	const size_t msb = start_bit + width_bits - 1;
++	const size_t lword = start_bit >> 6;
++	const size_t uword = msb >> 6;
++	size_t lbits;
++	uint64_t hi, lo;
++
++	if (lword == uword)
++		return (input[lword] >> (start_bit & 63)) & mask;
++
++	lbits = 64 - (start_bit & 63);
++	hi = input[uword];
++	lo = (input[lword] >> (start_bit & 63));
++	return ((hi << lbits) | lo) & mask;
++}
++
++static void
++npc_lshift_key(uint64_t *key, size_t key_bit_len)
++{
++	uint64_t prev_orig_word = 0;
++	uint64_t cur_orig_word = 0;
++	size_t extra = key_bit_len % 64;
++	size_t max_idx = key_bit_len / 64;
++	size_t i;
++
++	if (extra)
++		max_idx++;
++
++	for (i = 0; i < max_idx; i++) {
++		cur_orig_word = key[i];
++		key[i] = key[i] << 1;
++		key[i] |= ((prev_orig_word >> 63) & 0x1);
++		prev_orig_word = cur_orig_word;
++	}
++}
++
++static uint32_t
++npc_toeplitz_hash(const uint64_t *data, uint64_t *key, size_t data_bit_len, size_t key_bit_len)
++{
++	uint32_t hash_out = 0;
++	uint64_t temp_data = 0;
++	int i;
++
++	for (i = data_bit_len - 1; i >= 0; i--) {
++		temp_data = (data[i / 64]);
++		temp_data = temp_data >> (i % 64);
++		temp_data &= 0x1;
++		if (temp_data)
++			hash_out ^= (uint32_t)(npc_wide_extract(key, key_bit_len - 32, 32));
++
++		npc_lshift_key(key, key_bit_len);
++	}
++
++	return hash_out;
++}
++
++static uint32_t
++npc_field_hash_calc(uint64_t *ldata, struct npc_hash_cfg *hash_cfg, uint8_t intf, uint8_t hash_idx)
++{
++	uint64_t hash_key[3];
++	uint64_t data_padded[2];
++	uint32_t field_hash;
++
++	hash_key[0] = hash_cfg->secret_key[1] << 31;
++	hash_key[0] |= hash_cfg->secret_key[2];
++	hash_key[1] = hash_cfg->secret_key[1] >> 33;
++	hash_key[1] |= hash_cfg->secret_key[0] << 31;
++	hash_key[2] = hash_cfg->secret_key[0] >> 33;
++
++	data_padded[0] = hash_cfg->hash_mask[intf][hash_idx][0] & ldata[0];
++	data_padded[1] = hash_cfg->hash_mask[intf][hash_idx][1] & ldata[1];
++	field_hash = npc_toeplitz_hash(data_padded, hash_key, 128, 159);
++
++	field_hash &= hash_cfg->hash_ctrl[intf][hash_idx] >> 32;
++	field_hash |= hash_cfg->hash_ctrl[intf][hash_idx];
++	return field_hash;
++}
++
++static int
++npc_ipv6_field_hash_get(struct npc *npc, const uint32_t *ip6addr, uint8_t intf, int hash_idx,
++			uint32_t *hash)
++{
++#define IPV6_WORDS 4
++	uint32_t ipv6_addr[IPV6_WORDS];
++	struct npc_hash_cfg hash_cfg;
++	uint64_t ldata[2];
++	int rc = 0;
++
++	rc = npc_field_hash_secret_get(npc, &hash_cfg);
++	if (rc)
++		return -1;
++
++	be32_to_cpu_array(ipv6_addr, ip6addr, IPV6_WORDS);
++	ldata[0] = (uint64_t)ipv6_addr[2] << 32 | ipv6_addr[3];
++	ldata[1] = (uint64_t)ipv6_addr[0] << 32 | ipv6_addr[1];
++	*hash = npc_field_hash_calc(ldata, &hash_cfg, intf, hash_idx);
++
++	return 0;
++}
++
++static int
++npc_hash_field_get(struct npc_xtract_info *xinfo, const struct roc_npc_flow_item_ipv6 *ipv6_spec,
++		   const struct roc_npc_flow_item_ipv6 *ipv6_mask, uint8_t *hash_field)
++{
++	const uint8_t *ipv6_hdr_spec, *ipv6_hdr_mask;
++	struct roc_ipv6_hdr ipv6_buf;
++	int offset = xinfo->hdr_off;
++
++	memset(&ipv6_buf, 0, sizeof(ipv6_buf));
++
++	ipv6_hdr_spec = (const uint8_t *)&ipv6_spec->hdr;
++	ipv6_hdr_mask = (const uint8_t *)&ipv6_mask->hdr;
++
++	/* Check if mask is set for the field to be hashed */
++	if (memcmp(ipv6_hdr_mask + offset, &ipv6_buf, ROC_IPV6_ADDR_LEN) == 0)
++		return 0;
++
++	/* Extract the field to be hashed from item spec */
++	memcpy(hash_field, ipv6_hdr_spec + offset, ROC_IPV6_ADDR_LEN);
++	return 1;
++}
++
++int
++npc_process_ipv6_field_hash(const struct roc_npc_flow_item_ipv6 *ipv6_spec,
++			    const struct roc_npc_flow_item_ipv6 *ipv6_mask,
++			    struct npc_parse_state *pst)
++{
++	struct npc_lid_lt_xtract_info *lid_lt_xinfo;
++	uint8_t hash_field[ROC_IPV6_ADDR_LEN];
++	struct npc_xtract_info *xinfo;
++	struct roc_ipv6_hdr ipv6_buf;
++	uint32_t hash = 0, mask;
++	int intf, i, rc = 0;
++
++	memset(&ipv6_buf, 0, sizeof(ipv6_buf));
++	memset(hash_field, 0, sizeof(hash_field));
++
++	intf = pst->nix_intf;
++	lid_lt_xinfo = &pst->npc->prx_dxcfg[intf][NPC_LID_LC][NPC_LT_LC_IP6];
++
++	for (i = 0; i < NPC_MAX_LD; i++) {
++		xinfo = &lid_lt_xinfo->xtract[i];
++		if (!xinfo->use_hash)
++			continue;
++
++		rc = npc_hash_field_get(xinfo, ipv6_spec, ipv6_mask, hash_field);
++		if (rc == 0)
++			continue;
++
++		rc = npc_ipv6_field_hash_get(pst->npc, (const uint32_t *)hash_field, intf, i,
++					     &hash);
++		if (rc)
++			return rc;
++
++		mask = GENMASK(31, 0);
++		memcpy(pst->mcam_mask + xinfo->key_off, (uint8_t *)&mask, 4);
++		memcpy(pst->mcam_data + xinfo->key_off, (uint8_t *)&hash, 4);
++	}
++
++	return 0;
++}
++
+ int
+-npc_update_parse_state(struct npc_parse_state *pst,
+-		       struct npc_parse_item_info *info, int lid, int lt,
+-		       uint8_t flags)
++npc_update_parse_state(struct npc_parse_state *pst, struct npc_parse_item_info *info, int lid,
++		       int lt, uint8_t flags)
+ {
+ 	struct npc_lid_lt_xtract_info *xinfo;
+ 	struct roc_npc_flow_dump_data *dump;
+@@ -232,6 +444,8 @@ npc_update_parse_state(struct npc_parse_state *pst,
+ 		goto done;
+ 
+ 	for (i = 0; i < NPC_MAX_LD; i++) {
++		if (xinfo->xtract[i].use_hash)
++			continue;
+ 		rc = npc_update_extraction_data(pst, info, &xinfo->xtract[i]);
+ 		if (rc != 0)
+ 			return rc;
+@@ -240,6 +454,8 @@ npc_update_parse_state(struct npc_parse_state *pst,
+ 	for (i = 0; i < NPC_MAX_LD; i++) {
+ 		if (xinfo->xtract[i].flags_enable == 0)
+ 			continue;
++		if (xinfo->xtract[i].use_hash)
++			continue;
+ 
+ 		lf_cfg = pst->npc->prx_lfcfg[i].i;
+ 		if (lf_cfg == lid) {
+-- 
+2.25.1
+

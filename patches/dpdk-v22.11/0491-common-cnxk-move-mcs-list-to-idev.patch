@@ -1,0 +1,286 @@
+From 6664ca01f986a969caef01856c2afc9edf86af20 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Tue, 6 Jun 2023 14:27:54 +0530
+Subject: [PATCH 491/955] common/cnxk: move mcs list to idev
+
+roc_mcs is being stored in 2 places for 105N and 103.
+Now it is moved to idev completely and set/get/free
+operations are added to take care of both 105N and 103 usecase.
+With this the global variable of mcs list is also removed.
+This will allow multi-process to work.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Icd20c731af5b0d1d212b85d0819354735ccdb04a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104983
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 9a1b01b09fb7b501a0408b67b91227891b2c2ca6)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105662
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c       |  2 +-
+ drivers/common/cnxk/roc_features.h  |  6 ++++
+ drivers/common/cnxk/roc_idev.c      | 37 ++++++++++++++++----
+ drivers/common/cnxk/roc_idev.h      |  3 +-
+ drivers/common/cnxk/roc_idev_priv.h |  2 +-
+ drivers/common/cnxk/roc_mcs.c       | 54 ++++++++---------------------
+ drivers/common/cnxk/roc_mcs.h       |  2 ++
+ drivers/common/cnxk/version.map     |  1 +
+ 8 files changed, 58 insertions(+), 49 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index c6de1d62da8b1..4b0ba218ed911 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -537,7 +537,7 @@ mbox_up_handler_mcs_intr_notify(struct dev *dev, struct mcs_intr_info *info, str
+ 		     dev_get_vf(dev->pf_func), info->hdr.id, mbox_id2name(info->hdr.id),
+ 		     dev_get_pf(info->hdr.pcifunc), dev_get_vf(info->hdr.pcifunc));
+ 
+-	mcs = roc_mcs_dev_get(info->mcs_id);
++	mcs = roc_idev_mcs_get(info->mcs_id);
+ 	if (!mcs)
+ 		goto exit;
+ 
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index aab173976a24c..d5d0c0c901027 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -66,6 +66,12 @@ roc_feature_nix_has_macsec(void)
+ 	return roc_model_is_cn10kb();
+ }
+ 
++static inline bool
++roc_feature_bphy_has_macsec(void)
++{
++	return roc_model_is_cnf10kb();
++}
++
+ static inline bool
+ roc_feature_nix_has_inl_ipsec(void)
+ {
+diff --git a/drivers/common/cnxk/roc_idev.c b/drivers/common/cnxk/roc_idev.c
+index c5ce0265de067..e6c6b34d78f7e 100644
+--- a/drivers/common/cnxk/roc_idev.c
++++ b/drivers/common/cnxk/roc_idev.c
+@@ -38,7 +38,7 @@ idev_set_defaults(struct idev_cfg *idev)
+ 	idev->num_lmtlines = 0;
+ 	idev->bphy = NULL;
+ 	idev->cpt = NULL;
+-	idev->mcs = NULL;
++	TAILQ_INIT(&idev->mcs_list);
+ 	idev->nix_inl_dev = NULL;
+ 	TAILQ_INIT(&idev->roc_nix_list);
+ 	plt_spinlock_init(&idev->nix_inl_dev_lock);
+@@ -189,12 +189,17 @@ roc_idev_cpt_get(void)
+ }
+ 
+ struct roc_mcs *
+-roc_idev_mcs_get(void)
++roc_idev_mcs_get(uint8_t mcs_idx)
+ {
+ 	struct idev_cfg *idev = idev_get_cfg();
++	struct roc_mcs *mcs = NULL;
+ 
+-	if (idev != NULL)
+-		return idev->mcs;
++	if (idev != NULL) {
++		TAILQ_FOREACH(mcs, &idev->mcs_list, next) {
++			if (mcs->idx == mcs_idx)
++				return mcs;
++		}
++	}
+ 
+ 	return NULL;
+ }
+@@ -203,9 +208,29 @@ void
+ roc_idev_mcs_set(struct roc_mcs *mcs)
+ {
+ 	struct idev_cfg *idev = idev_get_cfg();
++	struct roc_mcs *mcs_iter = NULL;
++
++	if (idev != NULL) {
++		TAILQ_FOREACH(mcs_iter, &idev->mcs_list, next) {
++			if (mcs_iter->idx == mcs->idx)
++				return;
++		}
++		TAILQ_INSERT_TAIL(&idev->mcs_list, mcs, next);
++	}
++}
+ 
+-	if (idev != NULL)
+-		__atomic_store_n(&idev->mcs, mcs, __ATOMIC_RELEASE);
++void
++roc_idev_mcs_free(struct roc_mcs *mcs)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++	struct roc_mcs *mcs_iter = NULL;
++
++	if (idev != NULL) {
++		TAILQ_FOREACH(mcs_iter, &idev->mcs_list, next) {
++			if (mcs_iter->idx == mcs->idx)
++				TAILQ_REMOVE(&idev->mcs_list, mcs, next);
++		}
++	}
+ }
+ 
+ uint64_t *
+diff --git a/drivers/common/cnxk/roc_idev.h b/drivers/common/cnxk/roc_idev.h
+index 86fd31408aef0..aea7f5279da90 100644
+--- a/drivers/common/cnxk/roc_idev.h
++++ b/drivers/common/cnxk/roc_idev.h
+@@ -19,6 +19,7 @@ struct roc_nix *__roc_api roc_idev_npa_nix_get(void);
+ uint64_t __roc_api roc_idev_nix_inl_meta_aura_get(void);
+ struct roc_nix_list *__roc_api roc_idev_nix_list_get(void);
+ 
+-struct roc_mcs *__roc_api roc_idev_mcs_get(void);
++struct roc_mcs *__roc_api roc_idev_mcs_get(uint8_t mcs_idx);
+ void __roc_api roc_idev_mcs_set(struct roc_mcs *mcs);
++void __roc_api roc_idev_mcs_free(struct roc_mcs *mcs);
+ #endif /* _ROC_IDEV_H_ */
+diff --git a/drivers/common/cnxk/roc_idev_priv.h b/drivers/common/cnxk/roc_idev_priv.h
+index 6b37537e1131f..80f8465e1c7e7 100644
+--- a/drivers/common/cnxk/roc_idev_priv.h
++++ b/drivers/common/cnxk/roc_idev_priv.h
+@@ -31,7 +31,7 @@ struct idev_cfg {
+ 	struct roc_bphy *bphy;
+ 	struct roc_cpt *cpt;
+ 	struct roc_sso *sso;
+-	struct roc_mcs *mcs;
++	struct roc_mcs_head mcs_list;
+ 	struct nix_inl_dev *nix_inl_dev;
+ 	struct idev_nix_inl_cfg inl_cfg;
+ 	struct roc_nix_list roc_nix_list;
+diff --git a/drivers/common/cnxk/roc_mcs.c b/drivers/common/cnxk/roc_mcs.c
+index 0f988e3173627..0760eb0a6717b 100644
+--- a/drivers/common/cnxk/roc_mcs.c
++++ b/drivers/common/cnxk/roc_mcs.c
+@@ -17,10 +17,6 @@ TAILQ_HEAD(mcs_event_cb_list, mcs_event_cb);
+ 
+ PLT_STATIC_ASSERT(ROC_MCS_MEM_SZ >= (sizeof(struct mcs_priv) + sizeof(struct mcs_event_cb_list)));
+ 
+-TAILQ_HEAD(roc_mcs_head, roc_mcs);
+-/* Local mcs tailq list */
+-static struct roc_mcs_head roc_mcs_head = TAILQ_HEAD_INITIALIZER(roc_mcs_head);
+-
+ int
+ roc_mcs_hw_info_get(struct roc_mcs_hw_info *hw_info)
+ {
+@@ -804,19 +800,6 @@ mcs_alloc_rsrc_bmap(struct roc_mcs *mcs)
+ 	return -ENOMEM;
+ }
+ 
+-struct roc_mcs *
+-roc_mcs_dev_get(uint8_t mcs_idx)
+-{
+-	struct roc_mcs *mcs = NULL;
+-
+-	TAILQ_FOREACH(mcs, &roc_mcs_head, next) {
+-		if (mcs->idx == mcs_idx)
+-			break;
+-	}
+-
+-	return mcs;
+-}
+-
+ struct roc_mcs *
+ roc_mcs_dev_init(uint8_t mcs_idx)
+ {
+@@ -824,38 +807,31 @@ roc_mcs_dev_init(uint8_t mcs_idx)
+ 	struct roc_mcs *mcs;
+ 	struct npa_lf *npa;
+ 
+-	if (roc_model_is_cn10kb()) {
+-		mcs = roc_idev_mcs_get();
+-		if (mcs) {
+-			plt_info("Skipping device, mcs device already probed");
+-			mcs->refcount++;
+-			return mcs;
+-		}
++	if (!(roc_feature_bphy_has_macsec() || roc_feature_nix_has_macsec()))
++		return NULL;
++
++	mcs = roc_idev_mcs_get(mcs_idx);
++	if (mcs) {
++		plt_info("Skipping device, mcs device already probed");
++		mcs->refcount++;
++		return mcs;
+ 	}
+ 
+ 	mcs = plt_zmalloc(sizeof(struct roc_mcs), PLT_CACHE_LINE_SIZE);
+ 	if (!mcs)
+ 		return NULL;
+ 
+-	if (roc_model_is_cnf10kb() || roc_model_is_cn10kb()) {
+-		npa = idev_npa_obj_get();
+-		if (!npa)
+-			goto exit;
+-
+-		mcs->mbox = npa->mbox;
+-	} else {
+-		/* Retrieve mbox handler for other roc models */
+-		;
+-	}
++	npa = idev_npa_obj_get();
++	if (!npa)
++		goto exit;
+ 
++	mcs->mbox = npa->mbox;
+ 	mcs->idx = mcs_idx;
+ 
+ 	/* Add any per mcsv initialization */
+ 	if (mcs_alloc_rsrc_bmap(mcs))
+ 		goto exit;
+ 
+-	TAILQ_INSERT_TAIL(&roc_mcs_head, mcs, next);
+-
+ 	cb_list = (struct mcs_event_cb_list *)roc_mcs_to_mcs_cb_list(mcs);
+ 	TAILQ_INIT(cb_list);
+ 
+@@ -880,8 +856,6 @@ roc_mcs_dev_fini(struct roc_mcs *mcs)
+ 
+ 	priv = roc_mcs_to_mcs_priv(mcs);
+ 
+-	TAILQ_REMOVE(&roc_mcs_head, mcs, next);
+-
+ 	rsrc_bmap_free(&priv->dev_rsrc);
+ 
+ 	for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
+@@ -891,7 +865,7 @@ roc_mcs_dev_fini(struct roc_mcs *mcs)
+ 
+ 	plt_free(priv->port_rsrc);
+ 
+-	plt_free(mcs);
++	roc_idev_mcs_free(mcs);
+ 
+-	roc_idev_mcs_set(NULL);
++	plt_free(mcs);
+ }
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+index 0d53874842bfe..9934e71411429 100644
+--- a/drivers/common/cnxk/roc_mcs.h
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -494,6 +494,8 @@ struct roc_mcs {
+ 	uint8_t reserved[ROC_MCS_MEM_SZ] __plt_cache_aligned;
+ } __plt_cache_aligned;
+ 
++TAILQ_HEAD(roc_mcs_head, roc_mcs);
++
+ /* Initialization */
+ __roc_api struct roc_mcs *roc_mcs_dev_init(uint8_t mcs_idx);
+ __roc_api void roc_mcs_dev_fini(struct roc_mcs *mcs);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 1effd61fde1d8..891f81176717f 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -94,6 +94,7 @@ INTERNAL {
+ 	roc_idev_cpt_get;
+ 	roc_idev_cpt_set;
+ 	roc_idev_lmt_base_addr_get;
++	roc_idev_mcs_free;
+ 	roc_idev_mcs_get;
+ 	roc_idev_mcs_set;
+ 	roc_idev_npa_maxpools_get;
+-- 
+2.25.1
+

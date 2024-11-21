@@ -1,0 +1,30 @@
+From 8826b2352c2a5643b0d02627734767ccd0644c0a Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 28 Nov 2022 15:24:34 +0530
+Subject: [PATCH 047/955] common/cnxk: set default SQ TC value
+
+Zero is valid TC, initialize SQ TC value to ROC_NIX_PFC_CLASS_INVALID.
+
+ci: skip_checkformat
+
+Change-Id: I828d59c34c52e57157c50e05eb6b2c77cd0c8373
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_queue.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 8a84a34bef4ff..0dd3c8d4dfbf3 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -1235,6 +1235,7 @@ roc_nix_sq_init(struct roc_nix *roc_nix, struct roc_nix_sq *sq)
+ 		return NIX_ERR_QUEUE_INVALID_RANGE;
+ 
+ 	sq->roc_nix = roc_nix;
++	sq->tc = ROC_NIX_PFC_CLASS_INVALID;
+ 	/*
+ 	 * Allocate memory for flow control updates from HW.
+ 	 * Alloc one cache line, so that fits all FC_STYPE modes.
+-- 
+2.25.1
+

@@ -1,0 +1,348 @@
+From 45db0e2472d17617463b3f211c6d0146d6821916 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Thu, 18 May 2023 21:15:55 +0530
+Subject: [PATCH 427/955] common/cnxk: add MACsec SC configuration APIs
+
+Added ROC APIs to configure MACsec secure channel(SC)
+and its mapping with SAs for both Rx and Tx.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ib22b9d964b6c31d0ae2c99d41bf045f6257bfe64
+---
+ drivers/common/cnxk/roc_mbox.h        |  37 ++++++
+ drivers/common/cnxk/roc_mcs.h         |  41 ++++++
+ drivers/common/cnxk/roc_mcs_sec_cfg.c | 171 ++++++++++++++++++++++++++
+ drivers/common/cnxk/version.map       |   7 ++
+ 4 files changed, 256 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index ab1173e805c2d..40b761ee99796 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -300,7 +300,10 @@ struct mbox_msghdr {
+ 	M(MCS_ALLOC_RESOURCES, 0xa000, mcs_alloc_resources, mcs_alloc_rsrc_req,                    \
+ 	  mcs_alloc_rsrc_rsp)                                                                      \
+ 	M(MCS_FREE_RESOURCES, 0xa001, mcs_free_resources, mcs_free_rsrc_req, msg_rsp)              \
++	M(MCS_RX_SC_CAM_WRITE, 0xa004, mcs_rx_sc_cam_write, mcs_rx_sc_cam_write_req, msg_rsp)      \
+ 	M(MCS_SA_PLCY_WRITE, 0xa005, mcs_sa_plcy_write, mcs_sa_plcy_write_req, msg_rsp)            \
++	M(MCS_TX_SC_SA_MAP_WRITE, 0xa006, mcs_tx_sc_sa_map_write, mcs_tx_sc_sa_map, msg_rsp)       \
++	M(MCS_RX_SC_SA_MAP_WRITE, 0xa007, mcs_rx_sc_sa_map_write, mcs_rx_sc_sa_map, msg_rsp)       \
+ 	M(MCS_GET_HW_INFO, 0xa00b, mcs_get_hw_info, msg_req, mcs_hw_info)                          \
+ 
+ /* Messages initiated by AF (range 0xC00 - 0xDFF) */
+@@ -726,6 +729,16 @@ struct mcs_free_rsrc_req {
+ 	uint64_t __io rsvd;
+ };
+ 
++/* RX SC_CAM mapping */
++struct mcs_rx_sc_cam_write_req {
++	struct mbox_msghdr hdr;
++	uint64_t __io sci;     /* SCI */
++	uint64_t __io secy_id; /* secy index mapped to SC */
++	uint8_t __io sc_id;    /* SC CAM entry index */
++	uint8_t __io mcs_id;
++	uint64_t __io rsvd;
++};
++
+ struct mcs_sa_plcy_write_req {
+ 	struct mbox_msghdr hdr;
+ 	uint64_t __io plcy[2][9]; /* Support 2 SA policy */
+@@ -736,6 +749,30 @@ struct mcs_sa_plcy_write_req {
+ 	uint64_t __io rsvd;
+ };
+ 
++struct mcs_tx_sc_sa_map {
++	struct mbox_msghdr hdr;
++	uint8_t __io sa_index0;
++	uint8_t __io sa_index1;
++	uint8_t __io rekey_ena;
++	uint8_t __io sa_index0_vld;
++	uint8_t __io sa_index1_vld;
++	uint8_t __io tx_sa_active;
++	uint64_t __io sectag_sci;
++	uint8_t __io sc_id; /* used as index for SA_MEM_MAP */
++	uint8_t __io mcs_id;
++	uint64_t __io rsvd;
++};
++
++struct mcs_rx_sc_sa_map {
++	struct mbox_msghdr hdr;
++	uint8_t __io sa_index;
++	uint8_t __io sa_in_use;
++	uint8_t __io sc_id;
++	/* an range is 0-3, sc_id + an used as index SA_MEM_MAP */
++	uint8_t __io an;
++	uint8_t __io mcs_id;
++	uint64_t __io rsvd;
++};
+ 
+ struct mcs_hw_info {
+ 	struct mbox_msghdr hdr;
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+index a345d2a880ef6..2787d6a940c56 100644
+--- a/drivers/common/cnxk/roc_mcs.h
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -32,6 +32,12 @@ struct roc_mcs_free_rsrc_req {
+ 	uint8_t all; /* Free all the cam resources */
+ };
+ 
++/* RX SC_CAM mapping */
++struct roc_mcs_rx_sc_cam_write_req {
++	uint64_t sci;	  /* SCI */
++	uint64_t secy_id; /* secy index mapped to SC */
++	uint8_t sc_id;	  /* SC CAM entry index */
++};
+ 
+ struct roc_mcs_sa_plcy_write_req {
+ 	uint64_t plcy[2][9];
+@@ -40,6 +46,24 @@ struct roc_mcs_sa_plcy_write_req {
+ 	uint8_t dir;
+ };
+ 
++struct roc_mcs_tx_sc_sa_map {
++	uint8_t sa_index0;
++	uint8_t sa_index1;
++	uint8_t rekey_ena;
++	uint8_t sa_index0_vld;
++	uint8_t sa_index1_vld;
++	uint8_t tx_sa_active;
++	uint64_t sectag_sci;
++	uint8_t sc_id; /* used as index for SA_MEM_MAP */
++};
++
++struct roc_mcs_rx_sc_sa_map {
++	uint8_t sa_index;
++	uint8_t sa_in_use;
++	uint8_t sc_id;
++	uint8_t an; /* value range 0-3, sc_id + an used as index SA_MEM_MAP */
++};
++
+ struct roc_mcs_hw_info {
+ 	uint8_t num_mcs_blks; /* Number of MCS blocks */
+ 	uint8_t tcam_entries; /* RX/TX Tcam entries per mcs block */
+@@ -79,4 +103,21 @@ __roc_api int roc_mcs_sa_policy_write(struct roc_mcs *mcs,
+ 				      struct roc_mcs_sa_plcy_write_req *sa_plcy);
+ __roc_api int roc_mcs_sa_policy_read(struct roc_mcs *mcs,
+ 				     struct roc_mcs_sa_plcy_write_req *sa_plcy);
++/* RX SC read, write and enable */
++__roc_api int roc_mcs_rx_sc_cam_write(struct roc_mcs *mcs,
++				      struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam);
++__roc_api int roc_mcs_rx_sc_cam_read(struct roc_mcs *mcs,
++				     struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam);
++__roc_api int roc_mcs_rx_sc_cam_enable(struct roc_mcs *mcs,
++				       struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam);
++/* RX SC-SA MAP read and write */
++__roc_api int roc_mcs_rx_sc_sa_map_write(struct roc_mcs *mcs,
++					 struct roc_mcs_rx_sc_sa_map *rx_sc_sa_map);
++__roc_api int roc_mcs_rx_sc_sa_map_read(struct roc_mcs *mcs,
++					struct roc_mcs_rx_sc_sa_map *rx_sc_sa_map);
++/* TX SC-SA MAP read and write */
++__roc_api int roc_mcs_tx_sc_sa_map_write(struct roc_mcs *mcs,
++					 struct roc_mcs_tx_sc_sa_map *tx_sc_sa_map);
++__roc_api int roc_mcs_tx_sc_sa_map_read(struct roc_mcs *mcs,
++					struct roc_mcs_tx_sc_sa_map *tx_sc_sa_map);
+ #endif /* _ROC_MCS_H_ */
+diff --git a/drivers/common/cnxk/roc_mcs_sec_cfg.c b/drivers/common/cnxk/roc_mcs_sec_cfg.c
+index 50f2352c205d5..04bbbbfda08e6 100644
+--- a/drivers/common/cnxk/roc_mcs_sec_cfg.c
++++ b/drivers/common/cnxk/roc_mcs_sec_cfg.c
+@@ -209,3 +209,174 @@ roc_mcs_sa_policy_read(struct roc_mcs *mcs __plt_unused,
+ 
+ 	return -ENOTSUP;
+ }
++
++
++int
++roc_mcs_rx_sc_cam_write(struct roc_mcs *mcs, struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam)
++{
++	struct mcs_priv *priv = roc_mcs_to_mcs_priv(mcs);
++	struct mcs_rx_sc_cam_write_req *rx_sc;
++	struct msg_rsp *rsp;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	if (rx_sc_cam == NULL)
++		return -EINVAL;
++
++	rx_sc = mbox_alloc_msg_mcs_rx_sc_cam_write(mcs->mbox);
++	if (rx_sc == NULL)
++		return -ENOMEM;
++
++	rx_sc->sci = rx_sc_cam->sci;
++	rx_sc->secy_id = rx_sc_cam->secy_id;
++	rx_sc->sc_id = rx_sc_cam->sc_id;
++	rx_sc->mcs_id = mcs->idx;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&rsp);
++	if (rc)
++		return rc;
++
++	for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++		uint32_t set = plt_bitmap_get(priv->port_rsrc[i].secy_bmap, rx_sc_cam->secy_id);
++
++		if (set) {
++			plt_bitmap_set(priv->port_rsrc[i].sc_bmap, rx_sc_cam->sc_id);
++			break;
++		}
++	}
++
++	return 0;
++}
++
++int
++roc_mcs_rx_sc_cam_read(struct roc_mcs *mcs __plt_unused,
++		       struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam __plt_unused)
++{
++	MCS_SUPPORT_CHECK;
++
++	return -ENOTSUP;
++}
++
++int
++roc_mcs_rx_sc_cam_enable(struct roc_mcs *mcs __plt_unused,
++			 struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam __plt_unused)
++{
++	MCS_SUPPORT_CHECK;
++
++	return -ENOTSUP;
++}
++
++int
++roc_mcs_rx_sc_sa_map_write(struct roc_mcs *mcs, struct roc_mcs_rx_sc_sa_map *rx_sc_sa_map)
++{
++	struct mcs_priv *priv = roc_mcs_to_mcs_priv(mcs);
++	struct mcs_rx_sc_sa_map *sa_map;
++	struct msg_rsp *rsp;
++	uint16_t sc_id;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	if (rx_sc_sa_map == NULL)
++		return -EINVAL;
++
++	sc_id = rx_sc_sa_map->sc_id;
++	sa_map = mbox_alloc_msg_mcs_rx_sc_sa_map_write(mcs->mbox);
++	if (sa_map == NULL)
++		return -ENOMEM;
++
++	sa_map->sa_index = rx_sc_sa_map->sa_index;
++	sa_map->sa_in_use = rx_sc_sa_map->sa_in_use;
++	sa_map->sc_id = rx_sc_sa_map->sc_id;
++	sa_map->an = rx_sc_sa_map->an;
++	sa_map->mcs_id = mcs->idx;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&rsp);
++	if (rc)
++		return rc;
++
++	for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++		uint32_t set = plt_bitmap_get(priv->port_rsrc[i].sc_bmap, sc_id);
++
++		if (set) {
++			plt_bitmap_set(priv->port_rsrc[i].sa_bmap, rx_sc_sa_map->sa_index);
++			priv->port_rsrc[i].sc_conf[sc_id].rx.sa_idx = rx_sc_sa_map->sa_index;
++			priv->port_rsrc[i].sc_conf[sc_id].rx.an = rx_sc_sa_map->an;
++			break;
++		}
++	}
++
++	return 0;
++}
++
++int
++roc_mcs_rx_sc_sa_map_read(struct roc_mcs *mcs __plt_unused,
++			  struct roc_mcs_rx_sc_sa_map *rx_sc_sa_map __plt_unused)
++{
++	MCS_SUPPORT_CHECK;
++
++	return -ENOTSUP;
++}
++
++int
++roc_mcs_tx_sc_sa_map_write(struct roc_mcs *mcs, struct roc_mcs_tx_sc_sa_map *tx_sc_sa_map)
++{
++	struct mcs_priv *priv = roc_mcs_to_mcs_priv(mcs);
++	struct mcs_tx_sc_sa_map *sa_map;
++	struct msg_rsp *rsp;
++	uint16_t sc_id;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	if (tx_sc_sa_map == NULL)
++		return -EINVAL;
++
++	sa_map = mbox_alloc_msg_mcs_tx_sc_sa_map_write(mcs->mbox);
++	if (sa_map == NULL)
++		return -ENOMEM;
++
++	sa_map->sa_index0 = tx_sc_sa_map->sa_index0;
++	sa_map->sa_index1 = tx_sc_sa_map->sa_index1;
++	sa_map->rekey_ena = tx_sc_sa_map->rekey_ena;
++	sa_map->sa_index0_vld = tx_sc_sa_map->sa_index0_vld;
++	sa_map->sa_index1_vld = tx_sc_sa_map->sa_index1_vld;
++	sa_map->tx_sa_active = tx_sc_sa_map->tx_sa_active;
++	sa_map->sectag_sci = tx_sc_sa_map->sectag_sci;
++	sa_map->sc_id = tx_sc_sa_map->sc_id;
++	sa_map->mcs_id = mcs->idx;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&rsp);
++	if (rc)
++		return rc;
++
++	sc_id = tx_sc_sa_map->sc_id;
++	for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++		uint32_t set = plt_bitmap_get(priv->port_rsrc[i].sc_bmap, sc_id + priv->sc_entries);
++
++		if (set) {
++			uint32_t pos = priv->sa_entries + tx_sc_sa_map->sa_index0;
++
++			plt_bitmap_set(priv->port_rsrc[i].sa_bmap, pos);
++			priv->port_rsrc[i].sc_conf[sc_id].tx.sa_idx0 = tx_sc_sa_map->sa_index0;
++			pos = priv->sa_entries + tx_sc_sa_map->sa_index1;
++			plt_bitmap_set(priv->port_rsrc[i].sa_bmap, pos);
++			priv->port_rsrc[i].sc_conf[sc_id].tx.sa_idx1 = tx_sc_sa_map->sa_index1;
++			priv->port_rsrc[i].sc_conf[sc_id].tx.sci = tx_sc_sa_map->sectag_sci;
++			priv->port_rsrc[i].sc_conf[sc_id].tx.rekey_enb = tx_sc_sa_map->rekey_ena;
++			break;
++		}
++	}
++
++	return 0;
++}
++
++int
++roc_mcs_tx_sc_sa_map_read(struct roc_mcs *mcs __plt_unused,
++			  struct roc_mcs_tx_sc_sa_map *tx_sc_sa_map __plt_unused)
++{
++	MCS_SUPPORT_CHECK;
++
++	return -ENOTSUP;
++}
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 390ad3e0d066d..442aa8f2c1602 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -111,8 +111,15 @@ INTERNAL {
+ 	roc_mcs_dev_get;
+ 	roc_mcs_free_rsrc;
+ 	roc_mcs_hw_info_get;
++	roc_mcs_rx_sc_cam_enable;
++	roc_mcs_rx_sc_cam_read;
++	roc_mcs_rx_sc_cam_write;
++	roc_mcs_rx_sc_sa_map_read;
++	roc_mcs_rx_sc_sa_map_write;
+ 	roc_mcs_sa_policy_read;
+ 	roc_mcs_sa_policy_write;
++	roc_mcs_tx_sc_sa_map_read;
++	roc_mcs_tx_sc_sa_map_write;
+ 	roc_nix_bpf_alloc;
+ 	roc_nix_bpf_config;
+ 	roc_nix_bpf_connect;
+-- 
+2.25.1
+

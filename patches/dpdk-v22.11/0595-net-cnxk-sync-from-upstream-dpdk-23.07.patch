@@ -1,0 +1,106 @@
+From 52fae4254a2ff29ca42bdbbed00eb8ccc55a28cc Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 9 Aug 2023 18:11:21 +0530
+Subject: [PATCH 595/955] net/cnxk: sync from upstream dpdk 23.07
+
+Change-Id: I563fc0f05f1254bd6acf132e2c44e830dfacf35a
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109623
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_tx.h  | 18 +++++++++---------
+ drivers/net/cnxk/cn9k_tx.h   |  2 +-
+ drivers/net/cnxk/meson.build |  3 +++
+ 3 files changed, 13 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index 958ce5bafde0c..fff7ae7fc9bd1 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -38,7 +38,7 @@
+ 		int64_t avail;                                                 \
+ 		/* Cached value is low, Update the fc_cache_pkts */            \
+ 		if (unlikely((txq)->fc_cache_pkts < (pkts))) {                 \
+-			avail = txq->nb_sqb_bufs_adj - *(txq->fc_mem);         \
++			avail = txq->nb_sqb_bufs_adj - *txq->fc_mem;           \
+ 			/* Multiply with sqe_per_sqb to express in pkts */     \
+ 			(txq)->fc_cache_pkts =                                 \
+ 				(avail << (txq)->sqes_per_sqb_log2) - avail;   \
+@@ -167,7 +167,7 @@ cn10k_nix_vwqe_wait_fc(struct cn10k_eth_txq *txq, uint16_t req)
+ 	while (__atomic_load_n(&txq->fc_cache_pkts, __ATOMIC_RELAXED) < 0)
+ 		;
+ #endif
+-	cached = __atomic_sub_fetch(&txq->fc_cache_pkts, req, __ATOMIC_ACQUIRE);
++	cached = __atomic_fetch_sub(&txq->fc_cache_pkts, req, __ATOMIC_ACQUIRE) - req;
+ 	/* Check if there is enough space, else update and retry. */
+ 	if (cached >= 0)
+ 		return;
+@@ -423,7 +423,7 @@ cn10k_nix_sec_fc_wait(struct cn10k_eth_txq *txq, uint16_t nb_pkts)
+ 		;
+ #endif
+ 
+-	val = __atomic_sub_fetch(fc_sw, nb_pkts, __ATOMIC_ACQUIRE);
++	val = __atomic_fetch_sub(fc_sw, nb_pkts, __ATOMIC_ACQUIRE) - nb_pkts;
+ 	if (likely(val >= 0))
+ 		return;
+ 
+@@ -1012,7 +1012,7 @@ cn10k_nix_xmit_prepare(struct cn10k_eth_txq *txq,
+ 	}
+ 
+ 	if (flags & NIX_TX_NEED_EXT_HDR && flags & NIX_TX_OFFLOAD_TSO_F &&
+-			(ol_flags & RTE_MBUF_F_TX_TCP_SEG)) {
++	    (ol_flags & RTE_MBUF_F_TX_TCP_SEG)) {
+ 		uint16_t lso_sb;
+ 		uint64_t mask;
+ 
+@@ -3174,12 +3174,12 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 		if (flags & NIX_TX_VWQE_F) {
+ 			if (flags & NIX_TX_MULTI_SEG_F) {
+ 				if (burst - (cn10k_nix_pkts_per_vec_brst(flags) >> 1) > 0)
+-					cn10k_nix_vwqe_wait_fc(
+-						txq,
++					cn10k_nix_vwqe_wait_fc(txq,
+ 						burst - (cn10k_nix_pkts_per_vec_brst(flags) >> 1));
+-			} else
+-				cn10k_nix_vwqe_wait_fc(
+-					txq, burst - (cn10k_nix_pkts_per_vec_brst(flags) >> 1));
++			} else {
++				cn10k_nix_vwqe_wait_fc(txq,
++						burst - (cn10k_nix_pkts_per_vec_brst(flags) >> 1));
++			}
+ 		}
+ 		/* STEOR1 */
+ 		roc_lmt_submit_steorl(wd.data[1], pa);
+diff --git a/drivers/net/cnxk/cn9k_tx.h b/drivers/net/cnxk/cn9k_tx.h
+index 1ea449163737e..fba4bb421540e 100644
+--- a/drivers/net/cnxk/cn9k_tx.h
++++ b/drivers/net/cnxk/cn9k_tx.h
+@@ -35,7 +35,7 @@
+ 		int64_t avail;                                                 \
+ 		/* Cached value is low, Update the fc_cache_pkts */            \
+ 		if (unlikely((txq)->fc_cache_pkts < (pkts))) {                 \
+-			avail = txq->nb_sqb_bufs_adj - *(txq->fc_mem);         \
++			avail = txq->nb_sqb_bufs_adj - *txq->fc_mem;           \
+ 			/* Multiply with sqe_per_sqb to express in pkts */     \
+ 			(txq)->fc_cache_pkts =                                 \
+ 				(avail << (txq)->sqes_per_sqb_log2) - avail;   \
+diff --git a/drivers/net/cnxk/meson.build b/drivers/net/cnxk/meson.build
+index f709018bc665e..f48840d2a2f47 100644
+--- a/drivers/net/cnxk/meson.build
++++ b/drivers/net/cnxk/meson.build
+@@ -207,6 +207,9 @@ deps += ['common_cnxk', 'mempool_cnxk']
+ 
+ # Allow implicit vector conversions and strict aliasing warning
+ extra_flags = ['-flax-vector-conversions', '-Wno-strict-aliasing']
++if cc.get_id() == 'clang'
++        extra_flags += ['-Wno-asm-operand-widths']
++endif
+ foreach flag: extra_flags
+     if cc.has_argument(flag)
+         cflags += flag
+-- 
+2.25.1
+

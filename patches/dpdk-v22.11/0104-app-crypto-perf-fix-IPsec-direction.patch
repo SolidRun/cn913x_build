@@ -1,0 +1,158 @@
+From d3a0fec27c4528dd65727d745e4486e0fb8c618f Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 16 Dec 2022 04:16:39 +0000
+Subject: [PATCH 104/955] app/crypto-perf: fix IPsec direction
+
+The default value of options->auth_op & options->cipher_op are such that
+an unconditional check for the same would always return true. Hence, the
+direction is always determined to be outbound/egress.
+
+The field options->aead_algo should be checked prior to checking above
+fields. Since the same check would be required in datapath, introduce a
+new flag in options for the same.
+
+Fixes: 28dde5da503e ("app/crypto-perf: support lookaside IPsec")
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I63d0ae09c11125fc422911099ae0a375503f9dcb
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92827
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test-crypto-perf/cperf_ops.c             | 35 +++++++++++---------
+ app/test-crypto-perf/cperf_options.h         |  1 +
+ app/test-crypto-perf/cperf_options_parsing.c | 15 +++++++++
+ 3 files changed, 35 insertions(+), 16 deletions(-)
+
+diff --git a/app/test-crypto-perf/cperf_ops.c b/app/test-crypto-perf/cperf_ops.c
+index 4a1c9feb1cb41..93b9bfb240e5a 100644
+--- a/app/test-crypto-perf/cperf_ops.c
++++ b/app/test-crypto-perf/cperf_ops.c
+@@ -42,8 +42,7 @@ test_ipsec_vec_populate(struct rte_mbuf *m, const struct cperf_options *options,
+ {
+ 	struct rte_ipv4_hdr *ip = rte_pktmbuf_mtod(m, struct rte_ipv4_hdr *);
+ 
+-	if ((options->aead_op == RTE_CRYPTO_AEAD_OP_ENCRYPT) ||
+-		(options->cipher_op == RTE_CRYPTO_CIPHER_OP_ENCRYPT)) {
++	if (options->is_outbound) {
+ 		memcpy(ip, test_vector->plaintext.data,
+ 		       sizeof(struct rte_ipv4_hdr));
+ 
+@@ -645,8 +644,9 @@ create_ipsec_session(struct rte_mempool *sess_mp,
+ 		const struct cperf_test_vector *test_vector,
+ 		uint16_t iv_offset)
+ {
+-	struct rte_crypto_sym_xform xform = {0};
+ 	struct rte_crypto_sym_xform auth_xform = {0};
++	struct rte_crypto_sym_xform *crypto_xform;
++	struct rte_crypto_sym_xform xform = {0};
+ 
+ 	if (options->aead_algo != 0) {
+ 		/* Setup AEAD Parameters */
+@@ -660,10 +660,10 @@ create_ipsec_session(struct rte_mempool *sess_mp,
+ 		xform.aead.iv.length = test_vector->aead_iv.length;
+ 		xform.aead.digest_length = options->digest_sz;
+ 		xform.aead.aad_length = options->aead_aad_sz;
++		crypto_xform = &xform;
+ 	} else if (options->cipher_algo != 0 && options->auth_algo != 0) {
+ 		/* Setup Cipher Parameters */
+ 		xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+-		xform.next = NULL;
+ 		xform.cipher.algo = options->cipher_algo;
+ 		xform.cipher.op = options->cipher_op;
+ 		xform.cipher.iv.offset = iv_offset;
+@@ -680,7 +680,6 @@ create_ipsec_session(struct rte_mempool *sess_mp,
+ 
+ 		/* Setup Auth Parameters */
+ 		auth_xform.type = RTE_CRYPTO_SYM_XFORM_AUTH;
+-		auth_xform.next = NULL;
+ 		auth_xform.auth.algo = options->auth_algo;
+ 		auth_xform.auth.op = options->auth_op;
+ 		auth_xform.auth.iv.offset = iv_offset +
+@@ -699,7 +698,15 @@ create_ipsec_session(struct rte_mempool *sess_mp,
+ 			auth_xform.auth.iv.length = 0;
+ 		}
+ 
+-		xform.next = &auth_xform;
++		if (options->is_outbound) {
++			crypto_xform = &xform;
++			xform.next = &auth_xform;
++			auth_xform.next = NULL;
++		} else {
++			crypto_xform = &auth_xform;
++			auth_xform.next = &xform;
++			xform.next = NULL;
++		}
+ 	} else {
+ 		return NULL;
+ 	}
+@@ -729,23 +736,19 @@ create_ipsec_session(struct rte_mempool *sess_mp,
+ 			.salt = CPERF_IPSEC_SALT,
+ 			.options = { 0 },
+ 			.replay_win_sz = 0,
+-			.direction =
+-				((options->cipher_op ==
+-					RTE_CRYPTO_CIPHER_OP_ENCRYPT) &&
+-				(options->auth_op ==
+-					RTE_CRYPTO_AUTH_OP_GENERATE)) ||
+-				(options->aead_op ==
+-					RTE_CRYPTO_AEAD_OP_ENCRYPT) ?
+-				RTE_SECURITY_IPSEC_SA_DIR_EGRESS :
+-				RTE_SECURITY_IPSEC_SA_DIR_INGRESS,
+ 			.proto = RTE_SECURITY_IPSEC_SA_PROTO_ESP,
+ 			.mode = RTE_SECURITY_IPSEC_SA_MODE_TUNNEL,
+ 			.tunnel = tunnel,
+ 		} },
+ 		.userdata = NULL,
+-		.crypto_xform = &xform
++		.crypto_xform = crypto_xform,
+ 	};
+ 
++	if (options->is_outbound)
++		sess_conf.ipsec.direction = RTE_SECURITY_IPSEC_SA_DIR_EGRESS;
++	else
++		sess_conf.ipsec.direction = RTE_SECURITY_IPSEC_SA_DIR_INGRESS;
++
+ 	struct rte_security_ctx *ctx = (struct rte_security_ctx *)
+ 				rte_cryptodev_get_sec_ctx(dev_id);
+ 
+diff --git a/app/test-crypto-perf/cperf_options.h b/app/test-crypto-perf/cperf_options.h
+index 613d6d31e2df5..6966e0b286788 100644
+--- a/app/test-crypto-perf/cperf_options.h
++++ b/app/test-crypto-perf/cperf_options.h
+@@ -105,6 +105,7 @@ struct cperf_options {
+ 	uint32_t out_of_place:1;
+ 	uint32_t silent:1;
+ 	uint32_t csv:1;
++	uint32_t is_outbound:1;
+ 
+ 	enum rte_crypto_cipher_algorithm cipher_algo;
+ 	enum rte_crypto_cipher_operation cipher_op;
+diff --git a/app/test-crypto-perf/cperf_options_parsing.c b/app/test-crypto-perf/cperf_options_parsing.c
+index bc5e312c81b0b..cb91bcc3c5b38 100644
+--- a/app/test-crypto-perf/cperf_options_parsing.c
++++ b/app/test-crypto-perf/cperf_options_parsing.c
+@@ -1318,6 +1318,21 @@ cperf_options_check(struct cperf_options *options)
+ 		if (check_docsis_buffer_length(options) < 0)
+ 			return -EINVAL;
+ 	}
++
++	if (options->op_type == CPERF_IPSEC) {
++		if (options->aead_algo) {
++			if (options->aead_op == RTE_CRYPTO_AEAD_OP_ENCRYPT)
++				options->is_outbound = 1;
++			else
++				options->is_outbound = 0;
++		} else {
++			if (options->cipher_op == RTE_CRYPTO_CIPHER_OP_ENCRYPT &&
++			    options->auth_op == RTE_CRYPTO_AUTH_OP_GENERATE)
++				options->is_outbound = 1;
++			else
++				options->is_outbound = 0;
++		}
++	}
+ #endif
+ 
+ 	return 0;
+-- 
+2.25.1
+

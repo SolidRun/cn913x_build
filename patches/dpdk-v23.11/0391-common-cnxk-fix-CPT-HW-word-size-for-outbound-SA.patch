@@ -1,0 +1,36 @@
+From f713ec7064d3bbb805439a6a735c6113d41c10d3 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 12 Jun 2024 13:03:48 +0530
+Subject: [PATCH 391/513] common/cnxk: fix CPT HW word size for outbound SA
+
+Fix the CPT HW word size inited for outbound SA to be
+two words.
+
+Fixes: 5ece02e736c3 ("common/cnxk: use common SA init API for default options")
+Cc: stable@dpdk.org
+
+Change-Id: I073c0eff46e4e9caf5150971f2335d57d162473d
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130639
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_ie_ot.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/common/cnxk/roc_ie_ot.c b/drivers/common/cnxk/roc_ie_ot.c
+index 465b2bc1fb952..1b436dba7266e 100644
+--- a/drivers/common/cnxk/roc_ie_ot.c
++++ b/drivers/common/cnxk/roc_ie_ot.c
+@@ -38,5 +38,6 @@ roc_ot_ipsec_outb_sa_init(struct roc_ot_ipsec_outb_sa *sa)
+ 	offset = offsetof(struct roc_ot_ipsec_outb_sa, ctx);
+ 	sa->w0.s.ctx_push_size = (offset / ROC_CTX_UNIT_8B) + 1;
+ 	sa->w0.s.ctx_size = ROC_IE_OT_CTX_ILEN;
++	sa->w0.s.ctx_hdr_size = ROC_IE_OT_SA_CTX_HDR_SIZE;
+ 	sa->w0.s.aop_valid = 1;
+ }
+-- 
+2.25.1
+

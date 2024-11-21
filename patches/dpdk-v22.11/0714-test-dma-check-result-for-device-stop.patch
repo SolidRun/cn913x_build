@@ -1,0 +1,36 @@
+From 8d1082f623f7aad75327b236006b2e26ea7684f0 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Thu, 16 Feb 2023 11:09:17 +0000
+Subject: [PATCH 714/955] test/dma: check result for device stop
+
+The DMA device stop API can return an error value so check that return
+value when running dmadev unit tests.
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+Reviewed-by: Conor Walsh <conor.walsh@intel.com>
+Acked-by: Kevin Laatz <kevin.laatz@intel.com>
+Acked-by: Chengwen Feng <fengchengwen@huawei.com>
+Change-Id: Ief0f9645be29e8228ca94c7386cea74fcb5e3f64
+---
+ app/test/test_dmadev.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_dmadev.c b/app/test/test_dmadev.c
+index dc872244cccf0..665c4d2206732 100644
+--- a/app/test/test_dmadev.c
++++ b/app/test/test_dmadev.c
+@@ -1004,7 +1004,10 @@ test_dmadev_instance(int16_t dev_id)
+ 	}
+ 
+ 	rte_mempool_free(pool);
+-	rte_dma_stop(dev_id);
++
++	if (rte_dma_stop(dev_id) < 0)
++		ERR_RETURN("Error stopping device %u\n", dev_id);
++
+ 	rte_dma_stats_reset(dev_id, vchan);
+ 	return 0;
+ 
+-- 
+2.25.1
+

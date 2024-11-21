@@ -1,0 +1,52 @@
+From 50f9acb71e9108f8e9e9fbeb45e26ad03b3b1265 Mon Sep 17 00:00:00 2001
+From: Ferruh Yigit <ferruh.yigit@amd.com>
+Date: Wed, 24 Jan 2024 18:54:05 +0000
+Subject: [PATCH 494/513] net/sfc: fix calloc parameters
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+gcc [1] generates warning [2] about rte_calloc usage, because
+rte_calloc parameter order is wrong, fixing it by replacing parameters.
+
+[1]
+gcc (GCC) 14.0.1 20240124 (experimental)
+
+[2]
+Compiling C object drivers/libtmp_rte_net_sfc.a.p/net_sfc_sfc_mae.c.o
+../net/sfc/sfc_mae.c: In function ‘sfc_mae_action_set_list_add’:
+../drivers/net/sfc/sfc_mae.c:1353:35:
+ warning: ‘rte_calloc’ sizes specified with ‘sizeof’ in the earlier
+ argument and not in the later argument [-Wcalloc-transposed-args]
+ 1353 |                    sizeof(struct sfc_mae_action_set *),
+      |                           ^~~~~~
+
+Fixes: 002f591f54c3 ("net/sfc: support packet replay in transfer flows")
+Cc: stable@dpdk.org
+
+Signed-off-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Acked-by: Morten Brørup <mb@smartsharesystems.com>
+Reviewed-by: Andrew Rybchenko <andrew.rybchenko@oktetlabs.ru>
+Change-Id: I4626017e68b41c809fd4d28789d87557c4ef7aba
+---
+ drivers/net/sfc/sfc_mae.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/sfc/sfc_mae.c b/drivers/net/sfc/sfc_mae.c
+index e5ec0ae49d4df..60ff6d21810ae 100644
+--- a/drivers/net/sfc/sfc_mae.c
++++ b/drivers/net/sfc/sfc_mae.c
+@@ -1350,8 +1350,8 @@ sfc_mae_action_set_list_add(struct sfc_adapter *sa,
+ 
+ 	action_set_list->action_sets =
+ 		rte_calloc("sfc_mae_action_set_list_action_sets",
+-			   sizeof(struct sfc_mae_action_set *),
+-			   action_set_list->nb_action_sets, 0);
++			   action_set_list->nb_action_sets,
++			   sizeof(struct sfc_mae_action_set *), 0);
+ 	if (action_set_list->action_sets == NULL) {
+ 		sfc_err(sa, "failed to allocate action set list");
+ 		rte_free(action_set_list);
+-- 
+2.25.1
+

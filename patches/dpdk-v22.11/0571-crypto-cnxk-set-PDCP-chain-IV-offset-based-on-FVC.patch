@@ -1,0 +1,186 @@
+From 790396a2fd3a57b920876b44c1eb7b490e24c80b Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Thu, 27 Jul 2023 14:39:27 +0530
+Subject: [PATCH 571/955] crypto/cnxk: set PDCP chain IV offset based on FVC
+
+Set PDCP chain IV offset based on zuc 256 firmware
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I101891c0093e2dc1e9950294a9477a485d95dce1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108770
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 92beb42b75c0053e404b341fbacbcbfaa0412437)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108829
+---
+ drivers/common/cnxk/hw/cpt.h             |  4 +++-
+ drivers/common/cnxk/roc_se.h             |  3 +++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c | 10 ++++++++--
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.h |  5 +++--
+ drivers/crypto/cnxk/cnxk_se.h            | 16 ++++++++++------
+ 5 files changed, 27 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/cpt.h b/drivers/common/cnxk/hw/cpt.h
+index 96a863322a4d4..cad4ed7e79daf 100644
+--- a/drivers/common/cnxk/hw/cpt.h
++++ b/drivers/common/cnxk/hw/cpt.h
+@@ -78,7 +78,9 @@ union cpt_eng_caps {
+ 		uint64_t __io sm4 : 1;
+ 		uint64_t __io reserved_23_34 : 12;
+ 		uint64_t __io sg_ver2 : 1;
+-		uint64_t __io reserved_36_63 : 28;
++		uint64_t __io reserved36 : 1;
++		uint64_t __io pdcp_chain_zuc256 : 1;
++		uint64_t __io reserved_38_63 : 26;
+ 	};
+ };
+ 
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index 2a5abd71cf635..d8cbd58c9a6ce 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -323,6 +323,8 @@ struct roc_se_ctx {
+ 	uint64_t ciph_then_auth : 1;
+ 	uint64_t auth_then_ciph : 1;
+ 	uint64_t eia2 : 1;
++	/* auth_iv_offset passed to PDCP_CHAIN opcode based on FVC bit */
++	uint8_t pdcp_iv_offset;
+ 	union cpt_inst_w4 template_w4;
+ 	/* Below fields are accessed by hardware */
+ 	struct se_ctx_s {
+@@ -366,6 +368,7 @@ struct roc_se_fc_params {
+ 	struct roc_se_buf_ptr meta_buf;
+ 	uint8_t cipher_iv_len;
+ 	uint8_t auth_iv_len;
++	uint8_t pdcp_iv_offset;
+ 
+ 	struct roc_se_buf_ptr aad_buf;
+ 	struct roc_se_buf_ptr mac_buf;
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 99bf85323463b..82938c77c89c4 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -484,13 +484,19 @@ is_valid_pdcp_cipher_alg(struct rte_crypto_sym_xform *c_xfrm,
+ }
+ 
+ static int
+-cnxk_sess_fill(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
++cnxk_sess_fill(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xform,
++	       struct cnxk_se_sess *sess)
+ {
+ 	struct rte_crypto_sym_xform *aead_xfrm = NULL;
+ 	struct rte_crypto_sym_xform *c_xfrm = NULL;
+ 	struct rte_crypto_sym_xform *a_xfrm = NULL;
+ 	bool ciph_then_auth = false;
+ 
++	if (roc_cpt->hw_caps[CPT_ENG_TYPE_SE].pdcp_chain_zuc256)
++		sess->roc_se_ctx.pdcp_iv_offset = 24;
++	else
++		sess->roc_se_ctx.pdcp_iv_offset = 16;
++
+ 	if (xform == NULL)
+ 		return -EINVAL;
+ 
+@@ -672,7 +678,7 @@ sym_session_configure(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xfor
+ 	if (is_session_less)
+ 		memset(sess_priv, 0, sizeof(struct cnxk_se_sess));
+ 
+-	ret = cnxk_sess_fill(xform, sess_priv);
++	ret = cnxk_sess_fill(roc_cpt, xform, sess_priv);
+ 	if (ret)
+ 		goto priv_put;
+ 
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+index 4a8eb0890b598..c6bb8023eacd4 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+@@ -16,8 +16,9 @@
+ #include "roc_errata.h"
+ #include "roc_se.h"
+ 
+-#define CNXK_CPT_MIN_HEADROOM_REQ	 32
+-#define CNXK_CPT_MIN_TAILROOM_REQ	 102
++/* Space for ctrl_word(8B), IV(48B), passthrough alignment(8B) */
++#define CNXK_CPT_MIN_HEADROOM_REQ 64
++#define CNXK_CPT_MIN_TAILROOM_REQ 102
+ 
+ /* Default command timeout in seconds */
+ #define DEFAULT_COMMAND_TIMEOUT 4
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index fc37face57a72..0a5f716747009 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -909,7 +909,7 @@ pdcp_chain_sg1_prep(struct roc_se_fc_params *params, struct roc_se_ctx *cpt_ctx,
+ 	pdcp_iv_copy(iv_d, cipher_iv, pdcp_ci_alg, pack_iv);
+ 
+ 	/* Auth IV */
+-	iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + 16);
++	iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + params->pdcp_iv_offset);
+ 	pdcp_iv_copy(iv_d, auth_iv, pdcp_auth_alg, pack_iv);
+ 
+ 	/* input data */
+@@ -1015,7 +1015,7 @@ pdcp_chain_sg2_prep(struct roc_se_fc_params *params, struct roc_se_ctx *cpt_ctx,
+ 	pdcp_iv_copy(iv_d, cipher_iv, pdcp_ci_alg, pack_iv);
+ 
+ 	/* Auth IV */
+-	iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + 16);
++	iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + params->pdcp_iv_offset);
+ 	pdcp_iv_copy(iv_d, auth_iv, pdcp_auth_alg, pack_iv);
+ 
+ 	/* input data */
+@@ -1507,11 +1507,12 @@ cpt_pdcp_chain_alg_prep(uint32_t req_flags, uint64_t d_offs, uint64_t d_lens,
+ 	uint32_t encr_data_len, auth_data_len, aad_len, passthr_len, pad_len, hdr_len;
+ 	uint32_t encr_offset, auth_offset, iv_offset = 0;
+ 	const uint8_t *auth_iv = NULL, *cipher_iv = NULL;
++	uint8_t pdcp_iv_off = params->pdcp_iv_offset;
++	const int iv_len = pdcp_iv_off * 2;
+ 	uint8_t pdcp_ci_alg, pdcp_auth_alg;
+ 	union cpt_inst_w4 cpt_inst_w4;
+ 	struct roc_se_ctx *se_ctx;
+ 	uint64_t *offset_vaddr;
+-	const int iv_len = 32;
+ 	uint64_t offset_ctrl;
+ 	uint8_t pack_iv = 0;
+ 	int32_t inputlen;
+@@ -1593,7 +1594,7 @@ cpt_pdcp_chain_alg_prep(uint32_t req_flags, uint64_t d_offs, uint64_t d_lens,
+ 		iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN);
+ 		pdcp_iv_copy(iv_d, cipher_iv, pdcp_ci_alg, pack_iv);
+ 
+-		iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + 16);
++		iv_d = ((uint8_t *)offset_vaddr + ROC_SE_OFF_CTRL_LEN + pdcp_iv_off);
+ 		pdcp_iv_copy(iv_d, auth_iv, pdcp_auth_alg, pack_iv);
+ 
+ 		inst->w4.u64 = cpt_inst_w4.u64;
+@@ -2926,6 +2927,7 @@ fill_pdcp_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	fc_params.auth_iv_len = 0;
+ 	fc_params.iv_buf = NULL;
+ 	fc_params.auth_iv_buf = NULL;
++	fc_params.pdcp_iv_offset = sess->roc_se_ctx.pdcp_iv_offset;
+ 
+ 	if (likely(sess->iv_length))
+ 		fc_params.iv_buf = rte_crypto_op_ctod_offset(cop, uint8_t *, sess->iv_offset);
+@@ -3012,6 +3014,7 @@ fill_pdcp_chain_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	fc_params.auth_iv_len = sess->auth_iv_length;
+ 	fc_params.iv_buf = NULL;
+ 	fc_params.auth_iv_buf = NULL;
++	fc_params.pdcp_iv_offset = sess->roc_se_ctx.pdcp_iv_offset;
+ 
+ 	m_src = sym_op->m_src;
+ 	m_dst = sym_op->m_dst;
+@@ -3214,8 +3217,9 @@ fill_digest_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 		d_offs = auth_range_off;
+ 		auth_range_off = 0;
+ 		params.auth_iv_len = sess->auth_iv_length;
+-		params.auth_iv_buf = rte_crypto_op_ctod_offset(
+-			cop, uint8_t *, sess->auth_iv_offset);
++		params.auth_iv_buf =
++			rte_crypto_op_ctod_offset(cop, uint8_t *, sess->auth_iv_offset);
++		params.pdcp_iv_offset = sess->roc_se_ctx.pdcp_iv_offset;
+ 		if (sess->zsk_flag == ROC_SE_K_F9) {
+ 			uint32_t length_in_bits, num_bytes;
+ 			uint8_t *src, direction = 0;
+-- 
+2.25.1
+

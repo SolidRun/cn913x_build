@@ -1,0 +1,158 @@
+From 11b5114e6c678025894c86f96e8ccbb3cff3b9e9 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Fri, 2 Jun 2023 16:41:18 +0530
+Subject: [PATCH 495/955] cnxk-tests: add PFC support on SPB pool
+
+Patch updates l2fwd_event_pfc application to support PFC on
+spb_pool.
+
+New command line argument (--short-pool) is exposed which will be used
+to create mbuf pools for short packet and same will be configured in
+rq->spb_pool.
+
+If --short-pool is given then configuring each RQ with
+2 mbuf pools say pool0 and pool1. Pool0 will be used for packets larger
+than 256 bytes and pool1 will be used otherwise.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I904b7f9be1b6e2449bae04fb99a9c1910986e4f0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104699
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ .../cnxk-tests/l2fwd_event_pfc/l2fwd_common.c  | 12 +++++++++++-
+ .../cnxk-tests/l2fwd_event_pfc/l2fwd_common.h  |  2 ++
+ .../test/cnxk-tests/l2fwd_event_pfc/main.c     | 18 ++++++++++++++++++
+ 3 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.c b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.c
+index b9e6a2e2d0b02..99403f8e1d14b 100644
+--- a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.c
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.c
+@@ -7,6 +7,7 @@
+ int
+ l2fwd_event_init_ports(struct l2fwd_resources *rsrc)
+ {
++	struct rte_mempool *rx_mempool[MAX_RX_QUEUE_PER_PORT] = {0};
+ 	uint16_t nb_rxd = RX_DESC_DEFAULT;
+ 	uint16_t nb_txd = TX_DESC_DEFAULT;
+ 	struct rte_eth_conf port_conf = {
+@@ -78,12 +79,21 @@ l2fwd_event_init_ports(struct l2fwd_resources *rsrc)
+ 		fflush(stdout);
+ 		rxq_conf = dev_info.default_rxconf;
+ 		rxq_conf.offloads = local_port_conf.rxmode.offloads;
++		if (rsrc->use_short_pool)
++			rxq_conf.rx_nmempool = 2;
++
+ 		/* Using lcore to poll one or several ports. 8< */
+ 
+ 		for (i = 0; i < rsrc->num_rxq; i++) {
++			rx_mempool[0] = rsrc->pktmbuf_pool[port_id][i];
++			if (rsrc->use_short_pool) {
++				rx_mempool[1] = rsrc->pktmbuf_short_pool[port_id][i];
++				rxq_conf.rx_mempools = rx_mempool;
++			}
++
+ 			ret = rte_eth_rx_queue_setup(port_id, i, nb_rxd,
+ 						     rte_eth_dev_socket_id(port_id), &rxq_conf,
+-						     rsrc->pktmbuf_pool[port_id][i]);
++						     rsrc->use_short_pool ? NULL : rx_mempool[0]);
+ 			if (ret < 0)
+ 				rte_panic("rte_eth_rx_queue_setup:err=%d, port=%u\n",
+ 					  ret, port_id);
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.h b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.h
+index c4386befa82d6..5682b44840109 100644
+--- a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.h
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.h
+@@ -89,6 +89,7 @@ struct l2fwd_resources {
+ 	uint8_t event_mode;
+ 	uint8_t sched_type;
+ 	uint8_t mac_updating;
++	uint8_t use_short_pool;
+ 	uint8_t rx_queue_per_lcore;
+ 	uint8_t num_rxq;
+ 	uint8_t num_txq;
+@@ -100,6 +101,7 @@ struct l2fwd_resources {
+ 	uint32_t enabled_port_mask;
+ 	uint64_t timer_period;
+ 	struct rte_mempool *pktmbuf_pool[RTE_MAX_ETHPORTS][MAX_RX_QUEUE_PER_PORT];
++	struct rte_mempool *pktmbuf_short_pool[RTE_MAX_ETHPORTS][MAX_RX_QUEUE_PER_PORT];
+ 	struct rte_mempool *evt_vec_pool;
+ 	uint32_t dst_ports[RTE_MAX_ETHPORTS];
+ 	struct rte_ether_addr eth_addr[RTE_MAX_ETHPORTS];
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/main.c b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/main.c
+index 14889d41261bb..b3b4c5ee8e194 100644
+--- a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/main.c
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/main.c
+@@ -31,6 +31,7 @@ l2fwd_event_usage(const char *prgname)
+ 	       "    - <rxq> : Rx queue on which TC is to be mapped.\n"
+ 	       "    - <tc> : Traffic class which is mapped with rxq and used in PFC frame if threshold reaches.\n"
+ 	       "    - <pause quanta> : Pause quanta which is mapped with rxq and used in PFC frame if threshold reaches.\n"
++	       "  --short-pool: Enable use of short mbuf pool (disabled by default)\n"
+ 	       "  --mode: Packet transfer mode for I/O, poll or eventdev\n"
+ 	       "          Default mode = eventdev\n"
+ 	       "  --eventq-sched: Event queue schedule type, ordered, atomic or parallel.\n"
+@@ -331,6 +332,7 @@ static const char short_options[] =
+ #define CMD_LINE_OPT_RXQ "rxq"
+ #define CMD_LINE_OPT_TXQ "txq"
+ #define CMD_LINE_OPT_PFC "pfc"
++#define CMD_LINE_OPT_SHORT_POOL "short-pool"
+ #define CMD_LINE_OPT_EVENTQ_SCHED "eventq-sched"
+ #define CMD_LINE_OPT_PORT_PAIR_CONF "config"
+ #define CMD_LINE_OPT_ENABLE_VECTOR "event-vector"
+@@ -348,6 +350,7 @@ enum {
+ 	CMD_LINE_OPT_RXQ_NUM,
+ 	CMD_LINE_OPT_TXQ_NUM,
+ 	CMD_LINE_OPT_PFC_NUM,
++	CMD_LINE_OPT_PFC_SHORT_POOL_NUM,
+ 	CMD_LINE_OPT_EVENTQ_SCHED_NUM,
+ 	CMD_LINE_OPT_PORT_PAIR_CONF_NUM,
+ 	CMD_LINE_OPT_ENABLE_VECTOR_NUM,
+@@ -367,6 +370,7 @@ l2fwd_event_parse_args(int argc, char **argv, struct l2fwd_resources *rsrc)
+ 		{ CMD_LINE_OPT_RXQ, required_argument, NULL, CMD_LINE_OPT_RXQ_NUM},
+ 		{ CMD_LINE_OPT_TXQ, required_argument, NULL, CMD_LINE_OPT_TXQ_NUM},
+ 		{ CMD_LINE_OPT_PFC, required_argument, NULL, CMD_LINE_OPT_PFC_NUM},
++		{ CMD_LINE_OPT_SHORT_POOL, no_argument, NULL, CMD_LINE_OPT_PFC_SHORT_POOL_NUM},
+ 		{ CMD_LINE_OPT_EVENTQ_SCHED, required_argument, NULL,
+ 						CMD_LINE_OPT_EVENTQ_SCHED_NUM},
+ 		{ CMD_LINE_OPT_PORT_PAIR_CONF, required_argument, NULL,
+@@ -460,6 +464,10 @@ l2fwd_event_parse_args(int argc, char **argv, struct l2fwd_resources *rsrc)
+ 			}
+ 			break;
+ 
++		case CMD_LINE_OPT_PFC_SHORT_POOL_NUM:
++			rsrc->use_short_pool = 1;
++			break;
++
+ 		case CMD_LINE_OPT_EVENTQ_SCHED_NUM:
+ 			l2fwd_event_parse_eventq_sched(optarg, rsrc);
+ 			break;
+@@ -818,6 +826,7 @@ main(int argc, char **argv)
+ 	/* >8 End of init EAL. */
+ 
+ 	printf("MAC updating %s\n", rsrc->mac_updating ? "enabled" : "disabled");
++	printf("Use short pool %s\n", rsrc->use_short_pool ? "enabled" : "disabled");
+ 
+ 	nb_ports = rte_eth_dev_count_avail();
+ 	if (nb_ports == 0)
+@@ -871,6 +880,15 @@ main(int argc, char **argv)
+ 					rte_socket_id());
+ 			if (rsrc->pktmbuf_pool[port_id][i] == NULL)
+ 				rte_panic("Cannot init mbuf pool\n");
++
++			if (rsrc->use_short_pool) {
++				snprintf(name, 32, "port%d_rxq%d_spool", port_id, i);
++				rsrc->pktmbuf_short_pool[port_id][i] = rte_pktmbuf_pool_create(name,
++						nb_mbufs, MEMPOOL_CACHE_SIZE, 0, 256,
++						rte_socket_id());
++				if (rsrc->pktmbuf_short_pool[port_id][i] == NULL)
++					rte_panic("Cannot init mbuf short pool\n");
++				}
+ 		}
+ 		/* >8 End of creation of mbuf pool. */
+ 	}
+-- 
+2.25.1
+

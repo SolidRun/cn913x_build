@@ -1,0 +1,129 @@
+From 862455e26c56bbc9cd4c5df87f6afedef1114acd Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Wed, 15 Feb 2023 15:12:24 +0530
+Subject: [PATCH 293/955] mempool: drop export of internal tracepoints
+
+The file rte_mempool_trace.h contains tracepoints which are internal to the
+mempool library. This file is renamed to mempool_trace.h, and is made an
+internal header. The tracepoints in this file are removed from the
+experimental section in version.map file.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Acked-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: I560ae910fbd664cc55e044a4f1b8001aeb4c0435
+---
+ .../{rte_mempool_trace.h => mempool_trace.h}       |  6 +++---
+ lib/mempool/mempool_trace_points.c                 |  2 +-
+ lib/mempool/meson.build                            |  1 -
+ lib/mempool/rte_mempool.c                          |  2 +-
+ lib/mempool/rte_mempool_ops.c                      |  2 +-
+ lib/mempool/version.map                            | 14 --------------
+ 6 files changed, 6 insertions(+), 21 deletions(-)
+ rename lib/mempool/{rte_mempool_trace.h => mempool_trace.h} (98%)
+
+diff --git a/lib/mempool/rte_mempool_trace.h b/lib/mempool/mempool_trace.h
+similarity index 98%
+rename from lib/mempool/rte_mempool_trace.h
+rename to lib/mempool/mempool_trace.h
+index 087c913c8cbcb..dffef062e45ac 100644
+--- a/lib/mempool/rte_mempool_trace.h
++++ b/lib/mempool/mempool_trace.h
+@@ -2,8 +2,8 @@
+  * Copyright(C) 2020 Marvell International Ltd.
+  */
+ 
+-#ifndef _RTE_MEMPOOL_TRACE_H_
+-#define _RTE_MEMPOOL_TRACE_H_
++#ifndef MEMPOOL_TRACE_H
++#define MEMPOOL_TRACE_H
+ 
+ /**
+  * @file
+@@ -172,4 +172,4 @@ RTE_TRACE_POINT(
+ }
+ #endif
+ 
+-#endif /* _RTE_MEMPOOL_TRACE_H_ */
++#endif /* MEMPOOL_TRACE_H */
+diff --git a/lib/mempool/mempool_trace_points.c b/lib/mempool/mempool_trace_points.c
+index 4ad76deb3482e..307018094d73e 100644
+--- a/lib/mempool/mempool_trace_points.c
++++ b/lib/mempool/mempool_trace_points.c
+@@ -4,7 +4,7 @@
+ 
+ #include <rte_trace_point_register.h>
+ 
+-#include "rte_mempool_trace.h"
++#include "mempool_trace.h"
+ 
+ RTE_TRACE_POINT_REGISTER(rte_mempool_trace_ops_dequeue_bulk,
+ 	lib.mempool.ops.deq.bulk)
+diff --git a/lib/mempool/meson.build b/lib/mempool/meson.build
+index b8aaa00694bb4..8099a564667c4 100644
+--- a/lib/mempool/meson.build
++++ b/lib/mempool/meson.build
+@@ -17,7 +17,6 @@ sources = files(
+ )
+ headers = files(
+         'rte_mempool.h',
+-        'rte_mempool_trace.h',
+         'rte_mempool_trace_fp.h',
+ )
+ deps += ['ring', 'telemetry']
+diff --git a/lib/mempool/rte_mempool.c b/lib/mempool/rte_mempool.c
+index f33f455790910..3df7b37a7e949 100644
+--- a/lib/mempool/rte_mempool.c
++++ b/lib/mempool/rte_mempool.c
+@@ -28,8 +28,8 @@
+ #include <rte_eal_paging.h>
+ #include <rte_telemetry.h>
+ 
++#include "mempool_trace.h"
+ #include "rte_mempool.h"
+-#include "rte_mempool_trace.h"
+ 
+ TAILQ_HEAD(rte_mempool_list, rte_tailq_entry);
+ 
+diff --git a/lib/mempool/rte_mempool_ops.c b/lib/mempool/rte_mempool_ops.c
+index 3b43edc548a00..ae1d288f2741d 100644
+--- a/lib/mempool/rte_mempool_ops.c
++++ b/lib/mempool/rte_mempool_ops.c
+@@ -11,7 +11,7 @@
+ #include <rte_errno.h>
+ #include <dev_driver.h>
+ 
+-#include "rte_mempool_trace.h"
++#include "mempool_trace.h"
+ 
+ /* indirect jump table to support external memory pools. */
+ struct rte_mempool_ops_table rte_mempool_ops_table = {
+diff --git a/lib/mempool/version.map b/lib/mempool/version.map
+index b67d7aace766b..dff2d1cb5555f 100644
+--- a/lib/mempool/version.map
++++ b/lib/mempool/version.map
+@@ -47,22 +47,8 @@ EXPERIMENTAL {
+ 	__rte_mempool_trace_generic_get;
+ 	__rte_mempool_trace_get_bulk;
+ 	__rte_mempool_trace_get_contig_blocks;
+-	__rte_mempool_trace_create;
+-	__rte_mempool_trace_create_empty;
+-	__rte_mempool_trace_free;
+-	__rte_mempool_trace_populate_iova;
+-	__rte_mempool_trace_populate_virt;
+-	__rte_mempool_trace_populate_default;
+-	__rte_mempool_trace_populate_anon;
+-	__rte_mempool_trace_cache_create;
+-	__rte_mempool_trace_cache_free;
+ 	__rte_mempool_trace_default_cache;
+-	__rte_mempool_trace_get_page_size;
+ 	__rte_mempool_trace_cache_flush;
+-	__rte_mempool_trace_ops_populate;
+-	__rte_mempool_trace_ops_alloc;
+-	__rte_mempool_trace_ops_free;
+-	__rte_mempool_trace_set_ops_byname;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

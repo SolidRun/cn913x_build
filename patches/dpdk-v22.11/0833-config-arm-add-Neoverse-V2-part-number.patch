@@ -1,0 +1,46 @@
+From f85b2dd61cf65f56ac8600f568718dfb1b1164b7 Mon Sep 17 00:00:00 2001
+From: Honnappa Nagarahalli <honnappa.nagarahalli@arm.com>
+Date: Tue, 20 Feb 2024 01:45:30 +0000
+Subject: [PATCH 833/955] config/arm: add Neoverse V2 part number
+
+Add Arm Neoverse V2 CPU part number
+
+Signed-off-by: Honnappa Nagarahalli <honnappa.nagarahalli@arm.com>
+Acked-by: Ruifeng Wang <ruifeng.wang@arm.com>
+Reviewed-by: Wathsala Vithanage <wathsala.vithanage@arm.com>
+Change-Id: If053c7595fffd3489b1a8d01a978728627405e42
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123206
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 684ab3f2b31802f5146bc36b07cde6fce4d9dea2)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123344
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ config/arm/meson.build | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index c6ffb0a6d7de0..77e003867f95a 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -97,6 +97,16 @@ part_number_config_arm = {
+             ['RTE_MAX_LCORE', 64],
+             ['RTE_MAX_NUMA_NODES', 1]
+         ]
++    },
++    '0xd4f': {
++        'march_features': ['sve2'],
++        'compiler_options': ['-mcpu=neoverse-v2'],
++        'flags': [
++            ['RTE_MACHINE', '"neoverse-v2"'],
++            ['RTE_ARM_FEATURE_ATOMICS', true],
++            ['RTE_MAX_LCORE', 144],
++            ['RTE_MAX_NUMA_NODES', 2]
++        ]
+     }
+ }
+ implementer_arm = {
+-- 
+2.25.1
+

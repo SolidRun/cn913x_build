@@ -1,0 +1,34 @@
+From 3d1503a2f87144ecc397a972bb4f8e48a34e9809 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 5 May 2023 00:30:26 +0530
+Subject: [PATCH 403/955] common/cnxk: fix inline device VF identification
+
+Fix inline device VF identification so that the right
+mbox region is used.
+
+Fixes: ee48f711f3b0 ("common/cnxk: support NIX inline inbound and outbound setup")
+Change-Id: I2de4c71889c6015d3595407c72fc1ec48c882398
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102856
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Srujana Challa <schalla@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 9790960a68510..2a80733aaba70 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -1084,6 +1084,7 @@ dev_vf_hwcap_update(struct plt_pci_device *pci_dev, struct dev *dev)
+ 	case PCI_DEVID_CNXK_RVU_AF_VF:
+ 	case PCI_DEVID_CNXK_RVU_VF:
+ 	case PCI_DEVID_CNXK_RVU_SDP_VF:
++	case PCI_DEVID_CNXK_RVU_NIX_INL_VF:
+ 		dev->hwcap |= DEV_HWCAP_F_VF;
+ 		break;
+ 	}
+-- 
+2.25.1
+

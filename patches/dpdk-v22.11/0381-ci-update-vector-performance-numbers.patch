@@ -1,0 +1,36 @@
+From a16e1965514dfe39c5282c2bb59559291c347b87 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 24 Apr 2023 18:34:09 +0530
+Subject: [PATCH 381/955] ci: update vector performance numbers
+
+Update event vector performance numbers.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I6c88de2113eb0d9e9b717805c37b976a5bcd3763
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102169
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv    | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
+index 151778431672d..013a2180444e2 100644
+--- a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
++++ b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
+@@ -49,9 +49,9 @@ cores, RESULT
+ ------------------------------------------------------------------------
+ VECTOR_MODE (atomic queue) output in packets per second
+ cores, RESULT
+-1, 83.632
+-8, 87.804
+-16, 87.428
++1, 84.3
++8, 88.2
++16, 88.0
+ 
+ ------------------------------------------------------------------------
+ CRYPTO_ADAPTER_FWD (parallel queue) output in packets per second
+-- 
+2.25.1
+

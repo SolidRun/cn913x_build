@@ -1,0 +1,43 @@
+From 32b92ce50fdb7fe299a8930f19ddbd1c6c5aa67c Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Thu, 9 Nov 2023 19:13:54 +0530
+Subject: [PATCH 026/513] common/cnxk: fix issue with flow action type queue
+
+Adding changes to fix RTE Flow action queue for
+cnxk device. While writing the entry rq index is
+not being updated properly. Added changes to fix
+this.
+
+Fixes: 861a9b19eb67 ("common/cnxk: support mirror flow action")
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Ie168e6c0cb10b7c473cf6e261e6aa2ef6d35b124
+---
+ drivers/common/cnxk/roc_npc_mcam.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index 5fdc06a5e017b..28a90210d281e 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -719,6 +719,8 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 
+ 	req->intf = (flow->nix_intf == NIX_INTF_RX) ? NPC_MCAM_RX : NPC_MCAM_TX;
+ 	req->enable_entry = 1;
++	if (flow->nix_intf == NIX_INTF_RX)
++		flow->npc_action |= (uint64_t)flow->recv_queue << 20;
+ 	req->entry_data.action = flow->npc_action;
+ 
+ 	/*
+@@ -741,7 +743,6 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 	}
+ 
+ 	if (flow->nix_intf == NIX_INTF_RX) {
+-		flow->npc_action |= (uint64_t)flow->recv_queue << 20;
+ 		if (inl_dev && inl_dev->is_multi_channel &&
+ 		    (flow->npc_action & NIX_RX_ACTIONOP_UCAST_IPSEC)) {
+ 			pf_func = nix_inl_dev_pffunc_get();
+-- 
+2.25.1
+

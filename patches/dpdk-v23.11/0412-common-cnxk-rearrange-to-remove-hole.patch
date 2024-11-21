@@ -1,0 +1,43 @@
+From c9c72fa8f3621aace6dd2714e72abcf7cf7f65c6 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 29 Jul 2024 10:28:46 +0000
+Subject: [PATCH 412/513] common/cnxk: rearrange to remove hole
+
+Rearrange fields to remove hole.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I31502b0b4cb8ce95061c1aaad94a4a82d512a4cc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132245
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+(cherry picked from commit ceebba3ef31aff5ae4b72b1c6f01fa4957697bb5)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132330
+---
+ drivers/common/cnxk/roc_se.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index 50741a0b81b3a..ede8d69c0e9a6 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -331,6 +331,7 @@ struct roc_se_ctx {
+ 	/* auth_iv_offset passed to PDCP_CHAIN opcode based on FVC bit */
+ 	uint8_t pdcp_iv_offset;
+ 	union cpt_inst_w4 template_w4;
++	uint8_t *auth_key;
+ 	/* Below fields are accessed by hardware */
+ 	struct se_ctx_s {
+ 		/* Word0 */
+@@ -355,7 +356,6 @@ struct roc_se_ctx {
+ 			struct roc_se_sm_context sm_ctx;
+ 		};
+ 	} se_ctx __plt_aligned(ROC_ALIGN);
+-	uint8_t *auth_key;
+ } __plt_aligned(ROC_ALIGN);
+ 
+ struct roc_se_fc_params {
+-- 
+2.25.1
+

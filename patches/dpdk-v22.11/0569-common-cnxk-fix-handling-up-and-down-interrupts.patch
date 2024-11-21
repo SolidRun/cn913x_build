@@ -1,0 +1,87 @@
+From d6aa4d1765a123d317b6c97c59d6cef647a3b36d Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Thu, 13 Jul 2023 13:42:36 +0530
+Subject: [PATCH 569/955] common/cnxk: fix handling up and down interrupts
+
+Down messages should be processed only when down interrupt is received
+while UP messages should be processed when up interrupt is received.
+A scenario has been observed where processing down message on UP
+message interrupt causes processing of old message response while
+response of latest message is not received.
+
+Fixes: 14ebaac64564 ("common/cnxk: sync between mbox up and down messages")
+
+Change-Id: I8a8de42116abfdf5d3f288892d4b344a37ade16f
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108669
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c | 40 ++++++++++++++++++++++++-----------
+ 1 file changed, 28 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 18d7981825ccf..335194ffef61a 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -770,14 +770,22 @@ roc_pf_vf_mbox_irq(void *param)
+ 	 * by 1ms until this region is zeroed mbox_wait_for_zero()
+ 	 */
+ 	mbox_data = plt_read64(dev->bar2 + RVU_VF_VFPF_MBOX0);
+-	if (mbox_data)
+-		plt_write64(!mbox_data, dev->bar2 + RVU_VF_VFPF_MBOX0);
++	/* If interrupt occurred for down message */
++	if (mbox_data & MBOX_DOWN_MSG) {
++		mbox_data &= ~MBOX_DOWN_MSG;
++		plt_write64(mbox_data, dev->bar2 + RVU_VF_VFPF_MBOX0);
+ 
+-	/* First process all configuration messages */
+-	process_msgs(dev, dev->mbox);
++		/* First process all configuration messages */
++		process_msgs(dev, dev->mbox);
++	}
++	/* If interrupt occurred for UP message */
++	if (mbox_data & MBOX_UP_MSG) {
++		mbox_data &= ~MBOX_UP_MSG;
++		plt_write64(mbox_data, dev->bar2 + RVU_VF_VFPF_MBOX0);
+ 
+-	/* Process Uplink messages */
+-	process_msgs_up(dev, &dev->mbox_up);
++		/* Process Uplink messages */
++		process_msgs_up(dev, &dev->mbox_up);
++	}
+ }
+ 
+ /* IRQ to PF from AF - PF context (interrupt thread) */
+@@ -799,14 +807,22 @@ roc_af_pf_mbox_irq(void *param)
+ 	 * by 1ms until this region is zeroed mbox_wait_for_zero()
+ 	 */
+ 	mbox_data = plt_read64(dev->bar2 + RVU_PF_PFAF_MBOX0);
+-	if (mbox_data)
+-		plt_write64(!mbox_data, dev->bar2 + RVU_PF_PFAF_MBOX0);
++	/* If interrupt occurred for down message */
++	if (mbox_data & MBOX_DOWN_MSG) {
++		mbox_data &= ~MBOX_DOWN_MSG;
++		plt_write64(mbox_data, dev->bar2 + RVU_PF_PFAF_MBOX0);
+ 
+-	/* First process all configuration messages */
+-	process_msgs(dev, dev->mbox);
++		/* First process all configuration messages */
++		process_msgs(dev, dev->mbox);
++	}
++	/* If interrupt occurred for up message */
++	if (mbox_data & MBOX_UP_MSG) {
++		mbox_data &= ~MBOX_UP_MSG;
++		plt_write64(mbox_data, dev->bar2 + RVU_PF_PFAF_MBOX0);
+ 
+-	/* Process Uplink messages */
+-	process_msgs_up(dev, &dev->mbox_up);
++		/* Process Uplink messages */
++		process_msgs_up(dev, &dev->mbox_up);
++	}
+ }
+ 
+ static int
+-- 
+2.25.1
+

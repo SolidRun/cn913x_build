@@ -1,0 +1,35 @@
+From 73f8e4356bfee028ecb3da0c6fc5ccf56ec0ed94 Mon Sep 17 00:00:00 2001
+From: Nawal Kishor <nkishor@marvell.com>
+Date: Tue, 4 Jun 2024 18:07:19 +0530
+Subject: [PATCH 903/955] common/cnxk: use atomic load acquire in batch ops
+
+In roc batch alloc wait code, __ATOMIC_RELAXED is changed to
+__ATOMIC_ACQUIRE in order to avoid potential out of order loads.
+
+Signed-off-by: Nawal Kishor <nkishor@marvell.com>
+Change-Id: I5ea3f0deadfd7653a60f4003523bf0077c929430
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129620
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npa.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_npa.h b/drivers/common/cnxk/roc_npa.h
+index 7418150071a19..435d7e9c8a081 100644
+--- a/drivers/common/cnxk/roc_npa.h
++++ b/drivers/common/cnxk/roc_npa.h
+@@ -247,7 +247,7 @@ roc_npa_batch_alloc_wait(uint64_t *cache_line, unsigned int wait_us)
+ 	/* Batch alloc status code is updated in bits [5:6] of the first word
+ 	 * of the 128 byte cache line.
+ 	 */
+-	while (((__atomic_load_n(cache_line, __ATOMIC_RELAXED) >> 5) & 0x3) ==
++	while (((__atomic_load_n(cache_line, __ATOMIC_ACQUIRE) >> 5) & 0x3) ==
+ 	       ALLOC_CCODE_INVAL)
+ 		if (wait_us && (plt_tsc_cycles() - start) >= ticks)
+ 			break;
+-- 
+2.25.1
+

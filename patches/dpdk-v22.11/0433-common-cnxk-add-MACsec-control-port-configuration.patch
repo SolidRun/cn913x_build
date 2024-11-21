@@ -1,0 +1,376 @@
+From 01937ef2ea1c676037ba9d65591fca71ddf131dc Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 19 May 2023 01:12:00 +0530
+Subject: [PATCH 433/955] common/cnxk: add MACsec control port configuration
+
+Added ROC APIs to configure MACsec control port.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ib29233402b92a83d1dd2cd00703d6880cd8dcd24
+---
+ drivers/common/cnxk/roc_mbox.h  |  72 ++++++++++++++++++++
+ drivers/common/cnxk/roc_mcs.c   | 117 ++++++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_mcs.h   |  65 ++++++++++++++++++
+ drivers/common/cnxk/version.map |   4 ++
+ 4 files changed, 258 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 770ba6a514101..92e7b4e5fd249 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -319,9 +319,17 @@ struct mbox_msghdr {
+ 	M(MCS_INTR_CFG, 0xa012, mcs_intr_cfg, mcs_intr_cfg, msg_rsp)                               \
+ 	M(MCS_SET_LMAC_MODE, 0xa013, mcs_set_lmac_mode, mcs_set_lmac_mode, msg_rsp)                \
+ 	M(MCS_SET_PN_THRESHOLD, 0xa014, mcs_set_pn_threshold, mcs_set_pn_threshold, msg_rsp)       \
++	M(MCS_ALLOC_CTRL_PKT_RULE, 0xa015, mcs_alloc_ctrl_pkt_rule, mcs_alloc_ctrl_pkt_rule_req,   \
++	  mcs_alloc_ctrl_pkt_rule_rsp)                                                             \
++	M(MCS_FREE_CTRL_PKT_RULE, 0xa016, mcs_free_ctrl_pkt_rule, mcs_free_ctrl_pkt_rule_req,      \
++	  msg_rsp)                                                                                 \
++	M(MCS_CTRL_PKT_RULE_WRITE, 0xa017, mcs_ctrl_pkt_rule_write, mcs_ctrl_pkt_rule_write_req,   \
++	  msg_rsp)                                                                                 \
+ 	M(MCS_PORT_RESET, 0xa018, mcs_port_reset, mcs_port_reset_req, msg_rsp)                     \
+ 	M(MCS_PORT_CFG_SET, 0xa019, mcs_port_cfg_set, mcs_port_cfg_set_req, msg_rsp)               \
+ 	M(MCS_PORT_CFG_GET, 0xa020, mcs_port_cfg_get, mcs_port_cfg_get_req, mcs_port_cfg_get_rsp)  \
++	M(MCS_CUSTOM_TAG_CFG_GET, 0xa021, mcs_custom_tag_cfg_get, mcs_custom_tag_cfg_get_req,      \
++	  mcs_custom_tag_cfg_get_rsp)                                                              \
+ 
+ /* Messages initiated by AF (range 0xC00 - 0xDFF) */
+ #define MBOX_UP_CGX_MESSAGES                                                   \
+@@ -922,6 +930,53 @@ struct mcs_set_pn_threshold {
+ 	uint64_t __io rsvd;
+ };
+ 
++enum mcs_ctrl_pkt_rule_type {
++	MCS_CTRL_PKT_RULE_TYPE_ETH,
++	MCS_CTRL_PKT_RULE_TYPE_DA,
++	MCS_CTRL_PKT_RULE_TYPE_RANGE,
++	MCS_CTRL_PKT_RULE_TYPE_COMBO,
++	MCS_CTRL_PKT_RULE_TYPE_MAC,
++};
++
++struct mcs_alloc_ctrl_pkt_rule_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io rule_type;
++	uint8_t __io mcs_id; /* MCS block ID */
++	uint8_t __io dir;    /* Macsec ingress or egress side */
++	uint64_t __io rsvd;
++};
++
++struct mcs_alloc_ctrl_pkt_rule_rsp {
++	struct mbox_msghdr hdr;
++	uint8_t __io rule_idx;
++	uint8_t __io rule_type;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint64_t __io rsvd;
++};
++
++struct mcs_free_ctrl_pkt_rule_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io rule_idx;
++	uint8_t __io rule_type;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint8_t __io all; /* Free all the rule resources */
++	uint64_t __io rsvd;
++};
++
++struct mcs_ctrl_pkt_rule_write_req {
++	struct mbox_msghdr hdr;
++	uint64_t __io data0;
++	uint64_t __io data1;
++	uint64_t __io data2;
++	uint8_t __io rule_idx;
++	uint8_t __io rule_type;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint64_t __io rsvd;
++};
++
+ struct mcs_port_cfg_set_req {
+ 	struct mbox_msghdr hdr;
+ 	uint8_t __io cstm_tag_rel_mode_sel;
+@@ -951,6 +1006,23 @@ struct mcs_port_cfg_get_rsp {
+ 	uint64_t __io rsvd;
+ };
+ 
++struct mcs_custom_tag_cfg_get_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint64_t __io rsvd;
++};
++
++struct mcs_custom_tag_cfg_get_rsp {
++	struct mbox_msghdr hdr;
++	uint16_t __io cstm_etype[8];
++	uint8_t __io cstm_indx[8];
++	uint8_t __io cstm_etype_en;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint64_t __io rsvd;
++};
++
+ struct mcs_port_reset_req {
+ 	struct mbox_msghdr hdr;
+ 	uint8_t __io reset;
+diff --git a/drivers/common/cnxk/roc_mcs.c b/drivers/common/cnxk/roc_mcs.c
+index 32cb8d106d3bf..6536ca7fb74ba 100644
+--- a/drivers/common/cnxk/roc_mcs.c
++++ b/drivers/common/cnxk/roc_mcs.c
+@@ -144,6 +144,88 @@ roc_mcs_pn_threshold_set(struct roc_mcs *mcs, struct roc_mcs_set_pn_threshold *p
+ 	return mbox_process_msg(mcs->mbox, (void *)&rsp);
+ }
+ 
++int
++roc_mcs_alloc_ctrl_pkt_rule(struct roc_mcs *mcs, struct roc_mcs_alloc_ctrl_pkt_rule_req *req,
++			    struct roc_mcs_alloc_ctrl_pkt_rule_rsp *rsp)
++{
++	struct mcs_alloc_ctrl_pkt_rule_req *rule_req;
++	struct mcs_alloc_ctrl_pkt_rule_rsp *rule_rsp;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	if (req == NULL || rsp == NULL)
++		return -EINVAL;
++
++	rule_req = mbox_alloc_msg_mcs_alloc_ctrl_pkt_rule(mcs->mbox);
++	if (rule_req == NULL)
++		return -ENOMEM;
++
++	rule_req->rule_type = req->rule_type;
++	rule_req->mcs_id = mcs->idx;
++	rule_req->dir = req->dir;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&rule_rsp);
++	if (rc)
++		return rc;
++
++	rsp->rule_type = rule_rsp->rule_type;
++	rsp->rule_idx = rule_rsp->rule_idx;
++	rsp->dir = rule_rsp->dir;
++
++	return 0;
++}
++
++int
++roc_mcs_free_ctrl_pkt_rule(struct roc_mcs *mcs, struct roc_mcs_free_ctrl_pkt_rule_req *req)
++{
++	struct mcs_free_ctrl_pkt_rule_req *rule_req;
++	struct msg_rsp *rsp;
++
++	MCS_SUPPORT_CHECK;
++
++	if (req == NULL)
++		return -EINVAL;
++
++	rule_req = mbox_alloc_msg_mcs_free_ctrl_pkt_rule(mcs->mbox);
++	if (rule_req == NULL)
++		return -ENOMEM;
++
++	rule_req->rule_type = req->rule_type;
++	rule_req->rule_idx = req->rule_idx;
++	rule_req->mcs_id = mcs->idx;
++	rule_req->dir = req->dir;
++	rule_req->all = req->all;
++
++	return mbox_process_msg(mcs->mbox, (void *)&rsp);
++}
++
++int
++roc_mcs_ctrl_pkt_rule_write(struct roc_mcs *mcs, struct roc_mcs_ctrl_pkt_rule_write_req *req)
++{
++	struct mcs_ctrl_pkt_rule_write_req *rule_req;
++	struct msg_rsp *rsp;
++
++	MCS_SUPPORT_CHECK;
++
++	if (req == NULL)
++		return -EINVAL;
++
++	rule_req = mbox_alloc_msg_mcs_ctrl_pkt_rule_write(mcs->mbox);
++	if (rule_req == NULL)
++		return -ENOMEM;
++
++	rule_req->rule_type = req->rule_type;
++	rule_req->rule_idx = req->rule_idx;
++	rule_req->mcs_id = mcs->idx;
++	rule_req->dir = req->dir;
++	rule_req->data0 = req->data0;
++	rule_req->data1 = req->data1;
++	rule_req->data2 = req->data2;
++
++	return mbox_process_msg(mcs->mbox, (void *)&rsp);
++}
++
+ int
+ roc_mcs_port_cfg_set(struct roc_mcs *mcs, struct roc_mcs_port_cfg_set_req *req)
+ {
+@@ -202,6 +284,41 @@ roc_mcs_port_cfg_get(struct roc_mcs *mcs, struct roc_mcs_port_cfg_get_req *req,
+ 	return 0;
+ }
+ 
++int
++roc_mcs_custom_tag_cfg_get(struct roc_mcs *mcs, struct roc_mcs_custom_tag_cfg_get_req *req,
++			   struct roc_mcs_custom_tag_cfg_get_rsp *rsp)
++{
++	struct mcs_custom_tag_cfg_get_req *get_req;
++	struct mcs_custom_tag_cfg_get_rsp *get_rsp;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	if (req == NULL)
++		return -EINVAL;
++
++	get_req = mbox_alloc_msg_mcs_custom_tag_cfg_get(mcs->mbox);
++	if (get_req == NULL)
++		return -ENOMEM;
++
++	get_req->dir = req->dir;
++	get_req->mcs_id = mcs->idx;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&get_rsp);
++	if (rc)
++		return rc;
++
++	for (int i = 0; i < 8; i++) {
++		rsp->cstm_etype[i] = get_rsp->cstm_etype[i];
++		rsp->cstm_indx[i] = get_rsp->cstm_indx[i];
++	}
++
++	rsp->cstm_etype_en = get_rsp->cstm_etype_en;
++	rsp->dir = get_rsp->dir;
++
++	return 0;
++}
++
+ int
+ roc_mcs_intr_configure(struct roc_mcs *mcs, struct roc_mcs_intr_cfg *config)
+ {
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+index 77f2cee68134f..c9b57ed1dff4d 100644
+--- a/drivers/common/cnxk/roc_mcs.h
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -163,6 +163,45 @@ struct roc_mcs_set_pn_threshold {
+ 	uint64_t rsvd;
+ };
+ 
++enum roc_mcs_ctrl_pkt_rule_type {
++	ROC_MCS_CTRL_PKT_RULE_TYPE_ETH,
++	ROC_MCS_CTRL_PKT_RULE_TYPE_DA,
++	ROC_MCS_CTRL_PKT_RULE_TYPE_RANGE,
++	ROC_MCS_CTRL_PKT_RULE_TYPE_COMBO,
++	ROC_MCS_CTRL_PKT_RULE_TYPE_MAC,
++};
++
++struct roc_mcs_alloc_ctrl_pkt_rule_req {
++	uint8_t rule_type;
++	uint8_t dir; /* Macsec ingress or egress side */
++	uint64_t rsvd;
++};
++
++struct roc_mcs_alloc_ctrl_pkt_rule_rsp {
++	uint8_t rule_idx;
++	uint8_t rule_type;
++	uint8_t dir;
++	uint64_t rsvd;
++};
++
++struct roc_mcs_free_ctrl_pkt_rule_req {
++	uint8_t rule_idx;
++	uint8_t rule_type;
++	uint8_t dir;
++	uint8_t all; /* Free all the rule resources */
++	uint64_t rsvd;
++};
++
++struct roc_mcs_ctrl_pkt_rule_write_req {
++	uint64_t data0;
++	uint64_t data1;
++	uint64_t data2;
++	uint8_t rule_idx;
++	uint8_t rule_type;
++	uint8_t dir;
++	uint64_t rsvd;
++};
++
+ struct roc_mcs_port_cfg_set_req {
+ 	/* Index of custom tag (= cstm_indx[x] in roc_mcs_custom_tag_cfg_get_rsp struct) to use
+ 	 * when TX SECY_PLCY_MEMX[SECTAG_INSERT_MODE] = 0 (relative offset mode)
+@@ -195,6 +234,19 @@ struct roc_mcs_port_cfg_get_rsp {
+ 	uint64_t rsvd;
+ };
+ 
++struct roc_mcs_custom_tag_cfg_get_req {
++	uint8_t dir;
++	uint64_t rsvd;
++};
++
++struct roc_mcs_custom_tag_cfg_get_rsp {
++	uint16_t cstm_etype[8]; /* EthType/TPID */
++	uint8_t cstm_indx[8];	/* Custom tag index used to identify the VLAN etype */
++	uint8_t cstm_etype_en;	/* bitmap of enabled custom tags */
++	uint8_t dir;
++	uint64_t rsvd;
++};
++
+ struct roc_mcs_port_reset_req {
+ 	uint8_t port_id;
+ 	uint64_t rsvd;
+@@ -409,6 +461,10 @@ __roc_api int roc_mcs_port_cfg_set(struct roc_mcs *mcs, struct roc_mcs_port_cfg_
+ /* Set port config */
+ __roc_api int roc_mcs_port_cfg_get(struct roc_mcs *mcs, struct roc_mcs_port_cfg_get_req *req,
+ 				   struct roc_mcs_port_cfg_get_rsp *rsp);
++/* Get custom tag config */
++__roc_api int roc_mcs_custom_tag_cfg_get(struct roc_mcs *mcs,
++					 struct roc_mcs_custom_tag_cfg_get_req *req,
++					 struct roc_mcs_custom_tag_cfg_get_rsp *rsp);
+ 
+ /* Resource allocation and free */
+ __roc_api int roc_mcs_alloc_rsrc(struct roc_mcs *mcs, struct roc_mcs_alloc_rsrc_req *req,
+@@ -454,6 +510,15 @@ __roc_api int roc_mcs_flowid_entry_read(struct roc_mcs *mcs,
+ __roc_api int roc_mcs_flowid_entry_enable(struct roc_mcs *mcs,
+ 					  struct roc_mcs_flowid_ena_dis_entry *entry);
+ 
++/* Control packet rule alloc, free and write */
++__roc_api int roc_mcs_alloc_ctrl_pkt_rule(struct roc_mcs *mcs,
++					  struct roc_mcs_alloc_ctrl_pkt_rule_req *req,
++					  struct roc_mcs_alloc_ctrl_pkt_rule_rsp *rsp);
++__roc_api int roc_mcs_free_ctrl_pkt_rule(struct roc_mcs *mcs,
++					 struct roc_mcs_free_ctrl_pkt_rule_req *req);
++__roc_api int roc_mcs_ctrl_pkt_rule_write(struct roc_mcs *mcs,
++					  struct roc_mcs_ctrl_pkt_rule_write_req *req);
++
+ /* Flow id stats get */
+ __roc_api int roc_mcs_flowid_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
+ 				       struct roc_mcs_flowid_stats *stats);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 1e7b66c10a667..bcd2eb2157d62 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -106,7 +106,10 @@ INTERNAL {
+ 	roc_se_ciph_key_set;
+ 	roc_se_ctx_init;
+ 	roc_mcs_active_lmac_set;
++	roc_mcs_alloc_ctrl_pkt_rule;
+ 	roc_mcs_alloc_rsrc;
++	roc_mcs_ctrl_pkt_rule_write;
++	roc_mcs_custom_tag_cfg_get;
+ 	roc_mcs_dev_init;
+ 	roc_mcs_dev_fini;
+ 	roc_mcs_dev_get;
+@@ -116,6 +119,7 @@ INTERNAL {
+ 	roc_mcs_flowid_entry_read;
+ 	roc_mcs_flowid_entry_write;
+ 	roc_mcs_flowid_stats_get;
++	roc_mcs_free_ctrl_pkt_rule;
+ 	roc_mcs_free_rsrc;
+ 	roc_mcs_hw_info_get;
+ 	roc_mcs_intr_configure;
+-- 
+2.25.1
+

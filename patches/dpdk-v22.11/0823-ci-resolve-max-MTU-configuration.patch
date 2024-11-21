@@ -1,0 +1,39 @@
+From 388af1954877ac3af2d8f37effe9b090a920fb5a Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Fri, 9 Feb 2024 20:01:42 +0530
+Subject: [PATCH 823/955] ci: resolve max MTU configuration
+
+cnxk_mac_test is failing because of
+max mtu error check in ci.This patch fixes
+the same
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I0695161b554cd86a8a671f2042de110611564916
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121664
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+index 84be2a635a4d7..a77b36cf63d0d 100755
+--- a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
++++ b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+@@ -55,9 +55,9 @@ fi
+ IS_CN10K=$?
+ 
+ if [[ $IS_CN10K -ne 0 ]]; then
+-	MAX_MTU=16358
++	MAX_MTU=16350
+ else
+-	MAX_MTU=9190
++	MAX_MTU=9182
+ fi
+ 
+ function sig_handler()
+-- 
+2.25.1
+

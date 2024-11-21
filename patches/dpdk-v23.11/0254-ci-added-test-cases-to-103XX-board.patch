@@ -1,0 +1,172 @@
+From f8134807ef12eb41be7a4ad9cc91763df4501d83 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Tue, 27 Feb 2024 14:51:30 +0530
+Subject: [PATCH 254/513] ci: added test cases to 103XX board
+
+Added
+
+cnxk_dpdk_config_test
+cnxk_fc_test_config
+cnxk_tx_vlan
+cnxk_txrx_stats
+cnxk_mtr_test_config
+cnxk_tx_chksum
+trace_cnxk_autotest
+cnxk_sample_script
+cnxk_l2fwd_simple
+cnxk_tm_test
+cnxk_port_ctrl
+cnxk_fwd_perf
+
+testcases to ci for 103XX board
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I7e93c3d5b138241cdbc37c4d973e0bd6af2c78e0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122642
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ marvell-ci/test/board/cnxk-target-setup.sh     |  2 ++
+ .../test/cnxk-tests/common/testpmd/common.env  |  1 +
+ .../test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh  | 11 +++++++++--
+ .../rclk2500_sclk1100.cn103.testpmd            |  2 +-
+ .../test/cnxk-tests/tm_test/cnxk_tm_test.sh    | 18 ++++++++++++++----
+ marvell-ci/test/env/cn103.env                  | 12 ++++++++++++
+ 6 files changed, 39 insertions(+), 7 deletions(-)
+
+diff --git a/marvell-ci/test/board/cnxk-target-setup.sh b/marvell-ci/test/board/cnxk-target-setup.sh
+index 2f74353c0c81d..603f7b84d607a 100755
+--- a/marvell-ci/test/board/cnxk-target-setup.sh
++++ b/marvell-ci/test/board/cnxk-target-setup.sh
+@@ -140,6 +140,8 @@ function setup_devices() {
+ 	if [[ $CPU == "cn10kb" ]]; then
+ 		nix_pfs=${ETH_DEV:-$(lspci -d :a063 | tail -1 | awk -e '{ print $1 }')}
+ 		devs+=" $nix_pfs"
++		inl_pf=${INL_DEV:-$(lspci -d :a0f0 | tail -1 | awk -e '{ print $1 }')}
++		devs+=" $inl_pf"
+ 	fi
+ 
+ 	# Unbind all SSO devices first
+diff --git a/marvell-ci/test/cnxk-tests/common/testpmd/common.env b/marvell-ci/test/cnxk-tests/common/testpmd/common.env
+index fcd6b12de0831..bd1159b5b0822 100644
+--- a/marvell-ci/test/cnxk-tests/common/testpmd/common.env
++++ b/marvell-ci/test/cnxk-tests/common/testpmd/common.env
+@@ -122,6 +122,7 @@ function testpmd_port_stats()
+ 	local out=testpmd.out.$prefix
+ 
+ 	echo "show port stats $port" >> $in
++	sleep 0.5
+ 	testpmd_prompt $prefix
+ 	cat $out | tail -n10 | head -n4
+ }
+diff --git a/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh b/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
+index de3977d4ce532..efe1af91ad2bf 100755
+--- a/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
++++ b/marvell-ci/test/cnxk-tests/flow_ctrl/cnxk_fc_test.sh
+@@ -13,7 +13,14 @@ PRFX_VF="vf_fc-config"
+ 
+ TESTPMD_PORT="0002:02:00.0"
+ TESTPMD_VF_PORT="0002:02:00.1"
+-TESTPMD_COREMASK="0xfff"
++DTC=$(tr -d '\0' </proc/device-tree/model | awk '{print $2}')
++if [[ $DTC == "CN103XX" ]]; then
++	TESTPMD_COREMASK="0xff"
++	CORES=7
++else
++	TESTPMD_COREMASK="0xfff"
++	CORES=8
++fi
+ 
+ if [ -f $CNXKTESTPATH/../board/oxk-devbind-basic.sh ]
+ then
+@@ -247,7 +254,7 @@ echo "Starting FC and PFC Test for PF DPDK and VF with kernel"
+ echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
+ testpmd_launch $PRFX \
+ 	"-c $TESTPMD_COREMASK -a $TESTPMD_PORT,flow_max_priority=8" \
+-	"--no-flush-rx --rxq=8 --txq=8 --nb-cores=8"
++	"--no-flush-rx --rxq=8 --txq=8 --nb-cores=$CORES"
+ 
+ # Part - 1: Validate priority flow control (802.3x)
+ # Test case - 1: Validate flow control default configuration. Must be enable
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.testpmd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.testpmd
+index 29e625ecd6268..fbed7b64e96a0 100644
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.testpmd
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.testpmd
+@@ -1,5 +1,5 @@
+ PPS of tests on 106xx and multiple RCLK
+ ---------------------------------------
+ 
+-TESTPMD_NO_OFFLOAD 100000000
++TESTPMD_NO_OFFLOAD 73100000
+ TESTPMD_LBK_NO_OFFLOAD 100000000
+diff --git a/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh b/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh
+index db50d30ea3cc5..f95c39e27e15d 100755
+--- a/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh
++++ b/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh
+@@ -27,10 +27,20 @@ percentage=95
+ PORT0="0002:01:00.4"
+ CAP_PORT0="0002:01:00.2"
+ CAP_PORT1="0002:01:00.3"
+-COREMASK="0xF000"
+-CAP_COREMASK="0xFF8"
+ EXPECTED_CNT=1000
+ 
++DTC=$(tr -d '\0' </proc/device-tree/model | awk '{print $2}')
++if [[ $DTC == "CN103XX" ]]; then
++	COREMASK="0x0F"
++	CAP_COREMASK="0xF0"
++	CORES=2
++else
++	COREMASK="0xF000"
++	CAP_COREMASK="0xFF8"
++	CORES=8
++fi
++
++
+ if [[ -d /sys/bus/pci/drivers/octeontx2-nicvf ]]; then
+ 	NICVF="octeontx2-nicvf"
+ else
+@@ -327,14 +337,14 @@ trap "sig_handler EXIT" EXIT
+ echo "Testpmd running with $PORT0, Coremask=$COREMASK"
+ testpmd_launch $PRFX \
+ 	"-c $COREMASK -a $PORT0" \
+-	"--nb-cores=3 --rxq=4 --txq=4 --forward-mode=flowgen --txonly-multi-flow --txpkts=256 -i"
++	"--nb-cores=$CORES --rxq=4 --txq=4 --forward-mode=flowgen --txonly-multi-flow --txpkts=256 -i"
+ 
+ testpmd_cmd $PRFX "start"
+ 
+ # Launch capture testpmd
+ testpmd_launch $CAP_PRFX \
+ 	"-c $CAP_COREMASK -a $CAP_PORT0 -a $CAP_PORT1" \
+-        "--rxq=8 --txq=8 --nb-cores=8 --rss-udp --no-flush-rx -i"
++        "--rxq=8 --txq=8 --nb-cores=$CORES --rss-udp --no-flush-rx -i"
+ 
+ # Start capturing
+ #2Gbps PIR
+diff --git a/marvell-ci/test/env/cn103.env b/marvell-ci/test/env/cn103.env
+index efa048503aaad..bffc8816974dd 100644
+--- a/marvell-ci/test/env/cn103.env
++++ b/marvell-ci/test/env/cn103.env
+@@ -16,6 +16,18 @@ RUN_TESTS="
+ 	cnxk_read_config
+ 	cnxk_ingress_policer
+ 	flow_regression
++	cnxk_dpdk_config_test
++	cnxk_fc_test_config
++	cnxk_tx_vlan
++	cnxk_txrx_stats
++	cnxk_mtr_test_config
++	cnxk_tx_chksum
++	trace_cnxk_autotest
++	cnxk_sample_script
++	cnxk_l2fwd_simple
++	cnxk_tm_test
++	cnxk_port_ctrl
++	cnxk_fwd_perf
+ "
+ 
+ # Update command timeout
+-- 
+2.25.1
+

@@ -1,0 +1,128 @@
+From cf012747ae6ea290e3754cbbf0287968dd2d8747 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Wed, 4 Jan 2023 19:08:26 +0530
+Subject: [PATCH 166/955] examples/fips_validation: add ECDSA keygen support
+
+Add support to validate ECDSA keygen mode tests.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Iee0b44595c288682876bac68a9da1e4c4385304c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93993
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../fips_validation/fips_validation_ecdsa.c   | 52 +++++++++++++++++++
+ examples/fips_validation/main.c               | 13 +++++
+ 2 files changed, 65 insertions(+)
+
+diff --git a/examples/fips_validation/fips_validation_ecdsa.c b/examples/fips_validation/fips_validation_ecdsa.c
+index d47ab0b5d1827..5c91abfc5a89c 100644
+--- a/examples/fips_validation/fips_validation_ecdsa.c
++++ b/examples/fips_validation/fips_validation_ecdsa.c
+@@ -295,6 +295,20 @@ parse_test_ecdsa_json_writeback(struct fips_val *val)
+ 			json_object_set_new(json_info.json_write_case, "testPassed", json_true());
+ 		else
+ 			json_object_set_new(json_info.json_write_case, "testPassed", json_false());
++	} else if (info.op == FIPS_TEST_ASYM_KEYGEN) {
++		json_t *obj;
++
++		writeback_hex_str("", info.one_line_text, &vec.ecdsa.pkey);
++		obj = json_string(info.one_line_text);
++		json_object_set_new(json_info.json_write_case, "d", obj);
++
++		writeback_hex_str("", info.one_line_text, &vec.ecdsa.qx);
++		obj = json_string(info.one_line_text);
++		json_object_set_new(json_info.json_write_case, "qx", obj);
++
++		writeback_hex_str("", info.one_line_text, &vec.ecdsa.qy);
++		obj = json_string(info.one_line_text);
++		json_object_set_new(json_info.json_write_case, "qy", obj);
+ 	}
+ 
+ 	return 0;
+@@ -367,6 +381,36 @@ parse_siggen_message_str(const char *key, char *src, struct fips_val *val)
+ 	return ret;
+ }
+ 
++static int
++parse_keygen_tc_str(const char *key, char *src, struct fips_val *val)
++{
++	RTE_SET_USED(key);
++	RTE_SET_USED(src);
++	RTE_SET_USED(val);
++
++	if (info.op == FIPS_TEST_ASYM_KEYGEN) {
++		if (vec.ecdsa.pkey.val) {
++			rte_free(vec.ecdsa.pkey.val);
++			vec.ecdsa.pkey.val = NULL;
++		}
++
++		if (vec.ecdsa.k.val) {
++			rte_free(vec.ecdsa.k.val);
++			vec.ecdsa.k.val = NULL;
++		}
++
++		if (prepare_vec_ecdsa() < 0)
++			return -1;
++
++		if (prepare_vec_ecdsa_k() < 0)
++			return -1;
++
++		info.interim_info.ecdsa_data.pubkey_gen = 1;
++	}
++
++	return 0;
++}
++
+ static int
+ parse_sigver_randomvalue_str(const char *key, char *src, struct fips_val *val)
+ {
+@@ -402,6 +446,11 @@ struct fips_test_callback ecdsa_sigver_json_vectors[] = {
+ 		{NULL, NULL, NULL} /**< end pointer */
+ };
+ 
++struct fips_test_callback ecdsa_keygen_json_vectors[] = {
++		{"tcId", parse_keygen_tc_str, &vec.pt},
++		{NULL, NULL, NULL} /**< end pointer */
++};
++
+ int
+ parse_test_ecdsa_json_init(void)
+ {
+@@ -421,6 +470,9 @@ parse_test_ecdsa_json_init(void)
+ 	} else if (strcmp(mode_str, "sigVer") == 0) {
+ 		info.op = FIPS_TEST_ASYM_SIGVER;
+ 		info.callbacks = ecdsa_sigver_json_vectors;
++	} else if (strcmp(mode_str, "keyGen") == 0) {
++		info.op = FIPS_TEST_ASYM_KEYGEN;
++		info.callbacks = ecdsa_keygen_json_vectors;
+ 	} else {
+ 		return -EINVAL;
+ 	}
+diff --git a/examples/fips_validation/main.c b/examples/fips_validation/main.c
+index 1974dc959b92d..97190902aa1d6 100644
+--- a/examples/fips_validation/main.c
++++ b/examples/fips_validation/main.c
+@@ -1758,6 +1758,19 @@ fips_run_test(void)
+ 
+ 	env.op = env.sym.op;
+ 	if (env.is_asym_test) {
++		if (info.op == FIPS_TEST_ASYM_KEYGEN &&
++			info.algo == FIPS_TEST_ALGO_ECDSA) {
++			env.op = env.asym.op;
++			test_ops.prepare_asym_xform = prepare_ecfpm_xform;
++			test_ops.prepare_asym_op = prepare_ecfpm_op;
++			ret = fips_run_asym_test();
++			if (ret < 0)
++				return ret;
++
++			info.interim_info.ecdsa_data.pubkey_gen = 0;
++			return ret;
++		}
++
+ 		vec.cipher_auth.digest.len = parse_test_sha_hash_size(
+ 						info.interim_info.rsa_data.auth);
+ 		test_ops.prepare_sym_xform = prepare_sha_xform;
+-- 
+2.25.1
+

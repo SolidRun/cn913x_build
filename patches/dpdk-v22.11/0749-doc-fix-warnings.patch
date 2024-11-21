@@ -1,0 +1,48 @@
+From 6d0167a9eb36783b00de3c3ce7cea372193e0d4c Mon Sep 17 00:00:00 2001
+From: Jerin Jacob <jerinj@marvell.com>
+Date: Mon, 18 Dec 2023 11:52:28 +0530
+Subject: [PATCH 749/955] doc: fix warnings
+
+Fix following warnings
+
+Warning generate_overview_table(): Unknown feature 'tx_queue' in 'cnxk.ini'
+Warning generate_overview_table(): Unknown feature 'tx_queue' in 'cnxk_vf.ini'
+doc/guides/rel_notes/release_23_03.rst: WARNING: document isn't included in any toctree
+doc/guides/rel_notes/release_23_11.rst: WARNING: document isn't included in any toctree
+
+Change-Id: I7dcb633ff3f63af15b50b96353cb2160a41c0b30
+Signed-off-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118411
+---
+ doc/guides/nics/features/default.ini | 1 +
+ doc/guides/rel_notes/index.rst       | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/doc/guides/nics/features/default.ini b/doc/guides/nics/features/default.ini
+index b93f053a2bc86..9aec40ba3f513 100644
+--- a/doc/guides/nics/features/default.ini
++++ b/doc/guides/nics/features/default.ini
+@@ -137,6 +137,7 @@ represented_port     =
+ sctp                 =
+ tag                  =
+ tcp                  =
++tx_queue             =
+ udp                  =
+ vlan                 =
+ vxlan                =
+diff --git a/doc/guides/rel_notes/index.rst b/doc/guides/rel_notes/index.rst
+index f6782b91db152..3b0eaae971f34 100644
+--- a/doc/guides/rel_notes/index.rst
++++ b/doc/guides/rel_notes/index.rst
+@@ -8,6 +8,8 @@ Release Notes
+     :maxdepth: 1
+     :numbered:
+ 
++    release_23_11
++    release_23_03
+     release_22_11
+     release_22_07
+     release_22_03
+-- 
+2.25.1
+

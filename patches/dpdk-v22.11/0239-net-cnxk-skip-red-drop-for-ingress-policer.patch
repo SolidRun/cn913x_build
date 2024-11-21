@@ -1,0 +1,141 @@
+From 6a07c1c66cc8cd7c2dc44586a6e7f4b0e0a60379 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 15 Dec 2022 13:26:05 +0530
+Subject: [PATCH 239/955] net/cnxk: skip red drop for ingress policer
+
+Dropping of packets is based on action configured
+to meter.If both skip_red and drop actions are configured
+then tail dropping in invoked else if only drop action is
+configured then RED drop is invoked.This action is supported
+only when RED is configured using rte_eth_cman_config_set()
+
+Change-Id: Id04889d20932249f89b1573e368be655212347fd
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92729
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ doc/guides/nics/features/cnxk.ini    |  1 +
+ doc/guides/nics/features/cnxk_vf.ini |  1 +
+ drivers/net/cnxk/cnxk_ethdev.h       |  1 +
+ drivers/net/cnxk/cnxk_ethdev_mtr.c   | 50 ++++++++++++++++++++++++++++
+ 4 files changed, 53 insertions(+)
+
+diff --git a/doc/guides/nics/features/cnxk.ini b/doc/guides/nics/features/cnxk.ini
+index f81628da776cc..7947c044bbab2 100644
+--- a/doc/guides/nics/features/cnxk.ini
++++ b/doc/guides/nics/features/cnxk.ini
+@@ -94,4 +94,5 @@ queue                = Y
+ represented_port     = Y
+ rss                  = Y
+ security             = Y
++skip_cman            = Y
+ vf                   = Y
+diff --git a/doc/guides/nics/features/cnxk_vf.ini b/doc/guides/nics/features/cnxk_vf.ini
+index c4ee32a9adeb4..873e1dcc0a3b4 100644
+--- a/doc/guides/nics/features/cnxk_vf.ini
++++ b/doc/guides/nics/features/cnxk_vf.ini
+@@ -83,4 +83,5 @@ pf                   = Y
+ queue                = Y
+ rss                  = Y
+ security             = Y
++skip_cman            = Y
+ vf                   = Y
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 12c56ccd55326..91a8fde0ec3c4 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -168,6 +168,7 @@ struct policy_actions {
+ 		uint16_t queue;
+ 		uint32_t mtr_id;
+ 		struct action_rss *rss_desc;
++		bool skip_red;
+ 	};
+ };
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mtr.c b/drivers/net/cnxk/cnxk_ethdev_mtr.c
+index dcfa4223d5830..27a6e4ef3dd6d 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_mtr.c
++++ b/drivers/net/cnxk/cnxk_ethdev_mtr.c
+@@ -358,6 +358,9 @@ cnxk_nix_mtr_policy_validate(struct rte_eth_dev *dev,
+ 				if (action->type == RTE_FLOW_ACTION_TYPE_VOID)
+ 					supported[i] = true;
+ 
++				if (action->type == RTE_FLOW_ACTION_TYPE_SKIP_CMAN)
++					supported[i] = true;
++
+ 				if (!supported[i])
+ 					return update_mtr_err(i, error, true);
+ 			}
+@@ -397,6 +400,10 @@ cnxk_fill_policy_actions(struct cnxk_mtr_policy_node *fmp,
+ 					fmp->actions[i].action_fate =
+ 						action->type;
+ 				}
++
++				if (action->type ==
++					RTE_FLOW_ACTION_TYPE_SKIP_CMAN)
++					fmp->actions[i].skip_red = true;
+ 			}
+ 		}
+ 	}
+@@ -1306,6 +1313,45 @@ nix_mtr_config_map(struct cnxk_meter_node *mtr, struct roc_nix_bpf_cfg *cfg)
+ 		cfg->action[ROC_NIX_BPF_COLOR_RED] = ROC_NIX_BPF_ACTION_DROP;
+ }
+ 
++static void
++nix_mtr_config_red(struct cnxk_meter_node *mtr, struct roc_nix_rq *rq,
++		   struct roc_nix_bpf_cfg *cfg)
++{
++	struct cnxk_mtr_policy_node *policy = mtr->policy;
++
++	if ((rq->red_pass && rq->red_pass >= rq->red_drop) ||
++	   (rq->spb_red_pass && rq->spb_red_pass >= rq->spb_red_drop)	||
++	   (rq->xqe_red_pass && rq->xqe_red_pass >= rq->xqe_red_drop)) {
++		if (policy->actions[RTE_COLOR_GREEN].action_fate ==
++			RTE_FLOW_ACTION_TYPE_DROP) {
++			if (policy->actions[RTE_COLOR_GREEN].skip_red)
++				cfg->action[ROC_NIX_BPF_COLOR_GREEN] =
++						ROC_NIX_BPF_ACTION_DROP;
++			else
++				cfg->action[ROC_NIX_BPF_COLOR_GREEN] =
++						ROC_NIX_BPF_ACTION_RED;
++		}
++		if (policy->actions[RTE_COLOR_YELLOW].action_fate ==
++			RTE_FLOW_ACTION_TYPE_DROP) {
++			if (policy->actions[RTE_COLOR_YELLOW].skip_red)
++				cfg->action[ROC_NIX_BPF_COLOR_YELLOW] =
++						ROC_NIX_BPF_ACTION_DROP;
++			else
++				cfg->action[ROC_NIX_BPF_COLOR_YELLOW] =
++						ROC_NIX_BPF_ACTION_RED;
++		}
++		if (policy->actions[RTE_COLOR_RED].action_fate ==
++			RTE_FLOW_ACTION_TYPE_DROP) {
++			if (policy->actions[RTE_COLOR_RED].skip_red)
++				cfg->action[ROC_NIX_BPF_COLOR_RED] =
++						ROC_NIX_BPF_ACTION_DROP;
++			else
++				cfg->action[ROC_NIX_BPF_COLOR_RED] =
++						ROC_NIX_BPF_ACTION_RED;
++		}
++	}
++}
++
+ static void
+ nix_precolor_table_map(struct cnxk_meter_node *mtr,
+ 		       struct roc_nix_bpf_precolor *tbl,
+@@ -1483,6 +1529,10 @@ nix_mtr_configure(struct rte_eth_dev *eth_dev, uint32_t id)
+ 			if (!mtr[i]->is_used) {
+ 				memset(&cfg, 0, sizeof(struct roc_nix_bpf_cfg));
+ 				nix_mtr_config_map(mtr[i], &cfg);
++				for (j = 0; j < mtr[i]->rq_num; j++) {
++					rq = &dev->rqs[mtr[i]->rq_id[j]];
++					nix_mtr_config_red(mtr[i], rq, &cfg);
++				}
+ 				rc = roc_nix_bpf_config(nix, mtr[i]->bpf_id,
+ 							lvl_map[mtr[i]->level],
+ 							&cfg);
+-- 
+2.25.1
+

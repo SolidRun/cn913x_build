@@ -1,0 +1,38 @@
+From d5cb22e6fbc0bdbd6d290801566d7e5642d93d9f Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Mon, 2 Jan 2023 04:36:20 -0800
+Subject: [PATCH 138/955] net/octeon_ep: remove hardcoded 16KB check
+
+This patch removes the hardcoded 16KB packet drop
+check from Host SDP VF PMD.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: If509f5bc39d68081dbb9c03bcdaccd58dcbf85b1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93510
+Tested-by: Satananda Burla <sburla@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_rxtx.c | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 6017b6c51b1ba..700452a096519 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -986,13 +986,6 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 	droq_pkt->l3_len = hdr_lens.l3_len;
+ 	droq_pkt->l4_len = hdr_lens.l4_len;
+ 
+-	if (is_otx2_ep_vf(otx_ep->chip_id) &&
+-		droq_pkt->pkt_len > OTX2_EP_MAX_RX_PKT_LEN) {
+-		/* Due to hw errata NIX cannot send over 16K packets to SDP */
+-		rte_pktmbuf_free(droq_pkt);
+-		goto oq_read_fail;
+-	}
+-
+ 	if (droq_pkt->pkt_len > otx_ep->eth_dev->data->mtu) {
+ 		rte_pktmbuf_free(droq_pkt);
+ 		goto oq_read_fail;
+-- 
+2.25.1
+

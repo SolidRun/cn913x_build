@@ -1,0 +1,202 @@
+From cca66f36c4a271cf07e7f617c4af2cfb61cddbfe Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Tue, 8 Nov 2022 16:52:12 +0530
+Subject: [PATCH 040/955] drivers: optimize the build time
+
+While building cnxk, if build platform is cn9k, cn10k files
+are also being compiled and vice versa. This is causing more
+build time. Adding changes to avoid this by checking the
+platform and compile only platform specific files. If no
+platform is provided, both cn9k and cn10k files will be compiled.
+
+ci: skip_checkformat
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Change-Id: I45c41bda6e750d2bc76297978cc11d3f5fd908ee
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/90172
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/event/cnxk/cn9k_eventdev.c | 16 ----------------
+ drivers/event/cnxk/cnxk_eventdev.c | 14 ++++++++++++++
+ drivers/event/cnxk/cnxk_eventdev.h |  1 +
+ drivers/event/cnxk/meson.build     | 22 ++++++++++++++++++----
+ drivers/net/cnxk/meson.build       | 14 ++++++++++++++
+ 5 files changed, 47 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index f5a42a86f8443..7b09f27644abd 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -6,7 +6,6 @@
+ #include "cnxk_eventdev.h"
+ #include "cnxk_worker.h"
+ 
+-#define CN9K_DUAL_WS_NB_WS	    2
+ #define CN9K_DUAL_WS_PAIR_ID(x, id) (((x)*CN9K_DUAL_WS_NB_WS) + id)
+ 
+ #define CN9K_SET_EVDEV_DEQ_OP(dev, deq_op, deq_ops)                            \
+@@ -239,21 +238,6 @@ cn9k_sso_hws_reset(void *arg, void *hws)
+ 		ws->swtag_req = 0;
+ }
+ 
+-void
+-cn9k_sso_set_rsrc(void *arg)
+-{
+-	struct cnxk_sso_evdev *dev = arg;
+-
+-	if (dev->dual_ws)
+-		dev->max_event_ports = dev->sso.max_hws / CN9K_DUAL_WS_NB_WS;
+-	else
+-		dev->max_event_ports = dev->sso.max_hws;
+-	dev->max_event_queues =
+-		dev->sso.max_hwgrp > RTE_EVENT_MAX_QUEUES_PER_DEV ?
+-			      RTE_EVENT_MAX_QUEUES_PER_DEV :
+-			      dev->sso.max_hwgrp;
+-}
+-
+ static int
+ cn9k_sso_rsrc_init(void *arg, uint8_t hws, uint8_t hwgrp)
+ {
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index db62d32a8144b..efa9359ce6b79 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -623,3 +623,17 @@ cnxk_sso_remove(struct rte_pci_device *pci_dev)
+ {
+ 	return rte_event_pmd_pci_remove(pci_dev, cnxk_sso_fini);
+ }
++
++void
++cn9k_sso_set_rsrc(void *arg)
++{
++	struct cnxk_sso_evdev *dev = arg;
++
++	if (dev->dual_ws)
++		dev->max_event_ports = dev->sso.max_hws / CN9K_DUAL_WS_NB_WS;
++	else
++		dev->max_event_ports = dev->sso.max_hws;
++	dev->max_event_queues = dev->sso.max_hwgrp > RTE_EVENT_MAX_QUEUES_PER_DEV ?
++					RTE_EVENT_MAX_QUEUES_PER_DEV :
++					dev->sso.max_hwgrp;
++}
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index 738e335ea4f5e..fdbcfb4640360 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -56,6 +56,7 @@
+ #define CNXK_TAG_IS_HEAD(x)	    (BIT_ULL(35) & x)
+ 
+ #define CN9K_SSOW_GET_BASE_ADDR(_GW) ((_GW)-SSOW_LF_GWS_OP_GET_WORK0)
++#define CN9K_DUAL_WS_NB_WS	     2
+ 
+ #define CN10K_GW_MODE_NONE     0
+ #define CN10K_GW_MODE_PREF     1
+diff --git a/drivers/event/cnxk/meson.build b/drivers/event/cnxk/meson.build
+index aa42ab3a904b8..227c6ae7a80e3 100644
+--- a/drivers/event/cnxk/meson.build
++++ b/drivers/event/cnxk/meson.build
+@@ -8,11 +8,17 @@ if not is_linux or not dpdk_conf.get('RTE_ARCH_64')
+     subdir_done()
+ endif
+ 
++if meson.is_cross_build()
++        soc_type = meson.get_cross_property('platform', '')
++else
++        soc_type = platform
++endif
++
++if soc_type != 'cn9k' and soc_type != 'cn10k'
++        soc_type = 'all'
++endif
++
+ sources = files(
+-        'cn9k_eventdev.c',
+-        'cn9k_worker.c',
+-        'cn10k_eventdev.c',
+-        'cn10k_worker.c',
+         'cnxk_eventdev.c',
+         'cnxk_eventdev_adptr.c',
+         'cnxk_eventdev_selftest.c',
+@@ -21,7 +27,10 @@ sources = files(
+         'cnxk_tim_worker.c',
+ )
+ 
++if soc_type == 'cn9k' or soc_type == 'all'
+ sources += files(
++        'cn9k_eventdev.c',
++        'cn9k_worker.c',
+         'deq/cn9k/deq_0_15_burst.c',
+         'deq/cn9k/deq_16_31_burst.c',
+         'deq/cn9k/deq_32_47_burst.c',
+@@ -320,8 +329,12 @@ sources += files(
+         'tx/cn9k/tx_96_111_dual_seg.c',
+         'tx/cn9k/tx_112_127_dual_seg.c',
+ )
++endif
+ 
++if soc_type == 'cn10k' or soc_type == 'all'
+ sources += files(
++        'cn10k_eventdev.c',
++        'cn10k_worker.c',
+         'deq/cn10k/deq_0_15_burst.c',
+         'deq/cn10k/deq_16_31_burst.c',
+         'deq/cn10k/deq_32_47_burst.c',
+@@ -470,6 +483,7 @@ sources += files(
+         'tx/cn10k/tx_96_111_seg.c',
+         'tx/cn10k/tx_112_127_seg.c',
+ )
++endif
+ 
+ extra_flags = ['-flax-vector-conversions', '-Wno-strict-aliasing']
+ foreach flag: extra_flags
+diff --git a/drivers/net/cnxk/meson.build b/drivers/net/cnxk/meson.build
+index c7ca24d437dc7..99531c1917573 100644
+--- a/drivers/net/cnxk/meson.build
++++ b/drivers/net/cnxk/meson.build
+@@ -8,6 +8,16 @@ if not dpdk_conf.get('RTE_ARCH_64')
+     subdir_done()
+ endif
+ 
++if meson.is_cross_build()
++        soc_type = meson.get_cross_property('platform', '')
++else
++        soc_type = platform
++endif
++
++if soc_type != 'cn9k' and soc_type != 'cn10k'
++        soc_type = 'all'
++endif
++
+ sources = files(
+         'cnxk_ethdev.c',
+         'cnxk_ethdev_cman.c',
+@@ -25,6 +35,7 @@ sources = files(
+         'cnxk_tm.c',
+ )
+ 
++if soc_type == 'cn9k' or soc_type == 'all'
+ # CN9K
+ sources += files(
+         'cn9k_ethdev.c',
+@@ -103,7 +114,9 @@ sources += files(
+         'tx/cn9k/tx_96_111_vec_mseg.c',
+         'tx/cn9k/tx_112_127_vec_mseg.c',
+ )
++endif
+ 
++if soc_type == 'cn10k' or soc_type == 'all'
+ # CN10K
+ sources += files(
+         'cn10k_ethdev.c',
+@@ -182,6 +195,7 @@ sources += files(
+         'tx/cn10k/tx_96_111_vec_mseg.c',
+         'tx/cn10k/tx_112_127_vec_mseg.c',
+ )
++endif
+ 
+ deps += ['bus_pci', 'cryptodev', 'eventdev', 'security']
+ deps += ['common_cnxk', 'mempool_cnxk']
+-- 
+2.25.1
+

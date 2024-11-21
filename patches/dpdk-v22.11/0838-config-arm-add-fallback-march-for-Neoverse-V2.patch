@@ -1,0 +1,40 @@
+From 32c294a1e73be09a63b716c25c3f9ad9578ed85b Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 5 Mar 2024 10:36:12 +0000
+Subject: [PATCH 838/955] config/arm: add fallback march for Neoverse V2
+
+Add march & fallback march for Neoverse V2 to support build with older
+compilers that doesn't support mcpu = 'neoverse-v2'.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I9c253fea3f578206339748f9d42ebe07ca2408b7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123223
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+(cherry picked from commit b3fe58ee628bed6c249ddf595ab4b8acbd1406e3)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123389
+---
+ config/arm/meson.build | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index 6d11d2c865c7a..79c5e67a154ec 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -99,8 +99,10 @@ part_number_config_arm = {
+         ]
+     },
+     '0xd4f': {
++        'march': 'armv9-a',
+         'march_features': ['sve2'],
+-        'compiler_options': ['-mcpu=neoverse-v2'],
++        'mcpu': 'neoverse-v2',
++        'fallback_march': 'armv8.5-a',
+         'flags': [
+             ['RTE_MACHINE', '"neoverse-v2"'],
+             ['RTE_ARM_FEATURE_ATOMICS', true],
+-- 
+2.25.1
+

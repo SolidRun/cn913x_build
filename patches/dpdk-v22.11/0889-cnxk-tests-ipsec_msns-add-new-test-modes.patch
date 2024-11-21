@@ -1,0 +1,1791 @@
+From a0ce5e9b288b8005a7db5222c1771b653d8860d4 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Wed, 24 Apr 2024 15:21:11 +0530
+Subject: [PATCH 889/955] cnxk-tests/ipsec_msns: add new test modes
+
+Adds testmode to create multiple SAs, as well as
+handling soft expiry scenarios. In this mode,
+the application would automatically destroy and
+recreate an SA when a soft expiry is reported for
+that specific SA. To enable this functionality,
+use the following command-line parameters:
+"--testmode 2 --softexp-ena --num-sas <count> --softlimit <count>"
+
+Test modes
+0: IPSEC_MSNS
+1: EVENT_IPSEC_INBOUND_MSNS_PERF
+2: EVENT_IPSEC_INBOUND_PERF
+3: EVENT_IPSEC_INB_OUTB_PERF
+4: EVENT_IPSEC_INB_LAOUTB_PERF
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Icf8b7c71bd93bc31581ad73f19d4cf11eba18005
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126021
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ .../test/cnxk-tests/ipsec_msns/ipsec_msns.c   | 1436 ++++++++++++++++-
+ .../test/cnxk-tests/ipsec_msns/ipsec_msns.h   |   10 +
+ .../test/cnxk-tests/ipsec_msns/meson.build    |   10 +
+ 3 files changed, 1420 insertions(+), 36 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+index 2b959679b75a2..5e93cdba721f4 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+@@ -6,6 +6,7 @@
+ #include <signal.h>
+ #include <stdlib.h>
+ #include <unistd.h>
++#include <pthread.h>
+ 
+ #include <rte_atomic.h>
+ #include <rte_bitmap.h>
+@@ -20,6 +21,7 @@
+ #include <rte_eventdev.h>
+ #include <rte_event_eth_rx_adapter.h>
+ #include <rte_event_eth_tx_adapter.h>
++#include <rte_event_crypto_adapter.h>
+ 
+ #include "ipsec_msns.h"
+ 
+@@ -28,6 +30,8 @@
+ #define RTE_TEST_RX_DESC_DEFAULT 1024
+ #define RTE_TEST_TX_DESC_DEFAULT 1024
+ #define RTE_PORT_ALL		 (~(uint16_t)0x0)
++#define CDEV_MP_CACHE_SZ 64
++#define CDEV_MP_CACHE_MULTIPLIER 1.5 /* from rte_mempool.c */
+ 
+ #define RX_PTHRESH 8  /**< Default values of RX prefetch threshold reg. */
+ #define RX_HTHRESH 8  /**< Default values of RX host threshold reg. */
+@@ -39,8 +43,17 @@
+ 
+ #define NB_MBUF 10240U
+ 
++enum test_mode {
++	IPSEC_MSNS,
++	EVENT_IPSEC_INBOUND_MSNS_PERF,
++	EVENT_IPSEC_INBOUND_PERF,
++	EVENT_IPSEC_INB_OUTB_PERF,
++	EVENT_IPSEC_INB_LAOUTB_PERF,
++};
++
+ static struct rte_mempool *mbufpool[RTE_MAX_ETHPORTS];
+ static struct rte_mempool *sess_pool;
++static struct rte_mempool *cryptodev_session_pool;
+ /* ethernet addresses of ports */
+ static struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
+ 
+@@ -87,32 +100,77 @@ struct lcore_cfg {
+ 	uint64_t rx_pkts;
+ 	uint64_t rx_ipsec_pkts;
+ 	uint64_t tx_pkts;
++	uint64_t ipsec_failed;
++	uint64_t num_inb_sas;
++	uint64_t num_outb_sas;
+ };
+ 
+ static struct lcore_cfg lcore_cfg[RTE_MAX_LCORE];
+ 
+ static struct rte_flow *default_flow[RTE_MAX_ETHPORTS][RTE_PMD_CNXK_SEC_ACTION_ALG4 + 1];
++static struct rte_flow *default_flow_no_msns[RTE_MAX_ETHPORTS];
+ 
+ struct sa_index_map {
+ 	struct rte_bitmap *map;
+ 	uint32_t size;
+ };
+ 
+-static struct sa_index_map bmap[RTE_MAX_ETHPORTS][2];
++struct ipsec_sa_info {
++	struct rte_security_session *sa;
++	struct ipsec_session_data *sa_data;
++};
++
++struct outb_sa_exp_info {
++	RTE_TAILQ_ENTRY(outb_sa_exp_info) next;
++	struct ipsec_session_data *sa_data;
++	uint16_t port_id;
++};
++
++struct ipsec_mbuf_metadata {
++	struct rte_crypto_op cop;
++	struct rte_crypto_sym_op sym_cop;
++	uint8_t buf[32];
++} __rte_cache_aligned;
++
++struct ethaddr_info {
++	struct rte_ether_addr src, dst;
++};
++
++struct ethaddr_info ethaddr_tbl[RTE_MAX_ETHPORTS] = {
++	{ {{0}}, {{0x00, 0x16, 0x3e, 0x7e, 0x94, 0x9a}} },
++	{ {{0}}, {{0x00, 0x16, 0x3e, 0x22, 0xa1, 0xd9}} },
++	{ {{0}}, {{0x00, 0x16, 0x3e, 0x08, 0x69, 0x26}} },
++	{ {{0}}, {{0x00, 0x16, 0x3e, 0x49, 0x9e, 0xdd}} }
++};
+ 
+ /* Example usage, max entries 4K */
+ #define MAX_SA_SIZE (4 * 1024)
+ 
++struct ipsec_sa_info inb_sas[MAX_SA_SIZE + 1];
++struct ipsec_sa_info outb_sas[MAX_SA_SIZE + 1];
++static struct sa_index_map bmap[RTE_MAX_ETHPORTS][2];
++static rte_spinlock_t exp_ses_dest_lock = RTE_SPINLOCK_INITIALIZER;
++
+ static uint32_t ethdev_port_mask = RTE_PORT_ALL;
+ static volatile bool force_quit;
+ static uint32_t nb_bufs = 0;
+-static bool perf_mode;
++static enum test_mode testmode;
++static bool event_en;
+ static bool pfc;
+ static int eventdev_id;
+ static int rx_adapter_id;
+ static int tx_adapter_id;
+ static int nb_event_queues;
+ static int nb_event_ports;
++static uint32_t num_sas = 1;
++static bool softexp;
++static uint32_t soft_limit = 8 * 1024 * 1024;
++static uint32_t esn_ar;
++
++TAILQ_HEAD(outb_sa_expiry_q, outb_sa_exp_info);
++struct outb_sa_expiry_q sa_exp_q;
++pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
++pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+ 
+ static void
+ signal_handler(int signum)
+@@ -124,6 +182,248 @@ signal_handler(int signum)
+ 	}
+ }
+ 
++static const char *
++ipsec_test_mode_to_string(enum test_mode testmode)
++{
++	switch (testmode) {
++	case IPSEC_MSNS:
++		return "IPSEC_MSNS";
++	case EVENT_IPSEC_INBOUND_MSNS_PERF:
++		return "EVENT_IPSEC_INBOUND_MSNS_PERF";
++	case EVENT_IPSEC_INBOUND_PERF:
++		return "EVENT_IPSEC_INBOUND_PERF";
++	case EVENT_IPSEC_INB_OUTB_PERF:
++		return "EVENT_IPSEC_INB_OUTB_PERF";
++	case EVENT_IPSEC_INB_LAOUTB_PERF:
++		return "EVENT_IPSEC_INB_LAOUTB_PERF";
++	}
++	return NULL;
++}
++
++static inline void
++crypto_op_reset(struct rte_security_session *ses, struct rte_mbuf *mb[],
++		struct rte_crypto_op *cop[], uint16_t num)
++{
++	struct rte_crypto_sym_op *sop;
++	uint32_t i;
++
++	const struct rte_crypto_op unproc_cop = {
++		.type = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		.status = RTE_CRYPTO_OP_STATUS_NOT_PROCESSED,
++		.sess_type = RTE_CRYPTO_OP_SECURITY_SESSION,
++	};
++
++	for (i = 0; i != num; i++) {
++		cop[i]->raw = unproc_cop.raw;
++		sop = cop[i]->sym;
++		sop->m_src = mb[i];
++		sop->m_dst = NULL;
++		__rte_security_attach_session(sop, ses);
++	}
++}
++
++static inline int
++event_crypto_enqueue(struct rte_mbuf *pkt, struct lcore_cfg *info, uint16_t sa_index)
++{
++	struct ipsec_mbuf_metadata *priv;
++	struct rte_crypto_op *cop;
++	struct rte_event cev;
++	int ret;
++
++	/* Get pkt private data */
++	priv = rte_mbuf_to_priv(pkt);
++	cop = &priv->cop;
++
++	/* Reset crypto operation data */
++	crypto_op_reset(outb_sas[sa_index].sa, &pkt, &cop, 1);
++
++	/* Update event_ptr with rte_crypto_op */
++	cev.event = 0;
++	cev.event_ptr = cop;
++
++	/* Enqueue event to crypto adapter */
++	ret = rte_event_crypto_adapter_enqueue(info->eventdev_id, info->event_port_id, &cev, 1);
++	if (unlikely(ret <= 0)) {
++		rte_pktmbuf_free(pkt);
++		printf("Cannot enqueue event: %i (errno: %i)\n", ret, rte_errno);
++		return rte_errno;
++	}
++
++	return 0;
++}
++
++static inline int
++ipsec_ev_cryptodev_process_one_pkt(const struct rte_crypto_op *cop, struct rte_mbuf *pkt)
++{
++	struct rte_ether_hdr *ethhdr;
++	uint16_t port_id = 0;
++	struct ip *ip;
++
++	/* If operation was not successful, free the packet */
++	if (unlikely(cop->status != RTE_CRYPTO_OP_STATUS_SUCCESS)) {
++		printf("Crypto operation failed\n");
++		rte_pktmbuf_free(pkt);
++		return -1;
++	}
++	ip = rte_pktmbuf_mtod(pkt, struct ip *);
++
++	/* Prepend Ether layer */
++	ethhdr = (struct rte_ether_hdr *)rte_pktmbuf_prepend(pkt, RTE_ETHER_HDR_LEN);
++	if (unlikely(ethhdr == NULL)) {
++		rte_pktmbuf_free(pkt);
++		return -1;
++	}
++
++	/* Route pkt and update required fields */
++	if (ip->ip_v == IPVERSION) {
++		pkt->ol_flags |= RTE_MBUF_F_TX_IPV4;
++		pkt->l3_len = sizeof(struct ip);
++		pkt->l2_len = RTE_ETHER_HDR_LEN;
++
++		ethhdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
++	} else {
++		pkt->ol_flags |= RTE_MBUF_F_TX_IPV6;
++		pkt->l3_len = sizeof(struct ip6_hdr);
++		pkt->l2_len = RTE_ETHER_HDR_LEN;
++
++		ethhdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV6);
++	}
++
++	/* Update Ether with port's MAC addresses */
++	memcpy(&ethhdr->src_addr, &ethaddr_tbl[port_id].src, sizeof(struct rte_ether_addr));
++	memcpy(&ethhdr->dst_addr, &ethaddr_tbl[port_id].dst, sizeof(struct rte_ether_addr));
++
++	/* Save eth queue for Tx */
++	pkt->port = 0;
++	rte_event_eth_tx_adapter_txq_set(pkt, 0);
++
++	return 0;
++}
++
++static inline int
++ipsec_ev_cryptodev_process(struct rte_event *ev)
++{
++	struct rte_crypto_op *cop;
++	struct rte_mbuf *pkt;
++
++	/* Get pkt data */
++	cop = ev->event_ptr;
++	pkt = cop->sym->m_src;
++
++	if (ipsec_ev_cryptodev_process_one_pkt(cop, pkt))
++		return 0;
++
++	/* Update event */
++	ev->mbuf = pkt;
++
++	return 1;
++}
++
++static inline enum pkt_type
++process_ipsec_get_pkt_type(struct rte_mbuf *pkt, uint8_t **nlp)
++{
++	struct rte_ether_hdr *eth;
++	uint32_t ptype = pkt->packet_type;
++
++	eth = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);
++	rte_prefetch0(eth);
++
++	if (RTE_ETH_IS_IPV4_HDR(ptype)) {
++		*nlp = RTE_PTR_ADD(eth, RTE_ETHER_HDR_LEN +
++				offsetof(struct ip, ip_p));
++		if ((ptype & RTE_PTYPE_TUNNEL_MASK) == RTE_PTYPE_TUNNEL_ESP)
++			return PKT_TYPE_IPSEC_IPV4;
++		else
++			return PKT_TYPE_PLAIN_IPV4;
++	} else if (RTE_ETH_IS_IPV6_HDR(ptype)) {
++		*nlp = RTE_PTR_ADD(eth, RTE_ETHER_HDR_LEN +
++				offsetof(struct ip6_hdr, ip6_nxt));
++		if ((ptype & RTE_PTYPE_TUNNEL_MASK) == RTE_PTYPE_TUNNEL_ESP)
++			return PKT_TYPE_IPSEC_IPV6;
++		else
++			return PKT_TYPE_PLAIN_IPV6;
++	}
++
++	/* Unknown/Unsupported type */
++	return PKT_TYPE_INVALID;
++}
++
++static int
++cryptodev_session_pool_init(void)
++{
++	char mp_name[RTE_MEMPOOL_NAMESIZE];
++	struct rte_mempool *sess_mp;
++	uint32_t nb_sess;
++	size_t sess_sz;
++	void *sec_ctx;
++
++	sec_ctx = rte_cryptodev_get_sec_ctx(0);
++	if (sec_ctx == NULL)
++		return -ENOENT;
++
++	sess_sz = rte_security_session_get_size(sec_ctx);
++
++	snprintf(mp_name, RTE_MEMPOOL_NAMESIZE, "crypto_sess_mp");
++	nb_sess = (num_sas + CDEV_MP_CACHE_SZ * rte_lcore_count());
++	nb_sess = RTE_MAX(nb_sess, CDEV_MP_CACHE_SZ *
++			CDEV_MP_CACHE_MULTIPLIER);
++	sess_mp = rte_cryptodev_sym_session_pool_create(
++			mp_name, nb_sess, sess_sz, CDEV_MP_CACHE_SZ,
++			0, 0);
++	cryptodev_session_pool = sess_mp;
++
++	if (sess_mp == NULL)
++		rte_exit(EXIT_FAILURE, "Cannot init cryptodev session pool\n");
++
++	return 0;
++}
++
++static int
++cryptodevs_init(void)
++{
++	struct rte_cryptodev_config dev_conf;
++	struct rte_cryptodev_qp_conf qp_conf;
++	struct rte_cryptodev_info cdev_info;
++	uint32_t dev_max_sess;
++	uint16_t cdev_id = 0;
++	uint16_t qp;
++	int ret;
++
++	ret = cryptodev_session_pool_init();
++	if (ret)
++		return ret;
++
++	rte_cryptodev_info_get(cdev_id, &cdev_info);
++
++	dev_conf.socket_id = rte_cryptodev_socket_id(cdev_id);
++	/* Use the first socket if SOCKET_ID_ANY is returned. */
++	if (dev_conf.socket_id == SOCKET_ID_ANY)
++		dev_conf.socket_id = 0;
++	dev_conf.nb_queue_pairs = 1;
++	dev_conf.ff_disable = RTE_CRYPTODEV_FF_ASYMMETRIC_CRYPTO;
++	dev_max_sess = cdev_info.sym.max_nb_sessions;
++
++	if (dev_max_sess != 0 && dev_max_sess < num_sas)
++		rte_exit(EXIT_FAILURE, "Device does not support at least %u sessions",
++			 num_sas);
++
++	if (rte_cryptodev_configure(cdev_id, &dev_conf))
++		rte_panic("Failed to initialize cryptodev %u\n", cdev_id);
++
++	qp_conf.nb_descriptors = 2048;
++	qp_conf.mp_session = cryptodev_session_pool;
++	for (qp = 0; qp < dev_conf.nb_queue_pairs; qp++)
++		if (rte_cryptodev_queue_pair_setup(cdev_id, qp, &qp_conf, dev_conf.socket_id))
++			rte_panic("Failed to setup queue for cdev_id %u\n", cdev_id);
++
++	if (rte_cryptodev_start(cdev_id))
++		rte_panic("Failed to start cryptodev %u\n", cdev_id);
++
++	printf("\n");
++
++	return 0;
++}
++
+ static int
+ cnxk_sa_index_init(int port_id, enum rte_security_ipsec_sa_direction dir, uint32_t size)
+ {
+@@ -333,6 +633,153 @@ create_inline_ipsec_session(struct ipsec_session_data *sa, uint16_t portid,
+ 	return 0;
+ }
+ 
++static int
++create_ipsec_laoutb_perf_session(struct ipsec_session_data *sa, uint16_t cdev_id,
++				 struct rte_security_session **ses)
++{
++	uint32_t src_v4 = rte_cpu_to_be_32(RTE_IPV4(192, 168, 1, 2));
++	uint32_t dst_v4 = rte_cpu_to_be_32(RTE_IPV4(192, 168, 1, 1));
++	uint16_t src_v6[8] = {0x2607, 0xf8b0, 0x400c, 0x0c03, 0x0000, 0x0000, 0x0000, 0x001a};
++	uint16_t dst_v6[8] = {0x2001, 0x0470, 0xe5bf, 0xdead, 0x4957, 0x2174, 0xe82c, 0x4887};
++	struct rte_security_session_conf sess_conf = {
++		.action_type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
++		.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
++		.ipsec = sa->ipsec_xform,
++		.crypto_xform = &sa->xform.aead,
++		.userdata = NULL,
++	};
++	union rte_event_crypto_metadata m_data;
++	void *ctx = rte_cryptodev_get_sec_ctx(cdev_id);
++
++	sa->spi = sa->ipsec_xform.spi;
++	sess_conf.crypto_xform->aead.key.data = sa->key.data;
++	sess_conf.userdata = (void *)sa;
++
++	if (sess_conf.ipsec.tunnel.type == RTE_SECURITY_IPSEC_TUNNEL_IPV4) {
++		memcpy(&sess_conf.ipsec.tunnel.ipv4.src_ip, &src_v4, sizeof(src_v4));
++		memcpy(&sess_conf.ipsec.tunnel.ipv4.dst_ip, &dst_v4, sizeof(dst_v4));
++	} else {
++		memcpy(&sess_conf.ipsec.tunnel.ipv6.src_addr, &src_v6, sizeof(src_v6));
++		memcpy(&sess_conf.ipsec.tunnel.ipv6.dst_addr, &dst_v6, sizeof(dst_v6));
++	}
++
++	*ses = rte_security_session_create(ctx, &sess_conf, cryptodev_session_pool);
++	if (*ses == NULL) {
++		printf("Cryptodev SEC Session init failed\n");
++		return -1;
++	}
++	memset(&m_data, 0, sizeof(m_data));
++
++	/* Fill in response information */
++	m_data.response_info.sched_type = RTE_SCHED_TYPE_PARALLEL;
++	m_data.response_info.op = RTE_EVENT_OP_NEW;
++	m_data.response_info.queue_id = rte_eth_dev_count_avail() + 1;
++
++	/* Fill in request information */
++	m_data.request_info.cdev_id = cdev_id;
++	m_data.request_info.queue_pair_id = 0;
++
++	/* Attach meta info to session */
++	rte_cryptodev_session_event_mdata_set(cdev_id, *ses, RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++			RTE_CRYPTO_OP_SECURITY_SESSION, &m_data, sizeof(m_data));
++
++	return 0;
++}
++
++static int
++create_ipsec_perf_session(struct ipsec_session_data *sa, uint16_t portid,
++			  struct rte_security_session **ses)
++{
++	uint32_t src_v4 = rte_cpu_to_be_32(RTE_IPV4(192, 168, 1, 2));
++	uint32_t dst_v4 = rte_cpu_to_be_32(RTE_IPV4(192, 168, 1, 1));
++	uint16_t src_v6[8] = {0x2607, 0xf8b0, 0x400c, 0x0c03, 0x0000, 0x0000, 0x0000, 0x001a};
++	uint16_t dst_v6[8] = {0x2001, 0x0470, 0xe5bf, 0xdead, 0x4957, 0x2174, 0xe82c, 0x4887};
++	struct rte_security_session_conf sess_conf = {
++		.action_type = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL,
++		.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
++		.ipsec = sa->ipsec_xform,
++		.crypto_xform = &sa->xform.aead,
++		.userdata = NULL,
++	};
++	struct rte_security_ctx *sec_ctx;
++
++	sa->spi = sa->ipsec_xform.spi;
++	sec_ctx = rte_eth_dev_get_sec_ctx(portid);
++	sess_conf.crypto_xform->aead.key.data = sa->key.data;
++
++	/* Save SA as userdata for the security session. When
++	 * the packet is received, this userdata will be
++	 * retrieved using the metadata from the packet.
++	 *
++	 * The PMD is expected to set similar metadata for other
++	 * operations, like rte_eth_event, which are tied to
++	 * security session. In such cases, the userdata could
++	 * be obtained to uniquely identify the security
++	 * parameters denoted.
++	 */
++
++	sess_conf.userdata = (void *)sa;
++	if (sess_conf.ipsec.tunnel.type == RTE_SECURITY_IPSEC_TUNNEL_IPV4) {
++		memcpy(&sess_conf.ipsec.tunnel.ipv4.src_ip, &src_v4, sizeof(src_v4));
++		memcpy(&sess_conf.ipsec.tunnel.ipv4.dst_ip, &dst_v4, sizeof(dst_v4));
++	} else {
++		memcpy(&sess_conf.ipsec.tunnel.ipv6.src_addr, &src_v6, sizeof(src_v6));
++		memcpy(&sess_conf.ipsec.tunnel.ipv6.dst_addr, &dst_v6, sizeof(dst_v6));
++	}
++	sess_conf.ipsec.options.esn = !!esn_ar;
++	sess_conf.ipsec.options.stats = 1;
++	sess_conf.ipsec.replay_win_sz = esn_ar;
++
++	*ses = rte_security_session_create(sec_ctx, &sess_conf, sess_pool);
++	if (*ses == NULL) {
++		printf("SEC Session init failed\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++#if !defined(MSNS_CN9K)
++static void
++handle_inb_soft_exp(uint16_t port_id, struct rte_mbuf *mbuf, uint32_t lcore_id)
++{
++	struct lcore_cfg *info = &lcore_cfg[lcore_id];
++	struct rte_security_session *in_ses;
++	struct ipsec_session_data *sa_data;
++	union rte_pmd_cnxk_cpt_res_s *res;
++	struct rte_security_ctx *sec_ctx;
++	int spi, ret;
++
++	res = rte_pmd_cnxk_inl_ipsec_res(mbuf);
++	if (!res)
++		return;
++
++	if (res->cn10k.uc_compcode != 0xf0)
++		return;
++
++	sec_ctx = rte_eth_dev_get_sec_ctx(port_id);
++	sa_data = (struct ipsec_session_data *) *rte_security_dynfield(mbuf);
++	spi = res->cn10k.spi;
++
++	in_ses = inb_sas[spi].sa;
++	if (unlikely(in_ses == NULL)) {
++		printf("Invalid SA reported\n");
++		return;
++	}
++	rte_spinlock_lock(&exp_ses_dest_lock);
++	if (rte_security_session_destroy(sec_ctx, in_ses)) {
++		printf("Session Destroy failed for SPI: %d\n", spi);
++		return;
++	}
++
++	ret = create_ipsec_perf_session(sa_data, port_id, &inb_sas[spi].sa);
++	if (!ret)
++		info->num_inb_sas += 1;
++
++	rte_spinlock_unlock(&exp_ses_dest_lock);
++}
++#endif
++
+ /* Check the link status of all ports in up to 3s, and print them finally */
+ static void
+ check_all_ports_link_status(uint32_t port_mask)
+@@ -458,7 +905,7 @@ init_lcore(void)
+ 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+ 		lcore_cfg[lcore_id].socketid = rte_lcore_to_socket_id(lcore_id);
+ 		if (rte_lcore_is_enabled(lcore_id) != 0) {
+-			if (perf_mode) {
++			if (event_en) {
+ 				/* Assign event port id */
+ 				lcore_cfg[lcore_id].eventdev_id = 0;
+ 				lcore_cfg[lcore_id].event_port_id = -1;
+@@ -476,7 +923,7 @@ static int
+ init_sess_mempool(void)
+ {
+ 	struct rte_security_ctx *sec_ctx;
+-	uint16_t nb_sess = 512;
++	uint16_t nb_sess = RTE_MAX(num_sas * 2, 2048ul);
+ 	uint32_t sess_sz;
+ 	int socketid = 0;
+ 	char s[64];
+@@ -507,7 +954,7 @@ init_pktmbuf_pool(uint32_t portid, unsigned int nb_mbuf)
+ 
+ 	if (mbufpool[portid] == NULL) {
+ 		snprintf(s, sizeof(s), "mbuf_pool_%d", portid);
+-		mbufpool[portid] = rte_pktmbuf_pool_create(s, nb_mbuf, MEMPOOL_CACHE_SIZE, 0,
++		mbufpool[portid] = rte_pktmbuf_pool_create(s, nb_mbuf, MEMPOOL_CACHE_SIZE, 128,
+ 							   RTE_MBUF_DEFAULT_BUF_SIZE, socketid);
+ 		if (mbufpool[portid] == NULL)
+ 			printf("Cannot init mbuf pool on socket %d\n", socketid);
+@@ -631,6 +1078,7 @@ destroy_default_flow(uint16_t port_id)
+ static int
+ ut_eventdev_setup(void)
+ {
++	struct rte_event_crypto_adapter_queue_conf crypto_queue_conf;
+ 	struct rte_event_eth_rx_adapter_queue_conf queue_conf;
+ 	struct rte_event_dev_info evdev_default_conf = {0};
+ 	struct rte_event_dev_config eventdev_conf = {0};
+@@ -638,7 +1086,7 @@ ut_eventdev_setup(void)
+ 	struct rte_event_port_conf ev_port_conf = {0};
+ 	const int all_queues = -1;
+ 	uint8_t ev_queue_id = 0;
+-	int portid, ev_port_id;
++	int portid, ev_port_id, cdev_id = 0;
+ 	uint32_t caps = 0;
+ 	int ret;
+ 
+@@ -779,6 +1227,50 @@ ut_eventdev_setup(void)
+ 		return ret;
+ 	}
+ 
++	if (testmode != EVENT_IPSEC_INB_LAOUTB_PERF)
++		goto eventdev_start;
++
++	/* Create event crypto adapter */
++	ret = rte_event_crypto_adapter_caps_get(eventdev_id, cdev_id, &caps);
++	if (ret < 0) {
++		printf("Failed to get event device's crypto capabilities %d", ret);
++		return ret;
++	}
++
++	if (!(caps & RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD)) {
++		printf("Event crypto adapter does not support forward mode!");
++		return -EINVAL;
++	}
++
++	ev_port_conf.new_event_threshold = evdev_default_conf.max_num_events;
++	ev_port_conf.dequeue_depth = evdev_default_conf.max_event_port_dequeue_depth;
++	ev_port_conf.enqueue_depth = evdev_default_conf.max_event_port_enqueue_depth;
++
++	/* Create adapter */
++	ret = rte_event_crypto_adapter_create(cdev_id, eventdev_id, &ev_port_conf,
++					      RTE_EVENT_CRYPTO_ADAPTER_OP_FORWARD);
++	if (ret < 0) {
++		printf("Failed to create event crypto adapter %d", ret);
++		return ret;
++	}
++
++	memset(&crypto_queue_conf, 0, sizeof(crypto_queue_conf));
++
++	/* Add crypto queue pairs to event crypto adapter */
++	ret = rte_event_crypto_adapter_queue_pair_add(cdev_id, eventdev_id,
++			-1, /* adds all the pre configured queue pairs to the instance */
++			&crypto_queue_conf);
++	if (ret < 0) {
++		printf("Failed to add queue pairs to event crypto adapter %d", ret);
++		return ret;
++	}
++	ret = rte_event_crypto_adapter_start(cdev_id);
++	if (ret < 0) {
++		printf("Failed to start event crypto device %d (%d)", cdev_id, ret);
++		return ret;
++	}
++
++eventdev_start:
+ 	/* Start eventdev */
+ 	ret = rte_event_dev_start(eventdev_id);
+ 	if (ret < 0) {
+@@ -826,6 +1318,11 @@ ut_eventdev_teardown(void)
+ 	if (ret < 0)
+ 		printf("Failed to free tx adapter %d\n", ret);
+ 
++	if (testmode == EVENT_IPSEC_INB_LAOUTB_PERF) {
++		ret = rte_event_crypto_adapter_stop(0);
++		if (ret < 0)
++			printf("Failed to stop event crypto device %d", ret);
++	}
+ 	/* Stop and release event devices */
+ 	rte_event_dev_stop(eventdev_id);
+ 	ret = rte_event_dev_close(eventdev_id);
+@@ -837,7 +1334,9 @@ static void
+ print_usage(const char *name)
+ {
+ 	printf("Invalid arguments\n");
+-	printf("usage: %s [--perf] [--pfc] [--portmask] [--nb-mbufs <count >]\n", name);
++	printf("Usage: %s ", name);
++	printf("[--testmode <0/1/2/3/4>] [--pfc] [--portmask] [--nb-mbufs <count >]");
++	printf("[--num-sas <count>] [--softexp-en] [--softlimit <packet_count>]\n");
+ }
+ 
+ static int
+@@ -848,10 +1347,16 @@ parse_args(int argc, char **argv)
+ 	argc--;
+ 	argv++;
+ 	while (argc) {
+-		if (!strcmp(argv[0], "--perf")) {
+-			perf_mode = true;
+-			argc--;
+-			argv++;
++		if (!strcmp(argv[0], "--testmode") && (argc > 1)) {
++			testmode = strtoul(argv[1], NULL, 0);
++			if (testmode == EVENT_IPSEC_INBOUND_MSNS_PERF ||
++			    testmode == EVENT_IPSEC_INB_OUTB_PERF ||
++			    testmode == EVENT_IPSEC_INB_LAOUTB_PERF ||
++			    testmode == EVENT_IPSEC_INBOUND_PERF)
++				event_en = true;
++
++			argc -= 2;
++			argv += 2;
+ 			continue;
+ 		}
+ 
+@@ -876,6 +1381,38 @@ parse_args(int argc, char **argv)
+ 			continue;
+ 		}
+ 
++		if (!strcmp(argv[0], "--num-sas") && (argc > 1)) {
++			num_sas = atoi(argv[1]);
++			if (num_sas > MAX_SA_SIZE) {
++				printf("Number of SAs given is greater than MAX SAs\n");
++				return -1;
++			}
++			argc -= 2;
++			argv += 2;
++			continue;
++		}
++
++		if (!strcmp(argv[0], "--softexp-en")) {
++			softexp = true;
++			argc--;
++			argv++;
++			continue;
++		}
++
++		if (!strcmp(argv[0], "--softlimit") && (argc > 1)) {
++			soft_limit = atoi(argv[1]);
++			argc -= 2;
++			argv += 2;
++			continue;
++		}
++
++		if (!strcmp(argv[0], "--esn-ar") && (argc > 1)) {
++			esn_ar = atoi(argv[1]);
++			argc -= 2;
++			argv += 2;
++			continue;
++		}
++
+ 		/* Unknown args */
+ 		print_usage(name);
+ 		return -1;
+@@ -941,7 +1478,7 @@ ut_setup(int argc, char **argv)
+ 		}
+ 
+ 		/* Enable loopback mode for non perf test */
+-		port_conf.lpbk_mode = perf_mode ? 0 : 1;
++		port_conf.lpbk_mode = (testmode == IPSEC_MSNS) ? 1 : 0;
+ 
+ 		/* port configure */
+ 		ret = rte_eth_dev_configure(portid, nb_rx_queue, nb_tx_queue, &port_conf);
+@@ -985,8 +1522,10 @@ ut_setup(int argc, char **argv)
+ 			return ret;
+ 		}
+ 	}
++	if (testmode == EVENT_IPSEC_INB_LAOUTB_PERF)
++		cryptodevs_init();
+ 
+-	if (perf_mode) {
++	if (event_en) {
+ 		/* Setup event device */
+ 		ret = ut_eventdev_setup();
+ 		if (ret < 0) {
+@@ -1055,9 +1594,14 @@ ut_setup(int argc, char **argv)
+ static void
+ ut_teardown(void)
+ {
+-	int ret;
++	int ret, cdev_id;
+ 	int portid;
+ 
++	for (cdev_id = 0; cdev_id < rte_cryptodev_count(); cdev_id++) {
++		rte_cryptodev_stop(cdev_id);
++		rte_cryptodev_close(cdev_id);
++	}
++
+ 	RTE_ETH_FOREACH_DEV(portid) {
+ 		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
+ 			continue;
+@@ -1067,7 +1611,7 @@ ut_teardown(void)
+ 	}
+ 
+ 	/* Event device cleanup */
+-	if (perf_mode)
++	if (event_en)
+ 		ut_eventdev_teardown();
+ 
+ 	/* port tear down */
+@@ -1341,32 +1885,144 @@ ut_ipsec_ipv4_burst_encap_decap(void)
+ }
+ 
+ static void
+-print_stats(void)
++destroy_outb_exp_sa(struct outb_sa_exp_info *outb_exp_sa)
+ {
+-	uint64_t last_rx = 0, last_tx = 0;
+-	uint64_t curr_rx = 0, curr_tx = 0;
+-	uint64_t curr_rx_ipsec = 0;
+-	uint64_t timeout = 5;
+-	uint16_t lcore_id;
++	struct ipsec_session_data *sa_data = outb_exp_sa->sa_data;
++	struct lcore_cfg *info = &lcore_cfg[rte_lcore_id()];
++	uint32_t port_id = outb_exp_sa->port_id;
++	struct rte_security_session *outb_ses;
++	struct rte_security_ctx *sec_ctx;
++	int spi, ret;
++
++	sec_ctx = rte_eth_dev_get_sec_ctx(port_id);
++	spi = sa_data->ipsec_xform.spi;
++
++	outb_ses = outb_sas[spi].sa;
++	if (outb_ses == NULL) {
++		printf("Invalid OUTB SA reported\n");
++		return;
++	}
++	rte_spinlock_lock(&exp_ses_dest_lock);
++	if (rte_security_session_destroy(sec_ctx, outb_ses)) {
++		printf("Session Destroy failed for SPI: %d\n", spi);
++		return;
++	}
++
++	ret = create_ipsec_perf_session(sa_data, port_id, &outb_sas[spi].sa);
++
++	if (!ret)
++		info->num_outb_sas += 1;
++	rte_spinlock_unlock(&exp_ses_dest_lock);
++}
++
++static void
++print_inb_outb_stats(void)
++{
++	struct outb_sa_exp_info *sa_exp, *sa_exp_next;
++	uint64_t last_rx = 0, last_tx = 0;
++	uint64_t curr_rx = 0, curr_tx = 0;
++	uint64_t curr_ipsec_failed = 0;
++	uint64_t curr_rx_ipsec = 0;
++	uint64_t curr_inb_sas = 0;
++	uint64_t last_inb_sas = 0;
++	uint64_t curr_outb_sas = 0;
++	uint64_t last_outb_sas = 0;
++	int timeout = 5;
++	uint16_t lcore_id;
++	struct timespec tv;
++	struct timeval now;
+ 
+ 	while (!force_quit) {
+ 		curr_rx = 0;
+ 		curr_tx = 0;
+ 		curr_rx_ipsec = 0;
+-		RTE_LCORE_FOREACH_WORKER(lcore_id) {
++		curr_ipsec_failed = 0;
++		curr_inb_sas = 0;
++		curr_outb_sas = 0;
++		RTE_LCORE_FOREACH(lcore_id) {
+ 			curr_rx += lcore_cfg[lcore_id].rx_pkts;
+ 			curr_tx += lcore_cfg[lcore_id].tx_pkts;
+ 			curr_rx_ipsec += lcore_cfg[lcore_id].rx_ipsec_pkts;
++			curr_ipsec_failed += lcore_cfg[lcore_id].ipsec_failed;
++			curr_inb_sas += lcore_cfg[lcore_id].num_inb_sas;
++			curr_outb_sas += lcore_cfg[lcore_id].num_outb_sas;
+ 		}
+ 
+-		printf("%" PRIu64 " Rx pps(%" PRIu64 " ipsec pkts), %" PRIu64 " Tx pps, "
+-		       "%" PRIu64 " drops\n",
++		printf("%" PRIu64 " Rx pps(%" PRIu64 " ipsec pkts), %" PRIu64 " Tx pps,\n"
++		       "%" PRIu64 " drops, %" PRIu64 " ipsec_failed, " "%" PRIu64 " Inb SAs ps, "
++		       "%" PRIu64 " Outb SAs ps\n\n",
+ 		       (curr_rx - last_rx) / timeout, curr_rx_ipsec, (curr_tx - last_tx) / timeout,
+-		       curr_rx - curr_tx);
++		       curr_rx - curr_tx, curr_ipsec_failed,
++		       (curr_inb_sas - last_inb_sas) / timeout,
++		       (curr_outb_sas - last_outb_sas) / timeout);
++
++		gettimeofday(&now, NULL);
++		tv.tv_sec = now.tv_sec + 5; /* Wait for 5 seconds */
++		tv.tv_nsec = now.tv_usec * 1000;
++
++wait_timeout:
++		pthread_mutex_lock(&mutex);
++		int result = pthread_cond_timedwait(&cond, &mutex, &tv);
++
++		if (result == 0) {
++			for (sa_exp = TAILQ_FIRST(&sa_exp_q); sa_exp; ) {
++				destroy_outb_exp_sa(sa_exp);
++				sa_exp_next = TAILQ_NEXT(sa_exp, next);
++				TAILQ_REMOVE(&sa_exp_q, sa_exp, next);
++				free(sa_exp);
++				sa_exp = sa_exp_next;
++			}
++		}
++		pthread_mutex_unlock(&mutex);
++		if (result == 0)
++			goto wait_timeout;
++
++		last_rx = curr_rx;
++		last_tx = curr_tx;
++		last_inb_sas = curr_inb_sas;
++		last_outb_sas = curr_outb_sas;
++	}
++}
++
++
++static void
++print_stats(void)
++{
++	uint64_t last_rx = 0, last_tx = 0;
++	uint64_t curr_rx = 0, curr_tx = 0;
++	uint64_t curr_ipsec_failed = 0;
++	uint64_t curr_rx_ipsec = 0;
++	uint64_t curr_inb_sas = 0;
++	uint64_t last_inb_sas = 0;
++	int timeout = 5;
++	uint16_t lcore_id;
++
++	while (!force_quit) {
++		curr_rx = 0;
++		curr_tx = 0;
++		curr_rx_ipsec = 0;
++		curr_ipsec_failed = 0;
++		curr_inb_sas = 0;
++		RTE_LCORE_FOREACH(lcore_id) {
++			curr_rx += lcore_cfg[lcore_id].rx_pkts;
++			curr_tx += lcore_cfg[lcore_id].tx_pkts;
++			curr_rx_ipsec += lcore_cfg[lcore_id].rx_ipsec_pkts;
++			curr_ipsec_failed += lcore_cfg[lcore_id].ipsec_failed;
++			curr_inb_sas += lcore_cfg[lcore_id].num_inb_sas;
++		}
++
++		printf("%" PRIu64 " Rx pps(%" PRIu64 " ipsec pkts), %" PRIu64 " Tx pps,\n"
++		       "%" PRIu64 " drops, %" PRIu64 " ipsec_failed, " "%" PRIu64
++		       " Inb SAs ps,\n\n",
++		       (curr_rx - last_rx) / timeout, curr_rx_ipsec, (curr_tx - last_tx) / timeout,
++		       curr_rx - curr_tx, curr_ipsec_failed,
++		       (curr_inb_sas - last_inb_sas) / timeout);
+ 
+ 		sleep(timeout);
++
+ 		last_rx = curr_rx;
+ 		last_tx = curr_tx;
++		last_inb_sas = curr_inb_sas;
+ 	}
+ }
+ 
+@@ -1383,14 +2039,38 @@ ipsec_event_port_flush(uint8_t eventdev_id __rte_unused, struct rte_event ev,
+ 	rte_pktmbuf_free(ev.mbuf);
+ }
+ 
++static inline bool
++pkt_type_valid(struct rte_mbuf *pkt)
++{
++	enum pkt_type type;
++	uint8_t *nlp;
++
++	/* Check the packet type */
++	type = process_ipsec_get_pkt_type(pkt, &nlp);
++
++	switch (type) {
++	case PKT_TYPE_PLAIN_IPV4:
++		return true;
++	default:
++		/*
++		 * Only plain IPv4 packets are allowed
++		 * drop the rest.
++		 */
++		rte_pktmbuf_free(pkt);
++	}
++	return false;
++}
++
+ static int
+-event_worker(void *args)
++event_inb_laoutb_worker(void *args)
+ {
+ 	uint32_t lcore_id = rte_lcore_id();
+ 	struct lcore_cfg *info = &lcore_cfg[lcore_id];
+ 	unsigned int nb_rx = 0, nb_tx;
+ 	struct rte_mbuf *pkt;
+ 	struct rte_event ev;
++	uint16_t sa_index = 0;
++	int ret;
+ 
+ 	(void)args;
+ 
+@@ -1407,26 +2087,226 @@ event_worker(void *args)
+ 		switch (ev.event_type) {
+ 		case RTE_EVENT_TYPE_ETHDEV:
+ 			break;
++		case RTE_EVENT_TYPE_CRYPTODEV:
++			ret = ipsec_ev_cryptodev_process(&ev);
++			if (unlikely(ret != 1))
++				continue;
++			nb_tx = rte_event_eth_tx_adapter_enqueue(info->eventdev_id,
++							 info->event_port_id,
++							 &ev, /* events */
++							 1,   /* nb_events */
++							 0 /* flags */);
++			if (!nb_tx)
++				rte_pktmbuf_free(ev.mbuf);
++			info->tx_pkts += nb_tx;
++			continue;
+ 		default:
+-			printf("Invalid event type %u",	ev.event_type);
++			printf("Invalid event type %u", ev.event_type);
+ 			continue;
+ 		}
+ 
+ 		pkt = ev.mbuf;
+ 
++		if (!pkt_type_valid(pkt))
++			continue;
++
+ 		info->rx_pkts += nb_rx;
+ 		info->rx_ipsec_pkts += !!(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD);
++#if !defined(MSNS_CN9K)
++		if (unlikely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD && softexp))
++			handle_inb_soft_exp(0, ev.mbuf, lcore_id);
++#endif
+ 
+ 		rte_prefetch0(rte_pktmbuf_mtod(pkt, void *));
+ 		/* Drop packets received with offload failure */
+-		if (pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED) {
++		if (unlikely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED)) {
++			rte_pktmbuf_free(ev.mbuf);
++			info->ipsec_failed += 1;
++#if !defined(MSNS_CN9K)
++			union rte_pmd_cnxk_cpt_res_s *res;
++
++			res = rte_pmd_cnxk_inl_ipsec_res(pkt);
++			//if (res)
++				printf("compcode = %x\n", res->cn10k.uc_compcode);
++#endif
++			continue;
++		}
++		if (likely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD)) {
++			struct ipsec_session_data *sa_data;
++
++			sa_data = (struct ipsec_session_data *) *rte_security_dynfield(pkt);
++			sa_index = sa_data->spi;
++		} else {
++			sa_index = rte_rand_max(num_sas - 1) + 1;
++		}
++		/* prepare pkt - advance start to L3 */
++		rte_pktmbuf_adj(pkt, RTE_ETHER_HDR_LEN);
++
++		event_crypto_enqueue(pkt, info, sa_index);
++	}
++
++	if (ev.u64) {
++		ev.op = RTE_EVENT_OP_RELEASE;
++		rte_event_enqueue_burst(info->eventdev_id,
++					info->event_port_id, &ev, 1);
++	}
++
++	rte_event_port_quiesce(info->eventdev_id, info->event_port_id,
++			       ipsec_event_port_flush, NULL);
++	return 0;
++}
++
++static int
++event_inb_outb_worker(void *args)
++{
++	uint32_t lcore_id = rte_lcore_id();
++	struct lcore_cfg *info = &lcore_cfg[lcore_id];
++	struct rte_security_ctx *sec_ctx = NULL;
++	unsigned int nb_rx = 0, nb_tx;
++	struct rte_security_session *sa;
++	struct rte_mbuf *pkt;
++	struct rte_event ev;
++	uint16_t sa_index = 0;
++
++	(void)args;
++
++	printf("Launching event mode worker on lcore=%u, event_port_id=%u\n", lcore_id,
++	       info->event_port_id);
++
++	while (!force_quit) {
++		/* Read packet from event queues */
++		nb_rx = rte_event_dequeue_burst(info->eventdev_id, info->event_port_id,
++						&ev, 1, 0);
++		if (nb_rx == 0)
++			continue;
++
++		switch (ev.event_type) {
++		case RTE_EVENT_TYPE_ETHDEV:
++			break;
++		default:
++			printf("Invalid event type %u", ev.event_type);
++			continue;
++		}
++
++		pkt = ev.mbuf;
++
++		if (!pkt_type_valid(pkt))
++			continue;
++
++		info->rx_pkts += nb_rx;
++		info->rx_ipsec_pkts += !!(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD);
++#if !defined(MSNS_CN9K)
++		if (unlikely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD && softexp))
++			handle_inb_soft_exp(0, ev.mbuf, lcore_id);
++#endif
++
++		rte_prefetch0(rte_pktmbuf_mtod(pkt, void *));
++		/* Drop packets received with offload failure */
++		if (unlikely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED)) {
+ 			rte_pktmbuf_free(ev.mbuf);
++			info->ipsec_failed += 1;
++
++#if !defined(MSNS_CN9K)
++			union rte_pmd_cnxk_cpt_res_s *res;
++
++			res = rte_pmd_cnxk_inl_ipsec_res(pkt);
++			//if (res)
++				printf("compcode = %x\n", res->cn10k.uc_compcode);
++#endif
+ 			continue;
+ 		}
++		sec_ctx = rte_eth_dev_get_sec_ctx(0);
++
++		if (likely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD)) {
++			struct ipsec_session_data *sa_data;
++
++			sa_data = (struct ipsec_session_data *) *rte_security_dynfield(pkt);
++			sa_index = sa_data->spi;
++		} else {
++			sa_index = rte_rand_max(num_sas - 1) + 1;
++		}
++		sa = outb_sas[sa_index].sa;
++		rte_security_set_pkt_metadata(sec_ctx, sa, pkt, NULL);
+ 
++		/* Provide L2 len for Outbound processing */
++		pkt->l2_len = RTE_ETHER_HDR_LEN;
++		pkt->ol_flags |= RTE_MBUF_F_TX_SEC_OFFLOAD;
+ 		/* Save eth queue for Tx */
+ 		rte_event_eth_tx_adapter_txq_set(pkt, 0);
++		/*
++		 * Since tx internal port is available, events can be
++		 * directly enqueued to the adapter and it would be
++		 * internally submitted to the eth device.
++		 */
++		nb_tx = rte_event_eth_tx_adapter_enqueue(info->eventdev_id,
++							 info->event_port_id,
++							 &ev, /* events */
++							 1,   /* nb_events */
++							 0 /* flags */);
++		if (!nb_tx)
++			rte_pktmbuf_free(ev.mbuf);
++		info->tx_pkts += nb_tx;
++	}
++
++	if (ev.u64) {
++		ev.op = RTE_EVENT_OP_RELEASE;
++		rte_event_enqueue_burst(info->eventdev_id,
++					info->event_port_id, &ev, 1);
++	}
++
++	rte_event_port_quiesce(info->eventdev_id, info->event_port_id,
++			       ipsec_event_port_flush, NULL);
++	return 0;
++}
++
++static int
++event_inb_worker(void *args)
++{
++	uint32_t lcore_id = rte_lcore_id();
++	struct lcore_cfg *info = &lcore_cfg[lcore_id];
++	unsigned int nb_rx = 0, nb_tx;
++	struct rte_mbuf *pkt;
++	struct rte_event ev;
++
++	(void)args;
++
++	printf("Launching event mode worker on lcore=%u, event_port_id=%u\n", lcore_id,
++	       info->event_port_id);
++
++	while (!force_quit) {
++		/* Read packet from event queues */
++		nb_rx = rte_event_dequeue_burst(info->eventdev_id, info->event_port_id,
++						&ev, 1, 0);
++		if (nb_rx == 0)
++			continue;
++
++		switch (ev.event_type) {
++		case RTE_EVENT_TYPE_ETHDEV:
++			break;
++		default:
++			printf("Invalid event type %u", ev.event_type);
++			continue;
++		}
++
++		pkt = ev.mbuf;
++
++		rte_prefetch0(rte_pktmbuf_mtod(pkt, void *));
+ 
++		info->rx_pkts += nb_rx;
++		info->rx_ipsec_pkts += !!(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD);
++#if !defined(MSNS_CN9K)
++		if (pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD && softexp)
++			handle_inb_soft_exp(0, ev.mbuf, lcore_id);
++#endif
++
++		/* Drop packets received with offload failure */
++		if (pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED) {
++			rte_pktmbuf_free(ev.mbuf);
++			info->ipsec_failed += 1;
++			continue;
++		}
++		/* Save eth queue for Tx */
++		rte_event_eth_tx_adapter_txq_set(pkt, 0);
+ 		/*
+ 		 * Since tx internal port is available, events can be
+ 		 * directly enqueued to the adapter and it would be
+@@ -1453,8 +2333,462 @@ event_worker(void *args)
+ 	return 0;
+ }
+ 
++static void
++create_default_ipsec_flow(uint16_t port_id)
++{
++	struct rte_flow_action action[2];
++	struct rte_flow_item pattern[2];
++	struct rte_flow_attr attr = {0};
++	struct rte_flow_error err;
++	struct rte_flow *flow;
++	int ret;
++
++	/* Add the default rte_flow to enable SECURITY for all ESP packets */
++
++	pattern[0].type = RTE_FLOW_ITEM_TYPE_ESP;
++	pattern[0].spec = NULL;
++	pattern[0].mask = NULL;
++	pattern[0].last = NULL;
++	pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
++
++	action[0].type = RTE_FLOW_ACTION_TYPE_SECURITY;
++	action[0].conf = NULL;
++	action[1].type = RTE_FLOW_ACTION_TYPE_END;
++	action[1].conf = NULL;
++
++	attr.ingress = 1;
++
++	ret = rte_flow_validate(port_id, &attr, pattern, action, &err);
++	if (ret)
++		return;
++
++	flow = rte_flow_create(port_id, &attr, pattern, action, &err);
++	if (flow == NULL)
++		return;
++
++	default_flow_no_msns[port_id] = flow;
++	printf("Created default flow enabling SECURITY for all ESP traffic on port %d\n",
++		port_id);
++}
++
++static void
++destroy_default_ipsec_flow(uint16_t portid)
++{
++	struct rte_flow_error err;
++	int ret;
++
++	if (!default_flow_no_msns[portid])
++		return;
++	ret = rte_flow_destroy(portid, default_flow_no_msns[portid], &err);
++	if (ret) {
++		printf("\nDefault flow rule destroy failed\n");
++		return;
++	}
++	default_flow_no_msns[portid] = NULL;
++}
++
++static int
++outb_sa_exp_event_callback(uint16_t port_id, enum rte_eth_event_type type, void *param,
++			   void *ret_param)
++{
++	struct rte_eth_event_ipsec_desc *event_desc = NULL;
++	struct outb_sa_exp_info *sa_exp;
++
++	if (type != RTE_ETH_EVENT_IPSEC)
++		return -1;
++
++	RTE_SET_USED(param);
++
++	event_desc = ret_param;
++	if (event_desc == NULL) {
++		printf("Event descriptor not set\n");
++		return -1;
++	}
++	switch (event_desc->subtype) {
++	case RTE_ETH_EVENT_IPSEC_SA_PKT_EXPIRY:
++		break;
++	default:
++		return -1;
++	}
++	sa_exp = malloc(sizeof(*sa_exp));
++	if (!sa_exp)
++		return -1;
++
++	memset(sa_exp, 0, sizeof(*sa_exp));
++	sa_exp->port_id = port_id;
++	sa_exp->sa_data = (struct ipsec_session_data *)event_desc->metadata;
++
++	pthread_mutex_lock(&mutex);
++	TAILQ_INSERT_TAIL(&sa_exp_q, sa_exp, next);
++	pthread_cond_signal(&cond);
++	pthread_mutex_unlock(&mutex);
++
++	return 0;
++}
++
++static int
++setup_ipsec_inb_sessions(int portid, struct ipsec_session_data *conf,
++			 enum rte_security_ipsec_tunnel_type tun_type)
++{
++	enum rte_security_ipsec_sa_direction dir = RTE_SECURITY_IPSEC_SA_DIR_INGRESS;
++	const struct rte_security_capability *sec_cap;
++	struct ipsec_session_data *sa_data;
++	struct rte_security_ctx *sec_ctx;
++	uint32_t sa_index = 0;
++	int ret, i;
++
++	sec_ctx = rte_eth_dev_get_sec_ctx(portid);
++
++	sec_cap = rte_security_capabilities_get(sec_ctx);
++	if (sec_cap == NULL) {
++		printf("No capabilities registered\n");
++		return -1;
++	}
++
++	/* iterate until ESP tunnel*/
++	while (sec_cap->action != RTE_SECURITY_ACTION_TYPE_NONE) {
++		if (sec_cap->action == RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL &&
++		    sec_cap->protocol == RTE_SECURITY_PROTOCOL_IPSEC &&
++		    sec_cap->ipsec.mode == conf->ipsec_xform.mode &&
++		    sec_cap->ipsec.direction == dir)
++			break;
++		sec_cap++;
++	}
++
++	if (sec_cap->action == RTE_SECURITY_ACTION_TYPE_NONE) {
++		printf("No suitable security capability found\n");
++		return -1;
++	}
++
++	for (i = 1; i <= (int)num_sas; i++) {
++		sa_index = i;
++
++		sa_data = rte_zmalloc(NULL, sizeof(*sa_data), 0);
++		if (sa_data == NULL) {
++			ret = -ENOMEM;
++			goto exit;
++		}
++
++		memcpy(sa_data, conf, sizeof(*sa_data));
++
++		sa_data->ipsec_xform.spi = sa_index;
++		sa_data->ipsec_xform.direction = dir;
++		sa_data->ipsec_xform.tunnel.type = tun_type;
++		if (softexp) {
++			sa_data->ipsec_xform.life.packets_soft_limit = soft_limit - 1;
++			sa_data->ipsec_xform.options.stats = 1;
++		}
++		/* Create Inline IPsec inbound session. */
++		ret = create_ipsec_perf_session(sa_data, portid, &inb_sas[sa_index].sa);
++		if (ret) {
++			rte_free(inb_sas[sa_index].sa_data);
++			goto exit;
++		}
++		inb_sas[sa_index].sa_data = sa_data;
++
++		printf("Port %d: Created Inbound session with SPI = %u\n",
++			portid, sa_data->ipsec_xform.spi);
++	}
++	return 0;
++
++exit:
++	i--;
++	for (; i > 0; i--) {
++		if (inb_sas[i].sa)
++			rte_security_session_destroy(sec_ctx, inb_sas[i].sa);
++		rte_free(inb_sas[i].sa_data);
++	}
++	return ret;
++}
++
++static int
++setup_ipsec_outb_sessions(int portid, struct ipsec_session_data *conf,
++			  enum rte_security_ipsec_tunnel_type tun_type)
++{
++	enum rte_security_ipsec_sa_direction dir = RTE_SECURITY_IPSEC_SA_DIR_EGRESS;
++	const struct rte_security_capability *sec_cap;
++	enum rte_security_session_action_type action;
++	struct ipsec_session_data *sa_data;
++	uint32_t sa_index = 0;
++	void *sec_ctx;
++	int ret = 0, i;
++
++	if (testmode == EVENT_IPSEC_INB_LAOUTB_PERF) {
++		sec_ctx = rte_cryptodev_get_sec_ctx(0);
++		action = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL;
++	} else {
++		sec_ctx = rte_eth_dev_get_sec_ctx(portid);
++		action = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL;
++	}
++
++	sec_cap = rte_security_capabilities_get(sec_ctx);
++	if (sec_cap == NULL) {
++		printf("No capabilities registered\n");
++		return -1;
++	}
++
++	/* iterate until ESP tunnel*/
++	while (sec_cap->action != RTE_SECURITY_ACTION_TYPE_NONE) {
++		if (sec_cap->action == action &&
++		    sec_cap->protocol == RTE_SECURITY_PROTOCOL_IPSEC &&
++		    sec_cap->ipsec.mode == conf->ipsec_xform.mode &&
++		    sec_cap->ipsec.direction == dir)
++			break;
++		sec_cap++;
++	}
++
++	if (sec_cap->action == RTE_SECURITY_ACTION_TYPE_NONE) {
++		printf("No suitable security capability found\n");
++		return -1;
++	}
++	for (i = 1; i <= (int)num_sas; i++) {
++		sa_index = i;
++
++		sa_data = rte_zmalloc(NULL, sizeof(*sa_data), 0);
++		if (sa_data == NULL)
++			goto exit;
++
++		memcpy(sa_data, conf, sizeof(*sa_data));
++
++		sa_data->ipsec_xform.direction = dir;
++		sa_data->ipsec_xform.tunnel.type = tun_type;
++		sa_data->ipsec_xform.spi = sa_index;
++		if (softexp) {
++			sa_data->ipsec_xform.life.packets_soft_limit = soft_limit - 1;
++			sa_data->ipsec_xform.options.stats = 1;
++		}
++		/* Create Inline IPsec inbound session. */
++		if (testmode == EVENT_IPSEC_INB_LAOUTB_PERF)
++			ret = create_ipsec_laoutb_perf_session(sa_data, 0, &outb_sas[sa_index].sa);
++		else
++			ret = create_ipsec_perf_session(sa_data, portid, &outb_sas[sa_index].sa);
++
++		if (ret) {
++			rte_free(outb_sas[sa_index].sa_data);
++			goto exit;
++		}
++		outb_sas[sa_index].sa_data = sa_data;
++
++		printf("Port %d: Created Outbound session with SPI = %u\n",
++			portid, sa_data->ipsec_xform.spi);
++	}
++	if (softexp && testmode != EVENT_IPSEC_INB_LAOUTB_PERF)
++		rte_eth_dev_callback_register(portid, RTE_ETH_EVENT_IPSEC,
++					      outb_sa_exp_event_callback, NULL);
++
++	return 0;
++
++exit:
++	i--;
++	for (; i > 0; i--) {
++		if (outb_sas[i].sa)
++			rte_security_session_destroy(sec_ctx, outb_sas[i].sa);
++		rte_free(outb_sas[i].sa_data);
++	}
++	return ret;
++}
++
++static int
++event_ipsec_inb_laoutb_perf(void)
++{
++	enum rte_security_ipsec_tunnel_type tun_type = RTE_SECURITY_IPSEC_TUNNEL_IPV4;
++	struct rte_security_ctx *sec_ctx;
++	unsigned int portid = 0;
++	uint16_t lcore_id;
++	int ret = 0, i;
++	void *la_ctx;
++
++	TAILQ_INIT(&sa_exp_q);
++
++	sec_ctx = rte_eth_dev_get_sec_ctx(portid);
++	if (sec_ctx == NULL) {
++		printf("Ethernet device doesn't support security features.\n");
++		return -1;
++	}
++	la_ctx = rte_cryptodev_get_sec_ctx(0);
++	if (la_ctx == NULL) {
++		printf("Crypto device doesn't support security features.\n");
++		return -1;
++	}
++
++	/* Create one ESP rule per alg on port 0 and it would apply on all ports
++	 * due to custom_act
++	 */
++	printf("\nCrypto Alg: AES-GCM-128\n");
++	printf("Crypto Key: ");
++	for (i = 0; i < 15; i++)
++		printf("%02x:", conf_aes_128_gcm.key.data[i]);
++	printf("%02x\n", conf_aes_128_gcm.key.data[i]);
++
++	printf("Crypto Salt: %02x:%02x:%02x:%02x\n",
++	       conf_aes_128_gcm.ipsec_xform.salt >> 24,
++	       (conf_aes_128_gcm.ipsec_xform.salt >> 16) & 0xFF,
++	       (conf_aes_128_gcm.ipsec_xform.salt >> 8) & 0xFF,
++	       conf_aes_128_gcm.ipsec_xform.salt & 0xFF);
++
++	ret = setup_ipsec_inb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	if (ret) {
++		printf("IPsec sessions creation failed\n");
++		return ret;
++	}
++	ret = setup_ipsec_outb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	if (ret) {
++		printf("IPsec sessions creation failed\n");
++		goto inb_sas_destroy;
++	}
++	create_default_ipsec_flow(portid);
++
++	printf("\n");
++
++	/* launch per-lcore init on every lcore */
++	rte_eal_mp_remote_launch(event_inb_laoutb_worker, NULL, SKIP_MAIN);
++	/* Print stats */
++	print_inb_outb_stats();
++
++	RTE_LCORE_FOREACH_WORKER(lcore_id) {
++		if (rte_eal_wait_lcore(lcore_id) < 0)
++			break;
++	}
++
++	destroy_default_ipsec_flow(portid);
++
++	for (i = 1; i <= (int)num_sas; i++) {
++		if (outb_sas[i].sa)
++			rte_security_session_destroy(la_ctx, outb_sas[i].sa);
++		rte_free(outb_sas[i].sa_data);
++	}
++inb_sas_destroy:
++	for (i = 1; i <= (int)num_sas; i++) {
++		if (inb_sas[i].sa)
++			rte_security_session_destroy(sec_ctx, inb_sas[i].sa);
++		rte_free(inb_sas[i].sa_data);
++	}
++
++	return ret;
++}
++
+ static int
+-ut_ipsec_ipv4_perf(void)
++event_ipsec_inb_outb_perf(void)
++{
++	enum rte_security_ipsec_tunnel_type tun_type = RTE_SECURITY_IPSEC_TUNNEL_IPV4;
++	struct rte_security_ctx *sec_ctx;
++	unsigned int portid = 0;
++	uint16_t lcore_id;
++	int ret = 0, i;
++
++	TAILQ_INIT(&sa_exp_q);
++
++	sec_ctx = rte_eth_dev_get_sec_ctx(portid);
++	if (sec_ctx == NULL) {
++		printf("Ethernet device doesn't support security features.\n");
++		return -1;
++	}
++
++	/* Create one ESP rule per alg on port 0 and it would apply on all ports
++	 * due to custom_act
++	 */
++	printf("\nCrypto Alg: AES-GCM-128\n");
++	printf("Crypto Key: ");
++	for (i = 0; i < 15; i++)
++		printf("%02x:", conf_aes_128_gcm.key.data[i]);
++	printf("%02x\n", conf_aes_128_gcm.key.data[i]);
++
++	printf("Crypto Salt: %02x:%02x:%02x:%02x\n",
++	       conf_aes_128_gcm.ipsec_xform.salt >> 24,
++	       (conf_aes_128_gcm.ipsec_xform.salt >> 16) & 0xFF,
++	       (conf_aes_128_gcm.ipsec_xform.salt >> 8) & 0xFF,
++	       conf_aes_128_gcm.ipsec_xform.salt & 0xFF);
++
++	ret = setup_ipsec_inb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	if (ret) {
++		printf("IPsec sessions creation failed\n");
++		return ret;
++	}
++	ret = setup_ipsec_outb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	if (ret) {
++		printf("IPsec sessions creation failed\n");
++		goto inb_sas_destroy;
++	}
++	create_default_ipsec_flow(portid);
++
++	printf("\n");
++
++	/* launch per-lcore init on every lcore */
++	rte_eal_mp_remote_launch(event_inb_outb_worker, NULL, SKIP_MAIN);
++	/* Print stats */
++	print_inb_outb_stats();
++
++	RTE_LCORE_FOREACH_WORKER(lcore_id) {
++		if (rte_eal_wait_lcore(lcore_id) < 0)
++			break;
++	}
++
++	destroy_default_ipsec_flow(portid);
++
++	if (softexp)
++		rte_eth_dev_callback_unregister(portid, RTE_ETH_EVENT_IPSEC,
++						outb_sa_exp_event_callback, NULL);
++	for (i = 0; i < (int)num_sas; i++) {
++		if (outb_sas[i].sa)
++			rte_security_session_destroy(sec_ctx, outb_sas[i].sa);
++		rte_free(outb_sas[i].sa_data);
++	}
++inb_sas_destroy:
++	for (i = 0; i < (int)num_sas; i++) {
++		if (inb_sas[i].sa)
++			rte_security_session_destroy(sec_ctx, inb_sas[i].sa);
++		rte_free(inb_sas[i].sa_data);
++	}
++
++	return ret;
++}
++
++static int
++event_ipsec_inb_perf(void)
++{
++	enum rte_security_ipsec_tunnel_type tun_type = RTE_SECURITY_IPSEC_TUNNEL_IPV4;
++	struct rte_security_ctx *sec_ctx;
++	unsigned int portid = 0;
++	uint16_t lcore_id;
++	int ret = 0, i;
++
++	sec_ctx = rte_eth_dev_get_sec_ctx(portid);
++	if (sec_ctx == NULL) {
++		printf("Ethernet device doesn't support security features.\n");
++		return -1;
++	}
++	ret = setup_ipsec_inb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	if (ret) {
++		printf("IPsec sessions creation failed\n");
++		return ret;
++	}
++	create_default_ipsec_flow(portid);
++
++	printf("\n");
++
++	/* launch per-lcore init on every lcore */
++	rte_eal_mp_remote_launch(event_inb_worker, NULL, SKIP_MAIN);
++
++	/* Print stats */
++	print_stats();
++
++	RTE_LCORE_FOREACH_WORKER(lcore_id) {
++		if (rte_eal_wait_lcore(lcore_id) < 0)
++			break;
++	}
++	destroy_default_ipsec_flow(portid);
++
++	for (i = 0; i < (int)num_sas; i++) {
++		if (inb_sas[i].sa)
++			rte_security_session_destroy(sec_ctx, inb_sas[i].sa);
++		rte_free(inb_sas[i].sa_data);
++	}
++
++	return ret;
++}
++
++static int
++event_ipsec_inb_msns_perf(void)
+ {
+ 	struct rte_security_session *in_ses[RTE_MAX_ETHPORTS][RTE_PMD_CNXK_SEC_ACTION_ALG3 + 1];
+ 	enum rte_security_ipsec_tunnel_type tun_type = RTE_SECURITY_IPSEC_TUNNEL_IPV4;
+@@ -1573,7 +2907,7 @@ ut_ipsec_ipv4_perf(void)
+ 	printf("\n");
+ 
+ 	/* launch per-lcore init on every lcore */
+-	rte_eal_mp_remote_launch(event_worker, NULL, SKIP_MAIN);
++	rte_eal_mp_remote_launch(event_inb_worker, NULL, SKIP_MAIN);
+ 
+ 	/* Print stats */
+ 	print_stats();
+@@ -1615,20 +2949,50 @@ main(int argc, char **argv)
+ 		return rc;
+ 	}
+ 
+-	if (perf_mode) {
+-		printf("Running in perf mode\n");
+-		rc = ut_ipsec_ipv4_perf();
++	switch (testmode) {
++	case EVENT_IPSEC_INBOUND_MSNS_PERF:
++		printf("Test Mode: %s\n", ipsec_test_mode_to_string(testmode));
++		rc = event_ipsec_inb_msns_perf();
+ 		if (rc) {
+-			printf("Failed to run perf mode\n");
++			printf("Failed to run mode: %s\n", ipsec_test_mode_to_string(testmode));
+ 			return rc;
+ 		}
+-
+-	} else {
++		break;
++	case EVENT_IPSEC_INBOUND_PERF:
++		printf("Test Mode: %s\n", ipsec_test_mode_to_string(testmode));
++		rc = event_ipsec_inb_perf();
++		if (rc) {
++			printf("Failed to run mode: %s\n", ipsec_test_mode_to_string(testmode));
++			return rc;
++		}
++		break;
++	case EVENT_IPSEC_INB_OUTB_PERF:
++		printf("Test Mode: %s\n", ipsec_test_mode_to_string(testmode));
++		rc = event_ipsec_inb_outb_perf();
++		if (rc) {
++			printf("Failed to run mode: %s\n", ipsec_test_mode_to_string(testmode));
++			return rc;
++		}
++		break;
++	case EVENT_IPSEC_INB_LAOUTB_PERF:
++		printf("Test Mode: %s\n", ipsec_test_mode_to_string(testmode));
++		if (rte_cryptodev_count() == 0) {
++			printf("No cryptodevs found\n");
++			return -1;
++		}
++		rc = event_ipsec_inb_laoutb_perf();
++		if (rc) {
++			printf("Failed to run mode: %s\n", ipsec_test_mode_to_string(testmode));
++			return rc;
++		}
++		break;
++	case IPSEC_MSNS:
+ 		rc = ut_ipsec_ipv4_burst_encap_decap();
+ 		if (rc) {
+ 			printf("TEST FAILED: ut_ipsec_ipv4_burst_encap_decap\n");
+ 			return rc;
+ 		}
++		break;
+ 	}
+ 	ut_teardown();
+ 	return 0;
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.h b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.h
+index 0e570895f3886..685ec73226892 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.h
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.h
+@@ -8,6 +8,7 @@
+ #define MAX_PKT_LEN  1500
+ 
+ struct ipsec_session_data {
++	uint32_t spi;
+ 	struct {
+ 		uint8_t data[32];
+ 	} key;
+@@ -134,4 +135,13 @@ struct ipsec_session_data conf_aes_128_gcm = {
+ 		},
+ 	},
+ };
++
++enum pkt_type {
++	PKT_TYPE_PLAIN_IPV4 = 1,
++	PKT_TYPE_IPSEC_IPV4,
++	PKT_TYPE_PLAIN_IPV6,
++	PKT_TYPE_IPSEC_IPV6,
++	PKT_TYPE_INVALID
++};
++
+ #endif
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/meson.build b/marvell-ci/test/cnxk-tests/ipsec_msns/meson.build
+index 7762ef27142e3..89cf8a76cf463 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/meson.build
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/meson.build
+@@ -16,6 +16,16 @@ test_dir = meson.current_build_dir()
+ # Test executable
+ test_exec='cnxk_ipsec_msns'
+ 
++if meson.is_cross_build()
++        soc_type = meson.get_cross_property('platform', '')
++else
++        soc_type = platform
++endif
++
++if soc_type == 'cn9k'
++        cflags += ['-DMSNS_CN9K']
++endif
++
+ # Copy the required scripts to build directory.
+ run_command(copy_data, test_script)
+ 
+-- 
+2.25.1
+

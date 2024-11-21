@@ -1,0 +1,43 @@
+From 9d7acee89fa2d708f7f5441543fa47c2a740e433 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Tue, 25 Jun 2024 10:56:36 +0530
+Subject: [PATCH 880/955] app/eventdev: increase default queue depth for
+ cryptodev
+
+With crypto adapter, larger queue depths are desirable since same queue
+could be used from multiple cores at the same time. With devices that
+are capable of doing large bursts, larger queues would help in multi
+core management of same queue.
+
+Increase default queue depth in cryptodev to cater to such use cases.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I8afc535ca95382cf693c4f391d13a48f9b2f32ea
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130143
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+(cherry picked from commit 8cb739c86fd224c26074d64f17b5c4dabc4b42ba)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130264
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test-eventdev/test_perf_common.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/test-eventdev/test_perf_common.c b/app/test-eventdev/test_perf_common.c
+index 5f85584fe4cfe..75fabea84b848 100644
+--- a/app/test-eventdev/test_perf_common.c
++++ b/app/test-eventdev/test_perf_common.c
+@@ -6,7 +6,7 @@
+ 
+ #include "test_perf_common.h"
+ 
+-#define NB_CRYPTODEV_DESCRIPTORS 1024
++#define NB_CRYPTODEV_DESCRIPTORS 4096
+ #define DATA_SIZE		512
+ #define IV_OFFSET (sizeof(struct rte_crypto_op) + \
+ 		   sizeof(struct rte_crypto_sym_op) + \
+-- 
+2.25.1
+

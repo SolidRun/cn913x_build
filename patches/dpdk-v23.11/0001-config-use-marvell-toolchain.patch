@@ -1,0 +1,90 @@
+From 2958d4f98065f1de92efdae5579a6ba4a17cc21b Mon Sep 17 00:00:00 2001
+From: Jerin Jacob <jerinj@marvell.com>
+Date: Mon, 18 Jul 2022 12:28:37 +0530
+Subject: [PATCH 001/513] config: use marvell toolchain
+
+Change-Id: I98b9d7bc39b3c0e69b25752e1db1dcb2559abbba
+Signed-off-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/81877
+(cherry picked from commit 8d8065b0782f64b633fcdb30dbfe1cd0778eb6ea)
+(cherry picked from commit 661ec29a000efe2c5b26fa99b2b6a1d7355844cb)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116968
+---
+ config/arm/arm64_armada_linux_gcc      | 9 ++++-----
+ config/arm/arm64_cn10k_linux_gcc       | 8 ++++----
+ config/arm/arm64_cn9k_linux_gcc        | 8 ++++----
+ config/arm/arm64_thunderxt83_linux_gcc | 8 ++++----
+ 4 files changed, 16 insertions(+), 17 deletions(-)
+
+diff --git a/config/arm/arm64_armada_linux_gcc b/config/arm/arm64_armada_linux_gcc
+index 635b4946a39e1..90181f409b3e8 100644
+--- a/config/arm/arm64_armada_linux_gcc
++++ b/config/arm/arm64_armada_linux_gcc
+@@ -1,9 +1,8 @@
+ [binaries]
+-c = ['ccache', 'aarch64-linux-gnu-gcc']
+-cpp = ['ccache', 'aarch64-linux-gnu-g++']
+-ar = 'aarch64-linux-gnu-ar'
+-as = 'aarch64-linux-gnu-as'
+-strip = 'aarch64-linux-gnu-strip'
++c = ['ccache', 'aarch64-marvell-linux-gnu-gcc']
++cpp = ['ccache', 'aarch64-marvell-linux-gnu-g++']
++ar = 'aarch64-marvell-linux-gnu-gcc-ar'
++strip = 'aarch64-marvell-linux-gnu-strip'
+ pkgconfig = 'aarch64-linux-gnu-pkg-config'
+ pcap-config = ''
+ 
+diff --git a/config/arm/arm64_cn10k_linux_gcc b/config/arm/arm64_cn10k_linux_gcc
+index fa904af5d0b01..e15b0abaa2d17 100644
+--- a/config/arm/arm64_cn10k_linux_gcc
++++ b/config/arm/arm64_cn10k_linux_gcc
+@@ -1,8 +1,8 @@
+ [binaries]
+-c = ['ccache', 'aarch64-linux-gnu-gcc']
+-cpp = ['ccache', 'aarch64-linux-gnu-g++']
+-ar = 'aarch64-linux-gnu-gcc-ar'
+-strip = 'aarch64-linux-gnu-strip'
++c = ['ccache', 'aarch64-marvell-linux-gnu-gcc']
++cpp = ['ccache', 'aarch64-marvell-linux-gnu-g++']
++ar = 'aarch64-marvell-linux-gnu-gcc-ar'
++strip = 'aarch64-marvell-linux-gnu-strip'
+ pkgconfig = 'aarch64-linux-gnu-pkg-config'
+ pcap-config = ''
+ cmake = 'cmake'
+diff --git a/config/arm/arm64_cn9k_linux_gcc b/config/arm/arm64_cn9k_linux_gcc
+index 646ce4b5d3202..4194079fcd0b9 100644
+--- a/config/arm/arm64_cn9k_linux_gcc
++++ b/config/arm/arm64_cn9k_linux_gcc
+@@ -1,8 +1,8 @@
+ [binaries]
+-c = ['ccache', 'aarch64-linux-gnu-gcc']
+-cpp = ['ccache', 'aarch64-linux-gnu-g++']
+-ar = 'aarch64-linux-gnu-gcc-ar'
+-strip = 'aarch64-linux-gnu-strip'
++c = ['ccache', 'aarch64-marvell-linux-gnu-gcc']
++cpp = ['ccache', 'aarch64-marvell-linux-gnu-g++']
++ar = 'aarch64-marvell-linux-gnu-gcc-ar'
++strip = 'aarch64-marvell-linux-gnu-strip'
+ pkgconfig = 'aarch64-linux-gnu-pkg-config'
+ pcap-config = ''
+ cmake = 'cmake'
+diff --git a/config/arm/arm64_thunderxt83_linux_gcc b/config/arm/arm64_thunderxt83_linux_gcc
+index e9d9e62d441e2..fda903fdedf46 100644
+--- a/config/arm/arm64_thunderxt83_linux_gcc
++++ b/config/arm/arm64_thunderxt83_linux_gcc
+@@ -1,8 +1,8 @@
+ [binaries]
+-c = ['ccache', 'aarch64-linux-gnu-gcc']
+-cpp = ['ccache', 'aarch64-linux-gnu-g++']
+-ar = 'aarch64-linux-gnu-gcc-ar'
+-strip = 'aarch64-linux-gnu-strip'
++c = ['ccache', 'aarch64-marvell-linux-gnu-gcc']
++cpp = ['ccache', 'aarch64-marvell-linux-gnu-g++']
++ar = 'aarch64-marvell-linux-gnu-gcc-ar'
++strip = 'aarch64-marvell-linux-gnu-strip'
+ pkgconfig = 'aarch64-linux-gnu-pkg-config'
+ pcap-config = ''
+ 
+-- 
+2.25.1
+

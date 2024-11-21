@@ -1,0 +1,42 @@
+From 08cc170e86babd5ff1fcf106ede5237e10d77931 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 13 Dec 2022 17:02:56 +0530
+Subject: [PATCH 072/955] examples/ipsec-secgw: set AES-CTR IV length to 16
+
+Set AES-CTR IV length as 16 instead of taking from
+SA config option since the application populates
+16B IV in the datapath. AES-CTR requires 16B IV
+constructed from nonce and counter.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Ie85020c09746db157d669cd9daf0dba3435c6ea1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92474
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ examples/ipsec-secgw/sa.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/examples/ipsec-secgw/sa.c b/examples/ipsec-secgw/sa.c
+index 7da9444a7b8ad..5bb73a9137d1d 100644
+--- a/examples/ipsec-secgw/sa.c
++++ b/examples/ipsec-secgw/sa.c
+@@ -1328,9 +1328,14 @@ sa_add_rules(struct sa_ctx *sa_ctx, const struct ipsec_sa entries[],
+ 			case RTE_CRYPTO_CIPHER_DES_CBC:
+ 			case RTE_CRYPTO_CIPHER_3DES_CBC:
+ 			case RTE_CRYPTO_CIPHER_AES_CBC:
+-			case RTE_CRYPTO_CIPHER_AES_CTR:
+ 				iv_length = sa->iv_len;
+ 				break;
++			case RTE_CRYPTO_CIPHER_AES_CTR:
++				/* Length includes 8B per packet IV, 4B nonce and
++				 * 4B counter as populated in datapath.
++				 */
++				iv_length = 16;
++				break;
+ 			default:
+ 				RTE_LOG(ERR, IPSEC_ESP,
+ 						"unsupported cipher algorithm %u\n",
+-- 
+2.25.1
+

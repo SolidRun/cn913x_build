@@ -1,0 +1,36 @@
+From 8cd9f6ab35399be1b9eec70fbe7c4e0c0a0cd8f9 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Thu, 4 Jan 2024 13:51:14 +0530
+Subject: [PATCH 122/513] config/arm: fix CN10K minimum march requirement
+
+Meson selects march and mcpu based on compiler support and
+partnumber, only the minimum required march should be defined
+in cross compile configuration file.
+
+Fixes: 1b4c86a721c9 ("config/arm: add Marvell CN10K")
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I74a322b2dddda9e1e6d4530345e5ddbd591bac48
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119093
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ config/arm/arm64_cn10k_linux_gcc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/config/arm/arm64_cn10k_linux_gcc b/config/arm/arm64_cn10k_linux_gcc
+index e15b0abaa2d17..8af2272b60826 100644
+--- a/config/arm/arm64_cn10k_linux_gcc
++++ b/config/arm/arm64_cn10k_linux_gcc
+@@ -10,7 +10,7 @@ cmake = 'cmake'
+ [host_machine]
+ system = 'linux'
+ cpu_family = 'aarch64'
+-cpu = 'armv8.6-a'
++cpu = 'armv8-a'
+ endian = 'little'
+ 
+ [properties]
+-- 
+2.25.1
+

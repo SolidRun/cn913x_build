@@ -1,0 +1,281 @@
+From 9a2ff00a3250b6662c35cd0598d50568f700706b Mon Sep 17 00:00:00 2001
+From: Erik Gabriel Carrillo <erik.g.carrillo@intel.com>
+Date: Fri, 13 Jan 2023 13:50:21 -0600
+Subject: [PATCH 229/955] eventdev/timer: get remaining ticks
+
+Introduce an event timer adapter API which allows users to determine how
+many adapter ticks remain until an event timer expires.
+
+Signed-off-by: Erik Gabriel Carrillo <erik.g.carrillo@intel.com>
+Acked-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: I6687e9fc8de9a0b76ab8eea7a2f62a467142e05c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96120
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test/test_event_timer_adapter.c    | 75 ++++++++++++++++++++++++++
+ lib/eventdev/event_timer_adapter_pmd.h |  7 +++
+ lib/eventdev/rte_event_timer_adapter.c | 53 ++++++++++++++++++
+ lib/eventdev/rte_event_timer_adapter.h | 27 ++++++++++
+ lib/eventdev/version.map               |  3 ++
+ 5 files changed, 165 insertions(+)
+
+diff --git a/app/test/test_event_timer_adapter.c b/app/test/test_event_timer_adapter.c
+index 1a440dfd1000d..5e7feec1c763c 100644
+--- a/app/test/test_event_timer_adapter.c
++++ b/app/test/test_event_timer_adapter.c
+@@ -1920,6 +1920,79 @@ adapter_create_max(void)
+ 	return TEST_SUCCESS;
+ }
+ 
++static inline int
++test_timer_ticks_remaining(void)
++{
++	uint64_t ticks_remaining = UINT64_MAX;
++	struct rte_event_timer *ev_tim;
++	struct rte_event ev;
++	int ret, i;
++	const struct rte_event_timer tim = {
++		.ev.op = RTE_EVENT_OP_NEW,
++		.ev.queue_id = 0,
++		.ev.sched_type = RTE_SCHED_TYPE_ATOMIC,
++		.ev.priority = RTE_EVENT_DEV_PRIORITY_NORMAL,
++		.ev.event_type =  RTE_EVENT_TYPE_TIMER,
++		.state = RTE_EVENT_TIMER_NOT_ARMED,
++	};
++
++	rte_mempool_get(eventdev_test_mempool, (void **)&ev_tim);
++	*ev_tim = tim;
++	ev_tim->ev.event_ptr = ev_tim;
++#define TEST_TICKS 5
++	ev_tim->timeout_ticks = CALC_TICKS(TEST_TICKS);
++
++	ret = rte_event_timer_remaining_ticks_get(timdev, ev_tim,
++						  &ticks_remaining);
++	if (ret == -ENOTSUP) {
++		rte_mempool_put(eventdev_test_mempool, (void *)ev_tim);
++		printf("API not supported, skipping test\n");
++		return TEST_SKIPPED;
++	}
++
++	/* Test that unarmed timer returns error */
++	TEST_ASSERT_FAIL(ret,
++			 "Didn't fail to get ticks for unarmed event timer");
++
++	TEST_ASSERT_EQUAL(rte_event_timer_arm_burst(timdev, &ev_tim, 1), 1,
++			  "Failed to arm timer with proper timeout.");
++	TEST_ASSERT_EQUAL(ev_tim->state, RTE_EVENT_TIMER_ARMED,
++			  "Improper timer state set expected %d returned %d",
++			  RTE_EVENT_TIMER_ARMED, ev_tim->state);
++
++	for (i = 0; i < TEST_TICKS; i++) {
++		ret = rte_event_timer_remaining_ticks_get(timdev, ev_tim,
++							  &ticks_remaining);
++		if (ret < 0)
++			return TEST_FAILED;
++
++		TEST_ASSERT_EQUAL((int)ticks_remaining, TEST_TICKS - i,
++				  "Expected %d ticks remaining, got %"PRIu64"",
++				  TEST_TICKS - i, ticks_remaining);
++
++		rte_delay_ms(100);
++	}
++
++	rte_delay_ms(100);
++
++	TEST_ASSERT_EQUAL(rte_event_dequeue_burst(evdev, 0, &ev, 1, 0), 1,
++			  "Armed timer failed to trigger.");
++	TEST_ASSERT_EQUAL(ev_tim->state, RTE_EVENT_TIMER_NOT_ARMED,
++			  "Improper timer state set expected %d returned %d",
++			  RTE_EVENT_TIMER_NOT_ARMED, ev_tim->state);
++
++	/* Test that timer that fired returns error */
++	TEST_ASSERT_FAIL(rte_event_timer_remaining_ticks_get(timdev, ev_tim,
++							   &ticks_remaining),
++			 "Didn't fail to get ticks for unarmed event timer");
++
++	rte_mempool_put(eventdev_test_mempool, (void *)ev_tim);
++
++#undef TEST_TICKS
++	return TEST_SUCCESS;
++}
++
++
+ static struct unit_test_suite event_timer_adptr_functional_testsuite  = {
+ 	.suite_name = "event timer functional test suite",
+ 	.setup = testsuite_setup,
+@@ -1982,6 +2055,8 @@ static struct unit_test_suite event_timer_adptr_functional_testsuite  = {
+ 		TEST_CASE_ST(timdev_setup_msec, timdev_teardown,
+ 				adapter_tick_resolution),
+ 		TEST_CASE(adapter_create_max),
++		TEST_CASE_ST(timdev_setup_msec, timdev_teardown,
++				test_timer_ticks_remaining),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/lib/eventdev/event_timer_adapter_pmd.h b/lib/eventdev/event_timer_adapter_pmd.h
+index 189017b5c177e..c7d4a4f0f6f30 100644
+--- a/lib/eventdev/event_timer_adapter_pmd.h
++++ b/lib/eventdev/event_timer_adapter_pmd.h
+@@ -52,6 +52,11 @@ typedef int (*rte_event_timer_adapter_stats_get_t)(
+ typedef int (*rte_event_timer_adapter_stats_reset_t)(
+ 		const struct rte_event_timer_adapter *adapter);
+ /**< @internal Reset statistics for event timer adapter */
++typedef int (*rte_event_timer_remaining_ticks_get_t)(
++		const struct rte_event_timer_adapter *adapter,
++		const struct rte_event_timer *evtim,
++		uint64_t *ticks_remaining);
++/**< @internal Get remaining ticks for event timer */
+ 
+ /**
+  * @internal Structure containing the functions exported by an event timer
+@@ -74,6 +79,8 @@ struct event_timer_adapter_ops {
+ 	/**< Arm event timers with same expiration time */
+ 	rte_event_timer_cancel_burst_t		cancel_burst;
+ 	/**< Cancel one or more event timers */
++	rte_event_timer_remaining_ticks_get_t	remaining_ticks_get;
++	/**< Get remaining ticks for event timer */
+ };
+ 
+ /**
+diff --git a/lib/eventdev/rte_event_timer_adapter.c b/lib/eventdev/rte_event_timer_adapter.c
+index a0f14bf86185b..cae75c9945fe3 100644
+--- a/lib/eventdev/rte_event_timer_adapter.c
++++ b/lib/eventdev/rte_event_timer_adapter.c
+@@ -8,6 +8,7 @@
+ #include <inttypes.h>
+ #include <stdbool.h>
+ #include <stdlib.h>
++#include <math.h>
+ 
+ #include <rte_memzone.h>
+ #include <rte_errno.h>
+@@ -458,6 +459,22 @@ rte_event_timer_adapter_stats_reset(struct rte_event_timer_adapter *adapter)
+ 	return adapter->ops->stats_reset(adapter);
+ }
+ 
++int
++rte_event_timer_remaining_ticks_get(
++			const struct rte_event_timer_adapter *adapter,
++			const struct rte_event_timer *evtim,
++			uint64_t *ticks_remaining)
++{
++	ADAPTER_VALID_OR_ERR_RET(adapter, -EINVAL);
++	FUNC_PTR_OR_ERR_RET(adapter->ops->remaining_ticks_get, -ENOTSUP);
++
++	if (ticks_remaining == NULL)
++		return -EINVAL;
++
++	return adapter->ops->remaining_ticks_get(adapter, evtim,
++						 ticks_remaining);
++}
++
+ /*
+  * Software event timer adapter buffer helper functions
+  */
+@@ -1072,6 +1089,41 @@ swtim_stats_reset(const struct rte_event_timer_adapter *adapter)
+ 	return 0;
+ }
+ 
++static int
++swtim_remaining_ticks_get(const struct rte_event_timer_adapter *adapter,
++			  const struct rte_event_timer *evtim,
++			  uint64_t *ticks_remaining)
++{
++	uint64_t nsecs_per_adapter_tick, opaque, cycles_remaining;
++	enum rte_event_timer_state n_state;
++	double nsecs_per_cycle;
++	struct rte_timer *tim;
++	uint64_t cur_cycles;
++
++	/* Check that timer is armed */
++	n_state = __atomic_load_n(&evtim->state, __ATOMIC_ACQUIRE);
++	if (n_state != RTE_EVENT_TIMER_ARMED)
++		return -EINVAL;
++
++	opaque = evtim->impl_opaque[0];
++	tim = (struct rte_timer *)(uintptr_t)opaque;
++
++	cur_cycles = rte_get_timer_cycles();
++	if (cur_cycles > tim->expire) {
++		*ticks_remaining = 0;
++		return 0;
++	}
++
++	cycles_remaining = tim->expire - cur_cycles;
++	nsecs_per_cycle = (double)NSECPERSEC / rte_get_timer_hz();
++	nsecs_per_adapter_tick = adapter->data->conf.timer_tick_ns;
++
++	*ticks_remaining = (uint64_t)ceil((cycles_remaining * nsecs_per_cycle) /
++					  nsecs_per_adapter_tick);
++
++	return 0;
++}
++
+ static uint16_t
+ __swtim_arm_burst(const struct rte_event_timer_adapter *adapter,
+ 		struct rte_event_timer **evtims,
+@@ -1286,6 +1338,7 @@ static const struct event_timer_adapter_ops swtim_ops = {
+ 	.arm_burst = swtim_arm_burst,
+ 	.arm_tmo_tick_burst = swtim_arm_tmo_tick_burst,
+ 	.cancel_burst = swtim_cancel_burst,
++	.remaining_ticks_get = swtim_remaining_ticks_get,
+ };
+ 
+ static int
+diff --git a/lib/eventdev/rte_event_timer_adapter.h b/lib/eventdev/rte_event_timer_adapter.h
+index cd10db19e450c..c6f27fb604ddd 100644
+--- a/lib/eventdev/rte_event_timer_adapter.h
++++ b/lib/eventdev/rte_event_timer_adapter.h
+@@ -678,6 +678,33 @@ rte_event_timer_cancel_burst(const struct rte_event_timer_adapter *adapter,
+ 	return adapter->cancel_burst(adapter, evtims, nb_evtims);
+ }
+ 
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change without prior notice
++ *
++ * Get the number of ticks remaining until event timer expiry.
++ *
++ * @param adapter
++ *   A pointer to an event timer adapter structure
++ * @param evtim
++ *   A pointer to an rte_event_timer structure
++ * @param[out] ticks_remaining
++ *   Pointer to variable into which to write the number of ticks remaining
++ *   until event timer expiry
++ *
++ * @return
++ *   - 0: Success
++ *   - -EINVAL Invalid timer adapter identifier or the event timer is not in
++ *   the armed state or ticks_remaining is NULL
++ *   - -ENOTSUP The timer adapter implementation does not support this API.
++ */
++__rte_experimental
++int
++rte_event_timer_remaining_ticks_get(
++			const struct rte_event_timer_adapter *adapter,
++			const struct rte_event_timer *evtim,
++			uint64_t *ticks_remaining);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/eventdev/version.map b/lib/eventdev/version.map
+index 1a7fffd17ff06..9abe377bcad89 100644
+--- a/lib/eventdev/version.map
++++ b/lib/eventdev/version.map
+@@ -119,6 +119,9 @@ EXPERIMENTAL {
+ 	rte_event_eth_tx_adapter_instance_get;
+ 	rte_event_eth_tx_adapter_queue_start;
+ 	rte_event_eth_tx_adapter_queue_stop;
++
++	# added in 23.03
++	rte_event_timer_remaining_ticks_get;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

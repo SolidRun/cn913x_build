@@ -1,0 +1,141 @@
+From 4fa8a4a64aa5e50fa9b52b14f624240f0081c5a0 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Mon, 28 Nov 2022 11:40:30 +0530
+Subject: [PATCH 009/955] common/cnxk: synchronize NPA aura bitmap accesses
+
+Ensure that all cnxk mempool aura bitmap accesses are synchronized.
+
+Change-Id: Ic8f10ebc44eca61b33b8313c3c2cc471448a68f6
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91376
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 57f49c9cfcccf30d8891a0b6a7af22b14ffcafbd)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91534
+---
+ drivers/common/cnxk/roc_idev.c      |  1 +
+ drivers/common/cnxk/roc_idev_priv.h |  1 +
+ drivers/common/cnxk/roc_npa.c       | 29 ++++++++++++++++++++++++++++-
+ drivers/common/cnxk/roc_npa.h       |  2 ++
+ drivers/common/cnxk/version.map     |  2 ++
+ 5 files changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_idev.c b/drivers/common/cnxk/roc_idev.c
+index 4d2eff93ce1fe..62a4fd8880882 100644
+--- a/drivers/common/cnxk/roc_idev.c
++++ b/drivers/common/cnxk/roc_idev.c
+@@ -40,6 +40,7 @@ idev_set_defaults(struct idev_cfg *idev)
+ 	idev->cpt = NULL;
+ 	idev->nix_inl_dev = NULL;
+ 	plt_spinlock_init(&idev->nix_inl_dev_lock);
++	plt_spinlock_init(&idev->npa_dev_lock);
+ 	__atomic_store_n(&idev->npa_refcnt, 0, __ATOMIC_RELEASE);
+ }
+ 
+diff --git a/drivers/common/cnxk/roc_idev_priv.h b/drivers/common/cnxk/roc_idev_priv.h
+index 315cc6f52cea6..b97d2936a26c0 100644
+--- a/drivers/common/cnxk/roc_idev_priv.h
++++ b/drivers/common/cnxk/roc_idev_priv.h
+@@ -33,6 +33,7 @@ struct idev_cfg {
+ 	struct nix_inl_dev *nix_inl_dev;
+ 	struct idev_nix_inl_cfg inl_cfg;
+ 	plt_spinlock_t nix_inl_dev_lock;
++	plt_spinlock_t npa_dev_lock;
+ };
+ 
+ /* Generic */
+diff --git a/drivers/common/cnxk/roc_npa.c b/drivers/common/cnxk/roc_npa.c
+index ee42434c3800f..f015fc2f1b676 100644
+--- a/drivers/common/cnxk/roc_npa.c
++++ b/drivers/common/cnxk/roc_npa.c
+@@ -325,14 +325,19 @@ npa_aura_pool_pair_alloc(struct npa_lf *lf, const uint32_t block_size,
+ 	    block_size > ROC_NPA_MAX_BLOCK_SZ)
+ 		return NPA_ERR_INVALID_BLOCK_SZ;
+ 
++	roc_npa_dev_lock();
+ 	/* Get aura_id from resource bitmap */
+ 	aura_id = find_free_aura(lf, flags);
+-	if (aura_id < 0)
++	if (aura_id < 0) {
++		roc_npa_dev_unlock();
+ 		return NPA_ERR_AURA_ID_ALLOC;
++	}
+ 
+ 	/* Mark pool as reserved */
+ 	plt_bitmap_clear(lf->npa_bmp, aura_id);
+ 
++	roc_npa_dev_unlock();
++
+ 	/* Configuration based on each aura has separate pool(aura-pool pair) */
+ 	pool_id = aura_id;
+ 	rc = (aura_id < 0 || pool_id >= (int)lf->nr_pools ||
+@@ -401,7 +406,9 @@ npa_aura_pool_pair_alloc(struct npa_lf *lf, const uint32_t block_size,
+ stack_mem_free:
+ 	plt_memzone_free(mz);
+ aura_res_put:
++	roc_npa_dev_lock();
+ 	plt_bitmap_set(lf->npa_bmp, aura_id);
++	roc_npa_dev_unlock();
+ exit:
+ 	return rc;
+ }
+@@ -501,7 +508,9 @@ npa_aura_pool_pair_free(struct npa_lf *lf, uint64_t aura_handle)
+ 	rc |= npa_stack_dma_free(lf, name, pool_id);
+ 	memset(&lf->aura_attr[aura_id], 0, sizeof(struct npa_aura_attr));
+ 
++	roc_npa_dev_lock();
+ 	plt_bitmap_set(lf->npa_bmp, aura_id);
++	roc_npa_dev_unlock();
+ 
+ 	return rc;
+ }
+@@ -921,3 +930,21 @@ roc_npa_dev_fini(struct roc_npa *roc_npa)
+ 	npa->dev.drv_inited = false;
+ 	return dev_fini(&npa->dev, npa->pci_dev);
+ }
++
++void
++roc_npa_dev_lock(void)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++
++	if (idev != NULL)
++		plt_spinlock_lock(&idev->npa_dev_lock);
++}
++
++void
++roc_npa_dev_unlock(void)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++
++	if (idev != NULL)
++		plt_spinlock_unlock(&idev->npa_dev_lock);
++}
+diff --git a/drivers/common/cnxk/roc_npa.h b/drivers/common/cnxk/roc_npa.h
+index fed194240438c..c9093e6448da8 100644
+--- a/drivers/common/cnxk/roc_npa.h
++++ b/drivers/common/cnxk/roc_npa.h
+@@ -762,5 +762,7 @@ int __roc_api roc_npa_pool_op_pc_reset(uint64_t aura_handle);
+ 
+ int __roc_api roc_npa_aura_drop_set(uint64_t aura_handle, uint64_t limit,
+ 				    bool ena);
++void __roc_api roc_npa_dev_lock(void);
++void __roc_api roc_npa_dev_unlock(void);
+ 
+ #endif /* _ROC_NPA_H_ */
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 17f0ec6b488a1..77bf3f280797a 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -321,6 +321,8 @@ INTERNAL {
+ 	roc_npa_ctx_dump;
+ 	roc_npa_dev_fini;
+ 	roc_npa_dev_init;
++	roc_npa_dev_lock;
++	roc_npa_dev_unlock;
+ 	roc_npa_dump;
+ 	roc_npa_lf_init_cb_register;
+ 	roc_npa_pool_create;
+-- 
+2.25.1
+

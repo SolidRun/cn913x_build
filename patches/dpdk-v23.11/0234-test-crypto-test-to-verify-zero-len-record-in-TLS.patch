@@ -1,0 +1,78 @@
+From 342e1236f3b4eb764f4691c617bf211e1d71c45a Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Tue, 13 Feb 2024 23:39:48 -0800
+Subject: [PATCH 234/513] test/crypto: test to verify zero len record in TLS
+
+Add unit tests to verify TLS-1.3 record with zero length.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I3a22daa047e9d66e9a7b9fcfc86487bc82b226c8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121908
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c | 39 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 12579109b94b6..587b83eb1d23f 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12501,6 +12501,37 @@ test_tls_1_3_record_proto_custom_content_type(void)
+ 
+ 	return test_tls_record_proto_all(&flags);
+ }
++
++static int
++test_tls_1_3_record_proto_zero_len(void)
++{
++	struct tls_record_test_flags flags = {
++		.zero_len = 1,
++		.tls_version = RTE_SECURITY_VERSION_TLS_1_3
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_tls_1_3_record_proto_zero_len_non_app(void)
++{
++	struct tls_record_test_flags flags = {
++		.zero_len = 1,
++		.content_type = TLS_RECORD_TEST_CONTENT_TYPE_HANDSHAKE,
++		.tls_version = RTE_SECURITY_VERSION_TLS_1_3
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
+ #endif
+ 
+ static int
+@@ -17779,6 +17810,14 @@ static struct unit_test_suite tls13_record_proto_testsuite  = {
+ 			"TLS-1.3 record header with custom content type",
+ 			ut_setup_security, ut_teardown,
+ 			test_tls_1_3_record_proto_custom_content_type),
++		TEST_CASE_NAMED_ST(
++			"TLS-1.3 record with zero len and content type as app",
++			ut_setup_security, ut_teardown,
++			test_tls_1_3_record_proto_zero_len),
++		TEST_CASE_NAMED_ST(
++			"TLS-1.3 record with zero len and content type as ctrl",
++			ut_setup_security, ut_teardown,
++			test_tls_1_3_record_proto_zero_len_non_app),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+-- 
+2.25.1
+

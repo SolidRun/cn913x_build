@@ -1,0 +1,36 @@
+From ee9a7de5668f436f63d74dc0d6af8cd2a37a7ca3 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Mon, 20 Mar 2023 09:16:57 +0530
+Subject: [PATCH 323/955] ci: update event crypto adapter perf numbers
+
+Updated CRYPTO_ADAPTER_FWD numbers on CN9k.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: Ie0178ec2954103e03166de85ed2ffc51031fef5f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99491
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../event_perf/ref_numbers/cn96xx_rclk2200_sclk1100.csv     | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn96xx_rclk2200_sclk1100.csv b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn96xx_rclk2200_sclk1100.csv
+index 2643f2e874083..1cc7225dcb279 100644
+--- a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn96xx_rclk2200_sclk1100.csv
++++ b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn96xx_rclk2200_sclk1100.csv
+@@ -28,8 +28,8 @@ cores, RESULT
+ ------------------------------------------------------------------------
+ CRYPTO_ADAPTER_FWD (parallel queue) output in packets per second
+ cores, RESULT
+-1, 4.207
+-8, 16.903
+-16, 26.950
++1, 3.976
++8, 24.913
++16, 25.833
+ 
+ ------------------------------------------------------------------------
+-- 
+2.25.1
+

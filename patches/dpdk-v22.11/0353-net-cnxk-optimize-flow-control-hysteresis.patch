@@ -1,0 +1,50 @@
+From 19d284e016d94a540bed5d3e83e4e6631713714c Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Fri, 24 Mar 2023 00:03:23 +0530
+Subject: [PATCH 353/955] net/cnxk: optimize flow control hysteresis
+
+Set flow control hysteresis to ignore immediate sequence of
+decrement-increment to avoid unnecessary LLC traffic.
+Enable hysteresis when SQ length is more than 512 as it lower
+queue lengths will require faster updates.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Change-Id: I9bac7dd43500872d3d81ebfaba8f6aa09b4accb8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99831
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c | 2 ++
+ drivers/net/cnxk/cnxk_ethdev.h | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 677539c35ab33..aaa10144798a6 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -490,6 +490,8 @@ cnxk_nix_tx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	sq->qid = qid;
+ 	sq->nb_desc = nb_desc;
+ 	sq->max_sqe_sz = nix_sq_max_sqe_sz(dev);
++	if (sq->nb_desc >= CNXK_NIX_DEF_SQ_COUNT)
++		sq->fc_hyst_bits = 0x1;
+ 
+ 	if (nix->tx_compl_ena) {
+ 		sq->cqid = sq->qid + dev->nb_rxq;
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 2b89ebb9bc741..4d7e1d025bced 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -49,6 +49,8 @@
+ /* LPB & SPB */
+ #define CNXK_NIX_NUM_POOLS_MAX 2
+ 
++#define CNXK_NIX_DEF_SQ_COUNT	512
++
+ #define CNXK_NIX_RSS_L3_L4_SRC_DST                                             \
+ 	(RTE_ETH_RSS_L3_SRC_ONLY | RTE_ETH_RSS_L3_DST_ONLY |                   \
+ 	 RTE_ETH_RSS_L4_SRC_ONLY | RTE_ETH_RSS_L4_DST_ONLY)
+-- 
+2.25.1
+

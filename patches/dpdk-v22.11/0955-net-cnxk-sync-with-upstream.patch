@@ -1,0 +1,99 @@
+From 15167927499d5b7cddf10625284cd1f664eed3e9 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 20 Sep 2024 11:15:47 +0530
+Subject: [PATCH 955/955] net/cnxk: sync with upstream
+
+Change-Id: I12ffdf273c13a24d6ae585444c892456698ed5c3
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_queue.c |  3 ++-
+ drivers/net/cnxk/cn10k_tx.h         |  2 +-
+ drivers/net/cnxk/cn9k_tx.h          |  2 +-
+ drivers/net/cnxk/rte_pmd_cnxk.h     | 12 ++++++++++++
+ 4 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index e566efafad428..06029275af977 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -1434,7 +1434,8 @@ sqb_pool_populate(struct roc_nix *roc_nix, struct roc_nix_sq *sq)
+ 	thr = PLT_DIV_CEIL((nb_sqb_bufs * ROC_NIX_SQB_THRESH), 100);
+ 	nb_sqb_bufs += NIX_SQB_PREFETCH;
+ 	/* Clamp up the SQB count */
+-	nb_sqb_bufs = PLT_MIN(roc_nix->max_sqb_count, (uint16_t)PLT_MAX(NIX_DEF_SQB, nb_sqb_bufs));
++	nb_sqb_bufs = PLT_MAX(NIX_DEF_SQB, nb_sqb_bufs);
++	nb_sqb_bufs = PLT_MIN(roc_nix->max_sqb_count, (uint16_t)nb_sqb_bufs);
+ 
+ 	sq->nb_sqb_bufs = nb_sqb_bufs;
+ 	sq->sqes_per_sqb_log2 = (uint16_t)plt_log2_u32(sqes_per_sqb);
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index b0f9ddd53b99e..50b190b90cd20 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -1238,7 +1238,7 @@ cn10k_nix_xmit_prepare_tstamp(struct cn10k_eth_txq *txq, uintptr_t lmt_addr,
+ 		struct nix_send_mem_s *send_mem;
+ 
+ 		send_mem = (struct nix_send_mem_s *)(lmt + off);
+-		/* Packets for which PKT_TX_IEEE1588_TMST is not set, tx tstamp
++		/* Packets for which RTE_MBUF_F_TX_IEEE1588_TMST is not set, Tx tstamp
+ 		 * should not be recorded, hence changing the alg type to
+ 		 * NIX_SENDMEMALG_SUB and also changing send mem addr field to
+ 		 * next 8 bytes as it corrupts the actual Tx tstamp registered
+diff --git a/drivers/net/cnxk/cn9k_tx.h b/drivers/net/cnxk/cn9k_tx.h
+index 5ef3814bfa471..21d6896b5be93 100644
+--- a/drivers/net/cnxk/cn9k_tx.h
++++ b/drivers/net/cnxk/cn9k_tx.h
+@@ -556,7 +556,7 @@ cn9k_nix_xmit_prepare_tstamp(struct cn9k_eth_txq *txq, uint64_t *cmd,
+ 
+ 		send_mem = (struct nix_send_mem_s *)(cmd + off);
+ 
+-		/* Packets for which PKT_TX_IEEE1588_TMST is not set, tx tstamp
++		/* Packets for which RTE_MBUF_F_TX_IEEE1588_TMST is not set, Tx tstamp
+ 		 * should not be recorded, hence changing the alg type to
+ 		 * NIX_SENDMEMALG_SUB and also changing send mem addr field to
+ 		 * next 8 bytes as it corrupts the actual Tx tstamp registered
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index 826278a872746..a20b4f277dc46 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -479,25 +479,37 @@ union rte_pmd_cnxk_ipsec_hw_sa {
+ 
+ /** CPT HW result format */
+ union rte_pmd_cnxk_cpt_res_s {
++	/** CN10K CPT result */
+ 	struct rte_pmd_cpt_cn10k_res_s {
++		/** Completion code */
+ 		uint64_t compcode : 7;
++		/** Done interrupt */
+ 		uint64_t doneint : 1;
++		/** Microcode completion code */
+ 		uint64_t uc_compcode : 8;
++		/** Result length */
+ 		uint64_t rlen : 16;
++		/** SPI */
+ 		uint64_t spi : 32;
+ 
++		/** Extended sequence number */
+ 		uint64_t esn;
+ 	} cn10k;
+ 
++	/** CN9K CPT result */
+ 	struct rte_pmd_cpt_cn9k_res_s {
++		/** Completion code */
+ 		uint64_t compcode : 8;
++		/** Microcode completion code */
+ 		uint64_t uc_compcode : 8;
++		/** Done interrupt */
+ 		uint64_t doneint : 1;
+ 		uint64_t reserved_17_63 : 47;
+ 
+ 		uint64_t reserved_64_127;
+ 	} cn9k;
+ 
++	/** CPT RES */
+ 	uint64_t u64[2];
+ };
+ 
+-- 
+2.25.1
+

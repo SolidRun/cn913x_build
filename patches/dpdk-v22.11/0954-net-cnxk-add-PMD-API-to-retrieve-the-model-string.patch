@@ -1,0 +1,72 @@
+From 58018789c8976c012cde940399ef9a3e2023d320 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Mon, 12 Aug 2024 16:08:15 +0530
+Subject: [PATCH 954/955] net/cnxk: add PMD API to retrieve the model string
+
+This patch adds PMD API to retrieve the model string. This API
+allows applications to get the HW model string directly.
+
+Change-Id: I7633d05c1f060b86320037ef73082e8d9cb1a6a7
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c  | 7 +++++++
+ drivers/net/cnxk/rte_pmd_cnxk.h | 9 +++++++++
+ drivers/net/cnxk/version.map    | 1 +
+ 3 files changed, 17 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index c7723800ef664..23dc2a26cc949 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -4,11 +4,18 @@
+ #include <cnxk_ethdev.h>
+ 
+ #include <rte_eventdev.h>
++#include <rte_pmd_cnxk.h>
+ 
+ #define CNXK_NIX_CQ_INL_CLAMP_MAX (64UL * 1024UL)
+ 
+ #define NIX_TM_DFLT_RR_WT 71
+ 
++const char *
++rte_pmd_cnxk_model_str_get(void)
++{
++	return roc_model->name;
++}
++
+ static inline uint64_t
+ nix_get_rx_offload_capa(struct cnxk_eth_dev *dev)
+ {
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index 8c0b5ede68295..826278a872746 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -668,4 +668,13 @@ int rte_pmd_cnxk_cpt_q_stats_get(uint16_t portid, enum rte_pmd_cnxk_cpt_q_stats_
+  */
+ __rte_experimental
+ void rte_pmd_cnxk_hw_inline_inb_cfg_set(uint16_t portid, struct rte_pmd_cnxk_ipsec_inb_cfg *cfg);
++
++/**
++ * Retrieves model name on which it is running as a string.
++ *
++ * @return
++ *   Returns model string, ex."cn10ka_a1"
++ */
++__rte_experimental
++const char *rte_pmd_cnxk_model_str_get(void);
+ #endif /* _PMD_CNXK_H_ */
+diff --git a/drivers/net/cnxk/version.map b/drivers/net/cnxk/version.map
+index 4380bd4ea588f..1b0595f91d1c5 100644
+--- a/drivers/net/cnxk/version.map
++++ b/drivers/net/cnxk/version.map
+@@ -16,6 +16,7 @@ EXPERIMENTAL {
+ 	rte_pmd_cnxk_inl_dev_qptr_get;
+ 	rte_pmd_cnxk_inl_dev_submit;
+ 	rte_pmd_cnxk_inl_ipsec_res;
++	rte_pmd_cnxk_model_str_get;
+ 	rte_pmd_cnxk_sa_flush;
+ };
+ 
+-- 
+2.25.1
+

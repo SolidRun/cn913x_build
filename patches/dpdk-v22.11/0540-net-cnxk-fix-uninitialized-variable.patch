@@ -1,0 +1,41 @@
+From 18bdece519376c0b8275d97b11b3a9c34fb93c12 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Sat, 15 Jul 2023 00:28:16 +0530
+Subject: [PATCH 540/955] net/cnxk: fix uninitialized variable
+
+shift may be uninitialized in certain case.
+It is better to initialize.
+Fixes: 55bfac717c72 ("net/cnxk: support Tx security offload on cn10k")
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I3e3eaa8cab2678f710f203505d8e55b473897462
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107566
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_tx.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index 888d0acdd0a3a..faae9ca9f2705 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -1999,6 +1999,7 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 	uint64x2_t xmask01_w0, xmask23_w0;
+ 	uint64x2_t xmask01_w1, xmask23_w1;
+ 	rte_iova_t io_addr = txq->io_addr;
++	uint8_t lnum, shift = 0, loff = 0;
+ 	uintptr_t laddr = txq->lmt_base;
+ 	uint8_t c_lnum, c_shft, c_loff;
+ 	struct nix_send_hdr_s send_hdr;
+@@ -2006,7 +2007,6 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 	uint64x2_t xtmp128, ytmp128;
+ 	uint64x2_t xmask01, xmask23;
+ 	uintptr_t c_laddr = laddr;
+-	uint8_t lnum, shift, loff = 0;
+ 	rte_iova_t c_io_addr;
+ 	uint64_t sa_base;
+ 	union wdata {
+-- 
+2.25.1
+

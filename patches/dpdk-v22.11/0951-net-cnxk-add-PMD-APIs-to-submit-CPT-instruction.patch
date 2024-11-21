@@ -1,0 +1,427 @@
+From 0e6403808d50519c483030a16471183a5908554b Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Fri, 2 Aug 2024 16:37:44 +0530
+Subject: [PATCH 951/955] net/cnxk: add PMD APIs to submit CPT instruction
+
+Introduces new PMD APIs for submitting CPT instructions to the
+Inline Device. These APIs allows applications to directly submit
+CPT instructions to the Inline Device.
+
+Change-Id: I9bc02fd30e407d04e89b12ac6e35afbbc4fd2b86
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.h      | 12 ++++++-
+ drivers/common/cnxk/roc_nix_inl_dev.c  | 32 ++++++++++++++++++
+ drivers/common/cnxk/roc_nix_inl_priv.h |  2 ++
+ drivers/common/cnxk/version.map        |  1 +
+ drivers/net/cnxk/cn10k_ethdev_sec.c    | 42 ++++++++++++++++++++++++
+ drivers/net/cnxk/cn9k_ethdev_sec.c     | 14 ++++++++
+ drivers/net/cnxk/cnxk_ethdev.c         |  1 +
+ drivers/net/cnxk/cnxk_ethdev.h         | 45 ++++++++++++++++++++++++++
+ drivers/net/cnxk/cnxk_ethdev_sec.c     | 19 +++++++++++
+ drivers/net/cnxk/rte_pmd_cnxk.h        | 35 ++++++++++++++++++++
+ drivers/net/cnxk/version.map           |  2 ++
+ 11 files changed, 204 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index 1a4bf8808ce66..974834a0f33e1 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -99,10 +99,19 @@ struct roc_nix_inl_dev {
+ 	uint8_t rx_inj_ena; /* Rx Inject Enable */
+ 	/* End of input parameters */
+ 
+-#define ROC_NIX_INL_MEM_SZ (1408)
++#define ROC_NIX_INL_MEM_SZ (2048)
+ 	uint8_t reserved[ROC_NIX_INL_MEM_SZ] __plt_cache_aligned;
+ } __plt_cache_aligned;
+ 
++struct roc_nix_inl_dev_q {
++	uint32_t nb_desc;
++	uintptr_t rbase;
++	uintptr_t lmt_base;
++	uint64_t *fc_addr;
++	uint64_t io_addr;
++	int32_t fc_addr_sw;
++} __plt_cache_aligned;
++
+ /* NIX Inline Device API */
+ int __roc_api roc_nix_inl_dev_init(struct roc_nix_inl_dev *roc_inl_dev);
+ int __roc_api roc_nix_inl_dev_fini(struct roc_nix_inl_dev *roc_inl_dev);
+@@ -176,5 +185,6 @@ int __roc_api roc_nix_inl_ctx_write(struct roc_nix *roc_nix, void *sa_dptr,
+ 				    void *sa_cptr, bool inb, uint16_t sa_len);
+ void __roc_api roc_nix_inl_outb_cpt_lfs_dump(struct roc_nix *roc_nix, FILE *file);
+ uint64_t __roc_api roc_nix_inl_eng_caps_get(struct roc_nix *roc_nix);
++void *__roc_api roc_nix_inl_dev_qptr_get(uint8_t qid);
+ 
+ #endif /* _ROC_NIX_INL_H_ */
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index 61365cd4afe9e..13126c23d14f3 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -168,6 +168,7 @@ nix_inl_nix_ipsec_cfg(struct nix_inl_dev *inl_dev, bool ena)
+ static int
+ nix_inl_cpt_setup(struct nix_inl_dev *inl_dev, bool inl_dev_sso)
+ {
++	struct roc_nix_inl_dev_q *q_info;
+ 	struct dev *dev = &inl_dev->dev;
+ 	bool ctx_ilen_valid = false;
+ 	struct roc_cpt_lf *lf;
+@@ -209,6 +210,13 @@ nix_inl_cpt_setup(struct nix_inl_dev *inl_dev, bool inl_dev_sso)
+ 			goto lf_free;
+ 		}
+ 
++		q_info = &inl_dev->q_info[i];
++		q_info->nb_desc = lf->nb_desc;
++		q_info->fc_addr = lf->fc_addr;
++		q_info->io_addr = lf->io_addr;
++		q_info->lmt_base = lf->lmt_base;
++		q_info->rbase = lf->rbase;
++
+ 		roc_cpt_iq_enable(lf);
+ 	}
+ 	return 0;
+@@ -835,6 +843,30 @@ nix_inl_outb_poll_thread_setup(struct nix_inl_dev *inl_dev)
+ 	return rc;
+ }
+ 
++void *
++roc_nix_inl_dev_qptr_get(uint8_t qid)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++	struct nix_inl_dev *inl_dev = NULL;
++
++	if (idev)
++		inl_dev = idev->nix_inl_dev;
++
++	if (!inl_dev) {
++		plt_err("Inline Device could not be detected\n");
++		return NULL;
++	}
++	if (!inl_dev->attach_cptlf) {
++		plt_err("No CPT LFs are attached to Inline Device\n");
++		return NULL;
++	}
++	if (qid >= inl_dev->nb_cptlf) {
++		plt_err("Invalid qid: %u total queues: %d\n", qid, inl_dev->nb_cptlf);
++		return NULL;
++	}
++	return &inl_dev->q_info[qid];
++}
++
+ int
+ roc_nix_inl_dev_stats_get(struct roc_nix_stats *stats)
+ {
+diff --git a/drivers/common/cnxk/roc_nix_inl_priv.h b/drivers/common/cnxk/roc_nix_inl_priv.h
+index 5afc7d665511a..64b8b3977d8bc 100644
+--- a/drivers/common/cnxk/roc_nix_inl_priv.h
++++ b/drivers/common/cnxk/roc_nix_inl_priv.h
+@@ -100,6 +100,8 @@ struct nix_inl_dev {
+ 	uint32_t curr_ipsec_idx;
+ 	uint32_t max_ipsec_rules;
+ 	uint32_t alloc_ipsec_rules;
++
++	struct roc_nix_inl_dev_q q_info[NIX_INL_CPT_LF];
+ };
+ 
+ int nix_inl_sso_register_irqs(struct nix_inl_dev *inl_dev);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 92592cee31e60..9b5748d8187d2 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -237,6 +237,7 @@ INTERNAL {
+ 	roc_nix_inl_meta_pool_cb_register;
+ 	roc_nix_inl_custom_meta_pool_cb_register;
+ 	roc_nix_inb_mode_set;
++	roc_nix_inl_dev_qptr_get;
+ 	roc_nix_inl_outb_fini;
+ 	roc_nix_inl_outb_init;
+ 	roc_nix_inl_outb_lf_base_get;
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index 890af0fa886d0..8fe692f7c6e9f 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -1305,6 +1305,45 @@ cn10k_eth_sec_rx_inject_config(void *device, uint16_t port_id, bool enable)
+ 	return 0;
+ }
+ 
++#define CPT_LMTST_BURST 32
++static uint16_t
++cn10k_inl_dev_submit(struct roc_nix_inl_dev_q *q, void *inst, uint16_t nb_inst)
++{
++	uintptr_t lbase = q->lmt_base;
++	uint8_t lnum, shft, loff;
++	uint16_t left, burst;
++	rte_iova_t io_addr;
++	uint16_t lmt_id;
++
++	/* Check the flow control to avoid the queue overflow */
++	if (cnxk_nix_inl_fc_check(q->fc_addr, &q->fc_addr_sw, q->nb_desc, nb_inst))
++		return 0;
++
++	io_addr = q->io_addr;
++	ROC_LMT_CPT_BASE_ID_GET(lbase, lmt_id);
++
++	left = nb_inst;
++again:
++	burst = left > CPT_LMTST_BURST ? CPT_LMTST_BURST : left;
++
++	lnum = 0;
++	loff = 0;
++	shft = 16;
++	memcpy(PLT_PTR_CAST(lbase), inst, burst * sizeof(struct cpt_inst_s));
++	loff = (burst % 2) ? 1 : 0;
++	lnum = (burst / 2);
++	shft = shft + (lnum * 3);
++
++	left -= burst;
++	cn10k_nix_sec_steorl(io_addr, lmt_id, lnum, loff, shft);
++	rte_io_wmb();
++	if (left) {
++		inst = RTE_PTR_ADD(inst, burst * sizeof(struct cpt_inst_s));
++		goto again;
++	}
++	return nb_inst;
++}
++
+ void
+ cn10k_eth_sec_ops_override(void)
+ {
+@@ -1341,4 +1380,7 @@ cn10k_eth_sec_ops_override(void)
+ 	cnxk_eth_sec_ops.macsec_sa_stats_get = cnxk_eth_macsec_sa_stats_get;
+ 	cnxk_eth_sec_ops.rx_inject_configure = cn10k_eth_sec_rx_inject_config;
+ 	cnxk_eth_sec_ops.inb_pkt_rx_inject = cn10k_eth_sec_inb_rx_inject;
++
++	/* Update platform specific rte_pmd_cnxk ops */
++	cnxk_pmd_ops.inl_dev_submit = cn10k_inl_dev_submit;
+ }
+diff --git a/drivers/net/cnxk/cn9k_ethdev_sec.c b/drivers/net/cnxk/cn9k_ethdev_sec.c
+index 25110d1a5bf56..390853c7281f1 100644
+--- a/drivers/net/cnxk/cn9k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn9k_ethdev_sec.c
+@@ -845,6 +845,17 @@ cn9k_eth_sec_capabilities_get(void *device __rte_unused)
+ 	return cn9k_eth_sec_capabilities;
+ }
+ 
++static uint16_t
++cn9k_inl_dev_submit(struct roc_nix_inl_dev_q *q, void *inst, uint16_t nb_inst)
++{
++	/* Not supported */
++	PLT_SET_USED(q);
++	PLT_SET_USED(inst);
++	PLT_SET_USED(nb_inst);
++
++	return 0;
++}
++
+ void
+ cn9k_eth_sec_ops_override(void)
+ {
+@@ -859,4 +870,7 @@ cn9k_eth_sec_ops_override(void)
+ 	cnxk_eth_sec_ops.session_update = cn9k_eth_sec_session_update;
+ 	cnxk_eth_sec_ops.session_destroy = cn9k_eth_sec_session_destroy;
+ 	cnxk_eth_sec_ops.capabilities_get = cn9k_eth_sec_capabilities_get;
++
++	/* Update platform specific rte_pmd_cnxk ops */
++	cnxk_pmd_ops.inl_dev_submit = cn9k_inl_dev_submit;
+ }
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index dd065c826954a..13b7e8a38c1c1 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -135,6 +135,7 @@ nix_security_setup(struct cnxk_eth_dev *dev)
+ 			rc = -ENOMEM;
+ 			goto cleanup;
+ 		}
++		dev->inb.inl_dev_q = roc_nix_inl_dev_qptr_get(0);
+ 	}
+ 
+ 	if (dev->tx_offloads & RTE_ETH_TX_OFFLOAD_SECURITY ||
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 2337a3aa707d3..ed3368fc36319 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -260,6 +260,9 @@ struct cnxk_eth_dev_sec_inb {
+ 
+ 	/* Disable custom meta aura */
+ 	bool custom_meta_aura_dis;
++
++	/* Inline device CPT queue info */
++	struct roc_nix_inl_dev_q *inl_dev_q;
+ };
+ 
+ /* Outbound security data */
+@@ -498,6 +501,39 @@ cnxk_nix_tx_queue_sec_count(uint64_t *mem, uint16_t sqes_per_sqb_log2, uint64_t
+ 	return (val & 0xFFFF);
+ }
+ 
++static inline int
++cnxk_nix_inl_fc_check(uint64_t *fc, int32_t *fc_sw, uint32_t nb_desc, uint16_t nb_inst)
++{
++	uint8_t retry_count = 32;
++	int32_t val, newval;
++
++	/* Check if there is any CPT instruction to submit */
++	if (!nb_inst)
++		return -EINVAL;
++
++retry:
++	val = __atomic_fetch_sub(fc_sw, nb_inst, __ATOMIC_RELAXED) - nb_inst;
++	if (likely(val >= 0))
++		return 0;
++
++	newval = (int64_t)nb_desc - __atomic_load_n(fc, __ATOMIC_RELAXED);
++	newval -= nb_inst;
++
++	if (!__atomic_compare_exchange_n(fc_sw, &val, newval, 0,  __ATOMIC_RELEASE,
++					 __ATOMIC_RELAXED)) {
++		if (retry_count) {
++			retry_count--;
++			goto retry;
++		} else {
++			return -EAGAIN;
++		}
++	}
++	if (unlikely(newval < 0))
++		return -EAGAIN;
++
++	return 0;
++}
++
+ /* Common ethdev ops */
+ extern struct eth_dev_ops cnxk_eth_dev_ops;
+ 
+@@ -510,6 +546,15 @@ extern struct rte_security_ops cnxk_eth_sec_ops;
+ /* Common tm ops */
+ extern struct rte_tm_ops cnxk_tm_ops;
+ 
++/* Platform specific rte pmd cnxk ops */
++typedef uint16_t (*cnxk_inl_dev_submit_cb_t)(struct roc_nix_inl_dev_q *q, void *inst,
++					     uint16_t nb_inst);
++
++struct cnxk_ethdev_pmd_ops {
++	cnxk_inl_dev_submit_cb_t inl_dev_submit;
++};
++extern struct cnxk_ethdev_pmd_ops cnxk_pmd_ops;
++
+ /* Ops */
+ int cnxk_nix_probe(struct rte_pci_driver *pci_drv,
+ 		   struct rte_pci_device *pci_dev);
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index ec129b658413f..7e5103bf5416d 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -33,6 +33,8 @@ struct inl_cpt_channel {
+ #define CNXK_NIX_INL_DEV_NAME_LEN                                              \
+ 	(sizeof(CNXK_NIX_INL_DEV_NAME) + PCI_PRI_STR_SIZE)
+ 
++struct cnxk_ethdev_pmd_ops cnxk_pmd_ops;
++
+ static inline int
+ bitmap_ctzll(uint64_t slab)
+ {
+@@ -297,6 +299,18 @@ cnxk_eth_sec_sess_get_by_sess(struct cnxk_eth_dev *dev,
+ 	return NULL;
+ }
+ 
++uint16_t
++rte_pmd_cnxk_inl_dev_submit(struct rte_pmd_cnxk_inl_dev_q *qptr, void *inst, uint16_t nb_inst)
++{
++	return cnxk_pmd_ops.inl_dev_submit((struct roc_nix_inl_dev_q *)qptr, inst, nb_inst);
++}
++
++struct rte_pmd_cnxk_inl_dev_q *
++rte_pmd_cnxk_inl_dev_qptr_get(void)
++{
++	return roc_nix_inl_dev_qptr_get(0);
++}
++
+ union rte_pmd_cnxk_ipsec_hw_sa *
+ rte_pmd_cnxk_hw_session_base_get(uint16_t portid, bool inb)
+ {
+@@ -353,6 +367,7 @@ rte_pmd_cnxk_hw_sa_write(uint16_t portid, void *sess, union rte_pmd_cnxk_ipsec_h
+ 	struct rte_eth_dev *eth_dev = &rte_eth_devices[portid];
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	struct cnxk_eth_sec_sess *eth_sec;
++	struct roc_nix_inl_dev_q *q;
+ 	void *sa;
+ 
+ 	eth_sec = cnxk_eth_sec_sess_get_by_sess(dev, sess);
+@@ -361,6 +376,10 @@ rte_pmd_cnxk_hw_sa_write(uint16_t portid, void *sess, union rte_pmd_cnxk_ipsec_h
+ 	else
+ 		sa = sess;
+ 
++	q = dev->inb.inl_dev_q;
++	if (q && cnxk_nix_inl_fc_check(q->fc_addr, &q->fc_addr_sw, q->nb_desc, 1))
++		return -EAGAIN;
++
+ 	return roc_nix_inl_ctx_write(&dev->nix, data, sa, inb, len);
+ }
+ 
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index aefa5c92a0c62..d06c0acfd23a2 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -477,6 +477,13 @@ union rte_pmd_cnxk_cpt_res_s {
+ 	uint64_t u64[2];
+ };
+ 
++/** Forward structure declaration for inline device queue. Applications obtain a pointer
++ * to this structure using the ``rte_pmd_cnxk_inl_dev_qptr_get`` API and use it to submit
++ * CPT instructions (cpt_inst_s) to the inline device via the
++ * ``rte_pmd_cnxk_inl_dev_submit`` API.
++ */
++struct rte_pmd_cnxk_inl_dev_q;
++
+ /**
+  * Read HW SA context from session.
+  *
+@@ -566,4 +573,32 @@ union rte_pmd_cnxk_ipsec_hw_sa *rte_pmd_cnxk_hw_session_base_get(uint16_t portid
+  */
+ __rte_experimental
+ int rte_pmd_cnxk_sa_flush(uint16_t portid, union rte_pmd_cnxk_ipsec_hw_sa *sess, bool inb);
++
++/**
++ * Get queue pointer of Inline Device.
++ *
++ * @return
++ *   - Pointer to queue structure that would be the input to submit API.
++ *   - NULL upon failure.
++ */
++__rte_experimental
++struct rte_pmd_cnxk_inl_dev_q *rte_pmd_cnxk_inl_dev_qptr_get(void);
++
++/**
++ * Submit CPT instruction(s) (cpt_inst_s) to Inline Device.
++ *
++ * @param qptr
++ *   Pointer obtained with ``rte_pmd_cnxk_inl_dev_qptr_get``.
++ * @param inst
++ *   Pointer to an array of ``cpt_inst_s`` prapared by application.
++ * @param nb_inst
++ *   Number of instructions to be processed.
++ *
++ * @return
++ *   Number of instructions processed.
++ */
++__rte_experimental
++uint16_t rte_pmd_cnxk_inl_dev_submit(struct rte_pmd_cnxk_inl_dev_q *qptr, void *inst,
++				     uint16_t nb_inst);
++
+ #endif /* _PMD_CNXK_H_ */
+diff --git a/drivers/net/cnxk/version.map b/drivers/net/cnxk/version.map
+index cbf85f9533b12..ca7b83b27ddab 100644
+--- a/drivers/net/cnxk/version.map
++++ b/drivers/net/cnxk/version.map
+@@ -11,6 +11,8 @@ EXPERIMENTAL {
+ 
+ 	# added in 23.11
+ 	rte_pmd_cnxk_hw_session_base_get;
++	rte_pmd_cnxk_inl_dev_qptr_get;
++	rte_pmd_cnxk_inl_dev_submit;
+ 	rte_pmd_cnxk_inl_ipsec_res;
+ 	rte_pmd_cnxk_sa_flush;
+ };
+-- 
+2.25.1
+

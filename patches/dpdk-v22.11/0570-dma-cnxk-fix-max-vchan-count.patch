@@ -1,0 +1,41 @@
+From 8ea31dad9f1a3f2fe972c156e9fad4bafdfc2673 Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Tue, 1 Aug 2023 05:00:12 -0700
+Subject: [PATCH 570/955] dma/cnxk: fix max vchan count
+
+Limit max supported vchan to 1 as cnxk dmadev supports
+only one hw queue.
+
+Fixes: ca447882617 ("dma/cnxk: increase vchan per queue to max 4")
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: Ia56b376a7ddb811c3dfd98c25e68b426a7d7e745
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108775
+Reviewed-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 3d36beda2dfefdda665f5ab320cb262d43a9bb96)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108847
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.h b/drivers/dma/cnxk/cnxk_dmadev.h
+index 9c6c898d233e0..0d8203d012fb0 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.h
++++ b/drivers/dma/cnxk/cnxk_dmadev.h
+@@ -11,7 +11,7 @@
+ #define STRM_DEC(s, var)     ((s).var = ((s).var - 1) == -1 ? (s).max_cnt : ((s).var - 1))
+ #define DPI_MAX_DESC	     2048
+ #define DPI_MIN_DESC	     2
+-#define MAX_VCHANS_PER_QUEUE 4
++#define MAX_VCHANS_PER_QUEUE 1
+ 
+ /* Set Completion data to 0xFF when request submitted,
+  * upon successful request completion engine reset to completion status
+-- 
+2.25.1
+

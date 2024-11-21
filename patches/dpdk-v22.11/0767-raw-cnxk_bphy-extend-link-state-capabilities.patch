@@ -1,0 +1,201 @@
+From d44cdc23bd9cb86da17f673723a70ee5e0790cdd Mon Sep 17 00:00:00 2001
+From: Tomasz Duszynski <tduszynski@marvell.com>
+Date: Wed, 19 Apr 2023 15:35:17 +0200
+Subject: [PATCH 767/955] raw/cnxk_bphy: extend link state capabilities
+
+Recent version of firmware extended capatiblities
+of setting link state by adding two extra parameters
+i.e. timeout and flag disabling auto enablmenet of
+rx/tx during linkup.
+
+This change add supports for both.
+
+Signed-off-by: Tomasz Duszynski <tduszynski@marvell.com>
+Change-Id: I16e319daf1f24567071034c77ade184aef9c871c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119791
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_bphy_cgx.c         | 11 ++++++++---
+ drivers/common/cnxk/roc_bphy_cgx.h         |  8 +++++++-
+ drivers/common/cnxk/roc_bphy_cgx_priv.h    |  4 ++++
+ drivers/raw/cnxk_bphy/cnxk_bphy_cgx.c      |  7 +++++--
+ drivers/raw/cnxk_bphy/cnxk_bphy_cgx_test.c |  9 +++++++--
+ drivers/raw/cnxk_bphy/rte_pmd_bphy.h       | 14 ++++++++------
+ 6 files changed, 39 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_bphy_cgx.c b/drivers/common/cnxk/roc_bphy_cgx.c
+index 0edc83453ee9c..ffb950def897a 100644
+--- a/drivers/common/cnxk/roc_bphy_cgx.c
++++ b/drivers/common/cnxk/roc_bphy_cgx.c
+@@ -311,7 +311,7 @@ roc_bphy_cgx_stop_rxtx(struct roc_bphy_cgx *roc_cgx, unsigned int lmac)
+ 
+ int
+ roc_bphy_cgx_set_link_state(struct roc_bphy_cgx *roc_cgx, unsigned int lmac,
+-			    bool state)
++			    struct roc_bphy_cgx_link_state *state)
+ {
+ 	uint64_t scr1, scr0;
+ 
+@@ -321,8 +321,13 @@ roc_bphy_cgx_set_link_state(struct roc_bphy_cgx *roc_cgx, unsigned int lmac,
+ 	if (!roc_bphy_cgx_lmac_exists(roc_cgx, lmac))
+ 		return -ENODEV;
+ 
+-	scr1 = state ? FIELD_PREP(SCR1_ETH_CMD_ID, ETH_CMD_LINK_BRING_UP) :
+-		       FIELD_PREP(SCR1_ETH_CMD_ID, ETH_CMD_LINK_BRING_DOWN);
++	if (!state)
++		return -EINVAL;
++
++	scr1 = (state->state ? FIELD_PREP(SCR1_ETH_CMD_ID, ETH_CMD_LINK_BRING_UP) :
++			       FIELD_PREP(SCR1_ETH_CMD_ID, ETH_CMD_LINK_BRING_DOWN)) |
++	       FIELD_PREP(SCR1_CGX_LINK_BRINGUP_ARGS_TIMEOUT, state->timeout) |
++	       FIELD_PREP(SCR1_CGX_LINK_BRINGUP_ARGS_RX_TX_DIS, state->rx_tx_dis);
+ 
+ 	return roc_bphy_cgx_intf_req(roc_cgx, lmac, scr1, &scr0);
+ }
+diff --git a/drivers/common/cnxk/roc_bphy_cgx.h b/drivers/common/cnxk/roc_bphy_cgx.h
+index 2b9a23f5b1ac1..18bf3185bb7cd 100644
+--- a/drivers/common/cnxk/roc_bphy_cgx.h
++++ b/drivers/common/cnxk/roc_bphy_cgx.h
+@@ -144,6 +144,12 @@ struct roc_bphy_cgx_cpri_mode_misc {
+ 	int flags;
+ };
+ 
++struct roc_bphy_cgx_link_state {
++	bool state;
++	int timeout;
++	bool rx_tx_dis;
++};
++
+ __roc_api int roc_bphy_cgx_dev_init(struct roc_bphy_cgx *roc_cgx);
+ __roc_api int roc_bphy_cgx_dev_fini(struct roc_bphy_cgx *roc_cgx);
+ 
+@@ -152,7 +158,7 @@ __roc_api int roc_bphy_cgx_start_rxtx(struct roc_bphy_cgx *roc_cgx,
+ __roc_api int roc_bphy_cgx_stop_rxtx(struct roc_bphy_cgx *roc_cgx,
+ 				     unsigned int lmac);
+ __roc_api int roc_bphy_cgx_set_link_state(struct roc_bphy_cgx *roc_cgx,
+-					  unsigned int lmac, bool state);
++					  unsigned int lmac, struct roc_bphy_cgx_link_state *state);
+ __roc_api int roc_bphy_cgx_get_linkinfo(struct roc_bphy_cgx *roc_cgx,
+ 					unsigned int lmac,
+ 					struct roc_bphy_cgx_link_info *info);
+diff --git a/drivers/common/cnxk/roc_bphy_cgx_priv.h b/drivers/common/cnxk/roc_bphy_cgx_priv.h
+index 78fa1eaa6beb2..bbcf6221563f4 100644
+--- a/drivers/common/cnxk/roc_bphy_cgx_priv.h
++++ b/drivers/common/cnxk/roc_bphy_cgx_priv.h
+@@ -102,6 +102,10 @@ enum eth_cmd_own {
+ #define SCR1_CPRI_MODE_MISC_ARGS_LANE_IDX  GENMASK_ULL(15, 12)
+ #define SCR1_CPRI_MODE_MISC_ARGS_FLAGS     GENMASK_ULL(17, 16)
+ 
++/* struct cgx_link_bringup_args */
++#define SCR1_CGX_LINK_BRINGUP_ARGS_TIMEOUT   GENMASK_ULL(21, 8)
++#define SCR1_CGX_LINK_BRINGUP_ARGS_RX_TX_DIS BIT_ULL(22)
++
+ #define SCR1_OWN_STATUS GENMASK_ULL(1, 0)
+ 
+ #endif /* _ROC_BPHY_CGX_PRIV_H_ */
+diff --git a/drivers/raw/cnxk_bphy/cnxk_bphy_cgx.c b/drivers/raw/cnxk_bphy/cnxk_bphy_cgx.c
+index 2d8466ef918b5..e1f0dcf0e7445 100644
+--- a/drivers/raw/cnxk_bphy/cnxk_bphy_cgx.c
++++ b/drivers/raw/cnxk_bphy/cnxk_bphy_cgx.c
+@@ -66,6 +66,7 @@ cnxk_bphy_cgx_process_buf(struct cnxk_bphy_cgx *cgx, unsigned int queue,
+ 	struct roc_bphy_cgx_cpri_mode_change rcpri_mode;
+ 	struct roc_bphy_cgx_cpri_mode_misc rmode_misc;
+ 	struct roc_bphy_cgx_cpri_mode_tx_ctrl rtx_ctrl;
++	struct roc_bphy_cgx_link_state rlink_state;
+ 	struct roc_bphy_cgx_link_info rlink_info;
+ 	struct roc_bphy_cgx_link_mode rlink_mode;
+ 	enum roc_bphy_cgx_eth_link_fec *fec;
+@@ -134,8 +135,10 @@ cnxk_bphy_cgx_process_buf(struct cnxk_bphy_cgx *cgx, unsigned int queue,
+ 		break;
+ 	case CNXK_BPHY_CGX_MSG_TYPE_SET_LINK_STATE:
+ 		link_state = msg->data;
+-		ret = roc_bphy_cgx_set_link_state(cgx->rcgx, lmac,
+-						  link_state->state);
++		rlink_state.state = link_state->state;
++		rlink_state.timeout = link_state->timeout;
++		rlink_state.rx_tx_dis = link_state->rx_tx_dis;
++		ret = roc_bphy_cgx_set_link_state(cgx->rcgx, lmac, &rlink_state);
+ 		break;
+ 	case CNXK_BPHY_CGX_MSG_TYPE_START_RXTX:
+ 		ret = roc_bphy_cgx_start_rxtx(cgx->rcgx, lmac);
+diff --git a/drivers/raw/cnxk_bphy/cnxk_bphy_cgx_test.c b/drivers/raw/cnxk_bphy/cnxk_bphy_cgx_test.c
+index a3021b4bb7db4..bf331c38b9a55 100644
+--- a/drivers/raw/cnxk_bphy/cnxk_bphy_cgx_test.c
++++ b/drivers/raw/cnxk_bphy/cnxk_bphy_cgx_test.c
+@@ -37,6 +37,7 @@ cnxk_bphy_cgx_link_cond(uint16_t dev_id, unsigned int queue, int cond)
+ int
+ cnxk_bphy_cgx_dev_selftest(uint16_t dev_id)
+ {
++	struct cnxk_bphy_cgx_msg_set_link_state link_state = { };
+ 	unsigned int queues, i;
+ 	int ret;
+ 
+@@ -76,7 +77,8 @@ cnxk_bphy_cgx_dev_selftest(uint16_t dev_id)
+ 			break;
+ 		}
+ 
+-		ret = rte_pmd_bphy_cgx_set_link_state(dev_id, i, false);
++		link_state.state = false;
++		ret = rte_pmd_bphy_cgx_set_link_state(dev_id, i, &link_state);
+ 		if (ret) {
+ 			RTE_LOG(ERR, PMD, "Failed to set link down\n");
+ 			break;
+@@ -87,7 +89,10 @@ cnxk_bphy_cgx_dev_selftest(uint16_t dev_id)
+ 			RTE_LOG(ERR, PMD,
+ 				"Timed out waiting for a link down\n");
+ 
+-		ret = rte_pmd_bphy_cgx_set_link_state(dev_id, i, true);
++		link_state.state = true;
++		link_state.timeout = 1500;
++		link_state.rx_tx_dis = true;
++		ret = rte_pmd_bphy_cgx_set_link_state(dev_id, i, &link_state);
+ 		if (ret) {
+ 			RTE_LOG(ERR, PMD, "Failed to set link up\n");
+ 			break;
+diff --git a/drivers/raw/cnxk_bphy/rte_pmd_bphy.h b/drivers/raw/cnxk_bphy/rte_pmd_bphy.h
+index 9d8d0285581bf..a0ccc690d6343 100644
+--- a/drivers/raw/cnxk_bphy/rte_pmd_bphy.h
++++ b/drivers/raw/cnxk_bphy/rte_pmd_bphy.h
+@@ -231,6 +231,10 @@ struct cnxk_bphy_cgx_msg_link_info {
+ struct cnxk_bphy_cgx_msg_set_link_state {
+ 	/** Defines link state result */
+ 	bool state; /* up or down */
++	/** Timeout in ms */
++	int timeout;
++	/** Set if Rx/Tx should not be enabled during link up config */
++	bool rx_tx_dis;
+ };
+ 
+ struct cnxk_bphy_cgx_msg_cpri_mode_change {
+@@ -676,21 +680,19 @@ rte_pmd_bphy_cgx_set_link_mode(uint16_t dev_id, uint16_t lmac,
+  *   The identifier of the device
+  * @param lmac
+  *   LMAC number for operation
+- * @param up
++ * @param state
+  *   Link state to set
+  *
+  * @return
+  *   Returns 0 on success, negative error code otherwise
+  */
+ static __rte_always_inline int
+-rte_pmd_bphy_cgx_set_link_state(uint16_t dev_id, uint16_t lmac, bool up)
++rte_pmd_bphy_cgx_set_link_state(uint16_t dev_id, uint16_t lmac,
++				struct cnxk_bphy_cgx_msg_set_link_state *state)
+ {
+-	struct cnxk_bphy_cgx_msg_set_link_state state = {
+-		.state = up,
+-	};
+ 	struct cnxk_bphy_cgx_msg msg = {
+ 		.type = CNXK_BPHY_CGX_MSG_TYPE_SET_LINK_STATE,
+-		.data = &state,
++		.data = state,
+ 	};
+ 
+ 	return __rte_pmd_bphy_enq_deq(dev_id, lmac, &msg, NULL, 0);
+-- 
+2.25.1
+

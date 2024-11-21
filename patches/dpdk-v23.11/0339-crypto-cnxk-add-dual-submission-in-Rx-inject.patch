@@ -1,0 +1,211 @@
+From a8e8d13c0689e706826dba6375615abb99612a05 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 14 May 2024 06:10:12 +0000
+Subject: [PATCH 339/513] crypto/cnxk: add dual submission in Rx inject
+
+Add dual submission to CPT in Rx inject path.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I5f7ed52a1b8e2849978c7911b283d55c6d9acc61
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/127719
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128316
+---
+ drivers/common/cnxk/roc_cpt.h             | 43 +++++++++-----
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 70 +++++++++++++++++------
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  |  9 +++
+ 3 files changed, 90 insertions(+), 32 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index f3646d0867ff7..2ad2a9a096996 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -30,23 +30,36 @@
+ /* Vector of sizes in the burst of 16 CPT inst except first in 63:19 of
+  * APT_LMT_ARG_S
+  */
+-#define ROC_CN10K_CPT_LMT_ARG                                                  \
+-	(ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 0) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 1) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 2) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 3) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 4) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 5) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 6) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 7) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 8) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 9) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 10) |                           \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 11) |                           \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 12) |                           \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 13) |                           \
++#define ROC_CN10K_CPT_LMT_ARG                                                                      \
++	(ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 0) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 1) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 2) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 3) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 4) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 5) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 6) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 7) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 8) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 9) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 10) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 11) |   \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 12) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 13) |   \
+ 	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 14))
+ 
++/* Vector of sizes in the burst of 2 * 16 CPT inst except first in 63:19 of
++ * APT_LMT_ARG_S
++ */
++#define ROC_CN10K_DUAL_CPT_LMT_ARG                                                                 \
++	(ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 0) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 1) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 2) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 3) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 4) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 5) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 6) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 7) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 8) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 9) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 10) |                                           \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 11) |                                           \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 12) |                                           \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 13) |                                           \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 14))
++
+ /* CPT helper macros */
+ #define ROC_CPT_AH_HDR_LEN	12
+ #define ROC_CPT_AES_GCM_IV_LEN	8
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 1108a8a1da4fc..3fd002d549bef 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -55,6 +55,54 @@ struct vec_request {
+ 	uint64_t w2;
+ };
+ 
++static __rte_always_inline void __rte_hot
++cn10k_cpt_lmtst_dual_submit(uint64_t *io_addr, const uint16_t lmt_id, int *i)
++{
++	uint64_t lmt_arg;
++
++	/* Check if the total number of instructions is odd or even. */
++	const int flag_odd = *i & 0x1;
++
++	/* Reduce i by 1 when odd number of instructions.*/
++	*i -= flag_odd;
++
++	if (*i > 2 * CN10K_PKTS_PER_STEORL) {
++		lmt_arg = ROC_CN10K_DUAL_CPT_LMT_ARG | (CN10K_PKTS_PER_STEORL - 1) << 12 |
++			  (uint64_t)lmt_id;
++		roc_lmt_submit_steorl(lmt_arg, *io_addr);
++		lmt_arg = ROC_CN10K_DUAL_CPT_LMT_ARG | (*i / 2 - CN10K_PKTS_PER_STEORL - 1) << 12 |
++			  (uint64_t)(lmt_id + CN10K_PKTS_PER_STEORL);
++		roc_lmt_submit_steorl(lmt_arg, *io_addr);
++		if (flag_odd) {
++			*io_addr = (*io_addr & ~(uint64_t)(0x7 << 4)) |
++				   (ROC_CN10K_CPT_INST_DW_M1 << 4);
++			lmt_arg = (uint64_t)(lmt_id + *i / 2);
++			roc_lmt_submit_steorl(lmt_arg, *io_addr);
++			*io_addr = (*io_addr & ~(uint64_t)(0x7 << 4)) |
++				   (ROC_CN10K_TWO_CPT_INST_DW_M1 << 4);
++			*i += 1;
++		}
++	} else {
++		if (*i != 0) {
++			lmt_arg =
++				ROC_CN10K_DUAL_CPT_LMT_ARG | (*i / 2 - 1) << 12 | (uint64_t)lmt_id;
++			roc_lmt_submit_steorl(lmt_arg, *io_addr);
++		}
++
++		if (flag_odd) {
++			*io_addr = (*io_addr & ~(uint64_t)(0x7 << 4)) |
++				   (ROC_CN10K_CPT_INST_DW_M1 << 4);
++			lmt_arg = (uint64_t)(lmt_id + *i / 2);
++			roc_lmt_submit_steorl(lmt_arg, *io_addr);
++			*io_addr = (*io_addr & ~(uint64_t)(0x7 << 4)) |
++				   (ROC_CN10K_TWO_CPT_INST_DW_M1 << 4);
++			*i += 1;
++		}
++	}
++
++	rte_io_wmb();
++}
++
+ static inline struct cnxk_se_sess *
+ cn10k_cpt_sym_temp_sess_create(struct cnxk_cpt_qp *qp, struct rte_crypto_op *op)
+ {
+@@ -1396,7 +1444,7 @@ uint16_t __rte_hot
+ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 				  struct rte_security_session **sess, uint16_t nb_pkts)
+ {
+-	uint64_t lmt_base, lmt_arg, io_addr, u64_0, u64_1, l2_len, pf_func;
++	uint64_t lmt_base, io_addr, u64_0, u64_1, l2_len, pf_func;
+ 	uint64x2_t inst_01, inst_23, inst_45, inst_67;
+ 	struct cn10k_sec_session *sec_sess;
+ 	struct rte_cryptodev *cdev = dev;
+@@ -1431,7 +1479,7 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 	if (unlikely(fc.s.qsize > fc_thresh))
+ 		goto exit;
+ 
+-	for (; i < RTE_MIN(CN10K_PKTS_PER_LOOP, nb_pkts); i++) {
++	for (; i < RTE_MIN(2 * CN10K_PKTS_PER_LOOP, nb_pkts); i++) {
+ 
+ 		m = pkts[i];
+ 		sec_sess = (struct cn10k_sec_session *)sess[i];
+@@ -1484,24 +1532,12 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 		inst_67 = vsetq_lane_u64(u64_1, inst_67, 1);
+ 		vst1q_u64(&inst->w6.u64, inst_67);
+ 
+-		inst += 2;
+-	}
+-
+-	if (i > CN10K_PKTS_PER_STEORL) {
+-		lmt_arg = ROC_CN10K_CPT_LMT_ARG | (CN10K_PKTS_PER_STEORL - 1) << 12 |
+-			  (uint64_t)lmt_id;
+-		roc_lmt_submit_steorl(lmt_arg, io_addr);
+-		lmt_arg = ROC_CN10K_CPT_LMT_ARG | (i - CN10K_PKTS_PER_STEORL - 1) << 12 |
+-			  (uint64_t)(lmt_id + CN10K_PKTS_PER_STEORL);
+-		roc_lmt_submit_steorl(lmt_arg, io_addr);
+-	} else {
+-		lmt_arg = ROC_CN10K_CPT_LMT_ARG | (i - 1) << 12 | (uint64_t)lmt_id;
+-		roc_lmt_submit_steorl(lmt_arg, io_addr);
++		inst++;
+ 	}
+ 
+-	rte_io_wmb();
++	cn10k_cpt_lmtst_dual_submit(&io_addr, lmt_id, &i);
+ 
+-	if (nb_pkts - i > 0 && i == CN10K_PKTS_PER_LOOP) {
++	if (nb_pkts - i > 0 && i == 2 * CN10K_PKTS_PER_LOOP) {
+ 		nb_pkts -= i;
+ 		pkts += i;
+ 		count += i;
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index b94cb72b12323..d1c2bb8a6992b 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -431,6 +431,7 @@ cnxk_cpt_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
+ 	struct rte_pci_device *pci_dev;
+ 	struct cnxk_cpt_qp *qp;
+ 	uint32_t nb_desc;
++	uint64_t io_addr;
+ 	int ret;
+ 
+ 	if (dev->data->queue_pairs[qp_id] != NULL)
+@@ -485,6 +486,14 @@ cnxk_cpt_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
+ 
+ 		vf->rx_inj_sso_pf_func = roc_idev_nix_inl_dev_pffunc_get();
+ 
++		/* Update IO addr to enable dual submission */
++		io_addr = vf->rx_inj_lmtline.io_addr;
++		io_addr = (io_addr & ~(uint64_t)(0x7 << 4)) | ROC_CN10K_TWO_CPT_INST_DW_M1 << 4;
++		vf->rx_inj_lmtline.io_addr = io_addr;
++
++		/* Update FC threshold to reflect dual submission */
++		vf->rx_inj_lmtline.fc_thresh -= 32;
++
+ 		/* Block the queue for other submissions */
+ 		qp->pend_q.pq_mask = 0;
+ 	}
+-- 
+2.25.1
+

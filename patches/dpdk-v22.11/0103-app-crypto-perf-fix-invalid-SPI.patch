@@ -1,0 +1,36 @@
+From 63c25f688df54c73460219dce9c0e96bbdd11d99 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 16 Dec 2022 03:45:14 +0000
+Subject: [PATCH 103/955] app/crypto-perf: fix invalid SPI
+
+As per IPsec specification (RFC 4303) SPI zero is reserved. Using
+lcore_id directly would mean SPI 0 would also be attempted. This may
+lead to failure on an otherwise compliant implementation.
+
+Fixes: 28dde5da503e ("app/crypto-perf: support lookaside IPsec")
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Icd7402ddae888112a41ca5356642b778468f7d09
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92826
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test-crypto-perf/cperf_ops.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/test-crypto-perf/cperf_ops.c b/app/test-crypto-perf/cperf_ops.c
+index 61a3967697fa5..4a1c9feb1cb41 100644
+--- a/app/test-crypto-perf/cperf_ops.c
++++ b/app/test-crypto-perf/cperf_ops.c
+@@ -722,7 +722,7 @@ create_ipsec_session(struct rte_mempool *sess_mp,
+ 		.action_type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+ 		.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
+ 		{.ipsec = {
+-			.spi = rte_lcore_id(),
++			.spi = rte_lcore_id() + 1,
+ 			/**< For testing sake, lcore_id is taken as SPI so that
+ 			 * for every core a different session is created.
+ 			 */
+-- 
+2.25.1
+

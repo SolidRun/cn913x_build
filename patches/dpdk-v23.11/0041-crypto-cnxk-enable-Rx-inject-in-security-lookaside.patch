@@ -1,0 +1,601 @@
+From 3719772e4a4abb52fb3b3ba1fda216d62c050194 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Tue, 19 Sep 2023 03:06:30 -0700
+Subject: [PATCH 041/513] crypto/cnxk: enable Rx inject in security lookaside
+
+Add Rx inject fastpath API.
+Add devargs to specify an LF to be used for Rx inject.
+When the RX inject feature flag is enabled:
+1. Reserve a CPT LF to use for RX Inject mode.
+2. Enable RXC and disable full packet mode for that LF.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I01cd1fce139b4f777b90d2cc3dd2e2206bc44cda
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117306
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ doc/guides/cryptodevs/cnxk.rst               |  12 ++
+ drivers/common/cnxk/hw/cpt.h                 |   9 ++
+ drivers/common/cnxk/roc_cpt.c                |  11 +-
+ drivers/common/cnxk/roc_cpt.h                |   3 +-
+ drivers/common/cnxk/roc_cpt_priv.h           |   2 +-
+ drivers/common/cnxk/roc_ie_ot.c              |  14 +--
+ drivers/common/cnxk/roc_mbox.h               |   2 +
+ drivers/common/cnxk/roc_nix_inl.c            |   2 +-
+ drivers/common/cnxk/roc_nix_inl_dev.c        |   2 +-
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c    | 123 +++++++++++++++++++
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.h    |   8 ++
+ drivers/crypto/cnxk/cn10k_ipsec.c            |   4 +
+ drivers/crypto/cnxk/cn10k_ipsec.h            |   2 +
+ drivers/crypto/cnxk/cnxk_cryptodev.c         |   3 +
+ drivers/crypto/cnxk/cnxk_cryptodev.h         |   3 +
+ drivers/crypto/cnxk/cnxk_cryptodev_devargs.c |  31 +++++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c     |  27 +++-
+ drivers/crypto/cnxk/version.map              |   3 +
+ 18 files changed, 246 insertions(+), 15 deletions(-)
+
+diff --git a/doc/guides/cryptodevs/cnxk.rst b/doc/guides/cryptodevs/cnxk.rst
+index fbe67475bea21..8dc745dccda34 100644
+--- a/doc/guides/cryptodevs/cnxk.rst
++++ b/doc/guides/cryptodevs/cnxk.rst
+@@ -187,6 +187,18 @@ Runtime Config Options
+    With the above configuration, the number of maximum queue pairs supported
+    by the device is limited to 4.
+ 
++- ``LF ID for RX injection in case of fallback mechanism`` (default ``60``)
++
++   LF ID for RX Injection in fallback mechanism of security.
++   Can be configured during runtime by using ``rx_inj_lf`` ``devargs`` parameter.
++
++   For example::
++
++      -a 0002:20:00.1,rx_inj_lf=20
++
++   With the above configuration, LF 20 will be used by the device for RX Injection
++   in security in fallback mechanism secnario.
++
+ Debugging Options
+ -----------------
+ 
+diff --git a/drivers/common/cnxk/hw/cpt.h b/drivers/common/cnxk/hw/cpt.h
+index cf9046bbfb40c..edab8a5d83fcb 100644
+--- a/drivers/common/cnxk/hw/cpt.h
++++ b/drivers/common/cnxk/hw/cpt.h
+@@ -237,6 +237,15 @@ struct cpt_inst_s {
+ 			uint64_t doneint : 1;
+ 			uint64_t nixtx_addr : 60;
+ 		} s;
++		struct {
++			uint64_t nixtxl : 3;
++			uint64_t doneint : 1;
++			uint64_t chan : 12;
++			uint64_t l2_len : 8;
++			uint64_t et_offset : 8;
++			uint64_t match_id : 16;
++			uint64_t sso_pf_func : 16;
++		} hw_s;
+ 		uint64_t u64;
+ 	} w0;
+ 
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index 4e23d8c135523..38e46d65c15aa 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -463,7 +463,7 @@ cpt_available_lfs_get(struct dev *dev, uint16_t *nb_lf)
+ 
+ int
+ cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blkaddr, bool inl_dev_sso,
+-	      bool ctx_ilen_valid, uint8_t ctx_ilen)
++	      bool ctx_ilen_valid, uint8_t ctx_ilen, bool rxc_ena, uint16_t rx_inj_lf)
+ {
+ 	struct cpt_lf_alloc_req_msg *req;
+ 	struct mbox *mbox = mbox_get(dev->mbox);
+@@ -489,6 +489,10 @@ cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blkaddr, bool inl_dev
+ 	req->blkaddr = blkaddr;
+ 	req->ctx_ilen_valid = ctx_ilen_valid;
+ 	req->ctx_ilen = ctx_ilen;
++	if (rxc_ena) {
++		req->rxc_ena = 1;
++		req->rxc_ena_lf_id = rx_inj_lf;
++	}
+ 
+ 	rc = mbox_process(mbox);
+ exit:
+@@ -586,7 +590,7 @@ cpt_iq_init(struct roc_cpt_lf *lf)
+ }
+ 
+ int
+-roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf)
++roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena, uint16_t rx_inj_lf)
+ {
+ 	struct cpt *cpt = roc_cpt_to_cpt_priv(roc_cpt);
+ 	uint8_t blkaddr[ROC_CPT_MAX_BLKS];
+@@ -630,7 +634,8 @@ roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf)
+ 		ctx_ilen = (PLT_ALIGN(ROC_OT_IPSEC_SA_SZ_MAX, ROC_ALIGN) / 128) - 1;
+ 	}
+ 
+-	rc = cpt_lfs_alloc(&cpt->dev, eng_grpmsk, blkaddr[blknum], false, ctx_ilen_valid, ctx_ilen);
++	rc = cpt_lfs_alloc(&cpt->dev, eng_grpmsk, blkaddr[blknum], false, ctx_ilen_valid, ctx_ilen,
++			   rxc_ena, rx_inj_lf);
+ 	if (rc)
+ 		goto lfs_detach;
+ 
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index 787bccb27d035..001e71c55e48f 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -171,7 +171,8 @@ int __roc_api roc_cpt_dev_init(struct roc_cpt *roc_cpt);
+ int __roc_api roc_cpt_dev_fini(struct roc_cpt *roc_cpt);
+ int __roc_api roc_cpt_eng_grp_add(struct roc_cpt *roc_cpt,
+ 				  enum cpt_eng_type eng_type);
+-int __roc_api roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf);
++int __roc_api roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena,
++				    uint16_t rx_inj_lf);
+ void __roc_api roc_cpt_dev_clear(struct roc_cpt *roc_cpt);
+ int __roc_api roc_cpt_lf_init(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf);
+ void __roc_api roc_cpt_lf_fini(struct roc_cpt_lf *lf);
+diff --git a/drivers/common/cnxk/roc_cpt_priv.h b/drivers/common/cnxk/roc_cpt_priv.h
+index 4ed87c857b45c..fa4986d671f26 100644
+--- a/drivers/common/cnxk/roc_cpt_priv.h
++++ b/drivers/common/cnxk/roc_cpt_priv.h
+@@ -22,7 +22,7 @@ int cpt_lfs_attach(struct dev *dev, uint8_t blkaddr, bool modify,
+ 		   uint16_t nb_lf);
+ int cpt_lfs_detach(struct dev *dev);
+ int cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blk, bool inl_dev_sso,
+-		  bool ctx_ilen_valid, uint8_t ctx_ilen);
++		  bool ctx_ilen_valid, uint8_t ctx_ilen, bool rxc_ena, uint16_t rx_inj_lf);
+ int cpt_lfs_free(struct dev *dev);
+ int cpt_lf_init(struct roc_cpt_lf *lf);
+ void cpt_lf_fini(struct roc_cpt_lf *lf);
+diff --git a/drivers/common/cnxk/roc_ie_ot.c b/drivers/common/cnxk/roc_ie_ot.c
+index d0b7ad38f1536..465b2bc1fb952 100644
+--- a/drivers/common/cnxk/roc_ie_ot.c
++++ b/drivers/common/cnxk/roc_ie_ot.c
+@@ -12,13 +12,13 @@ roc_ot_ipsec_inb_sa_init(struct roc_ot_ipsec_inb_sa *sa, bool is_inline)
+ 
+ 	memset(sa, 0, sizeof(struct roc_ot_ipsec_inb_sa));
+ 
+-	if (is_inline) {
+-		sa->w0.s.pkt_output = ROC_IE_OT_SA_PKT_OUTPUT_NO_FRAG;
+-		sa->w0.s.pkt_format = ROC_IE_OT_SA_PKT_FMT_META;
+-		sa->w0.s.pkind = ROC_IE_OT_CPT_PKIND;
+-		sa->w0.s.et_ovrwr = 1;
+-		sa->w2.s.l3hdr_on_err = 1;
+-	}
++	sa->w0.s.pkt_output = ROC_IE_OT_SA_PKT_OUTPUT_NO_FRAG;
++	sa->w0.s.pkt_format = ROC_IE_OT_SA_PKT_FMT_META;
++	sa->w0.s.pkind = ROC_IE_OT_CPT_PKIND;
++	sa->w0.s.et_ovrwr = 1;
++	sa->w2.s.l3hdr_on_err = 1;
++
++	PLT_SET_USED(is_inline);
+ 
+ 	offset = offsetof(struct roc_ot_ipsec_inb_sa, ctx);
+ 	sa->w0.s.hw_ctx_off = offset / ROC_CTX_UNIT_8B;
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 3257a370bcdaa..8eb5da7f1adf1 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -2078,6 +2078,8 @@ struct cpt_lf_alloc_req_msg {
+ 	uint8_t __io blkaddr;
+ 	uint8_t __io ctx_ilen_valid : 1;
+ 	uint8_t __io ctx_ilen : 7;
++	uint8_t __io rxc_ena : 1;
++	uint8_t __io rxc_ena_lf_id : 7;
+ };
+ 
+ #define CPT_INLINE_INBOUND  0
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 750fd08355f17..07a90133ca69b 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -986,7 +986,7 @@ roc_nix_inl_outb_init(struct roc_nix *roc_nix)
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_SE_IE |
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_AE);
+ 	rc = cpt_lfs_alloc(dev, eng_grpmask, blkaddr,
+-			   !roc_nix->ipsec_out_sso_pffunc, ctx_ilen_valid, ctx_ilen);
++			   !roc_nix->ipsec_out_sso_pffunc, ctx_ilen_valid, ctx_ilen, false, 0);
+ 	if (rc) {
+ 		plt_err("Failed to alloc CPT LF resources, rc=%d", rc);
+ 		goto lf_detach;
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index dc1306c093fa1..f6991de051156 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -194,7 +194,7 @@ nix_inl_cpt_setup(struct nix_inl_dev *inl_dev, bool inl_dev_sso)
+ 	}
+ 
+ 	rc = cpt_lfs_alloc(dev, eng_grpmask, RVU_BLOCK_ADDR_CPT0, inl_dev_sso, ctx_ilen_valid,
+-			   ctx_ilen);
++			   ctx_ilen, false, 0);
+ 	if (rc) {
+ 		plt_err("Failed to alloc CPT LF resources, rc=%d", rc);
+ 		return rc;
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index bef7b7581014c..c86d47239b174 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -7,6 +7,8 @@
+ #include <rte_event_crypto_adapter.h>
+ #include <rte_ip.h>
+ 
++#include <ethdev_driver.h>
++
+ #include "roc_cpt.h"
+ #if defined(__aarch64__)
+ #include "roc_io.h"
+@@ -1057,6 +1059,103 @@ cn10k_cpt_dequeue_burst(void *qptr, struct rte_crypto_op **ops, uint16_t nb_ops)
+ 	return i;
+ }
+ 
++uint16_t __rte_hot
++cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
++				  struct rte_security_session **sess, uint16_t nb_pkts)
++{
++	uint16_t l2_len, pf_func, lmt_id, count = 0;
++	uint64_t lmt_base, lmt_arg, io_addr;
++	struct cn10k_sec_session *sec_sess;
++	struct rte_cryptodev *cdev = dev;
++	union cpt_res_s *hw_res = NULL;
++	struct cpt_inst_s *inst;
++	struct cnxk_cpt_vf *vf;
++	struct rte_mbuf *m;
++	uint64_t dptr;
++	int i;
++
++	const union cpt_res_s res = {
++		.cn10k.compcode = CPT_COMP_NOT_DONE,
++	};
++
++	vf = cdev->data->dev_private;
++
++	lmt_base = vf->rx_inj_lmtline.lmt_base;
++	io_addr = vf->rx_inj_lmtline.io_addr;
++
++	ROC_LMT_BASE_ID_GET(lmt_base, lmt_id);
++	pf_func = vf->rx_inj_pf_func;
++
++again:
++	inst = (struct cpt_inst_s *)lmt_base;
++	for (i = 0; i < RTE_MIN(PKTS_PER_LOOP, nb_pkts); i++) {
++
++		m = pkts[i];
++		sec_sess = (struct cn10k_sec_session *)sess[i];
++
++		if (unlikely(rte_pktmbuf_headroom(m) < 32)) {
++			plt_dp_err("No space for CPT res_s");
++			break;
++		}
++
++		if (unlikely(!rte_pktmbuf_is_contiguous(m))) {
++			plt_dp_err("Multi seg is not supported");
++			break;
++		}
++
++		l2_len = m->l2_len;
++
++		*rte_security_dynfield(m) = (uint64_t)sec_sess->userdata;
++
++		hw_res = rte_pktmbuf_mtod(m, void *);
++		hw_res = RTE_PTR_SUB(hw_res, 32);
++		hw_res = RTE_PTR_ALIGN_CEIL(hw_res, 16);
++
++		/* Prepare CPT instruction */
++		inst->w0.u64 = 0;
++		inst->w2.u64 = 0;
++		inst->w2.s.rvu_pf_func = pf_func;
++		inst->w3.u64 = (((uint64_t)m + sizeof(struct rte_mbuf)) >> 3) << 3 | 1;
++
++		inst->w4.u64 = sec_sess->inst.w4 | (rte_pktmbuf_pkt_len(m));
++		dptr = (uint64_t)rte_pktmbuf_iova(m);
++		inst->dptr = dptr;
++		inst->rptr = dptr;
++
++		inst->w0.hw_s.l2_len = l2_len;
++		inst->w0.hw_s.et_offset = l2_len - 2;
++
++		inst->res_addr = (uint64_t)hw_res;
++		rte_atomic_store_explicit(&hw_res->u64[0], res.u64[0], rte_memory_order_relaxed);
++
++		inst->w7.u64 = sec_sess->inst.w7;
++
++		inst += 2;
++	}
++
++	if (i > PKTS_PER_STEORL) {
++		lmt_arg = ROC_CN10K_CPT_LMT_ARG | (PKTS_PER_STEORL - 1) << 12 | (uint64_t)lmt_id;
++		roc_lmt_submit_steorl(lmt_arg, io_addr);
++		lmt_arg = ROC_CN10K_CPT_LMT_ARG | (i - PKTS_PER_STEORL - 1) << 12 |
++			  (uint64_t)(lmt_id + PKTS_PER_STEORL);
++		roc_lmt_submit_steorl(lmt_arg, io_addr);
++	} else {
++		lmt_arg = ROC_CN10K_CPT_LMT_ARG | (i - 1) << 12 | (uint64_t)lmt_id;
++		roc_lmt_submit_steorl(lmt_arg, io_addr);
++	}
++
++	rte_io_wmb();
++
++	if (nb_pkts - i > 0 && i == PKTS_PER_LOOP) {
++		nb_pkts -= i;
++		pkts += i;
++		count += i;
++		goto again;
++	}
++
++	return count + i;
++}
++
+ void
+ cn10k_cpt_set_enqdeq_fns(struct rte_cryptodev *dev, struct cnxk_cpt_vf *vf)
+ {
+@@ -1535,6 +1634,30 @@ cn10k_sym_configure_raw_dp_ctx(struct rte_cryptodev *dev, uint16_t qp_id,
+ 	return 0;
+ }
+ 
++int
++cn10k_cryptodev_sec_rx_inject_configure(void *device, uint16_t port_id, bool enable)
++{
++	struct rte_cryptodev *crypto_dev = device;
++	struct rte_eth_dev *eth_dev;
++	int ret;
++
++	if (!rte_eth_dev_is_valid_port(port_id))
++		return -EINVAL;
++
++	if (!(crypto_dev->feature_flags & RTE_CRYPTODEV_FF_SECURITY_RX_INJECT))
++		return -ENOTSUP;
++
++	eth_dev = &rte_eth_devices[port_id];
++
++	ret = strncmp(eth_dev->device->driver->name, "net_cn10k", 8);
++	if (ret)
++		return -ENOTSUP;
++
++	RTE_SET_USED(enable);
++
++	return 0;
++}
++
+ struct rte_cryptodev_ops cn10k_cpt_ops = {
+ 	/* Device control ops */
+ 	.dev_configure = cnxk_cpt_dev_config,
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.h b/drivers/crypto/cnxk/cn10k_cryptodev_ops.h
+index befbfcdfade6a..34becede3c73b 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.h
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.h
+@@ -16,6 +16,14 @@ extern struct rte_cryptodev_ops cn10k_cpt_ops;
+ 
+ void cn10k_cpt_set_enqdeq_fns(struct rte_cryptodev *dev, struct cnxk_cpt_vf *vf);
+ 
++__rte_internal
++uint16_t __rte_hot cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
++						     struct rte_security_session **sess,
++						     uint16_t nb_pkts);
++
++__rte_internal
++int cn10k_cryptodev_sec_rx_inject_configure(void *device, uint16_t port_id, bool enable);
++
+ __rte_internal
+ uint16_t __rte_hot cn10k_cpt_sg_ver1_crypto_adapter_enqueue(void *ws, struct rte_event ev[],
+ 		uint16_t nb_events);
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.c b/drivers/crypto/cnxk/cn10k_ipsec.c
+index ffd3f50eed5bf..2d098fdd24a49 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.c
++++ b/drivers/crypto/cnxk/cn10k_ipsec.c
+@@ -10,6 +10,7 @@
+ #include <rte_security_driver.h>
+ #include <rte_udp.h>
+ 
++#include "cn10k_cryptodev_ops.h"
+ #include "cn10k_ipsec.h"
+ #include "cnxk_cryptodev.h"
+ #include "cnxk_cryptodev_ops.h"
+@@ -297,6 +298,7 @@ cn10k_sec_session_create(void *device, struct rte_security_session_conf *conf,
+ 	if (conf->protocol != RTE_SECURITY_PROTOCOL_IPSEC)
+ 		return -ENOTSUP;
+ 
++	((struct cn10k_sec_session *)sess)->userdata = conf->userdata;
+ 	return cn10k_ipsec_session_create(device, &conf->ipsec,
+ 					 conf->crypto_xform, sess);
+ }
+@@ -458,4 +460,6 @@ cn10k_sec_ops_override(void)
+ 	cnxk_sec_ops.session_get_size = cn10k_sec_session_get_size;
+ 	cnxk_sec_ops.session_stats_get = cn10k_sec_session_stats_get;
+ 	cnxk_sec_ops.session_update = cn10k_sec_session_update;
++	cnxk_sec_ops.inb_pkt_rx_inject = cn10k_cryptodev_sec_inb_rx_inject;
++	cnxk_sec_ops.rx_inject_configure = cn10k_cryptodev_sec_rx_inject_configure;
+ }
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.h b/drivers/crypto/cnxk/cn10k_ipsec.h
+index 8a93d7406204e..03ac99400143c 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.h
++++ b/drivers/crypto/cnxk/cn10k_ipsec.h
+@@ -38,6 +38,8 @@ struct cn10k_sec_session {
+ 	bool is_outbound;
+ 	/** Queue pair */
+ 	struct cnxk_cpt_qp *qp;
++	/** Userdata to be set for Rx inject */
++	void *userdata;
+ 
+ 	/**
+ 	 * End of SW mutable area
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.c b/drivers/crypto/cnxk/cnxk_cryptodev.c
+index 4819a141842c7..b1684e56a7f27 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.c
+@@ -24,6 +24,9 @@ cnxk_cpt_default_ff_get(void)
+ 	if (roc_model_is_cn10k())
+ 		ff |= RTE_CRYPTODEV_FF_SECURITY_INNER_CSUM | RTE_CRYPTODEV_FF_SYM_RAW_DP;
+ 
++	if (roc_model_is_cn10ka_b0())
++		ff |= RTE_CRYPTODEV_FF_SECURITY_RX_INJECT;
++
+ 	return ff;
+ }
+ 
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.h b/drivers/crypto/cnxk/cnxk_cryptodev.h
+index f5374131bf4a8..fedae53736d20 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.h
+@@ -18,6 +18,8 @@
+  * Device private data
+  */
+ struct cnxk_cpt_vf {
++	struct roc_cpt_lmtline rx_inj_lmtline;
++	uint16_t rx_inj_pf_func;
+ 	struct roc_cpt cpt;
+ 	struct rte_cryptodev_capabilities crypto_caps[CNXK_CPT_MAX_CAPS];
+ 	struct rte_cryptodev_capabilities
+@@ -26,6 +28,7 @@ struct cnxk_cpt_vf {
+ 	uint64_t cnxk_fpm_iova[ROC_AE_EC_ID_PMAX];
+ 	struct roc_ae_ec_group *ec_grp[ROC_AE_EC_ID_PMAX];
+ 	uint16_t max_qps_limit;
++	uint16_t rx_inj_lf;
+ };
+ 
+ uint64_t cnxk_cpt_default_ff_get(void);
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c b/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c
+index c3e9bdb2d15b4..f5a76d83edfc7 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_devargs.c
+@@ -9,6 +9,23 @@
+ #define CNXK_MAX_QPS_LIMIT     "max_qps_limit"
+ #define CNXK_MAX_QPS_LIMIT_MIN 1
+ #define CNXK_MAX_QPS_LIMIT_MAX (ROC_CPT_MAX_LFS - 1)
++#define CNXK_RX_INJ_LF	       "rx_inj_lf"
++
++static int
++parse_rx_inj_lf(const char *key, const char *value, void *extra_args)
++{
++	RTE_SET_USED(key);
++	uint32_t val;
++
++	val = atoi(value);
++
++	if (val < CNXK_MAX_QPS_LIMIT_MIN || val > CNXK_MAX_QPS_LIMIT_MAX)
++		return -EINVAL;
++
++	*(uint16_t *)extra_args = val;
++
++	return 0;
++}
+ 
+ static int
+ parse_max_qps_limit(const char *key, const char *value, void *extra_args)
+@@ -31,8 +48,12 @@ cnxk_cpt_parse_devargs(struct rte_devargs *devargs, struct cnxk_cpt_vf *vf)
+ {
+ 	uint16_t max_qps_limit = CNXK_MAX_QPS_LIMIT_MAX;
+ 	struct rte_kvargs *kvlist;
++	uint16_t rx_inj_lf;
+ 	int rc;
+ 
++	/* Set to max value as default so that the feature is disabled by default. */
++	rx_inj_lf = CNXK_MAX_QPS_LIMIT_MAX;
++
+ 	if (devargs == NULL)
+ 		goto null_devargs;
+ 
+@@ -48,10 +69,20 @@ cnxk_cpt_parse_devargs(struct rte_devargs *devargs, struct cnxk_cpt_vf *vf)
+ 		rte_kvargs_free(kvlist);
+ 		goto exit;
+ 	}
++
++	rc = rte_kvargs_process(kvlist, CNXK_RX_INJ_LF, parse_rx_inj_lf, &rx_inj_lf);
++	if (rc < 0) {
++		plt_err("rx_inj_lf should in the range <%d-%d>", CNXK_MAX_QPS_LIMIT_MIN,
++			max_qps_limit - 1);
++		rte_kvargs_free(kvlist);
++		goto exit;
++	}
++
+ 	rte_kvargs_free(kvlist);
+ 
+ null_devargs:
+ 	vf->max_qps_limit = max_qps_limit;
++	vf->rx_inj_lf = rx_inj_lf;
+ 	return 0;
+ 
+ exit:
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 82938c77c89c4..c0733ddbfba97 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -5,6 +5,7 @@
+ #include <rte_cryptodev.h>
+ #include <cryptodev_pmd.h>
+ #include <rte_errno.h>
++#include <rte_security_driver.h>
+ 
+ #include "roc_ae_fpm_tables.h"
+ #include "roc_cpt.h"
+@@ -95,6 +96,7 @@ cnxk_cpt_dev_config(struct rte_cryptodev *dev, struct rte_cryptodev_config *conf
+ 	struct cnxk_cpt_vf *vf = dev->data->dev_private;
+ 	struct roc_cpt *roc_cpt = &vf->cpt;
+ 	uint16_t nb_lf_avail, nb_lf;
++	bool rxc_ena = false;
+ 	int ret;
+ 
+ 	/* If this is a reconfigure attempt, clear the device and configure again */
+@@ -111,7 +113,13 @@ cnxk_cpt_dev_config(struct rte_cryptodev *dev, struct rte_cryptodev_config *conf
+ 	if (nb_lf > nb_lf_avail)
+ 		return -ENOTSUP;
+ 
+-	ret = roc_cpt_dev_configure(roc_cpt, nb_lf);
++	if (dev->feature_flags & RTE_CRYPTODEV_FF_SECURITY_RX_INJECT) {
++		if (rte_security_dynfield_register() < 0)
++			return -ENOTSUP;
++		rxc_ena = true;
++	}
++
++	ret = roc_cpt_dev_configure(roc_cpt, nb_lf, rxc_ena, vf->rx_inj_lf);
+ 	if (ret) {
+ 		plt_err("Could not configure device");
+ 		return ret;
+@@ -208,6 +216,10 @@ cnxk_cpt_dev_info_get(struct rte_cryptodev *dev,
+ 	info->sym.max_nb_sessions = 0;
+ 	info->min_mbuf_headroom_req = CNXK_CPT_MIN_HEADROOM_REQ;
+ 	info->min_mbuf_tailroom_req = CNXK_CPT_MIN_TAILROOM_REQ;
++
++	/* If the LF ID for RX Inject is less than the available lfs. */
++	if (vf->rx_inj_lf > info->max_nb_queue_pairs)
++		info->feature_flags &= ~RTE_CRYPTODEV_FF_SECURITY_RX_INJECT;
+ }
+ 
+ static void
+@@ -452,6 +464,19 @@ cnxk_cpt_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
+ 	qp->sess_mp = conf->mp_session;
+ 	dev->data->queue_pairs[qp_id] = qp;
+ 
++	if (qp_id == vf->rx_inj_lf) {
++		ret = roc_cpt_lmtline_init(roc_cpt, &vf->rx_inj_lmtline, vf->rx_inj_lf);
++		if (ret) {
++			plt_err("Could not init lmtline Rx inject");
++			goto exit;
++		}
++
++		vf->rx_inj_pf_func = qp->lf.pf_func;
++
++		/* Block the queue for other submissions */
++		qp->pend_q.pq_mask = 0;
++	}
++
+ 	return 0;
+ 
+ exit:
+diff --git a/drivers/crypto/cnxk/version.map b/drivers/crypto/cnxk/version.map
+index d13209feec86e..5789a6bfc9862 100644
+--- a/drivers/crypto/cnxk/version.map
++++ b/drivers/crypto/cnxk/version.map
+@@ -8,5 +8,8 @@ INTERNAL {
+ 	cn10k_cpt_crypto_adapter_dequeue;
+ 	cn10k_cpt_crypto_adapter_vector_dequeue;
+ 
++	cn10k_cryptodev_sec_inb_rx_inject;
++	cn10k_cryptodev_sec_rx_inject_configure;
++
+ 	local: *;
+ };
+-- 
+2.25.1
+

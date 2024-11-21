@@ -1,0 +1,39 @@
+From 3fba371b28d7125a9fd9e0254ec2b30788d61bb3 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Wed, 19 Jul 2023 10:30:01 +0530
+Subject: [PATCH 553/955] common/cnxk: fix xstats for different packet sizes
+
+xstats for transmitted packets with different sizes
+are not updated as sizeof mbox response structure
+are different in dpdk and kernel.This patch fixes the
+same.
+
+Fixes: 503b82de2cbf ("common/cnxk: add mbox request and response definitions")
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Id81aa5e64d76043294b6a61d1b1bc86908e88609
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107787
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_mbox.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 1f267de980aa9..8150e0c5e19fb 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -560,7 +560,7 @@ enum cgx_af_status {
+ 
+ struct cgx_stats_rsp {
+ 	struct mbox_msghdr hdr;
+-#define CGX_RX_STATS_COUNT 13
++#define CGX_RX_STATS_COUNT 9
+ #define CGX_TX_STATS_COUNT 18
+ 	uint64_t __io rx_stats[CGX_RX_STATS_COUNT];
+ 	uint64_t __io tx_stats[CGX_TX_STATS_COUNT];
+-- 
+2.25.1
+

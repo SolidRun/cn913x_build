@@ -1,0 +1,501 @@
+From 3fefaa672e6110c3410aa0a94b1fda1bd7a28af5 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Thu, 23 Nov 2023 23:02:40 -0800
+Subject: [PATCH 054/513] test/crypto: move algorithm framework to common
+
+Move algorithm list and the associated framework to common files
+(test_security_proto.c & .h) to be able to use same framework for other
+security offload tests such as TLS record.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I537c097e44e71a218b2ce67e7c5cd05dc771a685
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115862
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117479
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test-security-perf/test_security_perf.c | 17 +++---
+ app/test/test_cryptodev.c                   | 35 ++++++------
+ app/test/test_cryptodev_security_ipsec.c    | 60 +++------------------
+ app/test/test_cryptodev_security_ipsec.h    | 16 ------
+ app/test/test_security_inline_proto.c       | 27 +++++-----
+ app/test/test_security_proto.c              | 46 ++++++++++++++++
+ app/test/test_security_proto.h              | 16 ++++++
+ 7 files changed, 109 insertions(+), 108 deletions(-)
+
+diff --git a/app/test-security-perf/test_security_perf.c b/app/test-security-perf/test_security_perf.c
+index 84726de7b0bfb..b0d55cbab0d3b 100644
+--- a/app/test-security-perf/test_security_perf.c
++++ b/app/test-security-perf/test_security_perf.c
+@@ -474,8 +474,8 @@ args_parse(int argc, char **argv)
+ int
+ main(int argc, char **argv)
+ {
+-	struct ipsec_test_data td_outb[RTE_DIM(alg_list)];
+-	struct ipsec_test_data td_inb[RTE_DIM(alg_list)];
++	struct ipsec_test_data td_outb[RTE_DIM(sec_alg_list)];
++	struct ipsec_test_data td_inb[RTE_DIM(sec_alg_list)];
+ 	struct ipsec_test_flags flags;
+ 	uint32_t lcore_id;
+ 	uint8_t nb_lcores;
+@@ -513,11 +513,11 @@ main(int argc, char **argv)
+ 	if (ret)
+ 		goto cryptodev_fini;
+ 
+-	test_ipsec_alg_list_populate();
++	test_sec_alg_list_populate();
+ 
+-	for (i = 0; i < RTE_DIM(alg_list); i++) {
+-		test_ipsec_td_prepare(alg_list[i].param1,
+-				      alg_list[i].param2,
++	for (i = 0; i < RTE_DIM(sec_alg_list); i++) {
++		test_ipsec_td_prepare(sec_alg_list[i].param1,
++				      sec_alg_list[i].param2,
+ 				      &flags,
+ 				      &td_outb[i],
+ 				      1);
+@@ -529,10 +529,11 @@ main(int argc, char **argv)
+ 	if (ctx.is_inbound)
+ 		ctx.td = td_inb;
+ 
+-	for (ctx.td_idx = 0; ctx.td_idx < RTE_DIM(alg_list); ctx.td_idx++) {
++	for (ctx.td_idx = 0; ctx.td_idx < RTE_DIM(sec_alg_list); ctx.td_idx++) {
+ 
+ 		printf("\n\n    Algorithm combination:");
+-		test_sec_alg_display(alg_list[ctx.td_idx].param1, alg_list[ctx.td_idx].param2);
++		test_sec_alg_display(sec_alg_list[ctx.td_idx].param1,
++				     sec_alg_list[ctx.td_idx].param2);
+ 		printf("    ----------------------");
+ 
+ 		printf("\n%20s%20s%20s%20s%20s%20s\n\n",
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 0c69220f91cd8..dd519338dad84 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -838,8 +838,8 @@ ipsec_proto_testsuite_setup(void)
+ 		ret = TEST_SKIPPED;
+ 	}
+ 
+-	test_ipsec_alg_list_populate();
+-	test_ipsec_ah_alg_list_populate();
++	test_sec_alg_list_populate();
++	test_sec_auth_only_alg_list_populate();
+ 
+ 	/*
+ 	 * Stop the device. Device would be started again by individual test
+@@ -10554,19 +10554,19 @@ test_ipsec_proto_known_vec_inb_rx_inject(const void *test_data)
+ static int
+ test_ipsec_proto_all(const struct ipsec_test_flags *flags)
+ {
+-	struct ipsec_test_data td_outb[IPSEC_TEST_PACKETS_MAX];
+-	struct ipsec_test_data td_inb[IPSEC_TEST_PACKETS_MAX];
++	struct ipsec_test_data td_outb[TEST_SEC_PKTS_MAX];
++	struct ipsec_test_data td_inb[TEST_SEC_PKTS_MAX];
+ 	unsigned int i, nb_pkts = 1, pass_cnt = 0;
+ 	int ret;
+ 
+ 	if (flags->iv_gen ||
+ 	    flags->sa_expiry_pkts_soft ||
+ 	    flags->sa_expiry_pkts_hard)
+-		nb_pkts = IPSEC_TEST_PACKETS_MAX;
++		nb_pkts = TEST_SEC_PKTS_MAX;
+ 
+-	for (i = 0; i < RTE_DIM(alg_list); i++) {
+-		test_ipsec_td_prepare(alg_list[i].param1,
+-				      alg_list[i].param2,
++	for (i = 0; i < RTE_DIM(sec_alg_list); i++) {
++		test_ipsec_td_prepare(sec_alg_list[i].param1,
++				      sec_alg_list[i].param2,
+ 				      flags,
+ 				      td_outb,
+ 				      nb_pkts);
+@@ -10611,7 +10611,7 @@ test_ipsec_proto_all(const struct ipsec_test_flags *flags)
+ 			return TEST_FAILED;
+ 
+ 		if (flags->display_alg)
+-			test_sec_alg_display(alg_list[i].param1, alg_list[i].param2);
++			test_sec_alg_display(sec_alg_list[i].param1, sec_alg_list[i].param2);
+ 
+ 		pass_cnt++;
+ 	}
+@@ -10625,14 +10625,14 @@ test_ipsec_proto_all(const struct ipsec_test_flags *flags)
+ static int
+ test_ipsec_ah_proto_all(const struct ipsec_test_flags *flags)
+ {
+-	struct ipsec_test_data td_outb[IPSEC_TEST_PACKETS_MAX];
+-	struct ipsec_test_data td_inb[IPSEC_TEST_PACKETS_MAX];
++	struct ipsec_test_data td_outb[TEST_SEC_PKTS_MAX];
++	struct ipsec_test_data td_inb[TEST_SEC_PKTS_MAX];
+ 	unsigned int i, nb_pkts = 1, pass_cnt = 0;
+ 	int ret;
+ 
+-	for (i = 0; i < RTE_DIM(ah_alg_list); i++) {
+-		test_ipsec_td_prepare(ah_alg_list[i].param1,
+-				      ah_alg_list[i].param2,
++	for (i = 0; i < RTE_DIM(sec_auth_only_alg_list); i++) {
++		test_ipsec_td_prepare(sec_auth_only_alg_list[i].param1,
++				      sec_auth_only_alg_list[i].param2,
+ 				      flags,
+ 				      td_outb,
+ 				      nb_pkts);
+@@ -10656,7 +10656,8 @@ test_ipsec_ah_proto_all(const struct ipsec_test_flags *flags)
+ 			return TEST_FAILED;
+ 
+ 		if (flags->display_alg)
+-			test_sec_alg_display(ah_alg_list[i].param1, ah_alg_list[i].param2);
++			test_sec_alg_display(sec_auth_only_alg_list[i].param1,
++					     sec_auth_only_alg_list[i].param2);
+ 
+ 		pass_cnt++;
+ 	}
+@@ -11158,8 +11159,8 @@ test_ipsec_pkt_replay(const void *test_data, const uint64_t esn[],
+ 		      bool replayed_pkt[], uint32_t nb_pkts, bool esn_en,
+ 		      uint64_t winsz)
+ {
+-	struct ipsec_test_data td_outb[IPSEC_TEST_PACKETS_MAX];
+-	struct ipsec_test_data td_inb[IPSEC_TEST_PACKETS_MAX];
++	struct ipsec_test_data td_outb[TEST_SEC_PKTS_MAX];
++	struct ipsec_test_data td_inb[TEST_SEC_PKTS_MAX];
+ 	struct ipsec_test_flags flags;
+ 	uint32_t i = 0, ret = 0;
+ 
+diff --git a/app/test/test_cryptodev_security_ipsec.c b/app/test/test_cryptodev_security_ipsec.c
+index dafe3244e8d69..1aba1ad9934bc 100644
+--- a/app/test/test_cryptodev_security_ipsec.c
++++ b/app/test/test_cryptodev_security_ipsec.c
+@@ -21,12 +21,6 @@
+ #define IPVERSION 4
+ #endif
+ 
+-struct crypto_param_comb alg_list[RTE_DIM(aead_list) +
+-				  (RTE_DIM(cipher_list) *
+-				   RTE_DIM(auth_list))];
+-
+-struct crypto_param_comb ah_alg_list[2 * (RTE_DIM(auth_list) - 1)];
+-
+ static bool
+ is_valid_ipv4_pkt(const struct rte_ipv4_hdr *pkt)
+ {
+@@ -61,46 +55,6 @@ is_valid_ipv6_pkt(const struct rte_ipv6_hdr *pkt)
+ 	return true;
+ }
+ 
+-void
+-test_ipsec_alg_list_populate(void)
+-{
+-	unsigned long i, j, index = 0;
+-
+-	for (i = 0; i < RTE_DIM(aead_list); i++) {
+-		alg_list[index].param1 = &aead_list[i];
+-		alg_list[index].param2 = NULL;
+-		index++;
+-	}
+-
+-	for (i = 0; i < RTE_DIM(cipher_list); i++) {
+-		for (j = 0; j < RTE_DIM(auth_list); j++) {
+-			alg_list[index].param1 = &cipher_list[i];
+-			alg_list[index].param2 = &auth_list[j];
+-			index++;
+-		}
+-	}
+-}
+-
+-void
+-test_ipsec_ah_alg_list_populate(void)
+-{
+-	unsigned long i, index = 0;
+-
+-	for (i = 1; i < RTE_DIM(auth_list); i++) {
+-		ah_alg_list[index].param1 = &auth_list[i];
+-		ah_alg_list[index].param2 = NULL;
+-		index++;
+-	}
+-
+-	for (i = 1; i < RTE_DIM(auth_list); i++) {
+-		/* NULL cipher */
+-		ah_alg_list[index].param1 = &cipher_list[0];
+-
+-		ah_alg_list[index].param2 = &auth_list[i];
+-		index++;
+-	}
+-}
+-
+ int
+ test_ipsec_sec_caps_verify(struct rte_security_ipsec_xform *ipsec_xform,
+ 			   const struct rte_security_capability *sec_cap,
+@@ -447,8 +401,7 @@ test_ipsec_td_prepare(const struct crypto_param *param1,
+ 			td->ipsec_xform.options.iv_gen_disable = 0;
+ 
+ 		if (flags->sa_expiry_pkts_soft)
+-			td->ipsec_xform.life.packets_soft_limit =
+-					IPSEC_TEST_PACKETS_MAX - 1;
++			td->ipsec_xform.life.packets_soft_limit = TEST_SEC_PKTS_MAX - 1;
+ 
+ 		if (flags->ip_csum) {
+ 			td->ipsec_xform.options.ip_csum_enable = 1;
+@@ -526,8 +479,7 @@ test_ipsec_td_update(struct ipsec_test_data td_inb[],
+ 		}
+ 
+ 		if (flags->sa_expiry_pkts_hard)
+-			td_inb[i].ipsec_xform.life.packets_hard_limit =
+-					IPSEC_TEST_PACKETS_MAX - 1;
++			td_inb[i].ipsec_xform.life.packets_hard_limit = TEST_SEC_PKTS_MAX - 1;
+ 
+ 		if (flags->udp_encap)
+ 			td_inb[i].ipsec_xform.options.udp_encap = 1;
+@@ -570,7 +522,7 @@ test_ipsec_tunnel_hdr_len_get(const struct ipsec_test_data *td)
+ static int
+ test_ipsec_iv_verify_push(const uint8_t *output_text, const struct ipsec_test_data *td)
+ {
+-	static uint8_t iv_queue[IV_LEN_MAX * IPSEC_TEST_PACKETS_MAX];
++	static uint8_t iv_queue[IV_LEN_MAX * TEST_SEC_PKTS_MAX];
+ 	int i, iv_pos, iv_len;
+ 	static int index;
+ 	uint8_t *iv_tmp;
+@@ -601,7 +553,7 @@ test_ipsec_iv_verify_push(const uint8_t *output_text, const struct ipsec_test_da
+ 	memcpy(iv_tmp, output_text, iv_len);
+ 	index++;
+ 
+-	if (index == IPSEC_TEST_PACKETS_MAX)
++	if (index == TEST_SEC_PKTS_MAX)
+ 		index = 0;
+ 
+ 	return TEST_SUCCESS;
+@@ -1101,7 +1053,7 @@ test_ipsec_status_check(const struct ipsec_test_data *td,
+ 
+ 	if (dir == RTE_SECURITY_IPSEC_SA_DIR_INGRESS &&
+ 	    flags->sa_expiry_pkts_hard &&
+-	    pkt_num == IPSEC_TEST_PACKETS_MAX) {
++	    pkt_num == TEST_SEC_PKTS_MAX) {
+ 		if (op->status != RTE_CRYPTO_OP_STATUS_ERROR) {
+ 			printf("SA hard expiry (pkts) test failed\n");
+ 			return TEST_FAILED;
+@@ -1133,7 +1085,7 @@ test_ipsec_status_check(const struct ipsec_test_data *td,
+ 		}
+ 	}
+ 
+-	if (flags->sa_expiry_pkts_soft && pkt_num == IPSEC_TEST_PACKETS_MAX) {
++	if (flags->sa_expiry_pkts_soft && pkt_num == TEST_SEC_PKTS_MAX) {
+ 		if (!(op->aux_flags &
+ 		      RTE_CRYPTO_OP_AUX_FLAGS_IPSEC_SOFT_EXPIRY)) {
+ 			printf("SA soft expiry (pkts) test failed\n");
+diff --git a/app/test/test_cryptodev_security_ipsec.h b/app/test/test_cryptodev_security_ipsec.h
+index 41aa865a0ff8b..3c694710993d4 100644
+--- a/app/test/test_cryptodev_security_ipsec.h
++++ b/app/test/test_cryptodev_security_ipsec.h
+@@ -10,7 +10,6 @@
+ 
+ #include "test_security_proto.h"
+ 
+-#define IPSEC_TEST_PACKETS_MAX 32
+ #define IPSEC_TEXT_MAX_LEN 16384u
+ 
+ struct ipsec_test_data {
+@@ -117,26 +116,11 @@ struct ipsec_test_flags {
+ 	bool rx_inject;
+ };
+ 
+-struct crypto_param_comb {
+-	const struct crypto_param *param1;
+-	const struct crypto_param *param2;
+-};
+-
+ extern struct ipsec_test_data pkt_aes_256_gcm;
+ extern struct ipsec_test_data pkt_aes_256_gcm_v6;
+ extern struct ipsec_test_data pkt_aes_128_cbc_hmac_sha256;
+ extern struct ipsec_test_data pkt_aes_128_cbc_hmac_sha256_v6;
+ 
+-extern struct crypto_param_comb alg_list[RTE_DIM(aead_list) +
+-					 (RTE_DIM(cipher_list) *
+-					  RTE_DIM(auth_list))];
+-
+-extern struct crypto_param_comb ah_alg_list[2 * (RTE_DIM(auth_list) - 1)];
+-
+-void test_ipsec_alg_list_populate(void);
+-
+-void test_ipsec_ah_alg_list_populate(void);
+-
+ int test_ipsec_sec_caps_verify(struct rte_security_ipsec_xform *ipsec_xform,
+ 			       const struct rte_security_capability *sec_cap,
+ 			       bool silent);
+diff --git a/app/test/test_security_inline_proto.c b/app/test/test_security_inline_proto.c
+index 6cda9fe7aaf46..481382b64e85d 100644
+--- a/app/test/test_security_inline_proto.c
++++ b/app/test/test_security_inline_proto.c
+@@ -1295,11 +1295,11 @@ test_ipsec_inline_proto_all(const struct ipsec_test_flags *flags)
+ 			flags->sa_expiry_bytes_soft ||
+ 			flags->sa_expiry_bytes_hard ||
+ 			flags->sa_expiry_pkts_hard)
+-		nb_pkts = IPSEC_TEST_PACKETS_MAX;
++		nb_pkts = TEST_SEC_PKTS_MAX;
+ 
+-	for (i = 0; i < RTE_DIM(alg_list); i++) {
+-		test_ipsec_td_prepare(alg_list[i].param1,
+-				      alg_list[i].param2,
++	for (i = 0; i < RTE_DIM(sec_alg_list); i++) {
++		test_ipsec_td_prepare(sec_alg_list[i].param1,
++				      sec_alg_list[i].param2,
+ 				      flags, &td_outb, 1);
+ 
+ 		if (!td_outb.aead) {
+@@ -1331,8 +1331,7 @@ test_ipsec_inline_proto_all(const struct ipsec_test_flags *flags)
+ 				(((td_outb.output_text.len + RTE_ETHER_HDR_LEN)
+ 				  * nb_pkts) >> 3) - 1;
+ 		if (flags->sa_expiry_pkts_hard)
+-			td_outb.ipsec_xform.life.packets_hard_limit =
+-					IPSEC_TEST_PACKETS_MAX - 1;
++			td_outb.ipsec_xform.life.packets_hard_limit = TEST_SEC_PKTS_MAX - 1;
+ 		if (flags->sa_expiry_bytes_hard)
+ 			td_outb.ipsec_xform.life.bytes_hard_limit =
+ 				(((td_outb.output_text.len + RTE_ETHER_HDR_LEN)
+@@ -1345,7 +1344,7 @@ test_ipsec_inline_proto_all(const struct ipsec_test_flags *flags)
+ 
+ 		if (ret == TEST_FAILED) {
+ 			printf("\n TEST FAILED");
+-			test_sec_alg_display(alg_list[i].param1, alg_list[i].param2);
++			test_sec_alg_display(sec_alg_list[i].param1, sec_alg_list[i].param2);
+ 			fail_cnt++;
+ 			continue;
+ 		}
+@@ -1359,13 +1358,13 @@ test_ipsec_inline_proto_all(const struct ipsec_test_flags *flags)
+ 
+ 		if (ret == TEST_FAILED) {
+ 			printf("\n TEST FAILED");
+-			test_sec_alg_display(alg_list[i].param1, alg_list[i].param2);
++			test_sec_alg_display(sec_alg_list[i].param1, sec_alg_list[i].param2);
+ 			fail_cnt++;
+ 			continue;
+ 		}
+ 
+ 		if (flags->display_alg)
+-			test_sec_alg_display(alg_list[i].param1, alg_list[i].param2);
++			test_sec_alg_display(sec_alg_list[i].param1, sec_alg_list[i].param2);
+ 
+ 		pass_cnt++;
+ 	}
+@@ -1742,7 +1741,8 @@ inline_ipsec_testsuite_setup(void)
+ 				ret, port_id);
+ 		return ret;
+ 	}
+-	test_ipsec_alg_list_populate();
++
++	test_sec_alg_list_populate();
+ 
+ 	/* Change the plaintext size for tests without Known vectors */
+ 	if (sg_mode) {
+@@ -2003,7 +2003,8 @@ event_inline_ipsec_testsuite_setup(void)
+ 	}
+ 
+ 	event_mode_enabled = true;
+-	test_ipsec_alg_list_populate();
++
++	test_sec_alg_list_populate();
+ 
+ 	return 0;
+ }
+@@ -2685,8 +2686,8 @@ test_ipsec_inline_pkt_replay(const void *test_data, const uint64_t esn[],
+ 		      bool replayed_pkt[], uint32_t nb_pkts, bool esn_en,
+ 		      uint64_t winsz)
+ {
+-	struct ipsec_test_data td_outb[IPSEC_TEST_PACKETS_MAX];
+-	struct ipsec_test_data td_inb[IPSEC_TEST_PACKETS_MAX];
++	struct ipsec_test_data td_outb[TEST_SEC_PKTS_MAX];
++	struct ipsec_test_data td_inb[TEST_SEC_PKTS_MAX];
+ 	struct ipsec_test_flags flags;
+ 	uint32_t i, ret = 0;
+ 
+diff --git a/app/test/test_security_proto.c b/app/test/test_security_proto.c
+index d62302a8dd50e..d242c852af3f5 100644
+--- a/app/test/test_security_proto.c
++++ b/app/test/test_security_proto.c
+@@ -7,6 +7,52 @@
+ 
+ #include "test_security_proto.h"
+ 
++struct crypto_param_comb sec_alg_list[RTE_DIM(aead_list) +
++				  (RTE_DIM(cipher_list) *
++				   RTE_DIM(auth_list))];
++
++struct crypto_param_comb sec_auth_only_alg_list[2 * (RTE_DIM(auth_list) - 1)];
++
++void
++test_sec_alg_list_populate(void)
++{
++	unsigned long i, j, index = 0;
++
++	for (i = 0; i < RTE_DIM(aead_list); i++) {
++		sec_alg_list[index].param1 = &aead_list[i];
++		sec_alg_list[index].param2 = NULL;
++		index++;
++	}
++
++	for (i = 0; i < RTE_DIM(cipher_list); i++) {
++		for (j = 0; j < RTE_DIM(auth_list); j++) {
++			sec_alg_list[index].param1 = &cipher_list[i];
++			sec_alg_list[index].param2 = &auth_list[j];
++			index++;
++		}
++	}
++}
++
++void
++test_sec_auth_only_alg_list_populate(void)
++{
++	unsigned long i, index = 0;
++
++	for (i = 1; i < RTE_DIM(auth_list); i++) {
++		sec_auth_only_alg_list[index].param1 = &auth_list[i];
++		sec_auth_only_alg_list[index].param2 = NULL;
++		index++;
++	}
++
++	for (i = 1; i < RTE_DIM(auth_list); i++) {
++		/* NULL cipher */
++		sec_auth_only_alg_list[index].param1 = &cipher_list[0];
++
++		sec_auth_only_alg_list[index].param2 = &auth_list[i];
++		index++;
++	}
++}
++
+ int
+ test_sec_crypto_caps_aead_verify(const struct rte_security_capability *sec_cap,
+ 		struct rte_crypto_sym_xform *aead)
+diff --git a/app/test/test_security_proto.h b/app/test/test_security_proto.h
+index d6a00018e3c79..6797e8b8c2f5f 100644
+--- a/app/test/test_security_proto.h
++++ b/app/test/test_security_proto.h
+@@ -8,6 +8,8 @@
+ #include <rte_cryptodev.h>
+ #include <rte_security.h>
+ 
++#define TEST_SEC_PKTS_MAX 32
++
+ struct crypto_param {
+ 	enum rte_crypto_sym_xform_type type;
+ 	union {
+@@ -138,6 +140,20 @@ static const struct crypto_param auth_list[] = {
+ 	},
+ };
+ 
++struct crypto_param_comb {
++	const struct crypto_param *param1;
++	const struct crypto_param *param2;
++};
++
++extern struct crypto_param_comb sec_alg_list[RTE_DIM(aead_list) +
++					     (RTE_DIM(cipher_list) * RTE_DIM(auth_list))];
++
++extern struct crypto_param_comb sec_auth_only_alg_list[2 * (RTE_DIM(auth_list) - 1)];
++
++void test_sec_alg_list_populate(void);
++
++void test_sec_auth_only_alg_list_populate(void);
++
+ int test_sec_crypto_caps_aead_verify(const struct rte_security_capability *sec_cap,
+ 		struct rte_crypto_sym_xform *aead);
+ 
+-- 
+2.25.1
+

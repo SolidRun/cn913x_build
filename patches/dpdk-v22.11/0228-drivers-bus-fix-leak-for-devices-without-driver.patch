@@ -1,0 +1,77 @@
+From d2f8a369331cad2e848ee6e574c760a2a8a83b7b Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Thu, 9 Feb 2023 14:22:07 +0100
+Subject: [PATCH 228/955] drivers/bus: fix leak for devices without driver
+
+During the bus scan, memory for device configuration is allocated.
+Currently, if a driver wasn't attached to the device during initialization,
+memory for that device will not be released at bus cleanup.
+This patch address this issue and releases the memory for all allocated
+devices.
+
+Fixes: 1cab1a40ea9b ("bus: cleanup devices on shutdown")
+Cc: stable@dpdk.org
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Acked-by: Kevin Laatz <kevin.laatz@intel.com>
+Change-Id: I49f62e6a10f602bd83b59c85f3886e8f2f875bc9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97267
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/bus/pci/pci_common.c | 3 ++-
+ drivers/bus/vdev/vdev.c      | 5 +++--
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/bus/pci/pci_common.c b/drivers/bus/pci/pci_common.c
+index e0e15fd624a2a..3b4196a43b894 100644
+--- a/drivers/bus/pci/pci_common.c
++++ b/drivers/bus/pci/pci_common.c
+@@ -450,7 +450,7 @@ pci_cleanup(void)
+ 		int ret = 0;
+ 
+ 		if (drv == NULL || drv->remove == NULL)
+-			continue;
++			goto free;
+ 
+ 		ret = drv->remove(dev);
+ 		if (ret < 0) {
+@@ -460,6 +460,7 @@ pci_cleanup(void)
+ 		dev->driver = NULL;
+ 		dev->device.driver = NULL;
+ 
++free:
+ 		/* free interrupt handles */
+ 		rte_intr_instance_free(dev->intr_handle);
+ 		dev->intr_handle = NULL;
+diff --git a/drivers/bus/vdev/vdev.c b/drivers/bus/vdev/vdev.c
+index 41bc07dde7f8e..7974b272953c0 100644
+--- a/drivers/bus/vdev/vdev.c
++++ b/drivers/bus/vdev/vdev.c
+@@ -578,18 +578,19 @@ vdev_cleanup(void)
+ 		int ret = 0;
+ 
+ 		if (dev->device.driver == NULL)
+-			continue;
++			goto free;
+ 
+ 		drv = container_of(dev->device.driver, const struct rte_vdev_driver, driver);
+ 
+ 		if (drv->remove == NULL)
+-			continue;
++			goto free;
+ 
+ 		ret = drv->remove(dev);
+ 		if (ret < 0)
+ 			error = -1;
+ 
+ 		dev->device.driver = NULL;
++free:
+ 		free(dev);
+ 	}
+ 
+-- 
+2.25.1
+

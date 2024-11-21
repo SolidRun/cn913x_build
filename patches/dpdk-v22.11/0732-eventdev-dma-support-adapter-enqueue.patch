@@ -1,0 +1,37 @@
+From 0ebf8580629847a7a5cfd5eb302d1b864a723e03 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Fri, 29 Sep 2023 17:20:49 +0530
+Subject: [PATCH 732/955] eventdev/dma: support adapter enqueue
+
+Added API support to enqueue a DMA operation to the DMA driver.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I84bb6fbaf7db3303fa7711b28ed7e90531a151ee
+---
+ lib/eventdev/rte_event_dma_adapter.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/lib/eventdev/rte_event_dma_adapter.c b/lib/eventdev/rte_event_dma_adapter.c
+index 6c67e6d49942f..f299914dec845 100644
+--- a/lib/eventdev/rte_event_dma_adapter.c
++++ b/lib/eventdev/rte_event_dma_adapter.c
+@@ -1403,3 +1403,16 @@ rte_event_dma_adapter_stats_reset(uint8_t id)
+ 
+ 	return 0;
+ }
++
++uint16_t
++rte_event_dma_adapter_enqueue(uint8_t dev_id, uint8_t port_id, struct rte_event ev[],
++			      uint16_t nb_events)
++{
++	const struct rte_event_fp_ops *fp_ops;
++	void *port;
++
++	fp_ops = &rte_event_fp_ops[dev_id];
++	port = fp_ops->data[port_id];
++
++	return fp_ops->dma_enqueue(port, ev, nb_events);
++}
+-- 
+2.25.1
+

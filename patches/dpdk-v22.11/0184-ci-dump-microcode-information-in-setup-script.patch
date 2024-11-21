@@ -1,0 +1,32 @@
+From df372fa385afaf2f9638fb482110ac984a927c5e Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Wed, 25 Jan 2023 22:22:22 +0530
+Subject: [PATCH 184/955] ci: dump microcode information in setup script
+
+Dump microcode information in setup script.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Ib1b13e5301c3f346f10dcc941bbc80f2153bca30
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95244
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ marvell-ci/test/board/cnxk-target-setup.sh | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/marvell-ci/test/board/cnxk-target-setup.sh b/marvell-ci/test/board/cnxk-target-setup.sh
+index dbb3ecfb93a93..f10d2ac08f46d 100755
+--- a/marvell-ci/test/board/cnxk-target-setup.sh
++++ b/marvell-ci/test/board/cnxk-target-setup.sh
+@@ -100,6 +100,7 @@ function setup_devices() {
+ 	if [[ -e /sys/bus/pci/devices/$cpt_pf/sriov_numvfs ]]; then
+ 		sh -c "echo 0 > /sys/bus/pci/devices/$cpt_pf/sriov_numvfs"
+ 		sh -c "echo 2 > /sys/bus/pci/devices/$cpt_pf/sriov_numvfs"
++		devlink dev info pci/$cpt_pf
+ 		devs+=" $cpt_vf"
+ 	fi
+ 
+-- 
+2.25.1
+

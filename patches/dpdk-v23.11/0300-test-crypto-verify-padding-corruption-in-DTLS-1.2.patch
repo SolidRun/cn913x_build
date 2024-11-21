@@ -1,0 +1,60 @@
+From 5f49d8f5d5ab26a36cbb4e0c52a470f4390d2e3b Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Thu, 15 Feb 2024 02:26:47 -0800
+Subject: [PATCH 300/513] test/crypto: verify padding corruption in DTLS-1.2
+
+Add unit test to verify corrupted padding bytes in DTLS-1.2 record
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Ic746e5ca335112b1400b898091cac0475e50591f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121993
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index e21b412518881..7c78a712a02ee 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12755,6 +12755,23 @@ test_tls_1_3_record_proto_display_list(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_dtls_1_2_record_proto_sg_opt_padding_corrupt(void)
++{
++	struct tls_record_test_flags flags = {
++		.opt_padding = 8,
++		.padding_corruption = true,
++		.nb_segs_in_mbuf = 4,
++		.tls_version = RTE_SECURITY_VERSION_DTLS_1_2
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
+ static int
+ test_tls_1_3_record_proto_corrupt_pkt(void)
+ {
+@@ -18160,6 +18177,10 @@ static struct unit_test_suite dtls12_record_proto_testsuite  = {
+ 			"DTLS record SG mode with optional padding > max range",
+ 			ut_setup_security, ut_teardown,
+ 			test_dtls_1_2_record_proto_sg_opt_padding_max),
++		TEST_CASE_NAMED_ST(
++			"DTLS record SG mode with padding corruption",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_sg_opt_padding_corrupt),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+-- 
+2.25.1
+

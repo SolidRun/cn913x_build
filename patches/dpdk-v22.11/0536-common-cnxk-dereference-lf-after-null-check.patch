@@ -1,0 +1,44 @@
+From cbcb641ff3bf3c169fa88a96d2df924d0fb1d7eb Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Sun, 16 Jul 2023 17:08:20 +0530
+Subject: [PATCH 536/955] common/cnxk: dereference lf after null check
+
+lf is being dereferenced before checking for null.
+
+Fixes: 72b1c549bcaf ("common/cnxk: optimize time while configuring fc on VF")
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Iaac6343c074062158aecc970d606f2b111feeac9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107579
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_fc.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 355d49c91b9ec..d58b35268e047 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -482,7 +482,7 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, ui
+ 	uint32_t aura_id = roc_npa_aura_handle_to_aura(pool_id);
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	struct npa_lf *lf = idev_npa_obj_get();
+-	struct npa_aura_attr *aura_attr = &lf->aura_attr[aura_id];
++	struct npa_aura_attr *aura_attr;
+ 	uint8_t bp_thresh, bp_intf;
+ 	uint16_t bpid;
+ 	int i;
+@@ -493,6 +493,8 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, ui
+ 	if (!lf)
+ 		return;
+ 
++	aura_attr = &lf->aura_attr[aura_id];
++
+ 	bp_intf = 1 << nix->is_nix1;
+ 	bp_thresh = NIX_RQ_AURA_THRESH(drop_percent, aura_attr->limit >> aura_attr->shift);
+ 
+-- 
+2.25.1
+

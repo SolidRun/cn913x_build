@@ -1,0 +1,38 @@
+From a847c2031efd7f528a4a3a33564ee9051b11525c Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Wed, 18 Jan 2023 11:30:02 +0530
+Subject: [PATCH 176/955] ci: disable crypto adapter perf test on cn10k
+
+The tests are not finishing always. Disabled till it gets fixed.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I681b8e8ee3a8c9cc2a16dbb3fd60026cbf63ac50
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94714
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+index 426b92d9cc8fc..cce466c8bb92b 100755
+--- a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
++++ b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+@@ -305,8 +305,12 @@ run_event_perf_regression()
+ 	L2FWD_EVENT		dpdk-l2fwd-event	=*
+ 	L3FWD_EVENT		dpdk-l3fwd		L3FWD: entering lpm_event_loop_single on lcore [0-9]*
+ 	PERF_ATQ		dpdk-test-eventdev	0.000 mpps avg 0.000 mpps
+-	PIPELINE_ATQ_TX_FIRST	dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps
+-	CRYPTO_ADAPTER_FWD	dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps"
++	PIPELINE_ATQ_TX_FIRST	dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps"
++	#FIXME: crypto adapter tests are not finishing on cn10k + dpdk-22.11-devel branch
++	if [[ $PLAT == cn9k ]]; then
++		test_info+="
++		CRYPTO_ADAPTER_FWD	dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps"
++	fi
+ 	if [[ $PLAT == cn10k ]]; then
+ 		test_info+="
+ 		GW_MODE_NO_PREF		dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps
+-- 
+2.25.1
+

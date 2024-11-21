@@ -1,0 +1,37 @@
+From 9cd58f8904f77085b25d5dfa27a1d9913d464635 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Tue, 11 Apr 2023 18:23:49 +0530
+Subject: [PATCH 361/955] doc: fix invalid auth algo in cryptoperf app
+
+3des-cbc is not an authentication algorithm,
+hence need to be removed.
+
+Fixes: c6baca7adc94 ("doc: describe new performance test application")
+Cc: stable@dpdk.org
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I815a29459a3f88043b8fb5c7e1dbcf1e57120909
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101101
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ doc/guides/tools/cryptoperf.rst | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/doc/guides/tools/cryptoperf.rst b/doc/guides/tools/cryptoperf.rst
+index c77e253417f17..f30784674de5a 100644
+--- a/doc/guides/tools/cryptoperf.rst
++++ b/doc/guides/tools/cryptoperf.rst
+@@ -232,7 +232,6 @@ The following are the application command-line options:
+         Set authentication algorithm name, where ``name`` is one
+         of the following::
+ 
+-           3des-cbc
+            aes-cbc-mac
+            aes-cmac
+            aes-gmac
+-- 
+2.25.1
+

@@ -1,0 +1,35 @@
+From 9571e5f0884a881dfa4b42601fa814552b3d0a2d Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 12 Jul 2023 08:00:42 -0700
+Subject: [PATCH 526/955] crypto/cnxk: check for sg version in SE engine
+ capabilities
+
+Check for supported SG version in SE engine capabilities.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I1063baa168329851f95d5f226faf673053314e9c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107393
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index 80cf6dfa31f91..97ab9087d2eca 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -1619,7 +1619,7 @@ static void
+ cn10k_crypto_caps_add(struct rte_cryptodev_capabilities cnxk_caps[],
+ 		     union cpt_eng_caps *hw_caps, int *cur_pos)
+ {
+-	if (hw_caps->sg_ver2) {
++	if (hw_caps[CPT_ENG_TYPE_SE].sg_ver2) {
+ 		CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, sm3);
+ 		CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, sm4);
+ 	}
+-- 
+2.25.1
+

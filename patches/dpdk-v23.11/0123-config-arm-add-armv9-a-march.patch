@@ -1,0 +1,44 @@
+From 0ed381c52cca229853819823b982f75561c1c4f8 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Thu, 4 Jan 2024 14:35:08 +0530
+Subject: [PATCH 123/513] config/arm: add armv9-a march
+
+Now that major versions of GCC recognize armv9-a march option,
+add it to the list of supported march.
+Update neoverse-n2 part number to include march as armv9-a.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I7c431fa70d4b0898dcbed2a870049bce7df623e0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119094
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ config/arm/meson.build | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index 36f21d22599a2..0804877b577a9 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -92,6 +92,7 @@ part_number_config_arm = {
+         'march': 'armv8.4-a',
+     },
+     '0xd49': {
++        'march': 'armv9-a',
+         'march_features': ['sve2'],
+         'compiler_options': ['-mcpu=neoverse-n2'],
+         'flags': [
+@@ -701,7 +702,7 @@ if update_flags
+         if part_number_config.get('force_march', false)
+             candidate_march = part_number_config['march']
+         else
+-            supported_marchs = ['armv8.6-a', 'armv8.5-a', 'armv8.4-a', 'armv8.3-a',
++            supported_marchs = ['armv9-a', 'armv8.6-a', 'armv8.5-a', 'armv8.4-a', 'armv8.3-a',
+                                 'armv8.2-a', 'armv8.1-a', 'armv8-a']
+             check_compiler_support = false
+             foreach supported_march: supported_marchs
+-- 
+2.25.1
+

@@ -1,0 +1,346 @@
+From 59424f0ffca1a48fc810f63d2a3ad47bca176cd4 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Wed, 17 May 2023 13:24:14 +0530
+Subject: [PATCH 422/955] net/octeon_ep: add control plane version2 commands
+
+add following control plane commands between VF
+and PF
+- Get firmware information
+- Link status notification
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: Ide867a1b6b7d1d9bb8136544eddcfa1e0b354afe
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103599
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Vamsi Krishna Attunuru <vattunuru@marvell.com>
+---
+ drivers/net/octeon_ep/otx2_ep_vf.h    |  4 +++
+ drivers/net/octeon_ep/otx_ep_common.h | 38 ++++++++++++++------
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 50 ++++++++++++---------------
+ drivers/net/octeon_ep/otx_ep_mbox.c   | 29 +++++++++++++++-
+ drivers/net/octeon_ep/otx_ep_mbox.h   | 16 ++++++++-
+ drivers/net/octeon_ep/otx_ep_rxtx.c   | 16 +++------
+ 6 files changed, 103 insertions(+), 50 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx2_ep_vf.h b/drivers/net/octeon_ep/otx2_ep_vf.h
+index f5142c1f3ac66..8c47c88b99235 100644
+--- a/drivers/net/octeon_ep/otx2_ep_vf.h
++++ b/drivers/net/octeon_ep/otx2_ep_vf.h
+@@ -107,4 +107,8 @@ union out_cnts_t {
+ #define OTX_EP_R_MBOX_PF_VF_INT(ring) \
+ 	(OTX_EP_R_MBOX_PF_VF_INT_START + ((ring) * OTX_EP_RING_OFFSET))
+ 
++#define OTX_EP_R_MBOX_PF_VF_DATA_START        (0x10210)
++#define OTX_EP_R_MBOX_PF_VF_DATA(ring)           \
++	(OTX_EP_R_MBOX_PF_VF_DATA_START + ((ring) * OTX_EP_RING_OFFSET))
++
+ #endif /*_OTX2_EP_VF_H_ */
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index a8f8aacaf52ba..025fd759e3206 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -255,12 +255,16 @@ struct otx_ep_droq_desc {
+ #define OTX_EP_DROQ_DESC_SIZE	(sizeof(struct otx_ep_droq_desc))
+ 
+ /* Receive Header, only present in NIC mode. */
+-union otx_ep_rh {
+-	uint64_t rh64;
++struct otx_ep_rh {
++	/* Reserved. */
++	uint64_t rsvd:48;
++
++	/* rx offload flags */
++	uint64_t rx_ol_flags:16;
+ };
+ 
+-#define OTX_EP_RH_SIZE (sizeof(union otx_ep_rh))
+-#define OTX_EP_RH_SIZE_NIC (sizeof(union otx_ep_rh))
++#define OTX_EP_RH_SIZE_NIC (sizeof(struct otx_ep_rh))
++#define OTX_EP_RH_EXT_SIZE (sizeof(struct otx_ep_rh))
+ #define OTX_EP_RH_SIZE_LOOP 0  /* Nothing in LOOP mode */
+ 
+ /** Information about packet DMA'ed by OCTEON 9.
+@@ -274,12 +278,9 @@ struct otx_ep_droq_info {
+ 	uint64_t length;
+ 
+ 	/* The Output Receive Header, only present in NIC mode */
+-	union otx_ep_rh rh;
++	struct otx_ep_rh rh;
+ };
+ #define OTX_EP_DROQ_INFO_SIZE_NIC	(sizeof(struct otx_ep_droq_info))
+-#define OTX_EP_DROQ_INFO_SIZE_LOOP	(sizeof(struct otx_ep_droq_info) + \
+-						OTX_EP_RH_SIZE_LOOP - \
+-						OTX_EP_RH_SIZE_NIC)
+ 
+ /* DROQ statistics. Each output queue has four stats fields. */
+ struct otx_ep_droq_stats {
+@@ -317,6 +318,17 @@ struct otx_ep_oq_config {
+ 	uint32_t refill_threshold;
+ };
+ 
++struct otx_ep_fw_info {
++	/* pkind value to be used in every Tx hardware descriptor */
++	uint8_t pkind;
++	/* front size data */
++	uint8_t fsz;
++	/* supported rx offloads */
++	uint16_t rx_ol_flags;
++	/* supported tx offloads */
++	uint16_t tx_ol_flags;
++};
++
+ /* The Descriptor Ring Output Queue(DROQ) structure. */
+ struct otx_ep_droq {
+ 	struct otx_ep_device *otx_ep_dev;
+@@ -465,8 +477,6 @@ struct otx_ep_device {
+ 	uint16_t pf_num;
+ 	uint16_t vf_num;
+ 
+-	uint32_t pkind;
+-
+ 	struct rte_eth_dev *eth_dev;
+ 
+ 	int port_id;
+@@ -523,6 +533,14 @@ struct otx_ep_device {
+ 
+ 	/* Negotiated Mbox version */
+ 	uint32_t mbox_neg_ver;
++
++	/* firmware info */
++	struct otx_ep_fw_info fw_info;
++
++	/* Extended Response Header in packet data received from Hardware.
++	 * Includes metadata like checksum status.
++	 */
++	uint32_t rh_ext_size;
+ };
+ 
+ int otx_ep_setup_iqs(struct otx_ep_device *otx_ep, uint32_t iq_no,
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index ffac5cfb4e53b..91c66324c601c 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -35,13 +35,27 @@ static void
+ otx_ep_interrupt_handler(void *param)
+ {
+ 	struct otx_ep_device *otx_epvf = (struct otx_ep_device *)param;
++	union otx_ep_mbox_word *notif;
+ 	uint64_t reg_val;
++
+ 	if (otx_epvf) {
+ 		/* Clear Mbox interrupts */
+ 		reg_val = rte_read64((uint8_t *)otx_epvf->hw_addr + OTX_EP_R_MBOX_PF_VF_INT(0));
+ 		rte_write64(reg_val, (uint8_t *)otx_epvf->hw_addr + OTX_EP_R_MBOX_PF_VF_INT(0));
+-		otx_ep_info("otx_epdev_interrupt_handler is called pf_num: %d vf_num: %d port_id: %d\n",
+-		otx_epvf->pf_num, otx_epvf->vf_num, otx_epvf->port_id);
++		reg_val = otx2_read64((uint8_t *)otx_epvf->hw_addr + OTX_EP_R_MBOX_PF_VF_DATA(0));
++
++		notif = (union otx_ep_mbox_word *)&reg_val;
++		switch (notif->s_link_status.opcode) {
++		case OTX_EP_MBOX_NOTIF_LINK_STATUS:
++			if (notif->s_link_status.status)
++				otx_ep_dbg("LINK UP\n");
++			else
++				otx_ep_dbg("LINK DOWN\n");
++			break;
++		default:
++			otx_ep_err("Received unsupported notif %d\n", notif->s_link_status.opcode);
++			break;
++		}
+ 	} else {
+ 		otx_ep_err("otx_epdev_interrupt_handler is called with dev NULL\n");
+ 	}
+@@ -706,33 +720,15 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 
+ 	if (otx_epdev_init(otx_epvf))
+ 		return -ENOMEM;
+-	if (otx_epvf->chip_id == PCI_DEVID_OCTEONTX2_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CN98XX_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CNF95N_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CNF95O_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CN10KA_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CN10KB_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CNF10KA_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CNF10KB_EP_NET_VF) {
+-		if (otx_epvf->sdp_packet_mode == SDP_PACKET_MODE_NIC) {
+-			otx_epvf->pkind = SDP_OTX2_PKIND_FS24;
+-			otx_ep_info("Using pkind %d for NIC packet mode.\n",
+-				  otx_epvf->pkind);
+-		} else {
+-			otx_epvf->pkind = SDP_OTX2_PKIND_FS0;
+-			otx_ep_info("Using pkind %d for LOOP packet mode.\n",
+-				  otx_epvf->pkind);
+-		}
+-	} else if (otx_epvf->chip_id == PCI_DEVID_OCTEONTX_EP_VF) {
+-		otx_epvf->pkind = SDP_PKIND;
+-		otx_ep_info("Using pkind %d.\n", otx_epvf->pkind);
+-	} else {
+-		otx_ep_err("Invalid chip id\n");
++
++	if (otx_ep_mbox_version_check(eth_dev))
+ 		return -EINVAL;
+-	}
+-	if (otx_ep_mbox_version_check(eth_dev)) {
++
++	if (otx_ep_mbox_get_fw_info(eth_dev))
+ 		return -EINVAL;
+-	}
++	if (otx_epvf->fw_info.rx_ol_flags)
++		otx_epvf->rh_ext_size = OTX_EP_RH_EXT_SIZE;
++
+ 	if (otx_ep_eth_dev_query_set_vf_mac(eth_dev,
+ 				(struct rte_ether_addr *)&vf_mac_addr)) {
+ 		otx_ep_err("set mac addr failed\n");
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index fd2945e29dae6..9665ec0fe9324 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -18,7 +18,9 @@
+  * with new command and it's version info.
+  */
+ static uint32_t otx_ep_cmd_versions[OTX_EP_MBOX_CMD_MAX] = {
+-	[0 ... OTX_EP_MBOX_CMD_DEV_REMOVE] = OTX_EP_MBOX_VERSION_V1
++	[0 ... OTX_EP_MBOX_CMD_DEV_REMOVE] = OTX_EP_MBOX_VERSION_V1,
++	[OTX_EP_MBOX_CMD_GET_FW_INFO ... OTX_EP_MBOX_NOTIF_LINK_STATUS] =
++		OTX_EP_MBOX_VERSION_V2
+ };
+ 
+ static int
+@@ -333,3 +335,28 @@ int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev)
+ 	ret = otx_ep_send_mbox_cmd(otx_ep, cmd, NULL);
+ 	return ret;
+ }
++
++int otx_ep_mbox_get_fw_info(struct rte_eth_dev *eth_dev)
++{
++	union otx_ep_mbox_word cmd;
++	union otx_ep_mbox_word rsp;
++	int ret;
++	struct otx_ep_device *otx_ep =
++		(struct otx_ep_device *)(eth_dev)->data->dev_private;
++
++	cmd.u64 = 0;
++	cmd.s_fw_info.opcode = OTX_EP_MBOX_CMD_GET_FW_INFO;
++	ret = otx_ep_send_mbox_cmd(otx_ep, cmd, &rsp);
++	if (ret) {
++		otx_ep_err("Get fw info via VF Mbox send failed\n");
++		return ret;
++	}
++	otx_ep->fw_info.pkind = rsp.s_fw_info.pkind;
++	otx_ep->fw_info.fsz = rsp.s_fw_info.fsz;
++	otx_ep->fw_info.rx_ol_flags = rsp.s_fw_info.rx_ol_flags;
++	otx_ep->fw_info.tx_ol_flags = rsp.s_fw_info.tx_ol_flags;
++	otx_ep_dbg("Get fw info pkind:%d fsz:%d rx:%x tx:%x\n", rsp.s_fw_info.pkind,
++		   rsp.s_fw_info.fsz, rsp.s_fw_info.rx_ol_flags, rsp.s_fw_info.tx_ol_flags);
++
++	return 0;
++}
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.h b/drivers/net/octeon_ep/otx_ep_mbox.h
+index a3fc15cca7dd4..37fd4ba3319f0 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.h
++++ b/drivers/net/octeon_ep/otx_ep_mbox.h
+@@ -11,9 +11,10 @@
+ enum octep_pfvf_mbox_version {
+ 	OTX_EP_MBOX_VERSION_V0,
+ 	OTX_EP_MBOX_VERSION_V1,
++	OTX_EP_MBOX_VERSION_V2,
+ };
+ 
+-#define OTX_EP_MBOX_VERSION_CURRENT OTX_EP_MBOX_VERSION_V1
++#define OTX_EP_MBOX_VERSION_CURRENT OTX_EP_MBOX_VERSION_V2
+ 
+ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_VERSION,
+@@ -27,6 +28,9 @@ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_GET_LINK_STATUS,
+ 	OTX_EP_MBOX_CMD_GET_MTU,
+ 	OTX_EP_MBOX_CMD_DEV_REMOVE,
++	OTX_EP_MBOX_CMD_GET_FW_INFO,
++	OTX_EP_MBOX_CMD_SET_OFFLOADS,
++	OTX_EP_MBOX_NOTIF_LINK_STATUS,
+ 	OTX_EP_MBOX_CMD_MAX,
+ };
+ 
+@@ -121,6 +125,15 @@ union otx_ep_mbox_word {
+ 		uint64_t status:1;
+ 		uint64_t rsvd:53;
+ 	} s_link_status;
++	struct {
++		uint64_t opcode:8;
++		uint64_t type:2;
++		uint64_t pkind:8;
++		uint64_t fsz:8;
++		uint64_t rx_ol_flags:16;
++		uint64_t tx_ol_flags:16;
++		uint64_t rsvd:6;
++	} s_fw_info;
+ } __rte_packed;
+ 
+ /* Hardware interface link state information. */
+@@ -167,4 +180,5 @@ void otx_ep_mbox_disable_interrupt(struct otx_ep_device *otx_ep);
+ int otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev);
+ int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev);
+ int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev);
++int otx_ep_mbox_get_fw_info(struct rte_eth_dev *eth_dev);
+ #endif
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 9084ef2e93f3f..582e7232ff19d 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -22,12 +22,6 @@
+ #define DROQ_REFILL_THRESHOLD 16
+ #define OTX2_SDP_REQUEST_ISM	(0x1ULL << 63)
+ 
+-/* These arrays indexed by otx_ep_device->sdp_packet_mode */
+-static uint8_t front_size[2] = {OTX2_EP_FSZ_NIC, OTX2_EP_FSZ_LOOP};
+-static uint8_t rh_size[2] = {OTX_EP_RH_SIZE_NIC, OTX_EP_RH_SIZE_LOOP};
+-static uint8_t droq_info_size[2] = {OTX_EP_DROQ_INFO_SIZE_NIC,
+-				    OTX_EP_DROQ_INFO_SIZE_LOOP};
+-
+ static void
+ otx_ep_dmazone_free(const struct rte_memzone *mz)
+ {
+@@ -568,7 +562,7 @@ otx_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ 
+ 	/* ih invars */
+ 	iqcmd.ih.s.fsz = OTX_EP_FSZ;
+-	iqcmd.ih.s.pkind = otx_ep->pkind; /* The SDK decided PKIND value */
++	iqcmd.ih.s.pkind = otx_ep->fw_info.pkind;
+ 
+ 	/* pki ih3 invars */
+ 	iqcmd.pki_ih3.s.w = 1;
+@@ -709,8 +703,8 @@ otx2_ep_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ 	iqcmd2.irh.u64 = 0;
+ 
+ 	/* ih invars */
+-	iqcmd2.ih.s.fsz = front_size[otx_ep->sdp_packet_mode];
+-	iqcmd2.ih.s.pkind = otx_ep->pkind; /* The SDK decided PKIND value */
++	iqcmd2.ih.s.fsz = otx_ep->fw_info.fsz;
++	iqcmd2.ih.s.pkind = otx_ep->fw_info.pkind;
+ 	/* irh invars, ignored in LOOP mode */
+ 	iqcmd2.irh.s.opcode = OTX_EP_NW_PKT_OP;
+ 
+@@ -871,7 +865,7 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 	int next_idx;
+ 	int info_size;
+ 
+-	info_size = droq_info_size[otx_ep->sdp_packet_mode];
++	info_size = INFO_SIZE + otx_ep->rh_ext_size;
+ 	droq_pkt  = droq->recv_buf_list[droq->read_idx];
+ 	droq_pkt2  = droq->recv_buf_list[droq->read_idx];
+ 	info = rte_pktmbuf_mtod(droq_pkt, struct otx_ep_droq_info *);
+@@ -905,7 +899,7 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 	/* Deduce the actual data size */
+ 	total_pkt_len = info->length + INFO_SIZE;
+ 	if (total_pkt_len <= droq->buffer_size) {
+-		info->length -=  rh_size[otx_ep->sdp_packet_mode];
++		info->length -=  otx_ep->rh_ext_size;
+ 		droq_pkt  = droq->recv_buf_list[droq->read_idx];
+ 		if (likely(droq_pkt != NULL)) {
+ 			droq_pkt->data_off += info_size;
+-- 
+2.25.1
+

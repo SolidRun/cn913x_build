@@ -1,0 +1,114 @@
+From 61899a9da1e7a1423484662a1c985d656ebe0fb5 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Tue, 6 Feb 2024 10:16:31 +0530
+Subject: [PATCH 822/955] net/cnxk: support Tx queue descriptor count
+
+Added CNXK APIs to get used txq descriptor count.
+
+Change-Id: Id94067306c10ab01af205887ce3601724d144fa8
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120084
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ doc/guides/nics/features/cnxk.ini |  1 +
+ drivers/net/cnxk/cn10k_ethdev.c   | 10 ++++++++++
+ drivers/net/cnxk/cn9k_ethdev.c    | 10 ++++++++++
+ drivers/net/cnxk/cnxk_ethdev.h    | 11 +++++++++++
+ 4 files changed, 32 insertions(+)
+
+diff --git a/doc/guides/nics/features/cnxk.ini b/doc/guides/nics/features/cnxk.ini
+index 98d90aa963c87..10a7a961ed1a2 100644
+--- a/doc/guides/nics/features/cnxk.ini
++++ b/doc/guides/nics/features/cnxk.ini
+@@ -40,6 +40,7 @@ Timesync             = Y
+ Timestamp offload    = Y
+ Rx descriptor status = Y
+ Tx descriptor status = Y
++Tx queue count       = Y
+ Basic stats          = Y
+ Stats per queue      = Y
+ Extended stats       = Y
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index ccceb570a328e..c385f76d465a5 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -844,6 +844,14 @@ cn10k_nix_tm_mark_ip_dscp(struct rte_eth_dev *eth_dev, int mark_green,
+ 	return rc;
+ }
+ 
++static int
++cn10k_nix_tx_queue_count(void *tx_queue)
++{
++	struct cn10k_eth_txq *txq = (struct cn10k_eth_txq *)tx_queue;
++
++	return cnxk_nix_tx_queue_count(txq->fc_mem, txq->sqes_per_sqb_log2);
++}
++
+ /* Update platform specific eth dev ops */
+ static void
+ nix_eth_dev_ops_override(void)
+@@ -943,6 +951,8 @@ cn10k_nix_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
+ 		return -ENOENT;
+ 	}
+ 
++	eth_dev->tx_queue_count = cn10k_nix_tx_queue_count;
++
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+ 		/* Setup callbacks for secondary process */
+ 		cn10k_eth_set_tx_function(eth_dev);
+diff --git a/drivers/net/cnxk/cn9k_ethdev.c b/drivers/net/cnxk/cn9k_ethdev.c
+index e2c2f84cc07ee..9801daeb002c8 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.c
++++ b/drivers/net/cnxk/cn9k_ethdev.c
+@@ -722,6 +722,14 @@ cn9k_rx_descriptor_dump(const struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	return 0;
+ }
+ 
++static int
++cn9k_nix_tx_queue_count(void *tx_queue)
++{
++	struct cn9k_eth_txq *txq = (struct cn9k_eth_txq *)tx_queue;
++
++	return cnxk_nix_tx_queue_count(txq->fc_mem, txq->sqes_per_sqb_log2);
++}
++
+ /* Update platform specific eth dev ops */
+ static void
+ nix_eth_dev_ops_override(void)
+@@ -818,6 +826,8 @@ cn9k_nix_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
+ 		return -ENOENT;
+ 	}
+ 
++	eth_dev->tx_queue_count = cn9k_nix_tx_queue_count;
++
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+ 		/* Setup callbacks for secondary process */
+ 		cn9k_eth_set_tx_function(eth_dev);
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 02837ca32fdca..f08d0a6398660 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -464,6 +464,17 @@ cnxk_eth_txq_to_sp(void *__txq)
+ 	return ((struct cnxk_eth_txq_sp *)__txq) - 1;
+ }
+ 
++static inline int
++cnxk_nix_tx_queue_count(uint64_t *mem, uint16_t sqes_per_sqb_log2)
++{
++	uint64_t val;
++
++	val = __atomic_load_n(mem, __ATOMIC_RELAXED);
++	val = (val << sqes_per_sqb_log2) - val;
++
++	return (val & 0xFFFF);
++}
++
+ /* Common ethdev ops */
+ extern struct eth_dev_ops cnxk_eth_dev_ops;
+ 
+-- 
+2.25.1
+

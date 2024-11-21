@@ -1,0 +1,71 @@
+From a00c86a1ed66981f76355c84db8962ef9caa163a Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Fri, 12 Jul 2024 14:00:19 +0530
+Subject: [PATCH 399/513] test/crypto: fix comparison function for modex values
+
+Fix comparison function used by modex test to check from
+first non-zero value itself.
+
+Coverity issue: 430125
+Fixes: 2162d32c1c3 ("test/crypto: validate modex from first non-zero")
+Cc: stable@dpdk.org
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I3d36ce6c8219a27455dafdc64433f310977b5db2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131238
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev_asym.c | 19 ++++++++++++-------
+ 1 file changed, 12 insertions(+), 7 deletions(-)
+
+diff --git a/app/test/test_cryptodev_asym.c b/app/test/test_cryptodev_asym.c
+index 6d1c17451e838..96e7209fd1916 100644
+--- a/app/test/test_cryptodev_asym.c
++++ b/app/test/test_cryptodev_asym.c
+@@ -3201,21 +3201,26 @@ static int send_one(void)
+ }
+ 
+ static int
+-modular_cmpeq(const uint8_t *a, const uint8_t *b, size_t len)
++modular_cmpeq(const uint8_t *a, size_t a_len, const uint8_t *b, size_t b_len)
+ {
+ 	const uint8_t *new_a, *new_b;
+ 	size_t i, j;
+ 
+ 	/* Strip leading NUL bytes */
+-	for (i = 0; i < len; i++)
++	for (i = 0; i < a_len; i++)
+ 		if (a[i] != 0)
+-			new_a = &a[i];
++			break;
+ 
+-	for (j = 0; j < len; j++)
++	for (j = 0; j < b_len; j++)
+ 		if (b[j] != 0)
+-			new_b = &b[i];
++			break;
++
++	if (a_len - i != b_len - j)
++		return 1;
+ 
+-	if (i != j || memcmp(new_a, new_b, len - i))
++	new_a = &a[i];
++	new_b = &b[j];
++	if (memcmp(new_a, new_b, a_len - i))
+ 		return 1;
+ 
+ 	return 0;
+@@ -3255,7 +3260,7 @@ modular_exponentiation(const void *test_data)
+ 
+ 	TEST_ASSERT_SUCCESS(send_one(),
+ 		"Failed to process crypto op");
+-	TEST_ASSERT_SUCCESS(modular_cmpeq(vector->reminder.data,
++	TEST_ASSERT_SUCCESS(modular_cmpeq(vector->reminder.data, vector->reminder.len,
+ 			self->result_op->asym->modex.result.data,
+ 			self->result_op->asym->modex.result.length),
+ 			"operation verification failed\n");
+-- 
+2.25.1
+

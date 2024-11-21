@@ -1,0 +1,123 @@
+From e4154983a4435e996e422da28f502ad880b1e8d9 Mon Sep 17 00:00:00 2001
+From: Jenishkumar Patel <jpatel2@marvell.com>
+Date: Tue, 18 Jul 2023 03:17:37 -0700
+Subject: [PATCH 587/955] net/mvpp2: resolve compilation errors for cn9130
+
+corrected the structure member for rate_limit according
+to new structure definition.
+
+Change-Id: I7523dfcc7cac07913f87971adcf0e44639aa25b7
+Signed-off-by: Jenishkumar Patel <jpatel2@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107703
+Reviewed-by: Sanghoon Lee <salee@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Sanghoon Lee <salee@marvell.com>
+(cherry picked from commit a6debb375563e351fcf63e7382a1fdaa2ac20502)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109083
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .mailmap                     |  1 +
+ drivers/net/mvpp2/mrvl_qos.c |  8 ++++----
+ drivers/net/mvpp2/mrvl_tm.c  | 24 ++++++++++++------------
+ 3 files changed, 17 insertions(+), 16 deletions(-)
+
+diff --git a/.mailmap b/.mailmap
+index f1299b7c8ab4f..90a8850ad221b 100644
+--- a/.mailmap
++++ b/.mailmap
+@@ -574,6 +574,7 @@ Jeff Kirsher <jeffrey.t.kirsher@intel.com>
+ Jeffrey Huang <jeffrey.huang@broadcom.com>
+ Jeff Shaw <jeffrey.b.shaw@intel.com>
+ Jens Freimann <jfreimann@redhat.com> <jfreiman@redhat.com>
++Jenishkumar Patel <jpatel2@marvell.com>
+ Jeremy Plsek <jplsek@iol.unh.edu>
+ Jeremy Spewock <jspewock@iol.unh.edu>
+ Jerin Jacob <jerinj@marvell.com> <jerin.jacob@caviumnetworks.com> <jerinjacobk@gmail.com>
+diff --git a/drivers/net/mvpp2/mrvl_qos.c b/drivers/net/mvpp2/mrvl_qos.c
+index f43217bc589c1..f91b8d601f0c9 100644
+--- a/drivers/net/mvpp2/mrvl_qos.c
++++ b/drivers/net/mvpp2/mrvl_qos.c
+@@ -1141,9 +1141,9 @@ mrvl_configure_txqs(struct mrvl_priv *priv, uint16_t portid,
+ 	if (mrvl_cfg == NULL)
+ 		return 0;
+ 
+-	priv->ppio_params.rate_limit_enable = port_cfg->rate_limit_enable;
++	priv->ppio_params.rate_limit.rate_limit_enable = port_cfg->rate_limit_enable;
+ 	if (port_cfg->rate_limit_enable)
+-		priv->ppio_params.rate_limit_params =
++		priv->ppio_params.rate_limit.rate_limit_params =
+ 			port_cfg->rate_limit_params;
+ 
+ 	for (i = 0; i < max_queues; i++) {
+@@ -1152,8 +1152,8 @@ mrvl_configure_txqs(struct mrvl_priv *priv, uint16_t portid,
+ 
+ 		params->sched_mode = port_cfg->outq[i].sched_mode;
+ 		params->weight = port_cfg->outq[i].weight;
+-		params->rate_limit_enable = port_cfg->outq[i].rate_limit_enable;
+-		params->rate_limit_params = port_cfg->outq[i].rate_limit_params;
++		params->rate_limit.rate_limit_enable = port_cfg->outq[i].rate_limit_enable;
++		params->rate_limit.rate_limit_params = port_cfg->outq[i].rate_limit_params;
+ 	}
+ 
+ 	return 0;
+diff --git a/drivers/net/mvpp2/mrvl_tm.c b/drivers/net/mvpp2/mrvl_tm.c
+index 9fac80b867be2..efab7852e58c4 100644
+--- a/drivers/net/mvpp2/mrvl_tm.c
++++ b/drivers/net/mvpp2/mrvl_tm.c
+@@ -875,10 +875,10 @@ mrvl_hierarchy_commit(struct rte_eth_dev *dev, int clear_on_fail,
+ 			if (!node->profile)
+ 				continue;
+ 
+-			priv->ppio_params.rate_limit_enable = 1;
+-			priv->ppio_params.rate_limit_params.cir =
++			priv->ppio_params.rate_limit.rate_limit_enable = 1;
++			priv->ppio_params.rate_limit.rate_limit_params.cir =
+ 				node->profile->params.peak.rate * 8 / 1000;
+-			priv->ppio_params.rate_limit_params.cbs =
++			priv->ppio_params.rate_limit.rate_limit_params.cbs =
+ 				node->profile->params.peak.size / 1000;
+ 
+ 			MRVL_LOG(INFO,
+@@ -905,17 +905,17 @@ mrvl_hierarchy_commit(struct rte_eth_dev *dev, int clear_on_fail,
+ 		}
+ 
+ 		if (node->profile) {
+-			p->rate_limit_enable = 1;
++			p->rate_limit.rate_limit_enable = 1;
+ 			/* convert Bytes/s to kilo bits/s */
+-			p->rate_limit_params.cir =
++			p->rate_limit.rate_limit_params.cir =
+ 				node->profile->params.peak.rate * 8 / 1000;
+ 			/* convert bits to kilo bits */
+-			p->rate_limit_params.cbs =
++			p->rate_limit.rate_limit_params.cbs =
+ 				node->profile->params.peak.size / 1000;
+ 		} else {
+-			p->rate_limit_enable = 0;
+-			p->rate_limit_params.cir = 0;
+-			p->rate_limit_params.cbs = 0;
++			p->rate_limit.rate_limit_enable = 0;
++			p->rate_limit.rate_limit_params.cir = 0;
++			p->rate_limit.rate_limit_params.cbs = 0;
+ 		}
+ 	}
+ 
+@@ -929,9 +929,9 @@ mrvl_hierarchy_commit(struct rte_eth_dev *dev, int clear_on_fail,
+ 
+ 			p->sched_mode = PP2_PPIO_SCHED_M_WRR;
+ 			p->weight = 0;
+-			p->rate_limit_enable = 0;
+-			p->rate_limit_params.cir = 0;
+-			p->rate_limit_params.cbs = 0;
++			p->rate_limit.rate_limit_enable = 0;
++			p->rate_limit.rate_limit_params.cir = 0;
++			p->rate_limit.rate_limit_params.cbs = 0;
+ 		}
+ 	}
+ 
+-- 
+2.25.1
+

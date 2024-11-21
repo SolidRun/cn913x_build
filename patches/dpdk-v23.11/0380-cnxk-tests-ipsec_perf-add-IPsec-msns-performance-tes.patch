@@ -1,0 +1,634 @@
+From 7a30a4c40bd701e5c8c82421176f5f02cb72da3c Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Fri, 14 Jun 2024 18:00:49 +0530
+Subject: [PATCH 380/513] cnxk-tests/ipsec_perf: add IPsec msns performance
+ test
+
+Adds IPsec Inline inbound + outbound performance test
+using cnxk_ipsec_msns application.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I584a5b69f7516f21fe0bfa834638b94fc928f283
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129656
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ .../cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh  | 116 +++++++++++++++---
+ .../test/cnxk-tests/ipsec_perf/meson.build    |   4 +
+ .../pcap/enc_aes-gcm_msns_1410.pcap           | Bin 0 -> 12080 bytes
+ .../ipsec_perf/pcap/enc_aes-gcm_msns_380.pcap | Bin 0 -> 3888 bytes
+ .../ipsec_perf/pcap/enc_aes-gcm_msns_64.pcap  | Bin 0 -> 1456 bytes
+ .../rclk2500_sclk1100.106xx.ip_p_msns.inb     |   5 +
+ 6 files changed, 107 insertions(+), 18 deletions(-)
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/pcap/enc_aes-gcm_msns_1410.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/pcap/enc_aes-gcm_msns_380.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/pcap/enc_aes-gcm_msns_64.pcap
+ create mode 100644 marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_msns.inb
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+index a51ce0adbbb5e..868623a7c66b0 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+@@ -96,6 +96,7 @@ CFG=(
+ 	"ep0_inline_protocol_ob_sp.cfg"
+ 	"ep0_inline_protocol_ob_sp.cfg"
+ 	"ep0_inline_protocol_ob_sp.cfg"
++	""
+ )
+ 
+ #Inline Protocol inbound specific config files
+@@ -110,6 +111,7 @@ IP_IB_CFG=(
+ 	"ep0_inline_protocol_ib_sp.cfg"
+ 	"ep0_inline_protocol_ib_sp.cfg"
+ 	"ep0_inline_protocol_ib_sp.cfg"
++	""
+ )
+ 
+ # Dual Port Inbound configs for Inline protocol
+@@ -123,6 +125,7 @@ IP_IB_CFG_DP=(
+ 	"ep0_inline_protocol_ib_dp.cfg"
+ 	"ep0_inline_protocol_ib_dp.cfg"
+ 	"ep0_inline_protocol_ib_dp.cfg"
++	""
+ )
+ 
+ # Dual Port Outbound configs for Inline protocol
+@@ -136,6 +139,7 @@ IP_OB_CFG_DP=(
+ 	"ep0_inline_protocol_ob_dp.cfg"
+ 	"ep0_inline_protocol_ob_dp.cfg"
+ 	"ep0_inline_protocol_ob_dp.cfg"
++	""
+ )
+ # Specific config files for Perf cases with Inline Protocol Single-SA
+ IP_PERF_CFG=(
+@@ -155,6 +159,7 @@ TYPE=(
+ 	"ip_p"
+ 	"ip_ev_ss"
+ 	"ip_p_ss"
++	"ip_p_msns"
+ )
+ 
+ TN=(
+@@ -167,6 +172,7 @@ TN=(
+ 	"Inline Protocol: Poll Mode"
+ 	"Inline Protocol: Event Vector Perf Mode (Single-SA)"
+ 	"Inline Protocol: Poll Perf Mode (Single-SA)"
++	"Inline Protocol: Poll Perf Mode (Ipsec-Msns)"
+ )
+ 
+ NB_TYPES=${#TYPE[@]}
+@@ -275,7 +281,7 @@ fi
+ function is_inline_proto_test()
+ {
+ 	local type=${TYPE[$Y]}
+-	local ip_tests=(ip ip_ev ip_p ip_ev_ss ip_p_ss)
++	local ip_tests=(ip ip_ev ip_p ip_ev_ss ip_p_ss ip_p_msns)
+ 
+ 	[[ " ${ip_tests[*]} " =~ " $type " ]]
+ }
+@@ -283,11 +289,19 @@ function is_inline_proto_test()
+ function is_single_sa_test()
+ {
+ 	local type=${TYPE[$Y]}
+-	local sa_tests=(ip_ev_ss ip_p_ss)
++	local sa_tests=(ip_ev_ss ip_p_ss ip_p_msns)
+ 
+ 	[[ " ${sa_tests[*]} " =~ " $type " ]]
+ }
+ 
++function is_ipsec_msns_test()
++{
++	local type=${TYPE[$Y]}
++	local msns_tests=(ip_p_msns)
++
++	[[ " ${msns_tests[*]} " =~ " $type " ]]
++}
++
+ function supported_by_9k()
+ {
+ 	local type=$1
+@@ -300,7 +314,7 @@ function run_test()
+ {
+ 	local cmd=$1
+ 	touch $IPSEC_LOG
+-	eval "nohup $1 >> $IPSEC_LOG 2>&1 &"
++	eval "stdbuf -o0 nohup $1 >> $IPSEC_LOG 2>&1 &"
+ 	PT1="IPSEC: entering main loop on lcore"
+ 	PT2="IPSEC: Launching event mode worker"
+ 
+@@ -466,14 +480,51 @@ function run_ipsec_secgw_inb()
+ 	sleep $WS
+ }
+ 
++function run_ipsec_msns()
++{
++	echo "ipsec-msns poll mode performance test"
++
++	# Find the cnxk_ipsec_msns application
++	if [[ -f $CNXKTESTPATH/../ipsec_msns/cnxk_ipsec_msns ]]; then
++		# This is running from build directory
++		MSNS_BIN=$CNXKTESTPATH/../ipsec_msns/cnxk_ipsec_msns
++	elif [[ -f $CNXKTESTPATH/../../cnxk_ipsec_msns ]]; then
++		# This is running from install directory
++		MSNS_BIN=$CNXKTESTPATH/../../cnxk_ipsec_msns
++	else
++		MSNS_BIN=$(which cnxk_ipsec_msns)
++
++		if [[ -z $MSNS_BIN ]]; then
++			echo "cnxk_ipsec_msns not found !!"
++			exit 1
++		fi
++	fi
++
++	if [[ $IS_CN10K -ne 0 ]]; then
++		local env="$MSNS_BIN -c 0x3 -a $CDEV_VF -a $INLINE_DEV,ipsec_in_max_spi=128 -a $EVENT_VF -a $IF0,ipsec_in_max_spi=128 --file-prefix $IPSEC_PREFIX -- --portmask 0x1"
++		IS_RXPPS_TXTPMD=1
++		run_test '$env --testmode 5 --num-sas 8'
++	fi
++	sleep $WS
++}
++
++
+ function ipsec_exit()
+ {
+-	killall -q dpdk-ipsec-secgw | echo "ipsec_exit: killed dpdk-ipsec-secgw"
++	if is_ipsec_msns_test; then
++		killall -q cnxk_ipsec_msns | echo "ipsec_exit: killed cnxk_ipsec_msns"
++		# Wait until the process is killed
++		while (ps -ef | grep cnxk_ipsec_msns | grep -q $IPSEC_PREFIX); do
++			continue
++		done
++	else
++		killall -q dpdk-ipsec-secgw | echo "ipsec_exit: killed dpdk-ipsec-secgw"
++		# Wait until the process is killed
++		while (ps -ef | grep dpdk-ipsec-secgw | grep -q $IPSEC_PREFIX); do
++			continue
++		done
++	fi
+ 
+-	# Wait until the process is killed
+-	while (ps -ef | grep dpdk-ipsec-secgw | grep -q $IPSEC_PREFIX); do
+-		continue
+-	done
+ 	sleep 7
+ }
+ 
+@@ -554,7 +605,13 @@ function pmd_tx_launch_for_inb()
+ 		C_MSK_I="0xF800"
+ 		C_MSK="0x3800"
+ 	fi
+-	local pcap=$CNXKTESTPATH/pcap/enc_$1_$2.pcap
++
++	if is_ipsec_msns_test; then
++		local pcap=$CNXKTESTPATH/pcap/enc_$1_msns_$2.pcap
++	else
++		local pcap=$CNXKTESTPATH/pcap/enc_$1_$2.pcap
++	fi
++
+ 	if [[ $WITH_GEN_BOARD -eq 1 ]] && is_inline_proto_test; then
+ 		exec_testpmd_cmd_gen "launch_tx_inb" $TPMD_TX_PREFIX $pcap
+ 	else
+@@ -803,9 +860,15 @@ function inb_perf()
+ 			if [[ $tcnt -gt 1 ]]; then
+ 				# Restart ipsec-secgw
+ 				ipsec_exit
+-				echo "Restart ipsec-secgw"
+ 				IPSEC_LOG=ipsec_"$X"_inb_"$Y"_"$tcnt".log
+-				run_ipsec_secgw_inb
++				if is_ipsec_msns_test; then
++					echo "Restart cnxk_ipsec_msns"
++					IPSEC_LOG=ipsec_"$X"_inb_"$Y"_"$tcnt".log
++					run_ipsec_msns
++				else
++					echo "Restart ipsec-secgw"
++					run_ipsec_secgw_inb
++				fi
+ 			fi
+ 			start_testpmd
+ 			pmd_rx_dry_run
+@@ -959,17 +1022,21 @@ function check_ref_files()
+ 		if [[ $IS_CN10K -eq 0 ]] && ! supported_by_9k $type; then
+ 			continue
+ 		fi
+-		outb="$FPATH.$type.outb"
+-		if [[ ! -f $outb ]]; then
+-			echo "File $outb not present"
+-			exit 1
+-		fi
+-
+ 		inb="$FPATH.$type.inb"
+ 		if [[ ! -f $inb ]]; then
+ 			echo "File $inb not present"
+ 			exit 1
+ 		fi
++
++		if [[ $type = "ip_p_msns" ]]; then
++			continue
++		fi
++
++		outb="$FPATH.$type.outb"
++		if [[ ! -f $outb ]]; then
++			echo "File $outb not present"
++			exit 1
++		fi
+ 	done
+ }
+ 
+@@ -1011,9 +1078,22 @@ while [[ $Y -lt $NB_TYPES ]]; do
+ 	echo ""
+ 	echo "Test: ${TN[$Y]}"
+ 	echo "----------------------"
+-	# Outbound
+ 	sleep $WS
+ 
++	# Ipsec_msns perf
++	if [[ ${TYPE[$Y]} = "ip_p_msns" ]] && [[ $DTC != "CN103XX" ]]; then
++		X=1
++		IPSEC_LOG=ipsec_msns_"$X"_inb_"$Y"_1.log
++		run_ipsec_msns
++		pmd_rx_launch
++		aes_gcm_inb
++		quit_testpmd "$TPMD_RX_PREFIX"
++		ipsec_exit
++		((++Y))
++		continue;
++	fi
++
++	# Outbound
+ 	# aes-cbc sha1-hmac
+ 
+ 	# Select perf config file for Inline protocol Single-SA perf tests
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build b/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
+index a0a571e7ee619..bc90f340cb63d 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
+@@ -74,12 +74,16 @@ run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.outb')
+ run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p.inb')
+ run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.outb')
+ run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.103xx.ip_p_ss.inb')
++run_command(copy_data, 'ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_msns.inb')
+ run_command(copy_data, 'pcap/enc_aes-cbc_sha1-hmac_64.pcap')
+ run_command(copy_data, 'pcap/enc_aes-cbc_sha1-hmac_380.pcap')
+ run_command(copy_data, 'pcap/enc_aes-cbc_sha1-hmac_1410.pcap')
+ run_command(copy_data, 'pcap/enc_aes-gcm_64.pcap')
+ run_command(copy_data, 'pcap/enc_aes-gcm_380.pcap')
+ run_command(copy_data, 'pcap/enc_aes-gcm_1410.pcap')
++run_command(copy_data, 'pcap/enc_aes-gcm_msns_64.pcap')
++run_command(copy_data, 'pcap/enc_aes-gcm_msns_380.pcap')
++run_command(copy_data, 'pcap/enc_aes-gcm_msns_1410.pcap')
+ # Add the meson test
+ test(test_name,
+     cnxk_test_script_wrapper,
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/pcap/enc_aes-gcm_msns_1410.pcap b/marvell-ci/test/cnxk-tests/ipsec_perf/pcap/enc_aes-gcm_msns_1410.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..a08e7fc8e3a170342458720f60ebd92055b488a9
+GIT binary patch
+literal 12080
+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
+I_>bxT2bGhxTL1t6
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/pcap/enc_aes-gcm_msns_380.pcap b/marvell-ci/test/cnxk-tests/ipsec_perf/pcap/enc_aes-gcm_msns_380.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..43ee4e8100d698ebe60a6dd17fa2eda61fdd9879
+GIT binary patch
+literal 3888
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/pcap/enc_aes-gcm_msns_64.pcap b/marvell-ci/test/cnxk-tests/ipsec_perf/pcap/enc_aes-gcm_msns_64.pcap
+new file mode 100644
+index 0000000000000000000000000000000000000000..c72971114476a99124a39e4c719c0817682979cb
+GIT binary patch
+literal 1456
+zcmd<$<>jhjU|{gI(UxKa(*L1=nL(VvCo`|KLcvte&{WSr*V0foJvA@2C^MOXg~6J^
+zH?=4|H94_BK_fh~D782vu_#+p!C22o&sagjJ+nli48kr*OwLYBPfbxsEQZMH8fpS<
+zVPF8+39?TFO8@^4VY31GOMn;zu1c{nykYgPZ341ESQre1z<`6nm4TrIWQ2p!cjf~t
+z7@2?=WFQ#pFy?>tP8Nz^<8+~$W8c~0CzGFREZqJf**oyr#T(y5?zP&P3eRZ2BAs{J
+zJwfE~#V0#k5*sG9KNUW>y+~dEl}=*RD|@leOVc;q_;<{A`n=bz%+J;xjZ2c3gt!ge
+zjh8P4k>*AwkUR5r^L)Q5xf;pIiA;1<y?LqP*d)use*SgK=hivu&0Syg=vReeUBk(S
+zwTU*TlaqLtdd8d%iP?MeshH&RuG<37{n>tt-pE?!Skz{jY#DDGQuH|E+r767*0W=G
+z<LlL7q`8q9<VM}?XM{f)aqstL7Fw*h@>H1Iu5|+QQhAua>i@mdBChRZvDf43<a5Wr
+zq))iW{&GnLYw@SRppRYM8UK8?TzL3A>!tB$#z||gySW^Ec*N(CTNcaJ&8~A6-tM!<
+z?#7t%DAL@>0&-*K-;3$z{l6@qm(23M^hbmr(}w1p$|G<7tb8j||Np`Ey=<La%VtgO
+zX5D+`!u*N@ObnS$UvD3~Jx{7pcJ*!T)^EKk`%*fi_7$DGQkLO-$6%ikS6;@RLw%cY
+z#I=%l9BFQ31-UWx6WfIim)8DK-ynR;!@c2D?7EdUFQs(UB=}Y0{KJ^VXFuiFo^r%{
+z-tU@FHipd=J8viCFRtGDvX!-S8;@Yaw~Viw;-s3+FX2>vd!vuZdC~6H+X2aodKy<?
+z567>PNu;?El%N@3uXecA{IHgP+t;uYnLN=;19u0i9(Z}`-o&hD?_Y{~EBgp`iZ1NA
+zCwSJbZQZiBeuc;T`S%}`jlW=|IA{ICuDKV2c5LEYb3ZdsqW11VhIa-kH80A-GIlEG
+zVs|6cyHwKL2u#-uj1C=>SPa;A9aWbTnO>2#cXs|)y}xs$r}(uTzMfHJ-R!{<(Yijm
+zPWy5~n%dQ)C%#k&8O$t?x7d{B5_NO~f9WD-J-eR57Z)tWRtGx>H?8{m)XyPmVN;7?
+z6?Qj9ZObIhjT|61+U>oc5x6P9m1$A=KNiOgt-tNHiZ`zJcX^|Fdxw~8%E=w(tC_{!
+zeCD1yrYH1l@~2lT-d>ve;N_x3)is~{txcZaJ^zifvB}x>e?#Eh($F;<rYOn;n4EaT
+II}74Q01D~fC;$Ke
+
+literal 0
+HcmV?d00001
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_msns.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_msns.inb
+new file mode 100644
+index 0000000000000..cef55d9819030
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_msns.inb
+@@ -0,0 +1,5 @@
++aes-gcm
++64: 23090300
++380: 17838592
++1410: 7015966
++<end>
+-- 
+2.25.1
+

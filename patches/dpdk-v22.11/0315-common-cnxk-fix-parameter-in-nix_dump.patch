@@ -1,0 +1,36 @@
+From c1e589ef2203555b2a261ef68af8bd6f9fb41656 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Tue, 7 Mar 2023 11:28:47 +0530
+Subject: [PATCH 315/955] common/cnxk: fix parameter in nix_dump
+
+Fix parameter passed to nix_dump to what expected in format
+specifier.
+Fixes: 68e163bd9f09 ("common/cnxk: enable 10K B0 support for inline IPsec")
+
+Change-Id: Id4376a47708b608d7579412a85a0445b148510d7
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99434
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_debug.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_debug.c b/drivers/common/cnxk/roc_nix_debug.c
+index a1c3db284b583..8c7d902f1e772 100644
+--- a/drivers/common/cnxk/roc_nix_debug.c
++++ b/drivers/common/cnxk/roc_nix_debug.c
+@@ -664,8 +664,8 @@ nix_lf_cq_dump(__io struct nix_cq_ctx_s *ctx, FILE *file)
+ 	nix_dump(file,
+ 		 "W1: lbpid_high \t\t\t0x%03x\nW1: lbpid_med \t\t\t0x%03x\n"
+ 		 "W1: lbpid_low \t\t\t0x%03x\n(W1: lbpid) \t\t\t0x%03x\n",
+-		 ctx->lbpid_high, ctx->lbpid_med, ctx->lbpid_low,
+-		 ctx->lbpid_high << 6 | ctx->lbpid_med << 3 | ctx->lbpid_low);
++		 ctx->lbpid_high, ctx->lbpid_med, ctx->lbpid_low, (unsigned int)
++		 (ctx->lbpid_high << 6 | ctx->lbpid_med << 3 | ctx->lbpid_low));
+ 	nix_dump(file, "W1: lbp_ena \t\t\t\t%d\n", ctx->lbp_ena);
+ 
+ 	nix_dump(file, "W2: update_time \t\t%d\nW2: avg_level \t\t\t%d",
+-- 
+2.25.1
+

@@ -1,0 +1,48 @@
+From 5f74e89f4db1e69759398f84ac1c2e2d621f4516 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 3 Apr 2024 09:39:11 +0530
+Subject: [PATCH 294/513] common/cnxk: override IPsec UDP encap ports on
+ outbound
+
+Change-Id: I1e063b7b1d981b67b3d694c286bc562cc66af2d0
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/124965
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/cnxk_security.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index 5e8165ceced48..15b0bedf43e23 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -418,6 +418,7 @@ cnxk_ot_ipsec_outb_sa_fill(struct roc_ot_ipsec_outb_sa *sa,
+ 			   struct rte_crypto_sym_xform *crypto_xfrm)
+ {
+ 	struct rte_security_ipsec_tunnel_param *tunnel = &ipsec_xfrm->tunnel;
++	uint16_t sport = 4500, dport = 4500;
+ 	union roc_ot_ipsec_sa_word2 w2;
+ 	size_t offset;
+ 	int rc;
+@@ -513,8 +514,14 @@ cnxk_ot_ipsec_outb_sa_fill(struct roc_ot_ipsec_outb_sa *sa,
+ 		sa->ctx.esn_val = ipsec_xfrm->esn.value - 1;
+ 
+ 	if (ipsec_xfrm->options.udp_encap) {
+-		sa->w10.s.udp_src_port = 4500;
+-		sa->w10.s.udp_dst_port = 4500;
++		if (ipsec_xfrm->udp.sport)
++			sport = ipsec_xfrm->udp.sport;
++
++		if (ipsec_xfrm->udp.dport)
++			dport = ipsec_xfrm->udp.dport;
++
++		sa->w10.s.udp_src_port = sport;
++		sa->w10.s.udp_dst_port = dport;
+ 	}
+ 
+ 	offset = offsetof(struct roc_ot_ipsec_outb_sa, ctx);
+-- 
+2.25.1
+

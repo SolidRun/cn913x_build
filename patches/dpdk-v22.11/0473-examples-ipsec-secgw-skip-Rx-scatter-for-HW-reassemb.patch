@@ -1,0 +1,39 @@
+From 7dd368348aac7bdd39f6f483cccfd6a0d0466a4a Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Sun, 14 May 2023 01:51:13 +0530
+Subject: [PATCH 473/955] examples/ipsec-secgw: skip Rx scatter for HW
+ reassembly
+
+When HW reassembly is enabled, currently both Rx scatter and
+Tx multi-segs ethdev offload flags are enabled. Tx multi-seg is
+needed to Tx the reassembled pkt but Rx scatter is not needed as
+reassembly should be self sufficient offload flag. Hence remove it
+and only enable Tx multi-segs when HW reassembly is enabled.
+
+Change-Id: I51ee8cff1cede7de5fda112e399589b2ec9c4c91
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103447
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+---
+ examples/ipsec-secgw/sa.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/examples/ipsec-secgw/sa.c b/examples/ipsec-secgw/sa.c
+index 42a4a064993cc..96c849579445d 100644
+--- a/examples/ipsec-secgw/sa.c
++++ b/examples/ipsec-secgw/sa.c
+@@ -1852,7 +1852,6 @@ sa_check_offloads(uint16_t port_id, uint64_t *rx_offloads,
+ 				&& rule->portid == port_id)
+ 			*rx_offloads |= RTE_ETH_RX_OFFLOAD_SECURITY;
+ 		if (IS_HW_REASSEMBLY_EN(rule->flags)) {
+-			*rx_offloads |= RTE_ETH_RX_OFFLOAD_SCATTER;
+ 			*tx_offloads |= RTE_ETH_TX_OFFLOAD_MULTI_SEGS;
+ 			*hw_reassembly = 1;
+ 		}
+-- 
+2.25.1
+

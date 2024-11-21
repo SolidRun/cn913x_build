@@ -1,0 +1,40 @@
+From e7f87aa803063fc54180147232f8cbee46ea9936 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Thu, 28 Sep 2023 12:17:13 +0530
+Subject: [PATCH 639/955] ci: lower lookaside IPsec performance numbers
+
+Lowering lookaside IPsec event vector outbound
+performance numbers.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Iba425541d9f0739ec201b3df061c83c206112a90
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/112774
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb  | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb
+index 846a2daf30a4f..de66526bc3c65 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+-64: 8695622
+-380: 8682232
++64: 7812756
++380: 8012232
+ 1410: 4400564
+ <end>
+ aes-gcm
+-64: 8666312
+-380: 8620362
++64: 7701183
++380: 8001488
+ 1410: 4400563
+ <end>
+-- 
+2.25.1
+

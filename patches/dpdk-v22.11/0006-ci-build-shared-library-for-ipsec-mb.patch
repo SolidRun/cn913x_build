@@ -1,0 +1,40 @@
+From 640b8c1027a8898ec1a33fc329bf14dfd54794f2 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 29 Nov 2022 16:48:58 +0530
+Subject: [PATCH 006/955] ci: build shared library for ipsec-mb
+
+Build shared library for ipsec-mb to workaround the below
+build errors.
+
+ 'relocation R_AARCH64_ADR_PREL_PG_HI21 against symbol `xyz`
+  which may bind externally can not be used when making a
+  shared object; recompile with -fPIC'
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Ica7c10bdf74753582c0ac8c5074bf3166f626aaa
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91474
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/build/build-deps.sh | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/build/build-deps.sh b/marvell-ci/build/build-deps.sh
+index c4b9c42ecf75b..755fe33cef45d 100755
+--- a/marvell-ci/build/build-deps.sh
++++ b/marvell-ci/build/build-deps.sh
+@@ -77,9 +77,9 @@ function setup_ipsec_mb()
+ 	tar -zxvf ipsec-mb-main.tar.gz --strip-components=1
+ 	patch -p1 < $PROJECT_ROOT/marvell-ci/patches/ipsec_mb/$patch1
+ 	patch -p1 < $PROJECT_ROOT/marvell-ci/patches/ipsec_mb/$patch2
+-	SHARED=n CC=aarch64-marvell-linux-gnu-gcc \
++	SHARED=y CC=aarch64-marvell-linux-gnu-gcc STRIP=aarch64-marvell-linux-gnu-strip \
+ 		make -C lib AESNI_EMU=y ARCH=aarch64 PREFIX=$INSTALL_ROOT
+-	SHARED=n CC=aarch64-marvell-linux-gnu-gcc \
++	SHARED=y CC=aarch64-marvell-linux-gnu-gcc STRIP=aarch64-marvell-linux-gnu-strip \
+ 		make -C lib AESNI_EMU=y ARCH=aarch64 PREFIX=$INSTALL_ROOT install
+ 	popd
+ }
+-- 
+2.25.1
+

@@ -1,0 +1,428 @@
+From ae8c2337a9fed01f2f7d738819b767a7df137843 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 28 May 2024 13:48:48 +0530
+Subject: [PATCH 890/955] cnxk-tests/ipsec_msns: support for out-of-place
+ inline inb
+
+Add support to do out-of-place processing in inline inbound.
+Also add option of aes-256-gcm algo.
+
+Change-Id: I96d62a64242439f65ac3fb28e057e7953358488e
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128549
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/ipsec_msns/ipsec_msns.c   | 163 +++++++++++++-----
+ .../test/cnxk-tests/ipsec_msns/ipsec_msns.h   |  51 ++++++
+ 2 files changed, 170 insertions(+), 44 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+index 5e93cdba721f4..3ebc1e9061285 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+@@ -164,8 +164,10 @@ static int nb_event_queues;
+ static int nb_event_ports;
+ static uint32_t num_sas = 1;
+ static bool softexp;
++static bool inl_inb_oop;
+ static uint32_t soft_limit = 8 * 1024 * 1024;
+ static uint32_t esn_ar;
++static struct ipsec_session_data *sess_conf = &conf_aes_128_gcm;
+ 
+ TAILQ_HEAD(outb_sa_expiry_q, outb_sa_exp_info);
+ struct outb_sa_expiry_q sa_exp_q;
+@@ -552,6 +554,26 @@ compare_pkt_data(struct rte_mbuf *m, uint8_t *ref, unsigned int tot_len)
+ 	return 0;
+ }
+ 
++static void
++dump_alg_data(struct ipsec_session_data *sess_conf)
++{
++	int i;
++
++	if (sess_conf->aead && sess_conf->xform.aead.aead.algo == RTE_CRYPTO_AEAD_AES_GCM) {
++		printf("\nCrypto Alg: AES-GCM-%u\n", sess_conf->xform.aead.aead.key.length * 8);
++		printf("Crypto Key: ");
++		for (i = 0; i < sess_conf->xform.aead.aead.key.length - 1; i++)
++			printf("%02x:", sess_conf->key.data[i]);
++		printf("%02x\n", sess_conf->key.data[i]);
++
++		printf("Crypto Salt: %02x:%02x:%02x:%02x\n",
++		       sess_conf->ipsec_xform.salt >> 24,
++		       (sess_conf->ipsec_xform.salt >> 16) & 0xFF,
++		       (sess_conf->ipsec_xform.salt >> 8) & 0xFF,
++		       sess_conf->ipsec_xform.salt & 0xFF);
++	}
++}
++
+ /* Create Inline IPsec session */
+ static int
+ create_inline_ipsec_session(struct ipsec_session_data *sa, uint16_t portid,
+@@ -739,6 +761,17 @@ create_ipsec_perf_session(struct ipsec_session_data *sa, uint16_t portid,
+ 	return 0;
+ }
+ 
++static __rte_always_inline void
++handle_inb_oop(struct rte_mbuf *mbuf)
++{
++	struct rte_mbuf *orig = *(struct rte_mbuf **)rte_security_oop_dynfield(mbuf);
++
++	if (orig == NULL)
++		abort();
++	/* Free original buffer */
++	rte_pktmbuf_free(orig);
++}
++
+ #if !defined(MSNS_CN9K)
+ static void
+ handle_inb_soft_exp(uint16_t port_id, struct rte_mbuf *mbuf, uint32_t lcore_id)
+@@ -1075,6 +1108,28 @@ destroy_default_flow(uint16_t port_id)
+ 	}
+ }
+ 
++static int
++ut_eventdev_stop(void)
++{
++	int rc = 0;
++
++	rte_event_dev_stop(eventdev_id);
++	rc = rte_event_eth_rx_adapter_stop(rx_adapter_id);
++	rc |= rte_event_eth_tx_adapter_stop(tx_adapter_id);
++	return rc;
++}
++
++static int
++ut_eventdev_start(void)
++{
++	int rc = 0;
++
++	rc |= rte_event_eth_rx_adapter_start(rx_adapter_id);
++	rc |= rte_event_eth_tx_adapter_start(tx_adapter_id);
++	rc = rte_event_dev_start(eventdev_id);
++	return rc;
++}
++
+ static int
+ ut_eventdev_setup(void)
+ {
+@@ -1278,6 +1333,10 @@ ut_eventdev_setup(void)
+ 		return ret;
+ 	}
+ 
++	/* Stop event dev before traffic */
++	if (event_en)
++		ut_eventdev_stop();
++
+ 	return 0;
+ }
+ 
+@@ -1337,6 +1396,7 @@ print_usage(const char *name)
+ 	printf("Usage: %s ", name);
+ 	printf("[--testmode <0/1/2/3/4>] [--pfc] [--portmask] [--nb-mbufs <count >]");
+ 	printf("[--num-sas <count>] [--softexp-en] [--softlimit <packet_count>]\n");
++	printf("[--inl-inb-oop] [--algo <aes_128_gcm|aes_256_gcm>]\n");
+ }
+ 
+ static int
+@@ -1399,6 +1459,13 @@ parse_args(int argc, char **argv)
+ 			continue;
+ 		}
+ 
++		if (!strcmp(argv[0], "--inl-inb-oop")) {
++			inl_inb_oop = true;
++			argc--;
++			argv++;
++			continue;
++		}
++
+ 		if (!strcmp(argv[0], "--softlimit") && (argc > 1)) {
+ 			soft_limit = atoi(argv[1]);
+ 			argc -= 2;
+@@ -1413,6 +1480,22 @@ parse_args(int argc, char **argv)
+ 			continue;
+ 		}
+ 
++		if (!strcmp(argv[0], "--algo")) {
++			const char *alg = argv[1];
++
++			argc -= 2;
++			argv += 2;
++			if (!strcmp(alg, "aes-128-gcm")) {
++				sess_conf = &conf_aes_128_gcm;
++				continue;
++			} else if (!strcmp(alg, "aes-256-gcm")) {
++				sess_conf = &conf_aes_256_gcm;
++				continue;
++			} else {
++				printf("Invalid algo %s\n", alg);
++			}
++		}
++
+ 		/* Unknown args */
+ 		print_usage(name);
+ 		return -1;
+@@ -1850,12 +1933,15 @@ static int
+ ut_ipsec_ipv4_burst_encap_decap(void)
+ {
+ 	struct test_ipsec_vector ipv4_nofrag_case = {
+-		.sa_data = &conf_aes_128_gcm,
++		.sa_data = sess_conf,
+ 		.full_pkt = &pkt_ipv4_plain,
+ 		.frags = &pkt_ipv4_plain,
+ 	};
+ 	int rc;
+ 
++	/* Start event dev */
++	ut_eventdev_start();
++
+ 	rc = ut_ipsec_encap_decap(&ipv4_nofrag_case, RTE_SECURITY_IPSEC_TUNNEL_IPV4,
+ 				  RTE_PMD_CNXK_SEC_ACTION_ALG0);
+ 	printf("Test RTE_PMD_CNXK_SEC_ACTION_ALG0: %s\n", rc ? "FAILED" : "PASS");
+@@ -2117,6 +2203,9 @@ event_inb_laoutb_worker(void *args)
+ 			handle_inb_soft_exp(0, ev.mbuf, lcore_id);
+ #endif
+ 
++		if (unlikely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD && inl_inb_oop))
++			handle_inb_oop(ev.mbuf);
++
+ 		rte_prefetch0(rte_pktmbuf_mtod(pkt, void *));
+ 		/* Drop packets received with offload failure */
+ 		if (unlikely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED)) {
+@@ -2200,6 +2289,9 @@ event_inb_outb_worker(void *args)
+ 			handle_inb_soft_exp(0, ev.mbuf, lcore_id);
+ #endif
+ 
++		if (unlikely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD && inl_inb_oop))
++			handle_inb_oop(ev.mbuf);
++
+ 		rte_prefetch0(rte_pktmbuf_mtod(pkt, void *));
+ 		/* Drop packets received with offload failure */
+ 		if (unlikely(pkt->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED)) {
+@@ -2478,6 +2570,9 @@ setup_ipsec_inb_sessions(int portid, struct ipsec_session_data *conf,
+ 			sa_data->ipsec_xform.life.packets_soft_limit = soft_limit - 1;
+ 			sa_data->ipsec_xform.options.stats = 1;
+ 		}
++		if (inl_inb_oop)
++			sa_data->ipsec_xform.options.ingress_oop = 1;
++
+ 		/* Create Inline IPsec inbound session. */
+ 		ret = create_ipsec_perf_session(sa_data, portid, &inb_sas[sa_index].sa);
+ 		if (ret) {
+@@ -2611,27 +2706,16 @@ event_ipsec_inb_laoutb_perf(void)
+ 		return -1;
+ 	}
+ 
++	dump_alg_data(sess_conf);
+ 	/* Create one ESP rule per alg on port 0 and it would apply on all ports
+ 	 * due to custom_act
+ 	 */
+-	printf("\nCrypto Alg: AES-GCM-128\n");
+-	printf("Crypto Key: ");
+-	for (i = 0; i < 15; i++)
+-		printf("%02x:", conf_aes_128_gcm.key.data[i]);
+-	printf("%02x\n", conf_aes_128_gcm.key.data[i]);
+-
+-	printf("Crypto Salt: %02x:%02x:%02x:%02x\n",
+-	       conf_aes_128_gcm.ipsec_xform.salt >> 24,
+-	       (conf_aes_128_gcm.ipsec_xform.salt >> 16) & 0xFF,
+-	       (conf_aes_128_gcm.ipsec_xform.salt >> 8) & 0xFF,
+-	       conf_aes_128_gcm.ipsec_xform.salt & 0xFF);
+-
+-	ret = setup_ipsec_inb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	ret = setup_ipsec_inb_sessions(portid, sess_conf, tun_type);
+ 	if (ret) {
+ 		printf("IPsec sessions creation failed\n");
+ 		return ret;
+ 	}
+-	ret = setup_ipsec_outb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	ret = setup_ipsec_outb_sessions(portid, sess_conf, tun_type);
+ 	if (ret) {
+ 		printf("IPsec sessions creation failed\n");
+ 		goto inb_sas_destroy;
+@@ -2640,6 +2724,9 @@ event_ipsec_inb_laoutb_perf(void)
+ 
+ 	printf("\n");
+ 
++	/* Start event dev */
++	ut_eventdev_start();
++
+ 	/* launch per-lcore init on every lcore */
+ 	rte_eal_mp_remote_launch(event_inb_laoutb_worker, NULL, SKIP_MAIN);
+ 	/* Print stats */
+@@ -2684,27 +2771,16 @@ event_ipsec_inb_outb_perf(void)
+ 		return -1;
+ 	}
+ 
++	dump_alg_data(sess_conf);
+ 	/* Create one ESP rule per alg on port 0 and it would apply on all ports
+ 	 * due to custom_act
+ 	 */
+-	printf("\nCrypto Alg: AES-GCM-128\n");
+-	printf("Crypto Key: ");
+-	for (i = 0; i < 15; i++)
+-		printf("%02x:", conf_aes_128_gcm.key.data[i]);
+-	printf("%02x\n", conf_aes_128_gcm.key.data[i]);
+-
+-	printf("Crypto Salt: %02x:%02x:%02x:%02x\n",
+-	       conf_aes_128_gcm.ipsec_xform.salt >> 24,
+-	       (conf_aes_128_gcm.ipsec_xform.salt >> 16) & 0xFF,
+-	       (conf_aes_128_gcm.ipsec_xform.salt >> 8) & 0xFF,
+-	       conf_aes_128_gcm.ipsec_xform.salt & 0xFF);
+-
+-	ret = setup_ipsec_inb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	ret = setup_ipsec_inb_sessions(portid, sess_conf, tun_type);
+ 	if (ret) {
+ 		printf("IPsec sessions creation failed\n");
+ 		return ret;
+ 	}
+-	ret = setup_ipsec_outb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	ret = setup_ipsec_outb_sessions(portid, sess_conf, tun_type);
+ 	if (ret) {
+ 		printf("IPsec sessions creation failed\n");
+ 		goto inb_sas_destroy;
+@@ -2713,6 +2789,9 @@ event_ipsec_inb_outb_perf(void)
+ 
+ 	printf("\n");
+ 
++	/* Start event dev */
++	ut_eventdev_start();
++
+ 	/* launch per-lcore init on every lcore */
+ 	rte_eal_mp_remote_launch(event_inb_outb_worker, NULL, SKIP_MAIN);
+ 	/* Print stats */
+@@ -2757,7 +2836,7 @@ event_ipsec_inb_perf(void)
+ 		printf("Ethernet device doesn't support security features.\n");
+ 		return -1;
+ 	}
+-	ret = setup_ipsec_inb_sessions(portid, &conf_aes_128_gcm, tun_type);
++	ret = setup_ipsec_inb_sessions(portid, sess_conf, tun_type);
+ 	if (ret) {
+ 		printf("IPsec sessions creation failed\n");
+ 		return ret;
+@@ -2766,6 +2845,9 @@ event_ipsec_inb_perf(void)
+ 
+ 	printf("\n");
+ 
++	/* Start event dev */
++	ut_eventdev_start();
++
+ 	/* launch per-lcore init on every lcore */
+ 	rte_eal_mp_remote_launch(event_inb_worker, NULL, SKIP_MAIN);
+ 
+@@ -2802,26 +2884,16 @@ event_ipsec_inb_msns_perf(void)
+ 	uint16_t sa_hi = 0, sa_lo = 0;
+ 	uint16_t lcore_id;
+ 	uint32_t spi = 0;
+-	int ret = 0, i;
++	int ret = 0;
+ 	uint8_t alg;
+ 
+ 	memset(&in_ses, 0, sizeof(in_ses));
+ 	memset(sa_indices, 0xFF, sizeof(sa_indices));
++
++	dump_alg_data(sess_conf);
+ 	/* Create one ESP rule per alg on port 0 and it would apply on all ports
+ 	 * due to custom_act
+ 	 */
+-	printf("\nCrypto Alg: AES-GCM-128\n");
+-	printf("Crypto Key: ");
+-	for (i = 0; i < 15; i++)
+-		printf("%02x:", conf_aes_128_gcm.key.data[i]);
+-	printf("%02x\n", conf_aes_128_gcm.key.data[i]);
+-
+-	printf("Crypto Salt: %02x:%02x:%02x:%02x\n",
+-	       conf_aes_128_gcm.ipsec_xform.salt >> 24,
+-	       (conf_aes_128_gcm.ipsec_xform.salt >> 16) & 0xFF,
+-	       (conf_aes_128_gcm.ipsec_xform.salt >> 8) & 0xFF,
+-	       conf_aes_128_gcm.ipsec_xform.salt & 0xFF);
+-
+ 	dir = RTE_SECURITY_IPSEC_SA_DIR_INGRESS;
+ 	RTE_ETH_FOREACH_DEV(portid) {
+ 		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
+@@ -2866,7 +2938,7 @@ event_ipsec_inb_msns_perf(void)
+ 				break;
+ 			}
+ 
+-			memcpy(&sa_data, &conf_aes_128_gcm, sizeof(sa_data));
++			memcpy(&sa_data, sess_conf, sizeof(sa_data));
+ 			sa_data.ipsec_xform.spi = sa_index;
+ 			/* Create Inline IPsec inbound session. */
+ 			ret = create_inline_ipsec_session(&sa_data, portid, &in_ses[portid][alg],
+@@ -2906,6 +2978,9 @@ event_ipsec_inb_msns_perf(void)
+ 
+ 	printf("\n");
+ 
++	/* Start event dev */
++	ut_eventdev_start();
++
+ 	/* launch per-lcore init on every lcore */
+ 	rte_eal_mp_remote_launch(event_inb_worker, NULL, SKIP_MAIN);
+ 
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.h b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.h
+index 685ec73226892..631b8168cb294 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.h
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.h
+@@ -136,6 +136,57 @@ struct ipsec_session_data conf_aes_128_gcm = {
+ 	},
+ };
+ 
++struct ipsec_session_data conf_aes_256_gcm = {
++	.key = {
++		.data = {
++			0xfe, 0xff, 0xe9, 0x92, 0x86, 0x65, 0x73, 0x1c,
++			0x6d, 0x6a, 0x8f, 0x94, 0x67, 0x30, 0x83,
++			0x08,
++			0xfe, 0xff, 0xe9, 0x92, 0x86, 0x65, 0x73, 0x1c,
++			0x6d, 0x6a, 0x8f, 0x94, 0x67, 0x30, 0x83,
++			0x08,
++		},
++	},
++	.ipsec_xform = {
++		.spi = 0xa5f8,
++		.salt = 0xbebafeca,
++		.options.esn = 0,
++		.options.udp_encap = 0,
++		.options.copy_dscp = 0,
++		.options.copy_flabel = 0,
++		.options.copy_df = 0,
++		.options.dec_ttl = 0,
++		.options.ecn = 0,
++		.options.stats = 0,
++		.options.tunnel_hdr_verify = 0,
++		.options.ip_csum_enable = 0,
++		.options.l4_csum_enable = 0,
++		.direction = RTE_SECURITY_IPSEC_SA_DIR_EGRESS,
++		.proto = RTE_SECURITY_IPSEC_SA_PROTO_ESP,
++		.mode = RTE_SECURITY_IPSEC_SA_MODE_TUNNEL,
++		.tunnel.type = RTE_SECURITY_IPSEC_TUNNEL_IPV4,
++		.replay_win_sz = 0,
++	},
++
++	.aead = true,
++
++	.xform = {
++		.aead = {
++			.next = NULL,
++			.type = RTE_CRYPTO_SYM_XFORM_AEAD,
++			.aead = {
++				.op = RTE_CRYPTO_AEAD_OP_ENCRYPT,
++				.algo = RTE_CRYPTO_AEAD_AES_GCM,
++				.key.length = 32,
++				.iv.length = 12,
++				.iv.offset = 0,
++				.digest_length = 16,
++				.aad_length = 12,
++			},
++		},
++	},
++};
++
+ enum pkt_type {
+ 	PKT_TYPE_PLAIN_IPV4 = 1,
+ 	PKT_TYPE_IPSEC_IPV4,
+-- 
+2.25.1
+

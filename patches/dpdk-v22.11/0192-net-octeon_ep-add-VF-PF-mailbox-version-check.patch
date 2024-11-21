@@ -1,0 +1,91 @@
+From cdc961895255bcaea38d8f505cdf2748613cc18d Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Tue, 31 Jan 2023 01:24:59 -0800
+Subject: [PATCH 192/955] net/octeon_ep: add VF PF mailbox version check
+
+add VF PF mailbox version compatible check support.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I179977b06594bbd37ef544e2eaf6fe4543a4db31
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95680
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+Tested-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_ethdev.c |  3 +++
+ drivers/net/octeon_ep/otx_ep_mbox.c   | 21 +++++++++++++++++++++
+ drivers/net/octeon_ep/otx_ep_mbox.h   |  4 ++--
+ 3 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 4bec912a8058c..c144e1dcf093e 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -712,6 +712,9 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		otx_ep_err("Invalid chip id\n");
+ 		return -EINVAL;
+ 	}
++	if (otx_ep_mbox_version_check(eth_dev)) {
++		return -EINVAL;
++	}
+ 	if (otx_ep_eth_dev_query_set_vf_mac(eth_dev,
+ 				(struct rte_ether_addr *)&vf_mac_addr)) {
+ 		otx_ep_err("set mac addr failed\n");
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index 8e866efd15f13..8e53445e9acbf 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -269,3 +269,24 @@ otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev)
+ 		return ret;
+ 	return rsp.s_get_mtu.mtu;
+ }
++
++int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_ep =
++		(struct otx_ep_device *)(eth_dev)->data->dev_private;
++	union otx_ep_mbox_word cmd;
++	union otx_ep_mbox_word rsp;
++	int ret;
++
++	cmd.u64 = 0;
++	cmd.s_version.opcode = OTX_EP_MBOX_CMD_VERSION;
++	cmd.s_version.version = OTX_EP_MBOX_VERSION;
++	ret = otx_ep_send_mbox_cmd(otx_ep, cmd, &rsp);
++	if (!ret)
++		return 0;
++	if (ret == OTX_EP_MBOX_CMD_STATUS_NACK) {
++		otx_ep_err("VF Mbox version:%u is not compatible with PF\n",
++			(uint32_t)cmd.s_version.version);
++	}
++	return ret;
++}
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.h b/drivers/net/octeon_ep/otx_ep_mbox.h
+index 311b3aa0fdffd..c7a0a546350d8 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.h
++++ b/drivers/net/octeon_ep/otx_ep_mbox.h
+@@ -6,7 +6,7 @@
+ #define _OTX_EP_MBOX_H_
+ 
+ 
+-#define OTX_EP_MBOX_VERSION 0
++#define OTX_EP_MBOX_VERSION        1
+ 
+ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_VERSION,
+@@ -57,7 +57,6 @@ enum otx_ep_link_autoneg {
+ 
+ #define OTX_EP_MBOX_TIMEOUT_MS     1200
+ #define OTX_EP_MBOX_MAX_RETRIES    2
+-#define OTX_EP_MBOX_VERSION        0
+ #define OTX_EP_MBOX_MAX_DATA_SIZE  6
+ #define OTX_EP_MBOX_MAX_DATA_BUF_SIZE 256
+ #define OTX_EP_MBOX_MORE_FRAG_FLAG 1
+@@ -158,4 +157,5 @@ int otx_ep_mbox_get_link_info(struct rte_eth_dev *eth_dev, struct rte_eth_link *
+ void otx_ep_mbox_enable_interrupt(struct otx_ep_device *otx_ep);
+ void otx_ep_mbox_disable_interrupt(struct otx_ep_device *otx_ep);
+ int otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev);
++int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev);
+ #endif
+-- 
+2.25.1
+

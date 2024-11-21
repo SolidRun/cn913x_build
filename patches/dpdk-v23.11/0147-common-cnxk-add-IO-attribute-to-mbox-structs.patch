@@ -1,0 +1,61 @@
+From e06db7818e7efba55fa7b9d1557d0782a6ffc2b5 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 19 Jan 2024 10:31:27 +0530
+Subject: [PATCH 147/513] common/cnxk: add IO attribute to mbox structs
+
+IO attribute is needed to mbox structs to avoid unaligned or pair
+access causing by compiler optimization. Add them to structs
+where it is missing.
+
+Fixes: 503b82de2cbf ("common/cnxk: add mbox request and response definitions")
+Fixes: ddf955d3917e ("common/cnxk: support CPT second pass")
+
+Change-Id: I564908e83c5e7536f6f8b67d1feb5df259d88c56
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120066
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_mbox.h | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 4b4f48e3724b7..d8a8494ac4d4a 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -1427,12 +1427,12 @@ struct nix_cn10k_aq_enq_req {
+ struct nix_cn10k_aq_enq_rsp {
+ 	struct mbox_msghdr hdr;
+ 	union {
+-		struct nix_cn10k_rq_ctx_s rq;
+-		struct nix_cn10k_sq_ctx_s sq;
+-		struct nix_cq_ctx_s cq;
+-		struct nix_rsse_s rss;
+-		struct nix_rx_mce_s mce;
+-		struct nix_band_prof_s prof;
++		__io struct nix_cn10k_rq_ctx_s rq;
++		__io struct nix_cn10k_sq_ctx_s sq;
++		__io struct nix_cq_ctx_s cq;
++		__io struct nix_rsse_s rss;
++		__io struct nix_rx_mce_s mce;
++		__io struct nix_band_prof_s prof;
+ 	};
+ };
+ 
+@@ -1668,11 +1668,11 @@ struct nix_rq_cpt_field_mask_cfg_req {
+ #define RQ_CTX_MASK_MAX 6
+ 	union {
+ 		uint64_t __io rq_ctx_word_set[RQ_CTX_MASK_MAX];
+-		struct nix_cn10k_rq_ctx_s rq_set;
++		__io struct nix_cn10k_rq_ctx_s rq_set;
+ 	};
+ 	union {
+ 		uint64_t __io rq_ctx_word_mask[RQ_CTX_MASK_MAX];
+-		struct nix_cn10k_rq_ctx_s rq_mask;
++		__io struct nix_cn10k_rq_ctx_s rq_mask;
+ 	};
+ 	struct nix_lf_rx_ipec_cfg1_req {
+ 		uint32_t __io spb_cpt_aura;
+-- 
+2.25.1
+

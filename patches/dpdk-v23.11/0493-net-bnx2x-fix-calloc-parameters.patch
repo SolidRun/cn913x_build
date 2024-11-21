@@ -1,0 +1,49 @@
+From 8d6ca590389d5fb579f7eb927661630c966d0d01 Mon Sep 17 00:00:00 2001
+From: Ferruh Yigit <ferruh.yigit@amd.com>
+Date: Wed, 24 Jan 2024 18:54:04 +0000
+Subject: [PATCH 493/513] net/bnx2x: fix calloc parameters
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+gcc [1] generates warning [2] about rte_calloc usage, because
+rte_calloc parameter order is wrong, fixing it by replacing parameters.
+
+[1]
+gcc (GCC) 14.0.1 20240124 (experimental)
+
+[2]
+Compiling C object drivers/libtmp_rte_net_bnx2x.a.p/net_bnx2x_bnx2x.c.o
+../drivers/net/bnx2x/bnx2x.c: In function ‘bnx2x_alloc_ilt_lines_mem’:
+../drivers/net/bnx2x/bnx2x.c:2392:44:
+ warning: ‘rte_calloc’ sizes specified with ‘sizeof’ in the earlier
+ argument and not in the later argument [-Wcalloc-transposed-args]
+ 2392 |                     sizeof(struct ilt_line), ILT_MAX_LINES,
+      |                            ^~~~~~
+
+Fixes: 540a211084a7 ("bnx2x: driver core")
+Cc: stable@dpdk.org
+
+Signed-off-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Acked-by: Morten Brørup <mb@smartsharesystems.com>
+Change-Id: Ieaf95757ec754a86efe120bc80c46e56f89959a4
+---
+ drivers/net/bnx2x/bnx2x.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/bnx2x/bnx2x.c b/drivers/net/bnx2x/bnx2x.c
+index c3283c94f38f9..597ee4335977b 100644
+--- a/drivers/net/bnx2x/bnx2x.c
++++ b/drivers/net/bnx2x/bnx2x.c
+@@ -2389,7 +2389,7 @@ int bnx2x_alloc_ilt_mem(struct bnx2x_softc *sc)
+ static int bnx2x_alloc_ilt_lines_mem(struct bnx2x_softc *sc)
+ {
+ 	sc->ilt->lines = rte_calloc("",
+-				    sizeof(struct ilt_line), ILT_MAX_LINES,
++				    ILT_MAX_LINES, sizeof(struct ilt_line),
+ 				    RTE_CACHE_LINE_SIZE);
+ 	return sc->ilt->lines == NULL;
+ }
+-- 
+2.25.1
+

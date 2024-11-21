@@ -1,0 +1,81 @@
+From 60aeb6f37ee4b7ed5f85883f674ca16069468471 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Tue, 25 Jul 2023 09:13:02 -0700
+Subject: [PATCH 592/955] crypto/cnxk: update the iv from proper param for gmac
+
+In raw crypto, aad and auth iv are provided in same param.
+Update the auth_iv from proper param in case of GMAC.
+Skip the raw for SM ciphers and auths
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I2b087ab8300723668d6b8cdc64c18ec3052057cc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108601
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c |  6 +++---
+ drivers/crypto/cnxk/cnxk_se.h             | 21 +++++++++++++++------
+ 2 files changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 4b0becce0e813..5f181e8839f8b 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -1485,7 +1485,8 @@ cn10k_sym_configure_raw_dp_ctx(struct rte_cryptodev *dev, uint16_t qp_id,
+ 
+ 	if ((sess->dp_thr_type == CPT_DP_THREAD_TYPE_PDCP) ||
+ 	    (sess->dp_thr_type == CPT_DP_THREAD_TYPE_PDCP_CHAIN) ||
+-	    (sess->dp_thr_type == CPT_DP_THREAD_TYPE_KASUMI))
++	    (sess->dp_thr_type == CPT_DP_THREAD_TYPE_KASUMI) ||
++	    (sess->dp_thr_type == CPT_DP_THREAD_TYPE_SM))
+ 		return -ENOTSUP;
+ 
+ 	if ((sess->dp_thr_type == CPT_DP_THREAD_AUTH_ONLY) &&
+@@ -1493,8 +1494,7 @@ cn10k_sym_configure_raw_dp_ctx(struct rte_cryptodev *dev, uint16_t qp_id,
+ 	     (sess->roc_se_ctx.fc_type == ROC_SE_PDCP)))
+ 		return -ENOTSUP;
+ 
+-	if ((sess->roc_se_ctx.hash_type == ROC_SE_GMAC_TYPE) ||
+-	    (sess->roc_se_ctx.hash_type == ROC_SE_SHA1_TYPE))
++	if (sess->roc_se_ctx.hash_type == ROC_SE_SHA1_TYPE)
+ 		return -ENOTSUP;
+ 
+ 	dp_ctx = (struct cnxk_sym_dp_ctx *)raw_dp_ctx->drv_ctx_data;
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index 0a5f716747009..213af41c19749 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -3487,14 +3487,23 @@ fill_raw_fc_params(struct cnxk_iov *iov, struct cnxk_se_sess *sess, struct cpt_q
+ 	fc_params.mac_buf.vaddr = 0;
+ 	fc_params.iv_buf = NULL;
+ 
+-	if (likely(is_kasumi || sess->iv_length)) {
++	if (likely(sess->iv_length)) {
+ 		flags |= ROC_SE_VALID_IV_BUF;
+-		fc_params.iv_buf = iov->iv_buf;
+ 
+-		if (sess->short_iv) {
+-			memcpy((uint8_t *)iv_buf, iov->iv_buf, 12);
+-			iv_buf[3] = rte_cpu_to_be_32(0x1);
+-			fc_params.iv_buf = iv_buf;
++		if (sess->is_gmac) {
++			fc_params.iv_buf = iov->aad_buf;
++			if (sess->short_iv) {
++				memcpy((void *)iv_buf, iov->aad_buf, 12);
++				iv_buf[3] = rte_cpu_to_be_32(0x1);
++				fc_params.iv_buf = iv_buf;
++			}
++		} else {
++			fc_params.iv_buf = iov->iv_buf;
++			if (sess->short_iv) {
++				memcpy((void *)iv_buf, iov->iv_buf, 12);
++				iv_buf[3] = rte_cpu_to_be_32(0x1);
++				fc_params.iv_buf = iv_buf;
++			}
+ 		}
+ 
+ 		if (sess->aes_ccm) {
+-- 
+2.25.1
+

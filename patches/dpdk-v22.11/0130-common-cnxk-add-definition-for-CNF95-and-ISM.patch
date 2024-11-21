@@ -1,0 +1,182 @@
+From 332b0c8f45d6d767130b8c2fae1e6eb5bed0e949 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Mon, 2 Jan 2023 00:18:00 -0800
+Subject: [PATCH 130/955] common/cnxk: add definition for CNF95 and ISM
+
+add definitions for CNF95XXN EP, CNF95XXO EP and
+ISM messages
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I5800209a24447683d851506a01cc5b87aee2520c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93492
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/common/cnxk/hw/sdp.h        | 74 ++++++++++++++---------------
+ drivers/common/cnxk/roc_constants.h | 13 +++--
+ 2 files changed, 44 insertions(+), 43 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/sdp.h b/drivers/common/cnxk/hw/sdp.h
+index 686f516097f5c..766fd3cf7bf9c 100644
+--- a/drivers/common/cnxk/hw/sdp.h
++++ b/drivers/common/cnxk/hw/sdp.h
+@@ -57,47 +57,45 @@
+ #define SDP_VF_R_IN_INT_LEVELS_START  (0x10060)
+ #define SDP_VF_R_IN_PKT_CNT_START     (0x10080)
+ #define SDP_VF_R_IN_BYTE_CNT_START    (0x10090)
++#define SDP_VF_R_IN_CNTS_ISM_START    (0x10520)
+ 
+-#define SDP_VF_R_IN_CONTROL(ring)                                              \
+-	(SDP_VF_R_IN_CONTROL_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_IN_CONTROL(ring) (SDP_VF_R_IN_CONTROL_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_IN_ENABLE(ring)                                               \
+-	(SDP_VF_R_IN_ENABLE_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_IN_ENABLE(ring) (SDP_VF_R_IN_ENABLE_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_IN_INSTR_BADDR(ring)                                          \
++#define SDP_VF_R_IN_INSTR_BADDR(ring)                                                              \
+ 	(SDP_VF_R_IN_INSTR_BADDR_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_IN_INSTR_RSIZE(ring)                                          \
++#define SDP_VF_R_IN_INSTR_RSIZE(ring)                                                              \
+ 	(SDP_VF_R_IN_INSTR_RSIZE_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_IN_INSTR_DBELL(ring)                                          \
++#define SDP_VF_R_IN_INSTR_DBELL(ring)                                                              \
+ 	(SDP_VF_R_IN_INSTR_DBELL_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_IN_CNTS(ring)                                                 \
+-	(SDP_VF_R_IN_CNTS_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_IN_CNTS(ring) (SDP_VF_R_IN_CNTS_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_IN_INT_LEVELS(ring)                                           \
+-	(SDP_VF_R_IN_INT_LEVELS_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_IN_INT_LEVELS(ring) (SDP_VF_R_IN_INT_LEVELS_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_IN_PKT_CNT(ring)                                              \
+-	(SDP_VF_R_IN_PKT_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_IN_PKT_CNT(ring) (SDP_VF_R_IN_PKT_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_IN_BYTE_CNT(ring)                                             \
+-	(SDP_VF_R_IN_BYTE_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_IN_BYTE_CNT(ring) (SDP_VF_R_IN_BYTE_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
++
++#define SDP_VF_R_IN_CNTS_ISM(ring) (SDP_VF_R_IN_CNTS_ISM_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+ /* SDP VF IQ Masks */
+ #define SDP_VF_R_IN_CTL_RPVF_MASK (0xF)
+ #define SDP_VF_R_IN_CTL_RPVF_POS  (48)
+ 
+-#define SDP_VF_R_IN_CTL_IDLE   (0x1ull << 28)
+-#define SDP_VF_R_IN_CTL_RDSIZE (0x3ull << 25) /* Setting to max(4) */
+-#define SDP_VF_R_IN_CTL_IS_64B (0x1ull << 24)
+-#define SDP_VF_R_IN_CTL_D_NSR  (0x1ull << 8)
+-#define SDP_VF_R_IN_CTL_D_ESR  (0x1ull << 6)
+-#define SDP_VF_R_IN_CTL_D_ROR  (0x1ull << 5)
+-#define SDP_VF_R_IN_CTL_NSR    (0x1ull << 3)
+-#define SDP_VF_R_IN_CTL_ESR    (0x1ull << 1)
+-#define SDP_VF_R_IN_CTL_ROR    (0x1ull << 0)
++#define SDP_VF_R_IN_CTL_IDLE	 (0x1ull << 28)
++#define SDP_VF_R_IN_CTL_RDSIZE	 (0x3ull << 25) /* Setting to max(4) */
++#define SDP_VF_R_IN_CTL_IS_64B	 (0x1ull << 24)
++#define SDP_VF_R_IN_CTL_D_NSR	 (0x1ull << 8)
++#define SDP_VF_R_IN_CTL_D_ESR	 (0x1ull << 6)
++#define SDP_VF_R_IN_CTL_D_ROR	 (0x1ull << 5)
++#define SDP_VF_R_IN_CTL_NSR	 (0x1ull << 3)
++#define SDP_VF_R_IN_CTL_ESR	 (0x1ull << 1)
++#define SDP_VF_R_IN_CTL_ROR	 (0x1ull << 0)
++#define SDP_VF_R_IN_CNTS_OUT_INT (0x1ull << 62)
+ 
+ #define SDP_VF_R_IN_CTL_MASK (SDP_VF_R_IN_CTL_RDSIZE | SDP_VF_R_IN_CTL_IS_64B)
+ 
+@@ -111,33 +109,31 @@
+ #define SDP_VF_R_OUT_ENABLE_START      (0x10160)
+ #define SDP_VF_R_OUT_PKT_CNT_START     (0x10180)
+ #define SDP_VF_R_OUT_BYTE_CNT_START    (0x10190)
++#define SDP_VF_R_OUT_CNTS_ISM_START    (0x10510)
+ 
+-#define SDP_VF_R_OUT_CONTROL(ring)                                             \
+-	(SDP_VF_R_OUT_CONTROL_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_OUT_CONTROL(ring) (SDP_VF_R_OUT_CONTROL_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_OUT_ENABLE(ring)                                              \
+-	(SDP_VF_R_OUT_ENABLE_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_OUT_ENABLE(ring) (SDP_VF_R_OUT_ENABLE_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_OUT_SLIST_BADDR(ring)                                         \
++#define SDP_VF_R_OUT_SLIST_BADDR(ring)                                                             \
+ 	(SDP_VF_R_OUT_SLIST_BADDR_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_OUT_SLIST_RSIZE(ring)                                         \
++#define SDP_VF_R_OUT_SLIST_RSIZE(ring)                                                             \
+ 	(SDP_VF_R_OUT_SLIST_RSIZE_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_OUT_SLIST_DBELL(ring)                                         \
++#define SDP_VF_R_OUT_SLIST_DBELL(ring)                                                             \
+ 	(SDP_VF_R_OUT_SLIST_DBELL_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_OUT_CNTS(ring)                                                \
+-	(SDP_VF_R_OUT_CNTS_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_OUT_CNTS(ring) (SDP_VF_R_OUT_CNTS_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_OUT_INT_LEVELS(ring)                                          \
++#define SDP_VF_R_OUT_INT_LEVELS(ring)                                                              \
+ 	(SDP_VF_R_OUT_INT_LEVELS_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_OUT_PKT_CNT(ring)                                             \
+-	(SDP_VF_R_OUT_PKT_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_OUT_PKT_CNT(ring) (SDP_VF_R_OUT_PKT_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
++
++#define SDP_VF_R_OUT_BYTE_CNT(ring) (SDP_VF_R_OUT_BYTE_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_OUT_BYTE_CNT(ring)                                            \
+-	(SDP_VF_R_OUT_BYTE_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
++#define SDP_VF_R_OUT_CNTS_ISM(ring) (SDP_VF_R_OUT_CNTS_ISM_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+ /* SDP VF OQ Masks */
+ #define SDP_VF_R_OUT_CTL_IDLE  (1ull << 40)
+@@ -154,6 +150,8 @@
+ 
+ #define SDP_VF_R_OUT_INT_LEVELS_BMODE (1ull << 63)
+ #define SDP_VF_R_OUT_INT_LEVELS_TIMET (32)
++#define SDP_VF_R_OUT_CNTS_IN_INT      (1ull << 61)
++#define SDP_VF_R_OUT_CNTS_OUT_INT     (1ull << 62)
+ 
+ /* SDP Instruction Header */
+ struct sdp_instr_ih {
+diff --git a/drivers/common/cnxk/roc_constants.h b/drivers/common/cnxk/roc_constants.h
+index 0495965daa3ce..d1e849a6fdd16 100644
+--- a/drivers/common/cnxk/roc_constants.h
++++ b/drivers/common/cnxk/roc_constants.h
+@@ -34,6 +34,9 @@
+ #define PCI_DEVID_CNXK_RVU_AF_VF      0xA0f8
+ #define PCI_DEVID_CNXK_DPI_VF	      0xA081
+ #define PCI_DEVID_CNXK_EP_VF	      0xB203
++#define PCI_DEVID_CNF95XXN_EP_NET_VF  0xB403
++#define PCI_DEVID_CNF95XXO_EP_NET_VF  0xB603
++#define PCI_DEVID_LIO3_EP_NET_VF      0x3383
+ #define PCI_DEVID_CNXK_RVU_SDP_PF     0xA0f6
+ #define PCI_DEVID_CNXK_RVU_SDP_VF     0xA0f7
+ #define PCI_DEVID_CNXK_BPHY	      0xA089
+@@ -56,11 +59,11 @@
+ #define PCI_SUBSYSTEM_DEVID_CN10KB  0xBD00
+ #define PCI_SUBSYSTEM_DEVID_CNF10KB 0xBC00
+ 
+-#define PCI_SUBSYSTEM_DEVID_CN9KA 0x0000
+-#define PCI_SUBSYSTEM_DEVID_CN9KB 0xb400
+-#define PCI_SUBSYSTEM_DEVID_CN9KC 0x0200
+-#define PCI_SUBSYSTEM_DEVID_CN9KD 0xB200
+-#define PCI_SUBSYSTEM_DEVID_CN9KE 0xB100
++#define PCI_SUBSYSTEM_DEVID_CN9KA  0x0000
++#define PCI_SUBSYSTEM_DEVID_CN9KB  0xb400
++#define PCI_SUBSYSTEM_DEVID_CN9KC  0x0200
++#define PCI_SUBSYSTEM_DEVID_CN9KD  0xB200
++#define PCI_SUBSYSTEM_DEVID_CN9KE  0xB100
+ #define PCI_SUBSYSTEM_DEVID_CNF9KA 0xB600
+ 
+ #endif /* _ROC_CONSTANTS_H_ */
+-- 
+2.25.1
+

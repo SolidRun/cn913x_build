@@ -1,0 +1,58 @@
+From 6c1ec8044f63872c39bb20963a02fbeace1417f6 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Wed, 26 Apr 2023 20:48:52 +0530
+Subject: [PATCH 380/955] event/cnxk: fix setting event attributes in empty get
+ work
+
+Even when no events are dequeued, it's important to update event
+attributes as they provide valuable information for checking the work
+slot state and other attributes.
+
+Fixes: c0a9774f030d ("event/cnxk: move post-processing to separate function")
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I390a2691f4d24563566d69856b4fe54ad10f50c0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102356
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+---
+ drivers/event/cnxk/cn10k_worker.h | 3 +++
+ drivers/event/cnxk/cn9k_worker.h  | 6 ++++--
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index 98bb8355f4cd5..c361d70535584 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -310,6 +310,9 @@ cn10k_sso_hws_get_work_empty(struct cn10k_sso_hws *ws, struct rte_event *ev,
+ 	ws->gw_rdata = gw.u64[0];
+ 	if (gw.u64[1])
+ 		cn10k_sso_hws_post_process(ws, gw.u64, flags);
++	else
++		gw.u64[0] = (gw.u64[0] & (0x3ull << 32)) << 6 |
++			    (gw.u64[0] & (0x3FFull << 36)) << 4 | (gw.u64[0] & 0xffffffff);
+ 
+ 	ev->event = gw.u64[0];
+ 	ev->u64 = gw.u64[1];
+diff --git a/drivers/event/cnxk/cn9k_worker.h b/drivers/event/cnxk/cn9k_worker.h
+index f4a59a38fe64c..965829a7f6fc9 100644
+--- a/drivers/event/cnxk/cn9k_worker.h
++++ b/drivers/event/cnxk/cn9k_worker.h
+@@ -356,8 +356,10 @@ cn9k_sso_hws_get_work_empty(uint64_t base, struct rte_event *ev,
+ #endif
+ 
+ 	if (gw.u64[1])
+-		cn9k_sso_hws_post_process(gw.u64, mbuf, flags, lookup_mem,
+-					  tstamp);
++		cn9k_sso_hws_post_process(gw.u64, mbuf, flags, lookup_mem, tstamp);
++	else
++		gw.u64[0] = (gw.u64[0] & (0x3ull << 32)) << 6 |
++			    (gw.u64[0] & (0x3FFull << 36)) << 4 | (gw.u64[0] & 0xffffffff);
+ 
+ 	ev->event = gw.u64[0];
+ 	ev->u64 = gw.u64[1];
+-- 
+2.25.1
+

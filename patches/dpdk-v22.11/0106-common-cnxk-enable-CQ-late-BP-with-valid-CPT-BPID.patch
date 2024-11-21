@@ -1,0 +1,98 @@
+From 78e8f1f3ad21b4d366ddfd8297440db4d75aa420 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 23 Dec 2022 10:06:33 +0530
+Subject: [PATCH 106/955] common/cnxk: enable CQ late BP with valid CPT BPID
+
+When FC enable requested for CPT, mbox returns allocated BPID.
+While configuring CQ consider this value to enable late back pressure.
+
+Change-Id: If088b77ccd080d30396f2845cad1283a6a781826
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93318
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_fc.c    |  2 ++
+ drivers/common/cnxk/roc_nix_priv.h  |  1 +
+ drivers/common/cnxk/roc_nix_queue.c | 19 +++++++++++++------
+ 3 files changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 569fe8dc48bd8..784e6e541626a 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -83,6 +83,7 @@ nix_fc_rxchan_bpid_set(struct roc_nix *roc_nix, bool enable)
+ 		rc = mbox_process_msg(mbox, (void *)&rsp);
+ 		if (rc)
+ 			goto exit;
++		nix->cpt_lbpid = rsp->chan_bpid[0] & 0x1FF;
+ 	} else {
+ 		req = mbox_alloc_msg_nix_cpt_bp_disable(mbox);
+ 		if (req == NULL)
+@@ -94,6 +95,7 @@ nix_fc_rxchan_bpid_set(struct roc_nix *roc_nix, bool enable)
+ 		rc = mbox_process_msg(mbox, (void *)&rsp);
+ 		if (rc)
+ 			goto exit;
++		nix->cpt_lbpid = 0;
+ 	}
+ 
+ exit:
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 0a9461c8569c6..7d2e3626a3ef2 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -205,6 +205,7 @@ struct nix {
+ 	uint16_t nb_cpt_lf;
+ 	uint16_t outb_se_ring_cnt;
+ 	uint16_t outb_se_ring_base;
++	uint16_t cpt_lbpid;
+ 	bool need_meta_aura;
+ 	/* Mode provided by driver */
+ 	bool inb_inl_dev;
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 20a1e7d4d88c1..385f1ba04e775 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -798,7 +798,7 @@ roc_nix_cq_init(struct roc_nix *roc_nix, struct roc_nix_cq *cq)
+ 	struct mbox *mbox = (&nix->dev)->mbox;
+ 	volatile struct nix_cq_ctx_s *cq_ctx;
+ 	uint16_t drop_thresh = NIX_CQ_THRESH_LEVEL;
+-	uint16_t cpt_lbpid = nix->bpid[0];
++	uint16_t cpt_lbpid = nix->cpt_lbpid;
+ 	enum nix_q_size qsize;
+ 	size_t desc_sz;
+ 	int rc;
+@@ -860,11 +860,14 @@ roc_nix_cq_init(struct roc_nix *roc_nix, struct roc_nix_cq *cq)
+ 	if (roc_model_is_cn10kb() && roc_nix_inl_inb_is_enabled(roc_nix)) {
+ 		cq_ctx->cq_err_int_ena |= BIT(NIX_CQERRINT_CPT_DROP);
+ 		cq_ctx->cpt_drop_err_en = 1;
+-		cq_ctx->lbp_ena = 1;
+-		cq_ctx->lbpid_low = cpt_lbpid & 0x7;
+-		cq_ctx->lbpid_med = (cpt_lbpid >> 3) & 0x7;
+-		cq_ctx->lbpid_high = (cpt_lbpid >> 6) & 0x7;
+-		cq_ctx->lbp_frac = NIX_CQ_LPB_THRESH_FRAC;
++		/* Enable Late BP only when non zero CPT BPID */
++		if (cpt_lbpid) {
++			cq_ctx->lbp_ena = 1;
++			cq_ctx->lbpid_low = cpt_lbpid & 0x7;
++			cq_ctx->lbpid_med = (cpt_lbpid >> 3) & 0x7;
++			cq_ctx->lbpid_high = (cpt_lbpid >> 6) & 0x7;
++			cq_ctx->lbp_frac = NIX_CQ_LPB_THRESH_FRAC;
++		}
+ 		drop_thresh = NIX_CQ_SEC_THRESH_LEVEL;
+ 	}
+ 
+@@ -959,6 +962,10 @@ roc_nix_cq_fini(struct roc_nix_cq *cq)
+ 		aq->cq.bp_ena = 0;
+ 		aq->cq_mask.ena = ~aq->cq_mask.ena;
+ 		aq->cq_mask.bp_ena = ~aq->cq_mask.bp_ena;
++		if (roc_model_is_cn10kb() && roc_nix_inl_inb_is_enabled(cq->roc_nix)) {
++			aq->cq.lbp_ena = 0;
++			aq->cq_mask.lbp_ena = ~aq->cq_mask.lbp_ena;
++		}
+ 	}
+ 
+ 	rc = mbox_process(mbox);
+-- 
+2.25.1
+

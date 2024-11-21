@@ -1,0 +1,34 @@
+From 72e92e17cf4c8d7c9d663491a23256e18df7c80e Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 12 Apr 2024 17:20:02 +0530
+Subject: [PATCH 303/513] ethdev: address shared build issue
+
+Patch from upstream it fixes the shared build issue.
+
+Change-Id: I5549b5200443c6722c41275e45b48a4ddb710885
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125281
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ lib/ethdev/version.map | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
+index e03830902a526..d658629c94b81 100644
+--- a/lib/ethdev/version.map
++++ b/lib/ethdev/version.map
+@@ -318,7 +318,7 @@ EXPERIMENTAL {
+ 	rte_flow_calc_table_hash;
+ 
+ 	# added in 24.03
+-	rte_eth_tx_queue_count;
++	__rte_eth_trace_tx_queue_count;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

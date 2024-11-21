@@ -1,0 +1,109 @@
+From adccf3c4bfd5f952dbe5d59ab6cde117777a0ace Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Thu, 8 Feb 2024 15:25:51 +0530
+Subject: [PATCH 213/513] test/security: add DTLS SG data walkthrough test
+
+Add multi segment packet data walkthrough test for DTLS 1.2.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I6d329ba1958c4c959e4ceee8178311c14d3c8a2a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121564
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_cryptodev.c | 56 +++++++++++++++++++++++++--------------
+ 1 file changed, 36 insertions(+), 20 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 924e6c655d518..307ba0a4e3801 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12146,6 +12146,32 @@ test_tls_1_2_record_proto_sgl(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_tls_record_proto_sgl_data_walkthrough(enum rte_security_tls_version tls_version)
++{
++	struct tls_record_test_flags flags = {
++		.nb_segs_in_mbuf = 5,
++		.tls_version = tls_version,
++		.data_walkthrough = true
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++	if (!(dev_info.feature_flags & RTE_CRYPTODEV_FF_IN_PLACE_SGL)) {
++		printf("Device doesn't support in-place scatter-gather. Test Skipped.\n");
++		return TEST_SKIPPED;
++	}
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_tls_1_2_record_proto_sgl_data_walkthrough(void)
++{
++	return test_tls_record_proto_sgl_data_walkthrough(RTE_SECURITY_VERSION_TLS_1_2);
++}
++
+ static int
+ test_tls_record_proto_corrupt_pkt(void)
+ {
+@@ -12216,26 +12242,6 @@ test_dtls_1_2_record_proto_data_walkthrough(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
+-static int
+-test_tls_1_2_record_proto_sgl_data_walkthrough(void)
+-{
+-	struct tls_record_test_flags flags = {
+-		.nb_segs_in_mbuf = 5,
+-		.tls_version = RTE_SECURITY_VERSION_TLS_1_2,
+-		.data_walkthrough = true
+-	};
+-	struct crypto_testsuite_params *ts_params = &testsuite_params;
+-	struct rte_cryptodev_info dev_info;
+-
+-	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
+-	if (!(dev_info.feature_flags & RTE_CRYPTODEV_FF_IN_PLACE_SGL)) {
+-		printf("Device doesn't support in-place scatter-gather. Test Skipped.\n");
+-		return TEST_SKIPPED;
+-	}
+-
+-	return test_tls_record_proto_all(&flags);
+-}
+-
+ static int
+ test_dtls_1_2_record_proto_display_list(void)
+ {
+@@ -12352,6 +12358,12 @@ test_dtls_1_2_record_proto_sgl(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_dtls_1_2_record_proto_sgl_data_walkthrough(void)
++{
++	return test_tls_record_proto_sgl_data_walkthrough(RTE_SECURITY_VERSION_DTLS_1_2);
++}
++
+ static int
+ test_dtls_1_2_record_proto_corrupt_pkt(void)
+ {
+@@ -17602,6 +17614,10 @@ static struct unit_test_suite dtls12_record_proto_testsuite  = {
+ 			"Multi-segmented mode",
+ 			ut_setup_security, ut_teardown,
+ 			test_dtls_1_2_record_proto_sgl),
++		TEST_CASE_NAMED_ST(
++			"Multi-segmented mode data walkthrough",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_sgl_data_walkthrough),
+ 		TEST_CASE_NAMED_ST(
+ 			"Packet corruption",
+ 			ut_setup_security, ut_teardown,
+-- 
+2.25.1
+

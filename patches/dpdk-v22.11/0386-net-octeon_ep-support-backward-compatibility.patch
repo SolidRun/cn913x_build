@@ -1,0 +1,150 @@
+From f0b75f9cc22b892a142e8c6a997e986e21f2fd88 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Thu, 27 Apr 2023 17:16:53 +0530
+Subject: [PATCH 386/955] net/octeon_ep: support backward compatibility
+
+add backward compatibility support between VF
+and PF mailbox messages.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I6c75abc88d71ea71043dc4b2a46f1550c9d0c6c2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102482
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+Tested-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_common.h |  3 +++
+ drivers/net/octeon_ep/otx_ep_ethdev.c |  6 +++++
+ drivers/net/octeon_ep/otx_ep_mbox.c   | 37 ++++++++++++++++++++++-----
+ drivers/net/octeon_ep/otx_ep_mbox.h   | 11 ++++++--
+ 4 files changed, 49 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 256ce5750f1c9..a8f8aacaf52ba 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -520,6 +520,9 @@ struct otx_ep_device {
+ 
+ 	/* DMA buffer for SDP ISM messages */
+ 	const struct rte_memzone *ism_buffer_mz;
++
++	/* Negotiated Mbox version */
++	uint32_t mbox_neg_ver;
+ };
+ 
+ int otx_ep_setup_iqs(struct otx_ep_device *otx_ep, uint32_t iq_no,
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 4a4e916c2d356..ffac5cfb4e53b 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -689,6 +689,12 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	otx_epvf->port_id = eth_dev->data->port_id;
+ 	eth_dev->dev_ops = &otx_ep_eth_dev_ops;
+ 	rte_spinlock_init(&otx_epvf->mbox_lock);
++
++	/*
++	 * Initialize negotiated Mbox version to base version of VF Mbox
++	 * This will address working legacy PF with latest VF.
++	 */
++	otx_epvf->mbox_neg_ver = OTX_EP_MBOX_VERSION_V1;
+ 	eth_dev->data->mac_addrs = rte_zmalloc("otx_ep", RTE_ETHER_ADDR_LEN, 0);
+ 	if (eth_dev->data->mac_addrs == NULL) {
+ 		otx_ep_err("MAC addresses memory allocation failed\n");
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index 80c34174e6b4f..fd2945e29dae6 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -13,6 +13,14 @@
+ #include "cnxk_ep_vf.h"
+ #include "otx_ep_mbox.h"
+ 
++/*
++ * When a new command is implemented, the below table should be updated
++ * with new command and it's version info.
++ */
++static uint32_t otx_ep_cmd_versions[OTX_EP_MBOX_CMD_MAX] = {
++	[0 ... OTX_EP_MBOX_CMD_DEV_REMOVE] = OTX_EP_MBOX_VERSION_V1
++};
++
+ static int
+ __otx_ep_send_mbox_cmd(struct otx_ep_device *otx_ep,
+ 		       union otx_ep_mbox_word cmd,
+@@ -57,6 +65,12 @@ otx_ep_send_mbox_cmd(struct otx_ep_device *otx_ep,
+ 	int ret;
+ 
+ 	rte_spinlock_lock(&otx_ep->mbox_lock);
++	if (otx_ep_cmd_versions[cmd.s.opcode] > otx_ep->mbox_neg_ver) {
++		otx_ep_dbg("CMD:%d not supported in Version:%d\n", cmd.s.opcode,
++			    otx_ep->mbox_neg_ver);
++		rte_spinlock_unlock(&otx_ep->mbox_lock);
++		return -EOPNOTSUPP;
++	}
+ 	ret = __otx_ep_send_mbox_cmd(otx_ep, cmd, rsp);
+ 	rte_spinlock_unlock(&otx_ep->mbox_lock);
+ 	return ret;
+@@ -285,15 +299,26 @@ int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev)
+ 
+ 	cmd.u64 = 0;
+ 	cmd.s_version.opcode = OTX_EP_MBOX_CMD_VERSION;
+-	cmd.s_version.version = OTX_EP_MBOX_VERSION;
++	cmd.s_version.version = OTX_EP_MBOX_VERSION_CURRENT;
+ 	ret = otx_ep_send_mbox_cmd(otx_ep, cmd, &rsp);
+-	if (!ret)
+-		return 0;
+-	if (ret == OTX_EP_MBOX_CMD_STATUS_NACK) {
+-		otx_ep_err("VF Mbox version:%u is not compatible with PF\n",
++	/*
++	 * VF receives NACK or version info as zero
++	 * only if PF driver running old version of Mailbox
++	 * In this case VF mailbox version fallbacks to base
++	 * mailbox vesrion OTX_EP_MBOX_VERSION_V1.
++	 * Default VF mbox_neg_ver is set to OTX_EP_MBOX_VERSION_V1
++	 * during initialization of PMD driver.
++	 */
++	if (ret == OTX_EP_MBOX_CMD_STATUS_NACK || rsp.s_version.version == 0) {
++		otx_ep_dbg("VF Mbox version fallback to base version from:%u\n",
+ 			(uint32_t)cmd.s_version.version);
++		return 0;
+ 	}
+-	return ret;
++	otx_ep->mbox_neg_ver = (uint32_t)rsp.s_version.version;
++	otx_ep_dbg("VF Mbox version:%u Negotiated VF version with PF:%u\n",
++		    (uint32_t)cmd.s_version.version,
++		    (uint32_t)rsp.s_version.version);
++	return 0;
+ }
+ 
+ int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev)
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.h b/drivers/net/octeon_ep/otx_ep_mbox.h
+index 9df3c53edd9d5..a3fc15cca7dd4 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.h
++++ b/drivers/net/octeon_ep/otx_ep_mbox.h
+@@ -5,8 +5,15 @@
+ #ifndef _OTX_EP_MBOX_H_
+ #define _OTX_EP_MBOX_H_
+ 
++/*
++ * When a new command is implemented, VF Mbox version should be bumped.
++ */
++enum octep_pfvf_mbox_version {
++	OTX_EP_MBOX_VERSION_V0,
++	OTX_EP_MBOX_VERSION_V1,
++};
+ 
+-#define OTX_EP_MBOX_VERSION        1
++#define OTX_EP_MBOX_VERSION_CURRENT OTX_EP_MBOX_VERSION_V1
+ 
+ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_VERSION,
+@@ -20,7 +27,7 @@ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_GET_LINK_STATUS,
+ 	OTX_EP_MBOX_CMD_GET_MTU,
+ 	OTX_EP_MBOX_CMD_DEV_REMOVE,
+-	OTX_EP_MBOX_CMD_LAST,
++	OTX_EP_MBOX_CMD_MAX,
+ };
+ 
+ enum otx_ep_mbox_word_type {
+-- 
+2.25.1
+

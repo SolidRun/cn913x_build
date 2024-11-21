@@ -1,0 +1,51 @@
+From 6c5ed30b7dd6f42ef18304ff024dbbff148fe310 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Thu, 4 May 2023 18:47:22 +0530
+Subject: [PATCH 401/955] common/cnxk: add check for null auth and anti-replay
+
+As per IPsec RFC, the anti-replay service can be selected for
+an SA only if the integrity service is selected for that SA.
+This patch adds the validation check for the same.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I5fa7460dddcf5498aee34fd232a459b3a606dfef
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102837
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/cnxk_security.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index 13ca2c7791fc1..a8c3ba90cdc02 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -155,6 +155,10 @@ ot_ipsec_sa_common_param_fill(union roc_ot_ipsec_sa_word2 *w2,
+ 
+ 		switch (auth_xfrm->auth.algo) {
+ 		case RTE_CRYPTO_AUTH_NULL:
++			if (w2->s.dir == ROC_IE_SA_DIR_INBOUND && ipsec_xfrm->replay_win_sz) {
++				plt_err("anti-replay can't be supported with integrity service disabled");
++				return -EINVAL;
++			}
+ 			w2->s.auth_type = ROC_IE_OT_SA_AUTH_NULL;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA1_HMAC:
+@@ -1392,6 +1396,11 @@ cnxk_on_ipsec_inb_sa_create(struct rte_security_ipsec_xform *ipsec,
+ 	if (ret)
+ 		return ret;
+ 
++	if (crypto_xform->type != RTE_CRYPTO_SYM_XFORM_AEAD &&
++	    crypto_xform->auth.algo == RTE_CRYPTO_AUTH_NULL && ipsec->replay_win_sz) {
++		plt_err("anti-replay can't be supported with integrity service disabled");
++		return -EINVAL;
++	}
+ 	if (crypto_xform->type == RTE_CRYPTO_SYM_XFORM_AEAD ||
+ 	    auth_xform->auth.algo == RTE_CRYPTO_AUTH_NULL ||
+ 	    auth_xform->auth.algo == RTE_CRYPTO_AUTH_AES_GMAC) {
+-- 
+2.25.1
+

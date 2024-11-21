@@ -1,0 +1,66 @@
+From 4be915f955784183e9c1125a56dc1a53c99b2796 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Mon, 4 Sep 2023 22:17:05 +0530
+Subject: [PATCH 103/513] common/cnxk: fix VLAN check for inner header
+
+Adding the has vlan check in inner headers i.e in LF layer. If
+has_vlan is 0 it should be masked out while installing flow rule.
+
+Fixes: c34ea71b878d ("common/cnxk: add NPC parsing API")
+
+Change-Id: I36bec505ded039b450762685c2a2020efc3dc4e5
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117884
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_npc_parse.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc_parse.c b/drivers/common/cnxk/roc_npc_parse.c
+index 0fa045e2125e3..3638d4be71fda 100644
+--- a/drivers/common/cnxk/roc_npc_parse.c
++++ b/drivers/common/cnxk/roc_npc_parse.c
+@@ -1108,6 +1108,7 @@ npc_parse_lf(struct npc_parse_state *pst)
+ {
+ 	const struct roc_npc_item_info *pattern, *last_pattern;
+ 	char hw_mask[NPC_MAX_EXTRACT_HW_LEN];
++	const struct roc_npc_flow_item_eth *eth_item;
+ 	struct npc_parse_item_info info;
+ 	int lid, lt, lflags;
+ 	int nr_vlans = 0;
+@@ -1124,10 +1125,12 @@ npc_parse_lf(struct npc_parse_state *pst)
+ 	lt = NPC_LT_LF_TU_ETHER;
+ 	lflags = 0;
+ 
++	eth_item = pst->pattern->spec;
++
+ 	/* No match support for vlan tags */
+ 	info.def_mask = NULL;
+ 	info.hw_mask = NULL;
+-	info.len = pst->pattern->size;
++	info.len = sizeof(eth_item->hdr);
+ 	info.spec = NULL;
+ 	info.mask = NULL;
+ 	info.hw_hdr_len = 0;
+@@ -1158,12 +1161,15 @@ npc_parse_lf(struct npc_parse_state *pst)
+ 	}
+ 
+ 	info.hw_mask = &hw_mask;
+-	info.len = pst->pattern->size;
++	info.len = sizeof(eth_item->hdr);
+ 	info.hw_hdr_len = 0;
+ 	npc_get_hw_supp_mask(pst, &info, lid, lt);
+ 	info.spec = NULL;
+ 	info.mask = NULL;
+ 
++	if (eth_item && eth_item->has_vlan)
++		pst->set_vlan_ltype_mask = true;
++
+ 	rc = npc_parse_item_basic(pst->pattern, &info);
+ 	if (rc != 0)
+ 		return rc;
+-- 
+2.25.1
+

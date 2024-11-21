@@ -1,0 +1,1582 @@
+From 695c0c19924e9378e761709bedd6a666b66a142a Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Sun, 4 Aug 2024 16:49:41 +0530
+Subject: [PATCH 445/513] net/cnxk: support Rx function select for cn20k
+
+Add support to select Rx function based on offload flags
+for cn20k.
+
+Change-Id: I3b7aef6c7cbb13d27cde3a9d4d945846e917b981
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133454
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn20k_ethdev.c               |  59 ++++-
+ drivers/net/cnxk/cn20k_ethdev.h               |   3 +
+ drivers/net/cnxk/cn20k_rx.h                   | 226 ++++++++++++++++++
+ drivers/net/cnxk/cn20k_rx_select.c            | 162 +++++++++++++
+ drivers/net/cnxk/meson.build                  |  44 ++++
+ drivers/net/cnxk/rx/cn20k/rx_0_15.c           |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_0_15_mseg.c      |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_0_15_vec.c       |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_0_15_vec_mseg.c  |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_112_127.c        |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_112_127_mseg.c   |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_112_127_vec.c    |  20 ++
+ .../net/cnxk/rx/cn20k/rx_112_127_vec_mseg.c   |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_16_31.c          |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_16_31_mseg.c     |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_16_31_vec.c      |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_16_31_vec_mseg.c |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_32_47.c          |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_32_47_mseg.c     |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_32_47_vec.c      |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_32_47_vec_mseg.c |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_48_63.c          |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_48_63_mseg.c     |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_48_63_vec.c      |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_48_63_vec_mseg.c |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_64_79.c          |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_64_79_mseg.c     |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_64_79_vec.c      |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_64_79_vec_mseg.c |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_80_95.c          |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_80_95_mseg.c     |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_80_95_vec.c      |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_80_95_vec_mseg.c |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_96_111.c         |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_96_111_mseg.c    |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_96_111_vec.c     |  20 ++
+ .../net/cnxk/rx/cn20k/rx_96_111_vec_mseg.c    |  20 ++
+ drivers/net/cnxk/rx/cn20k/rx_all_offload.c    |  57 +++++
+ 38 files changed, 1190 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/net/cnxk/cn20k_rx_select.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_0_15.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_0_15_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_0_15_vec.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_0_15_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_112_127.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_112_127_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_112_127_vec.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_112_127_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_16_31.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_16_31_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_16_31_vec.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_16_31_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_32_47.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_32_47_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_32_47_vec.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_32_47_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_48_63.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_48_63_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_48_63_vec.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_48_63_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_64_79.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_64_79_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_64_79_vec.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_64_79_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_80_95.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_80_95_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_80_95_vec.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_80_95_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_96_111.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_96_111_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_96_111_vec.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_96_111_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/rx/cn20k/rx_all_offload.c
+
+diff --git a/drivers/net/cnxk/cn20k_ethdev.c b/drivers/net/cnxk/cn20k_ethdev.c
+index b4d21fe4be8f1..d1cb3a52bff1d 100644
+--- a/drivers/net/cnxk/cn20k_ethdev.c
++++ b/drivers/net/cnxk/cn20k_ethdev.c
+@@ -5,6 +5,41 @@
+ #include "cn20k_rx.h"
+ #include "cn20k_tx.h"
+ 
++static uint16_t
++nix_rx_offload_flags(struct rte_eth_dev *eth_dev)
++{
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct rte_eth_dev_data *data = eth_dev->data;
++	struct rte_eth_conf *conf = &data->dev_conf;
++	struct rte_eth_rxmode *rxmode = &conf->rxmode;
++	uint16_t flags = 0;
++
++	if (rxmode->mq_mode == RTE_ETH_MQ_RX_RSS &&
++	    (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_RSS_HASH))
++		flags |= NIX_RX_OFFLOAD_RSS_F;
++
++	if (dev->rx_offloads & (RTE_ETH_RX_OFFLOAD_TCP_CKSUM | RTE_ETH_RX_OFFLOAD_UDP_CKSUM))
++		flags |= NIX_RX_OFFLOAD_CHECKSUM_F;
++
++	if (dev->rx_offloads &
++	    (RTE_ETH_RX_OFFLOAD_IPV4_CKSUM | RTE_ETH_RX_OFFLOAD_OUTER_IPV4_CKSUM))
++		flags |= NIX_RX_OFFLOAD_CHECKSUM_F;
++
++	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)
++		flags |= NIX_RX_MULTI_SEG_F;
++
++	if ((dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP))
++		flags |= NIX_RX_OFFLOAD_TSTAMP_F;
++
++	if (!dev->ptype_disable)
++		flags |= NIX_RX_OFFLOAD_PTYPE_F;
++
++	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY)
++		flags |= NIX_RX_OFFLOAD_SECURITY_F;
++
++	return flags;
++}
++
+ static int
+ cn20k_nix_ptypes_set(struct rte_eth_dev *eth_dev, uint32_t ptype_mask)
+ {
+@@ -18,6 +53,7 @@ cn20k_nix_ptypes_set(struct rte_eth_dev *eth_dev, uint32_t ptype_mask)
+ 		dev->ptype_disable = 1;
+ 	}
+ 
++	cn20k_eth_set_rx_function(eth_dev);
+ 	return 0;
+ }
+ 
+@@ -187,6 +223,9 @@ cn20k_nix_rx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t qid, uint16_t nb_
+ 		rc = nix_recalc_mtu(eth_dev);
+ 		if (rc)
+ 			return rc;
++
++		/* Update offload flags */
++		dev->rx_offload_flags = nix_rx_offload_flags(eth_dev);
+ 	}
+ 
+ 	rq = &dev->rqs[qid];
+@@ -245,6 +284,8 @@ cn20k_nix_configure(struct rte_eth_dev *eth_dev)
+ 	if (rc)
+ 		return rc;
+ 
++	/* Update offload flags */
++	dev->rx_offload_flags = nix_rx_offload_flags(eth_dev);
+ 	/* reset reassembly dynfield/flag offset */
+ 	dev->reass_dynfield_off = -1;
+ 	dev->reass_dynflag_bit = -1;
+@@ -271,6 +312,10 @@ cn20k_nix_timesync_enable(struct rte_eth_dev *eth_dev)
+ 	for (i = 0; i < eth_dev->data->nb_tx_queues; i++)
+ 		nix_form_default_desc(dev, eth_dev->data->tx_queues[i], i);
+ 
++	/* Setting up the rx[tx]_offload_flags due to change
++	 * in rx[tx]_offloads.
++	 */
++	cn20k_eth_set_rx_function(eth_dev);
+ 	return 0;
+ }
+ 
+@@ -290,6 +335,10 @@ cn20k_nix_timesync_disable(struct rte_eth_dev *eth_dev)
+ 	for (i = 0; i < eth_dev->data->nb_tx_queues; i++)
+ 		nix_form_default_desc(dev, eth_dev->data->tx_queues[i], i);
+ 
++	/* Setting up the rx[tx]_offload_flags due to change
++	 * in rx[tx]_offloads.
++	 */
++	cn20k_eth_set_rx_function(eth_dev);
+ 	return 0;
+ }
+ 
+@@ -325,10 +374,15 @@ cn20k_nix_dev_start(struct rte_eth_dev *eth_dev)
+ 	if (rc)
+ 		return rc;
+ 
++	/* Setting up the rx[tx]_offload_flags due to change
++	 * in rx[tx]_offloads.
++	 */
++	dev->rx_offload_flags |= nix_rx_offload_flags(eth_dev);
+ 	/* Set flags for Rx Inject feature */
+ 	if (roc_idev_nix_rx_inject_get(nix->port_id))
+ 		dev->rx_offload_flags |= NIX_RX_SEC_REASSEMBLY_F;
+ 
++	cn20k_eth_set_rx_function(eth_dev);
+ 	return 0;
+ }
+ 
+@@ -525,8 +579,11 @@ cn20k_nix_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
+ 		return -ENOENT;
+ 	}
+ 
+-	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
++	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
++		/* Setup callbacks for secondary process */
++		cn20k_eth_set_rx_function(eth_dev);
+ 		return 0;
++	}
+ 
+ 	return 0;
+ }
+diff --git a/drivers/net/cnxk/cn20k_ethdev.h b/drivers/net/cnxk/cn20k_ethdev.h
+index 1af490befc7bf..2049ee7fa4f01 100644
+--- a/drivers/net/cnxk/cn20k_ethdev.h
++++ b/drivers/net/cnxk/cn20k_ethdev.h
+@@ -8,4 +8,7 @@
+ #include <cnxk_ethdev.h>
+ #include <cnxk_security.h>
+ 
++/* Rx and Tx routines */
++void cn20k_eth_set_rx_function(struct rte_eth_dev *eth_dev);
++
+ #endif /* __CN20K_ETHDEV_H__ */
+diff --git a/drivers/net/cnxk/cn20k_rx.h b/drivers/net/cnxk/cn20k_rx.h
+index 58a2920a5434c..2cb77c0b46d6c 100644
+--- a/drivers/net/cnxk/cn20k_rx.h
++++ b/drivers/net/cnxk/cn20k_rx.h
+@@ -30,4 +30,230 @@
+ #define NIX_RX_MULTI_SEG_F BIT(14)
+ 
+ #define NIX_RX_SEC_REASSEMBLY_F (NIX_RX_REAS_F | NIX_RX_OFFLOAD_SECURITY_F)
++
++#define RSS_F	  NIX_RX_OFFLOAD_RSS_F
++#define PTYPE_F	  NIX_RX_OFFLOAD_PTYPE_F
++#define CKSUM_F	  NIX_RX_OFFLOAD_CHECKSUM_F
++#define MARK_F	  NIX_RX_OFFLOAD_MARK_UPDATE_F
++#define TS_F	  NIX_RX_OFFLOAD_TSTAMP_F
++#define RX_VLAN_F NIX_RX_OFFLOAD_VLAN_STRIP_F
++#define R_SEC_F	  NIX_RX_OFFLOAD_SECURITY_F
++
++/* [R_SEC_F] [RX_VLAN_F] [TS] [MARK] [CKSUM] [PTYPE] [RSS] */
++#define NIX_RX_FASTPATH_MODES_0_15                                                                 \
++	R(no_offload, NIX_RX_OFFLOAD_NONE)                                                         \
++	R(rss, RSS_F)                                                                              \
++	R(ptype, PTYPE_F)                                                                          \
++	R(ptype_rss, PTYPE_F | RSS_F)                                                              \
++	R(cksum, CKSUM_F)                                                                          \
++	R(cksum_rss, CKSUM_F | RSS_F)                                                              \
++	R(cksum_ptype, CKSUM_F | PTYPE_F)                                                          \
++	R(cksum_ptype_rss, CKSUM_F | PTYPE_F | RSS_F)                                              \
++	R(mark, MARK_F)                                                                            \
++	R(mark_rss, MARK_F | RSS_F)                                                                \
++	R(mark_ptype, MARK_F | PTYPE_F)                                                            \
++	R(mark_ptype_rss, MARK_F | PTYPE_F | RSS_F)                                                \
++	R(mark_cksum, MARK_F | CKSUM_F)                                                            \
++	R(mark_cksum_rss, MARK_F | CKSUM_F | RSS_F)                                                \
++	R(mark_cksum_ptype, MARK_F | CKSUM_F | PTYPE_F)                                            \
++	R(mark_cksum_ptype_rss, MARK_F | CKSUM_F | PTYPE_F | RSS_F)
++
++#define NIX_RX_FASTPATH_MODES_16_31                                                                \
++	R(ts, TS_F)                                                                                \
++	R(ts_rss, TS_F | RSS_F)                                                                    \
++	R(ts_ptype, TS_F | PTYPE_F)                                                                \
++	R(ts_ptype_rss, TS_F | PTYPE_F | RSS_F)                                                    \
++	R(ts_cksum, TS_F | CKSUM_F)                                                                \
++	R(ts_cksum_rss, TS_F | CKSUM_F | RSS_F)                                                    \
++	R(ts_cksum_ptype, TS_F | CKSUM_F | PTYPE_F)                                                \
++	R(ts_cksum_ptype_rss, TS_F | CKSUM_F | PTYPE_F | RSS_F)                                    \
++	R(ts_mark, TS_F | MARK_F)                                                                  \
++	R(ts_mark_rss, TS_F | MARK_F | RSS_F)                                                      \
++	R(ts_mark_ptype, TS_F | MARK_F | PTYPE_F)                                                  \
++	R(ts_mark_ptype_rss, TS_F | MARK_F | PTYPE_F | RSS_F)                                      \
++	R(ts_mark_cksum, TS_F | MARK_F | CKSUM_F)                                                  \
++	R(ts_mark_cksum_rss, TS_F | MARK_F | CKSUM_F | RSS_F)                                      \
++	R(ts_mark_cksum_ptype, TS_F | MARK_F | CKSUM_F | PTYPE_F)                                  \
++	R(ts_mark_cksum_ptype_rss, TS_F | MARK_F | CKSUM_F | PTYPE_F | RSS_F)
++
++#define NIX_RX_FASTPATH_MODES_32_47                                                                \
++	R(vlan, RX_VLAN_F)                                                                         \
++	R(vlan_rss, RX_VLAN_F | RSS_F)                                                             \
++	R(vlan_ptype, RX_VLAN_F | PTYPE_F)                                                         \
++	R(vlan_ptype_rss, RX_VLAN_F | PTYPE_F | RSS_F)                                             \
++	R(vlan_cksum, RX_VLAN_F | CKSUM_F)                                                         \
++	R(vlan_cksum_rss, RX_VLAN_F | CKSUM_F | RSS_F)                                             \
++	R(vlan_cksum_ptype, RX_VLAN_F | CKSUM_F | PTYPE_F)                                         \
++	R(vlan_cksum_ptype_rss, RX_VLAN_F | CKSUM_F | PTYPE_F | RSS_F)                             \
++	R(vlan_mark, RX_VLAN_F | MARK_F)                                                           \
++	R(vlan_mark_rss, RX_VLAN_F | MARK_F | RSS_F)                                               \
++	R(vlan_mark_ptype, RX_VLAN_F | MARK_F | PTYPE_F)                                           \
++	R(vlan_mark_ptype_rss, RX_VLAN_F | MARK_F | PTYPE_F | RSS_F)                               \
++	R(vlan_mark_cksum, RX_VLAN_F | MARK_F | CKSUM_F)                                           \
++	R(vlan_mark_cksum_rss, RX_VLAN_F | MARK_F | CKSUM_F | RSS_F)                               \
++	R(vlan_mark_cksum_ptype, RX_VLAN_F | MARK_F | CKSUM_F | PTYPE_F)                           \
++	R(vlan_mark_cksum_ptype_rss, RX_VLAN_F | MARK_F | CKSUM_F | PTYPE_F | RSS_F)
++
++#define NIX_RX_FASTPATH_MODES_48_63                                                                \
++	R(vlan_ts, RX_VLAN_F | TS_F)                                                               \
++	R(vlan_ts_rss, RX_VLAN_F | TS_F | RSS_F)                                                   \
++	R(vlan_ts_ptype, RX_VLAN_F | TS_F | PTYPE_F)                                               \
++	R(vlan_ts_ptype_rss, RX_VLAN_F | TS_F | PTYPE_F | RSS_F)                                   \
++	R(vlan_ts_cksum, RX_VLAN_F | TS_F | CKSUM_F)                                               \
++	R(vlan_ts_cksum_rss, RX_VLAN_F | TS_F | CKSUM_F | RSS_F)                                   \
++	R(vlan_ts_cksum_ptype, RX_VLAN_F | TS_F | CKSUM_F | PTYPE_F)                               \
++	R(vlan_ts_cksum_ptype_rss, RX_VLAN_F | TS_F | CKSUM_F | PTYPE_F | RSS_F)                   \
++	R(vlan_ts_mark, RX_VLAN_F | TS_F | MARK_F)                                                 \
++	R(vlan_ts_mark_rss, RX_VLAN_F | TS_F | MARK_F | RSS_F)                                     \
++	R(vlan_ts_mark_ptype, RX_VLAN_F | TS_F | MARK_F | PTYPE_F)                                 \
++	R(vlan_ts_mark_ptype_rss, RX_VLAN_F | TS_F | MARK_F | PTYPE_F | RSS_F)                     \
++	R(vlan_ts_mark_cksum, RX_VLAN_F | TS_F | MARK_F | CKSUM_F)                                 \
++	R(vlan_ts_mark_cksum_rss, RX_VLAN_F | TS_F | MARK_F | CKSUM_F | RSS_F)                     \
++	R(vlan_ts_mark_cksum_ptype, RX_VLAN_F | TS_F | MARK_F | CKSUM_F | PTYPE_F)                 \
++	R(vlan_ts_mark_cksum_ptype_rss, RX_VLAN_F | TS_F | MARK_F | CKSUM_F | PTYPE_F | RSS_F)
++
++#define NIX_RX_FASTPATH_MODES_64_79                                                                \
++	R(sec, R_SEC_F)                                                                            \
++	R(sec_rss, R_SEC_F | RSS_F)                                                                \
++	R(sec_ptype, R_SEC_F | PTYPE_F)                                                            \
++	R(sec_ptype_rss, R_SEC_F | PTYPE_F | RSS_F)                                                \
++	R(sec_cksum, R_SEC_F | CKSUM_F)                                                            \
++	R(sec_cksum_rss, R_SEC_F | CKSUM_F | RSS_F)                                                \
++	R(sec_cksum_ptype, R_SEC_F | CKSUM_F | PTYPE_F)                                            \
++	R(sec_cksum_ptype_rss, R_SEC_F | CKSUM_F | PTYPE_F | RSS_F)                                \
++	R(sec_mark, R_SEC_F | MARK_F)                                                              \
++	R(sec_mark_rss, R_SEC_F | MARK_F | RSS_F)                                                  \
++	R(sec_mark_ptype, R_SEC_F | MARK_F | PTYPE_F)                                              \
++	R(sec_mark_ptype_rss, R_SEC_F | MARK_F | PTYPE_F | RSS_F)                                  \
++	R(sec_mark_cksum, R_SEC_F | MARK_F | CKSUM_F)                                              \
++	R(sec_mark_cksum_rss, R_SEC_F | MARK_F | CKSUM_F | RSS_F)                                  \
++	R(sec_mark_cksum_ptype, R_SEC_F | MARK_F | CKSUM_F | PTYPE_F)                              \
++	R(sec_mark_cksum_ptype_rss, R_SEC_F | MARK_F | CKSUM_F | PTYPE_F | RSS_F)
++
++#define NIX_RX_FASTPATH_MODES_80_95                                                                \
++	R(sec_ts, R_SEC_F | TS_F)                                                                  \
++	R(sec_ts_rss, R_SEC_F | TS_F | RSS_F)                                                      \
++	R(sec_ts_ptype, R_SEC_F | TS_F | PTYPE_F)                                                  \
++	R(sec_ts_ptype_rss, R_SEC_F | TS_F | PTYPE_F | RSS_F)                                      \
++	R(sec_ts_cksum, R_SEC_F | TS_F | CKSUM_F)                                                  \
++	R(sec_ts_cksum_rss, R_SEC_F | TS_F | CKSUM_F | RSS_F)                                      \
++	R(sec_ts_cksum_ptype, R_SEC_F | TS_F | CKSUM_F | PTYPE_F)                                  \
++	R(sec_ts_cksum_ptype_rss, R_SEC_F | TS_F | CKSUM_F | PTYPE_F | RSS_F)                      \
++	R(sec_ts_mark, R_SEC_F | TS_F | MARK_F)                                                    \
++	R(sec_ts_mark_rss, R_SEC_F | TS_F | MARK_F | RSS_F)                                        \
++	R(sec_ts_mark_ptype, R_SEC_F | TS_F | MARK_F | PTYPE_F)                                    \
++	R(sec_ts_mark_ptype_rss, R_SEC_F | TS_F | MARK_F | PTYPE_F | RSS_F)                        \
++	R(sec_ts_mark_cksum, R_SEC_F | TS_F | MARK_F | CKSUM_F)                                    \
++	R(sec_ts_mark_cksum_rss, R_SEC_F | TS_F | MARK_F | CKSUM_F | RSS_F)                        \
++	R(sec_ts_mark_cksum_ptype, R_SEC_F | TS_F | MARK_F | CKSUM_F | PTYPE_F)                    \
++	R(sec_ts_mark_cksum_ptype_rss, R_SEC_F | TS_F | MARK_F | CKSUM_F | PTYPE_F | RSS_F)
++
++#define NIX_RX_FASTPATH_MODES_96_111                                                               \
++	R(sec_vlan, R_SEC_F | RX_VLAN_F)                                                           \
++	R(sec_vlan_rss, R_SEC_F | RX_VLAN_F | RSS_F)                                               \
++	R(sec_vlan_ptype, R_SEC_F | RX_VLAN_F | PTYPE_F)                                           \
++	R(sec_vlan_ptype_rss, R_SEC_F | RX_VLAN_F | PTYPE_F | RSS_F)                               \
++	R(sec_vlan_cksum, R_SEC_F | RX_VLAN_F | CKSUM_F)                                           \
++	R(sec_vlan_cksum_rss, R_SEC_F | RX_VLAN_F | CKSUM_F | RSS_F)                               \
++	R(sec_vlan_cksum_ptype, R_SEC_F | RX_VLAN_F | CKSUM_F | PTYPE_F)                           \
++	R(sec_vlan_cksum_ptype_rss, R_SEC_F | RX_VLAN_F | CKSUM_F | PTYPE_F | RSS_F)               \
++	R(sec_vlan_mark, R_SEC_F | RX_VLAN_F | MARK_F)                                             \
++	R(sec_vlan_mark_rss, R_SEC_F | RX_VLAN_F | MARK_F | RSS_F)                                 \
++	R(sec_vlan_mark_ptype, R_SEC_F | RX_VLAN_F | MARK_F | PTYPE_F)                             \
++	R(sec_vlan_mark_ptype_rss, R_SEC_F | RX_VLAN_F | MARK_F | PTYPE_F | RSS_F)                 \
++	R(sec_vlan_mark_cksum, R_SEC_F | RX_VLAN_F | MARK_F | CKSUM_F)                             \
++	R(sec_vlan_mark_cksum_rss, R_SEC_F | RX_VLAN_F | MARK_F | CKSUM_F | RSS_F)                 \
++	R(sec_vlan_mark_cksum_ptype, R_SEC_F | RX_VLAN_F | MARK_F | CKSUM_F | PTYPE_F)             \
++	R(sec_vlan_mark_cksum_ptype_rss, R_SEC_F | RX_VLAN_F | MARK_F | CKSUM_F | PTYPE_F | RSS_F)
++
++#define NIX_RX_FASTPATH_MODES_112_127                                                              \
++	R(sec_vlan_ts, R_SEC_F | RX_VLAN_F | TS_F)                                                 \
++	R(sec_vlan_ts_rss, R_SEC_F | RX_VLAN_F | TS_F | RSS_F)                                     \
++	R(sec_vlan_ts_ptype, R_SEC_F | RX_VLAN_F | TS_F | PTYPE_F)                                 \
++	R(sec_vlan_ts_ptype_rss, R_SEC_F | RX_VLAN_F | TS_F | PTYPE_F | RSS_F)                     \
++	R(sec_vlan_ts_cksum, R_SEC_F | RX_VLAN_F | TS_F | CKSUM_F)                                 \
++	R(sec_vlan_ts_cksum_rss, R_SEC_F | RX_VLAN_F | TS_F | CKSUM_F | RSS_F)                     \
++	R(sec_vlan_ts_cksum_ptype, R_SEC_F | RX_VLAN_F | TS_F | CKSUM_F | PTYPE_F)                 \
++	R(sec_vlan_ts_cksum_ptype_rss, R_SEC_F | RX_VLAN_F | TS_F | CKSUM_F | PTYPE_F | RSS_F)     \
++	R(sec_vlan_ts_mark, R_SEC_F | RX_VLAN_F | TS_F | MARK_F)                                   \
++	R(sec_vlan_ts_mark_rss, R_SEC_F | RX_VLAN_F | TS_F | MARK_F | RSS_F)                       \
++	R(sec_vlan_ts_mark_ptype, R_SEC_F | RX_VLAN_F | TS_F | MARK_F | PTYPE_F)                   \
++	R(sec_vlan_ts_mark_ptype_rss, R_SEC_F | RX_VLAN_F | TS_F | MARK_F | PTYPE_F | RSS_F)       \
++	R(sec_vlan_ts_mark_cksum, R_SEC_F | RX_VLAN_F | TS_F | MARK_F | CKSUM_F)                   \
++	R(sec_vlan_ts_mark_cksum_rss, R_SEC_F | RX_VLAN_F | TS_F | MARK_F | CKSUM_F | RSS_F)       \
++	R(sec_vlan_ts_mark_cksum_ptype, R_SEC_F | RX_VLAN_F | TS_F | MARK_F | CKSUM_F | PTYPE_F)   \
++	R(sec_vlan_ts_mark_cksum_ptype_rss,                                                        \
++	  R_SEC_F | RX_VLAN_F | TS_F | MARK_F | CKSUM_F | PTYPE_F | RSS_F)
++
++#define NIX_RX_FASTPATH_MODES                                                                      \
++	NIX_RX_FASTPATH_MODES_0_15                                                                 \
++	NIX_RX_FASTPATH_MODES_16_31                                                                \
++	NIX_RX_FASTPATH_MODES_32_47                                                                \
++	NIX_RX_FASTPATH_MODES_48_63                                                                \
++	NIX_RX_FASTPATH_MODES_64_79                                                                \
++	NIX_RX_FASTPATH_MODES_80_95                                                                \
++	NIX_RX_FASTPATH_MODES_96_111                                                               \
++	NIX_RX_FASTPATH_MODES_112_127
++
++#define R(name, flags)                                                                             \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_##name(                              \
++		void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_mseg_##name(                         \
++		void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_vec_##name(                          \
++		void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_vec_mseg_##name(                     \
++		void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_reas_##name(                         \
++		void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_reas_mseg_##name(                    \
++		void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_reas_vec_##name(                     \
++		void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_reas_vec_mseg_##name(                \
++		void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts);
++
++NIX_RX_FASTPATH_MODES
++#undef R
++
++#define NIX_RX_RECV(fn, flags)                                                                     \
++	uint16_t __rte_noinline __rte_hot fn(void *rx_queue, struct rte_mbuf **rx_pkts,            \
++					     uint16_t pkts)                                        \
++	{                                                                                          \
++		RTE_SET_USED(rx_queue);                                                            \
++		RTE_SET_USED(rx_pkts);                                                             \
++		RTE_SET_USED(pkts);                                                                \
++		return 0;                                                                          \
++	}
++
++#define NIX_RX_RECV_MSEG(fn, flags) NIX_RX_RECV(fn, flags | NIX_RX_MULTI_SEG_F)
++
++#define NIX_RX_RECV_VEC(fn, flags)                                                                 \
++	uint16_t __rte_noinline __rte_hot fn(void *rx_queue, struct rte_mbuf **rx_pkts,            \
++					     uint16_t pkts)                                        \
++	{                                                                                          \
++		RTE_SET_USED(rx_queue);                                                            \
++		RTE_SET_USED(rx_pkts);                                                             \
++		RTE_SET_USED(pkts);                                                                \
++		return 0;                                                                          \
++	}
++
++#define NIX_RX_RECV_VEC_MSEG(fn, flags) NIX_RX_RECV_VEC(fn, flags | NIX_RX_MULTI_SEG_F)
++
++uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_all_offload(void *rx_queue,
++								  struct rte_mbuf **rx_pkts,
++								  uint16_t pkts);
++
++uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_vec_all_offload(void *rx_queue,
++								      struct rte_mbuf **rx_pkts,
++								      uint16_t pkts);
++
++uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_all_offload_tst(void *rx_queue,
++								      struct rte_mbuf **rx_pkts,
++								      uint16_t pkts);
++
++uint16_t __rte_noinline __rte_hot cn20k_nix_recv_pkts_vec_all_offload_tst(void *rx_queue,
++									  struct rte_mbuf **rx_pkts,
++									  uint16_t pkts);
++
+ #endif /* __CN20K_RX_H__ */
+diff --git a/drivers/net/cnxk/cn20k_rx_select.c b/drivers/net/cnxk/cn20k_rx_select.c
+new file mode 100644
+index 0000000000000..82e06a62ef8c4
+--- /dev/null
++++ b/drivers/net/cnxk/cn20k_rx_select.c
+@@ -0,0 +1,162 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_ethdev.h"
++#include "cn20k_rx.h"
++
++static __rte_used void
++pick_rx_func(struct rte_eth_dev *eth_dev, const eth_rx_burst_t rx_burst[NIX_RX_OFFLOAD_MAX])
++{
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	/* [VLAN] [TSP] [MARK] [CKSUM] [PTYPE] [RSS] */
++	eth_dev->rx_pkt_burst = rx_burst[dev->rx_offload_flags & (NIX_RX_OFFLOAD_MAX - 1)];
++
++	if (eth_dev->data->dev_started)
++		rte_eth_fp_ops[eth_dev->data->port_id].rx_pkt_burst = eth_dev->rx_pkt_burst;
++
++	rte_atomic_thread_fence(rte_memory_order_release);
++}
++
++static uint16_t __rte_noinline __rte_hot __rte_unused
++cn20k_nix_flush_rx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
++{
++	RTE_SET_USED(rx_queue);
++	RTE_SET_USED(rx_pkts);
++	RTE_SET_USED(pkts);
++	return 0;
++}
++
++#if defined(RTE_ARCH_ARM64)
++static void
++cn20k_eth_set_rx_tmplt_func(struct rte_eth_dev *eth_dev)
++{
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	const eth_rx_burst_t nix_eth_rx_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_nix_recv_pkts_##name,
++
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const eth_rx_burst_t nix_eth_rx_burst_mseg[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_nix_recv_pkts_mseg_##name,
++
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const eth_rx_burst_t nix_eth_rx_burst_reas[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_nix_recv_pkts_reas_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const eth_rx_burst_t nix_eth_rx_burst_mseg_reas[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_nix_recv_pkts_reas_mseg_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const eth_rx_burst_t nix_eth_rx_vec_burst[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_nix_recv_pkts_vec_##name,
++
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const eth_rx_burst_t nix_eth_rx_vec_burst_mseg[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_nix_recv_pkts_vec_mseg_##name,
++
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const eth_rx_burst_t nix_eth_rx_vec_burst_reas[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_nix_recv_pkts_reas_vec_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	const eth_rx_burst_t nix_eth_rx_vec_burst_mseg_reas[NIX_RX_OFFLOAD_MAX] = {
++#define R(name, flags) [flags] = cn20k_nix_recv_pkts_reas_vec_mseg_##name,
++		NIX_RX_FASTPATH_MODES
++#undef R
++	};
++
++	/* Copy multi seg version with security for tear down sequence */
++	if (rte_eal_process_type() == RTE_PROC_PRIMARY)
++		dev->rx_pkt_burst_no_offload = cn20k_nix_flush_rx;
++
++	if (dev->scalar_ena) {
++		if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER) {
++			if (dev->rx_offload_flags & NIX_RX_REAS_F)
++				return pick_rx_func(eth_dev, nix_eth_rx_burst_mseg_reas);
++			else
++				return pick_rx_func(eth_dev, nix_eth_rx_burst_mseg);
++		}
++		if (dev->rx_offload_flags & NIX_RX_REAS_F)
++			return pick_rx_func(eth_dev, nix_eth_rx_burst_reas);
++		else
++			return pick_rx_func(eth_dev, nix_eth_rx_burst);
++	}
++
++	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER) {
++		if (dev->rx_offload_flags & NIX_RX_REAS_F)
++			return pick_rx_func(eth_dev, nix_eth_rx_vec_burst_mseg_reas);
++		else
++			return pick_rx_func(eth_dev, nix_eth_rx_vec_burst_mseg);
++	}
++
++	if (dev->rx_offload_flags & NIX_RX_REAS_F)
++		return pick_rx_func(eth_dev, nix_eth_rx_vec_burst_reas);
++	else
++		return pick_rx_func(eth_dev, nix_eth_rx_vec_burst);
++#else
++	RTE_SET_USED(eth_dev);
++#endif
++}
++
++static void
++cn20k_eth_set_rx_blk_func(struct rte_eth_dev *eth_dev)
++{
++#if defined(CNXK_DIS_TMPLT_FUNC)
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	/* Copy multi seg version with security for tear down sequence */
++	if (rte_eal_process_type() == RTE_PROC_PRIMARY)
++		dev->rx_pkt_burst_no_offload = cn20k_nix_flush_rx;
++
++	if (dev->scalar_ena) {
++		eth_dev->rx_pkt_burst = cn20k_nix_recv_pkts_all_offload;
++		if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
++			eth_dev->rx_pkt_burst = cn20k_nix_recv_pkts_all_offload_tst;
++	} else {
++		eth_dev->rx_pkt_burst = cn20k_nix_recv_pkts_vec_all_offload;
++		if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
++			eth_dev->rx_pkt_burst = cn20k_nix_recv_pkts_vec_all_offload_tst;
++	}
++
++	if (eth_dev->data->dev_started)
++		rte_eth_fp_ops[eth_dev->data->port_id].rx_pkt_burst = eth_dev->rx_pkt_burst;
++#else
++	RTE_SET_USED(eth_dev);
++#endif
++}
++#endif
++
++void
++cn20k_eth_set_rx_function(struct rte_eth_dev *eth_dev)
++{
++#if defined(RTE_ARCH_ARM64)
++	cn20k_eth_set_rx_blk_func(eth_dev);
++	cn20k_eth_set_rx_tmplt_func(eth_dev);
++
++	rte_atomic_thread_fence(rte_memory_order_release);
++#else
++	RTE_SET_USED(eth_dev);
++#endif
++}
+diff --git a/drivers/net/cnxk/meson.build b/drivers/net/cnxk/meson.build
+index cf2ce09f77d88..f41238be9c079 100644
+--- a/drivers/net/cnxk/meson.build
++++ b/drivers/net/cnxk/meson.build
+@@ -236,7 +236,51 @@ if soc_type == 'cn20k' or soc_type == 'all'
+ # CN20K
+ sources += files(
+         'cn20k_ethdev.c',
++        'cn20k_rx_select.c',
+ )
++
++if host_machine.cpu_family().startswith('aarch') and not disable_template
++sources += files(
++        'rx/cn20k/rx_0_15.c',
++        'rx/cn20k/rx_16_31.c',
++        'rx/cn20k/rx_32_47.c',
++        'rx/cn20k/rx_48_63.c',
++        'rx/cn20k/rx_64_79.c',
++        'rx/cn20k/rx_80_95.c',
++        'rx/cn20k/rx_96_111.c',
++        'rx/cn20k/rx_112_127.c',
++        'rx/cn20k/rx_0_15_mseg.c',
++        'rx/cn20k/rx_16_31_mseg.c',
++        'rx/cn20k/rx_32_47_mseg.c',
++        'rx/cn20k/rx_48_63_mseg.c',
++        'rx/cn20k/rx_64_79_mseg.c',
++        'rx/cn20k/rx_80_95_mseg.c',
++        'rx/cn20k/rx_96_111_mseg.c',
++        'rx/cn20k/rx_112_127_mseg.c',
++        'rx/cn20k/rx_0_15_vec.c',
++        'rx/cn20k/rx_16_31_vec.c',
++        'rx/cn20k/rx_32_47_vec.c',
++        'rx/cn20k/rx_48_63_vec.c',
++        'rx/cn20k/rx_64_79_vec.c',
++        'rx/cn20k/rx_80_95_vec.c',
++        'rx/cn20k/rx_96_111_vec.c',
++        'rx/cn20k/rx_112_127_vec.c',
++        'rx/cn20k/rx_0_15_vec_mseg.c',
++        'rx/cn20k/rx_16_31_vec_mseg.c',
++        'rx/cn20k/rx_32_47_vec_mseg.c',
++        'rx/cn20k/rx_48_63_vec_mseg.c',
++        'rx/cn20k/rx_64_79_vec_mseg.c',
++        'rx/cn20k/rx_80_95_vec_mseg.c',
++        'rx/cn20k/rx_96_111_vec_mseg.c',
++        'rx/cn20k/rx_112_127_vec_mseg.c',
++        'rx/cn20k/rx_all_offload.c',
++)
++
++else
++sources += files(
++        'rx/cn20k/rx_all_offload.c',
++)
++endif
+ endif
+ 
+ 
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_0_15.c b/drivers/net/cnxk/rx/cn20k/rx_0_15.c
+new file mode 100644
+index 0000000000000..d248eb8c7e14c
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_0_15.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_##name, flags)                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_reas_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_0_15_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_0_15_mseg.c
+new file mode 100644
+index 0000000000000..b1596329213d2
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_0_15_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_mseg_##name, flags)                                   \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_reas_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_0_15_vec.c b/drivers/net/cnxk/rx/cn20k/rx_0_15_vec.c
+new file mode 100644
+index 0000000000000..76846bfea8bde
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_0_15_vec.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_vec_##name, flags)                                     \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_reas_vec_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_0_15_vec_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_0_15_vec_mseg.c
+new file mode 100644
+index 0000000000000..73533631ad8b4
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_0_15_vec_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_vec_mseg_##name, flags)                           \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_reas_vec_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_0_15
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_112_127.c b/drivers/net/cnxk/rx/cn20k/rx_112_127.c
+new file mode 100644
+index 0000000000000..b7c53def26074
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_112_127.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_##name, flags)                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_reas_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_112_127_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_112_127_mseg.c
+new file mode 100644
+index 0000000000000..ed3a95479c07d
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_112_127_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_mseg_##name, flags)                                   \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_reas_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_112_127_vec.c b/drivers/net/cnxk/rx/cn20k/rx_112_127_vec.c
+new file mode 100644
+index 0000000000000..4bbba8bdbea91
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_112_127_vec.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_vec_##name, flags)                                     \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_reas_vec_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_112_127_vec_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_112_127_vec_mseg.c
+new file mode 100644
+index 0000000000000..3a2b67436f3f6
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_112_127_vec_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_vec_mseg_##name, flags)                           \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_reas_vec_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_112_127
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_16_31.c b/drivers/net/cnxk/rx/cn20k/rx_16_31.c
+new file mode 100644
+index 0000000000000..cd60faaefd72b
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_16_31.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_##name, flags)                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_reas_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_16_31_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_16_31_mseg.c
+new file mode 100644
+index 0000000000000..2f2d527def4f9
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_16_31_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_mseg_##name, flags)                                   \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_reas_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_16_31_vec.c b/drivers/net/cnxk/rx/cn20k/rx_16_31_vec.c
+new file mode 100644
+index 0000000000000..595ec8689ef6e
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_16_31_vec.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_vec_##name, flags)                                     \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_reas_vec_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_16_31_vec_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_16_31_vec_mseg.c
+new file mode 100644
+index 0000000000000..7cf1c65f4a7a1
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_16_31_vec_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_vec_mseg_##name, flags)                           \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_reas_vec_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_16_31
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_32_47.c b/drivers/net/cnxk/rx/cn20k/rx_32_47.c
+new file mode 100644
+index 0000000000000..e3778448ca874
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_32_47.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_##name, flags)                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_reas_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_32_47_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_32_47_mseg.c
+new file mode 100644
+index 0000000000000..2203247aa4bea
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_32_47_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_mseg_##name, flags)                                   \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_reas_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_32_47_vec.c b/drivers/net/cnxk/rx/cn20k/rx_32_47_vec.c
+new file mode 100644
+index 0000000000000..7aae8225e74e0
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_32_47_vec.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_vec_##name, flags)                                     \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_reas_vec_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_32_47_vec_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_32_47_vec_mseg.c
+new file mode 100644
+index 0000000000000..1a221ae0950d3
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_32_47_vec_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_vec_mseg_##name, flags)                           \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_reas_vec_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_32_47
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_48_63.c b/drivers/net/cnxk/rx/cn20k/rx_48_63.c
+new file mode 100644
+index 0000000000000..c5fedd06cd771
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_48_63.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_##name, flags)                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_reas_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_48_63_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_48_63_mseg.c
+new file mode 100644
+index 0000000000000..6c2d8ac3310b0
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_48_63_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_mseg_##name, flags)                                   \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_reas_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_48_63_vec.c b/drivers/net/cnxk/rx/cn20k/rx_48_63_vec.c
+new file mode 100644
+index 0000000000000..20a937e45353f
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_48_63_vec.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_vec_##name, flags)                                     \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_reas_vec_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_48_63_vec_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_48_63_vec_mseg.c
+new file mode 100644
+index 0000000000000..929d807c8d9c4
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_48_63_vec_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_vec_mseg_##name, flags)                           \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_reas_vec_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_48_63
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_64_79.c b/drivers/net/cnxk/rx/cn20k/rx_64_79.c
+new file mode 100644
+index 0000000000000..30beebc3269e0
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_64_79.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_##name, flags)                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_reas_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_64_79_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_64_79_mseg.c
+new file mode 100644
+index 0000000000000..30ece8f8eebe2
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_64_79_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_mseg_##name, flags)                                   \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_reas_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_64_79_vec.c b/drivers/net/cnxk/rx/cn20k/rx_64_79_vec.c
+new file mode 100644
+index 0000000000000..1f533c01f6ae2
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_64_79_vec.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_vec_##name, flags)                                     \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_reas_vec_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_64_79_vec_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_64_79_vec_mseg.c
+new file mode 100644
+index 0000000000000..ed3c012798086
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_64_79_vec_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_vec_mseg_##name, flags)                           \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_reas_vec_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_64_79
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_80_95.c b/drivers/net/cnxk/rx/cn20k/rx_80_95.c
+new file mode 100644
+index 0000000000000..a13ecb244f2f8
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_80_95.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_##name, flags)                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_reas_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_80_95_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_80_95_mseg.c
+new file mode 100644
+index 0000000000000..c6438120d8297
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_80_95_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_mseg_##name, flags)                                   \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_reas_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_80_95_vec.c b/drivers/net/cnxk/rx/cn20k/rx_80_95_vec.c
+new file mode 100644
+index 0000000000000..94c685ba7c436
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_80_95_vec.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_vec_##name, flags)                                     \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_reas_vec_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_80_95_vec_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_80_95_vec_mseg.c
+new file mode 100644
+index 0000000000000..370376da7d706
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_80_95_vec_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_vec_mseg_##name, flags)                           \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_reas_vec_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_80_95
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_96_111.c b/drivers/net/cnxk/rx/cn20k/rx_96_111.c
+new file mode 100644
+index 0000000000000..15b5375e3cf6d
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_96_111.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_##name, flags)                                             \
++	NIX_RX_RECV(cn20k_nix_recv_pkts_reas_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_96_111_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_96_111_mseg.c
+new file mode 100644
+index 0000000000000..561b48c7892f5
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_96_111_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_mseg_##name, flags)                                   \
++	NIX_RX_RECV_MSEG(cn20k_nix_recv_pkts_reas_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_96_111_vec.c b/drivers/net/cnxk/rx/cn20k/rx_96_111_vec.c
+new file mode 100644
+index 0000000000000..17031f7b6f6ed
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_96_111_vec.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_vec_##name, flags)                                     \
++	NIX_RX_RECV_VEC(cn20k_nix_recv_pkts_reas_vec_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_96_111_vec_mseg.c b/drivers/net/cnxk/rx/cn20k/rx_96_111_vec_mseg.c
+new file mode 100644
+index 0000000000000..9dd1f3f39a3ee
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_96_111_vec_mseg.c
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define R(name, flags)                                                                             \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_vec_mseg_##name, flags)                           \
++	NIX_RX_RECV_VEC_MSEG(cn20k_nix_recv_pkts_reas_vec_mseg_##name, flags | NIX_RX_REAS_F)
++
++NIX_RX_FASTPATH_MODES_96_111
++#undef R
++
++#endif
+diff --git a/drivers/net/cnxk/rx/cn20k/rx_all_offload.c b/drivers/net/cnxk/rx/cn20k/rx_all_offload.c
+new file mode 100644
+index 0000000000000..1d032b3b1710e
+--- /dev/null
++++ b/drivers/net/cnxk/rx/cn20k/rx_all_offload.c
+@@ -0,0 +1,57 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_rx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if defined(CNXK_DIS_TMPLT_FUNC)
++
++uint16_t __rte_noinline __rte_hot
++cn20k_nix_recv_pkts_all_offload(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
++{
++	return cn20k_nix_recv_pkts(rx_queue, rx_pkts, pkts,
++				   NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F |
++					   NIX_RX_OFFLOAD_CHECKSUM_F |
++					   NIX_RX_OFFLOAD_MARK_UPDATE_F | NIX_RX_OFFLOAD_TSTAMP_F |
++					   NIX_RX_OFFLOAD_VLAN_STRIP_F | NIX_RX_OFFLOAD_SECURITY_F |
++					   NIX_RX_MULTI_SEG_F | NIX_RX_REAS_F);
++}
++
++uint16_t __rte_noinline __rte_hot
++cn20k_nix_recv_pkts_vec_all_offload(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
++{
++	return cn20k_nix_recv_pkts_vector(
++		rx_queue, rx_pkts, pkts,
++		NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F | NIX_RX_OFFLOAD_CHECKSUM_F |
++			NIX_RX_OFFLOAD_MARK_UPDATE_F | NIX_RX_OFFLOAD_TSTAMP_F |
++			NIX_RX_OFFLOAD_VLAN_STRIP_F | NIX_RX_OFFLOAD_SECURITY_F |
++			NIX_RX_MULTI_SEG_F | NIX_RX_REAS_F,
++		NULL, NULL, 0, 0);
++}
++
++uint16_t __rte_noinline __rte_hot
++cn20k_nix_recv_pkts_all_offload_tst(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
++{
++	return cn20k_nix_recv_pkts(
++		rx_queue, rx_pkts, pkts,
++		NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F | NIX_RX_OFFLOAD_CHECKSUM_F |
++			NIX_RX_OFFLOAD_MARK_UPDATE_F | NIX_RX_OFFLOAD_VLAN_STRIP_F |
++			NIX_RX_OFFLOAD_SECURITY_F | NIX_RX_MULTI_SEG_F | NIX_RX_REAS_F);
++}
++
++uint16_t __rte_noinline __rte_hot
++cn20k_nix_recv_pkts_vec_all_offload_tst(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
++{
++	return cn20k_nix_recv_pkts_vector(
++		rx_queue, rx_pkts, pkts,
++		NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F | NIX_RX_OFFLOAD_CHECKSUM_F |
++			NIX_RX_OFFLOAD_MARK_UPDATE_F | NIX_RX_OFFLOAD_VLAN_STRIP_F |
++			NIX_RX_OFFLOAD_SECURITY_F | NIX_RX_MULTI_SEG_F | NIX_RX_REAS_F,
++		NULL, NULL, 0, 0);
++}
++
++#endif
+-- 
+2.25.1
+

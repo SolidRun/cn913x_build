@@ -1,0 +1,70 @@
+From c78e4dc1becc4c2d8300fcef230c2eaf6b8180f3 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Fri, 14 Apr 2023 22:47:49 +0530
+Subject: [PATCH 404/955] common/nix: check for null derefernce
+
+Check for NULL value return before dereferencing on it.
+
+Change-Id: Ic2d7dd421c9946eb3226e4672efd7a4b8050d196
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103277
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.c    | 8 +++++++-
+ drivers/common/cnxk/roc_nix_fc.c | 7 ++++++-
+ 2 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.c b/drivers/common/cnxk/roc_nix.c
+index 39943e4ba749b..152ef7269e9e9 100644
+--- a/drivers/common/cnxk/roc_nix.c
++++ b/drivers/common/cnxk/roc_nix.c
+@@ -392,6 +392,7 @@ roc_nix_dev_init(struct roc_nix *roc_nix)
+ {
+ 	enum roc_nix_rss_reta_sz reta_sz;
+ 	struct plt_pci_device *pci_dev;
++	struct roc_nix_list *nix_list;
+ 	uint16_t max_sqb_count;
+ 	uint64_t blkaddr;
+ 	struct dev *dev;
+@@ -417,7 +418,12 @@ roc_nix_dev_init(struct roc_nix *roc_nix)
+ 	nix = roc_nix_to_nix_priv(roc_nix);
+ 	pci_dev = roc_nix->pci_dev;
+ 	dev = &nix->dev;
+-	TAILQ_INSERT_TAIL(roc_idev_nix_list_get(), roc_nix, next);
++
++	nix_list = roc_idev_nix_list_get();
++	if (nix_list == NULL)
++		return -EINVAL;
++
++	TAILQ_INSERT_TAIL(nix_list, roc_nix, next);
+ 
+ 	if (nix->dev.drv_inited)
+ 		return 0;
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 0bbc233376232..6a34e7f1a2979 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -425,13 +425,18 @@ static int
+ nix_rx_chan_multi_bpid_cfg(struct roc_nix *roc_nix, uint8_t chan, uint16_t bpid, uint16_t *bpid_new)
+ {
+ 	struct roc_nix *roc_nix_tmp, *roc_nix_pre = NULL;
++	struct roc_nix_list *nix_list;
+ 	uint8_t chan_pre;
+ 
+ 	if (!roc_feature_nix_has_rxchan_multi_bpid())
+ 		return -ENOTSUP;
+ 
++	nix_list = roc_idev_nix_list_get();
++	if (nix_list == NULL)
++		return -EINVAL;
++
+ 	/* Find associated NIX RX channel if Aura BPID is of that of a NIX. */
+-	TAILQ_FOREACH (roc_nix_tmp, roc_idev_nix_list_get(), next) {
++	TAILQ_FOREACH (roc_nix_tmp, nix_list, next) {
+ 		struct nix *nix = roc_nix_to_nix_priv(roc_nix_tmp);
+ 		int i;
+ 
+-- 
+2.25.1
+

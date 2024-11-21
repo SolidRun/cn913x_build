@@ -1,0 +1,71 @@
+From 1e7ba3161c44132640cc18066b5def43ff09e1ad Mon Sep 17 00:00:00 2001
+From: Kommula Shiva Shankar <kshankar@marvell.com>
+Date: Wed, 2 Aug 2023 22:22:24 +0530
+Subject: [PATCH 593/955] common/cnxk: enable CQ stashing
+
+This patch enables CQ stashing for better CQE
+processing performance
+
+Signed-off-by: Kommula Shiva Shankar <kshankar@marvell.com>
+Change-Id: Ic394d0b40d6a21ebbb3444a79308dee443259b70
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109413
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_features.h  | 6 ++++++
+ drivers/common/cnxk/roc_nix.h       | 1 +
+ drivers/common/cnxk/roc_nix_queue.c | 7 +++++++
+ 3 files changed, 14 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index d5d0c0c901027..f4807ee271972 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -46,6 +46,12 @@ roc_feature_nix_has_reass(void)
+ 	return roc_model_is_cn10ka();
+ }
+ 
++static inline bool
++roc_feature_nix_has_cqe_stash(void)
++{
++	return roc_model_is_cn10ka_b0();
++}
++
+ static inline bool
+ roc_feature_nix_has_rxchan_multi_bpid(void)
+ {
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 1d84f4de9db5b..407f331bea414 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -367,6 +367,7 @@ struct roc_nix_cq {
+ 	/* Input parameters */
+ 	uint16_t qid;
+ 	uint32_t nb_desc;
++	uint8_t stash_thresh;
+ 	/* End of Input parameters */
+ 	uint16_t drop_thresh;
+ 	struct roc_nix *roc_nix;
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 5e689d08befb4..f96d5c3a96705 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -908,6 +908,13 @@ roc_nix_cq_init(struct roc_nix *roc_nix, struct roc_nix_cq *cq)
+ 	}
+ 	cq_ctx->bp = cq->drop_thresh;
+ 
++	if (roc_feature_nix_has_cqe_stash()) {
++		if (cq_ctx->caching) {
++			cq_ctx->stashing = 1;
++			cq_ctx->stash_thresh = cq->stash_thresh;
++		}
++	}
++
+ 	rc = mbox_process(mbox);
+ 	mbox_put(mbox);
+ 	if (rc)
+-- 
+2.25.1
+

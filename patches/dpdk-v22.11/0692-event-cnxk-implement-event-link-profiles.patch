@@ -1,0 +1,677 @@
+From c52802d5d41e24a5aadcde2f42d794ab07b45224 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 3 Oct 2023 15:17:20 +0530
+Subject: [PATCH 692/955] event/cnxk: implement event link profiles
+
+Implement event link profiles support on CN10K and CN9K.
+Both the platforms support up to 2 link profiles.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: If88bb24bccdea763af607267c9d0be6c8c383efa
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114012
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Tests: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116831
+---
+ doc/guides/eventdevs/cnxk.rst          |  1 +
+ doc/guides/eventdevs/features/cnxk.ini |  3 +-
+ doc/guides/rel_notes/release_23_11.rst |  1 +
+ drivers/common/cnxk/roc_nix_inl_dev.c  |  4 +-
+ drivers/common/cnxk/roc_sso.c          | 18 +++----
+ drivers/common/cnxk/roc_sso.h          |  8 +--
+ drivers/common/cnxk/roc_sso_priv.h     |  4 +-
+ drivers/event/cnxk/cn10k_eventdev.c    | 45 +++++++++++-----
+ drivers/event/cnxk/cn10k_worker.c      | 11 ++++
+ drivers/event/cnxk/cn10k_worker.h      |  1 +
+ drivers/event/cnxk/cn9k_eventdev.c     | 74 ++++++++++++++++----------
+ drivers/event/cnxk/cn9k_worker.c       | 22 ++++++++
+ drivers/event/cnxk/cn9k_worker.h       |  2 +
+ drivers/event/cnxk/cnxk_eventdev.c     | 37 +++++++------
+ drivers/event/cnxk/cnxk_eventdev.h     | 10 ++--
+ 15 files changed, 160 insertions(+), 81 deletions(-)
+
+diff --git a/doc/guides/eventdevs/cnxk.rst b/doc/guides/eventdevs/cnxk.rst
+index c3c0bfd7b56e5..cf6998c9ef2b8 100644
+--- a/doc/guides/eventdevs/cnxk.rst
++++ b/doc/guides/eventdevs/cnxk.rst
+@@ -48,6 +48,7 @@ Features of the OCTEON cnxk SSO PMD are:
+ - HW managed event vectorization on CN10K for packets enqueued from ethdev to
+   eventdev configurable per each Rx queue in Rx adapter.
+ - Event vector transmission via Tx adapter.
++- Up to 2 event link profiles.
+ 
+ Prerequisites and Compilation procedure
+ ---------------------------------------
+diff --git a/doc/guides/eventdevs/features/cnxk.ini b/doc/guides/eventdevs/features/cnxk.ini
+index bee69bf8f483e..5d353e367078a 100644
+--- a/doc/guides/eventdevs/features/cnxk.ini
++++ b/doc/guides/eventdevs/features/cnxk.ini
+@@ -12,7 +12,8 @@ runtime_port_link          = Y
+ multiple_queue_port        = Y
+ carry_flow_id              = Y
+ maintenance_free           = Y
+-runtime_queue_attr         = y
++runtime_queue_attr         = Y
++profile_links              = Y
+ 
+ [Eth Rx adapter Features]
+ internal_port              = Y
+diff --git a/doc/guides/rel_notes/release_23_11.rst b/doc/guides/rel_notes/release_23_11.rst
+index a4169029d4392..3fe1f21aaf692 100644
+--- a/doc/guides/rel_notes/release_23_11.rst
++++ b/doc/guides/rel_notes/release_23_11.rst
+@@ -205,6 +205,7 @@ New Features
+ 
+   * Added support for ``remaining_ticks_get`` timer adapter PMD callback
+     to get the remaining ticks to expire for a given event timer.
++  * Added link profiles support, up to two link profiles are supported.
+ 
+ 
+ Removed Items
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index de3498a4f7cdf..306e0ee1f4917 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -293,7 +293,7 @@ nix_inl_sso_setup(struct nix_inl_dev *inl_dev)
+ 	}
+ 
+ 	/* Setup hwgrp->hws link */
+-	sso_hws_link_modify(0, inl_dev->ssow_base, NULL, hwgrp, 1, true);
++	sso_hws_link_modify(0, inl_dev->ssow_base, NULL, hwgrp, 1, 0, true);
+ 
+ 	/* Enable HWGRP */
+ 	plt_write64(0x1, inl_dev->sso_base + SSO_LF_GGRP_QCTL);
+@@ -323,7 +323,7 @@ nix_inl_sso_release(struct nix_inl_dev *inl_dev)
+ 	nix_inl_sso_unregister_irqs(inl_dev);
+ 
+ 	/* Unlink hws */
+-	sso_hws_link_modify(0, inl_dev->ssow_base, NULL, hwgrp, 1, false);
++	sso_hws_link_modify(0, inl_dev->ssow_base, NULL, hwgrp, 1, 0, false);
+ 
+ 	/* Release XAQ aura */
+ 	sso_hwgrp_release_xaq(&inl_dev->dev, 1);
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index 0f588b4650b41..258708eee460a 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -186,8 +186,8 @@ sso_rsrc_get(struct roc_sso *roc_sso)
+ }
+ 
+ void
+-sso_hws_link_modify(uint8_t hws, uintptr_t base, struct plt_bitmap *bmp,
+-		    uint16_t hwgrp[], uint16_t n, uint16_t enable)
++sso_hws_link_modify(uint8_t hws, uintptr_t base, struct plt_bitmap *bmp, uint16_t hwgrp[],
++		    uint16_t n, uint8_t set, uint16_t enable)
+ {
+ 	uint64_t reg;
+ 	int i, j, k;
+@@ -204,7 +204,7 @@ sso_hws_link_modify(uint8_t hws, uintptr_t base, struct plt_bitmap *bmp,
+ 		k = n % 4;
+ 		k = k ? k : 4;
+ 		for (j = 0; j < k; j++) {
+-			mask[j] = hwgrp[i + j] | enable << 14;
++			mask[j] = hwgrp[i + j] | (uint32_t)set << 12 | enable << 14;
+ 			if (bmp) {
+ 				enable ? plt_bitmap_set(bmp, hwgrp[i + j]) :
+ 					 plt_bitmap_clear(bmp, hwgrp[i + j]);
+@@ -290,8 +290,8 @@ roc_sso_ns_to_gw(struct roc_sso *roc_sso, uint64_t ns)
+ }
+ 
+ int
+-roc_sso_hws_link(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[],
+-		 uint16_t nb_hwgrp)
++roc_sso_hws_link(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[], uint16_t nb_hwgrp,
++		 uint8_t set)
+ {
+ 	struct dev *dev = &roc_sso_to_sso_priv(roc_sso)->dev;
+ 	struct sso *sso;
+@@ -299,14 +299,14 @@ roc_sso_hws_link(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[],
+ 
+ 	sso = roc_sso_to_sso_priv(roc_sso);
+ 	base = dev->bar2 + (RVU_BLOCK_ADDR_SSOW << 20 | hws << 12);
+-	sso_hws_link_modify(hws, base, sso->link_map[hws], hwgrp, nb_hwgrp, 1);
++	sso_hws_link_modify(hws, base, sso->link_map[hws], hwgrp, nb_hwgrp, set, 1);
+ 
+ 	return nb_hwgrp;
+ }
+ 
+ int
+-roc_sso_hws_unlink(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[],
+-		   uint16_t nb_hwgrp)
++roc_sso_hws_unlink(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[], uint16_t nb_hwgrp,
++		   uint8_t set)
+ {
+ 	struct dev *dev = &roc_sso_to_sso_priv(roc_sso)->dev;
+ 	struct sso *sso;
+@@ -314,7 +314,7 @@ roc_sso_hws_unlink(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[],
+ 
+ 	sso = roc_sso_to_sso_priv(roc_sso);
+ 	base = dev->bar2 + (RVU_BLOCK_ADDR_SSOW << 20 | hws << 12);
+-	sso_hws_link_modify(hws, base, sso->link_map[hws], hwgrp, nb_hwgrp, 0);
++	sso_hws_link_modify(hws, base, sso->link_map[hws], hwgrp, nb_hwgrp, set, 0);
+ 
+ 	return nb_hwgrp;
+ }
+diff --git a/drivers/common/cnxk/roc_sso.h b/drivers/common/cnxk/roc_sso.h
+index 8ee62afb9a483..64f14b8119c20 100644
+--- a/drivers/common/cnxk/roc_sso.h
++++ b/drivers/common/cnxk/roc_sso.h
+@@ -84,10 +84,10 @@ int __roc_api roc_sso_hwgrp_set_priority(struct roc_sso *roc_sso,
+ 					 uint16_t hwgrp, uint8_t weight,
+ 					 uint8_t affinity, uint8_t priority);
+ uint64_t __roc_api roc_sso_ns_to_gw(struct roc_sso *roc_sso, uint64_t ns);
+-int __roc_api roc_sso_hws_link(struct roc_sso *roc_sso, uint8_t hws,
+-			       uint16_t hwgrp[], uint16_t nb_hwgrp);
+-int __roc_api roc_sso_hws_unlink(struct roc_sso *roc_sso, uint8_t hws,
+-				 uint16_t hwgrp[], uint16_t nb_hwgrp);
++int __roc_api roc_sso_hws_link(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[],
++			       uint16_t nb_hwgrp, uint8_t set);
++int __roc_api roc_sso_hws_unlink(struct roc_sso *roc_sso, uint8_t hws, uint16_t hwgrp[],
++				 uint16_t nb_hwgrp, uint8_t set);
+ int __roc_api roc_sso_hwgrp_hws_link_status(struct roc_sso *roc_sso,
+ 					    uint8_t hws, uint16_t hwgrp);
+ uintptr_t __roc_api roc_sso_hws_base_get(struct roc_sso *roc_sso, uint8_t hws);
+diff --git a/drivers/common/cnxk/roc_sso_priv.h b/drivers/common/cnxk/roc_sso_priv.h
+index 09729d4f62877..21c59c57e65d6 100644
+--- a/drivers/common/cnxk/roc_sso_priv.h
++++ b/drivers/common/cnxk/roc_sso_priv.h
+@@ -44,8 +44,8 @@ roc_sso_to_sso_priv(struct roc_sso *roc_sso)
+ int sso_lf_alloc(struct dev *dev, enum sso_lf_type lf_type, uint16_t nb_lf,
+ 		 void **rsp);
+ int sso_lf_free(struct dev *dev, enum sso_lf_type lf_type, uint16_t nb_lf);
+-void sso_hws_link_modify(uint8_t hws, uintptr_t base, struct plt_bitmap *bmp,
+-			 uint16_t hwgrp[], uint16_t n, uint16_t enable);
++void sso_hws_link_modify(uint8_t hws, uintptr_t base, struct plt_bitmap *bmp, uint16_t hwgrp[],
++			 uint16_t n, uint8_t set, uint16_t enable);
+ int sso_hwgrp_alloc_xaq(struct dev *dev, uint32_t npa_aura_id, uint16_t hwgrps);
+ int sso_hwgrp_release_xaq(struct dev *dev, uint16_t hwgrps);
+ int sso_hwgrp_init_xaq_aura(struct dev *dev, struct roc_sso_xaq_data *xaq,
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index cf186b9af4d35..bb0c91055352c 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -66,21 +66,21 @@ cn10k_sso_init_hws_mem(void *arg, uint8_t port_id)
+ }
+ 
+ static int
+-cn10k_sso_hws_link(void *arg, void *port, uint16_t *map, uint16_t nb_link)
++cn10k_sso_hws_link(void *arg, void *port, uint16_t *map, uint16_t nb_link, uint8_t profile)
+ {
+ 	struct cnxk_sso_evdev *dev = arg;
+ 	struct cn10k_sso_hws *ws = port;
+ 
+-	return roc_sso_hws_link(&dev->sso, ws->hws_id, map, nb_link);
++	return roc_sso_hws_link(&dev->sso, ws->hws_id, map, nb_link, profile);
+ }
+ 
+ static int
+-cn10k_sso_hws_unlink(void *arg, void *port, uint16_t *map, uint16_t nb_link)
++cn10k_sso_hws_unlink(void *arg, void *port, uint16_t *map, uint16_t nb_link, uint8_t profile)
+ {
+ 	struct cnxk_sso_evdev *dev = arg;
+ 	struct cn10k_sso_hws *ws = port;
+ 
+-	return roc_sso_hws_unlink(&dev->sso, ws->hws_id, map, nb_link);
++	return roc_sso_hws_unlink(&dev->sso, ws->hws_id, map, nb_link, profile);
+ }
+ 
+ static void
+@@ -107,10 +107,11 @@ cn10k_sso_hws_release(void *arg, void *hws)
+ {
+ 	struct cnxk_sso_evdev *dev = arg;
+ 	struct cn10k_sso_hws *ws = hws;
+-	uint16_t i;
++	uint16_t i, j;
+ 
+-	for (i = 0; i < dev->nb_event_queues; i++)
+-		roc_sso_hws_unlink(&dev->sso, ws->hws_id, &i, 1);
++	for (i = 0; i < CNXK_SSO_MAX_PROFILES; i++)
++		for (j = 0; j < dev->nb_event_queues; j++)
++			roc_sso_hws_unlink(&dev->sso, ws->hws_id, &j, 1, i);
+ 	memset(ws, 0, sizeof(*ws));
+ }
+ 
+@@ -482,6 +483,7 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 		CN10K_SET_EVDEV_ENQ_OP(dev, event_dev->txa_enqueue, sso_hws_tx_adptr_enq);
+ 
+ 	event_dev->txa_enqueue_same_dest = event_dev->txa_enqueue;
++	event_dev->profile_switch = cn10k_sso_hws_profile_switch;
+ #else
+ 	RTE_SET_USED(event_dev);
+ #endif
+@@ -633,9 +635,8 @@ cn10k_sso_port_quiesce(struct rte_eventdev *event_dev, void *port,
+ }
+ 
+ static int
+-cn10k_sso_port_link(struct rte_eventdev *event_dev, void *port,
+-		    const uint8_t queues[], const uint8_t priorities[],
+-		    uint16_t nb_links)
++cn10k_sso_port_link_profile(struct rte_eventdev *event_dev, void *port, const uint8_t queues[],
++			    const uint8_t priorities[], uint16_t nb_links, uint8_t profile)
+ {
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	uint16_t hwgrp_ids[nb_links];
+@@ -644,14 +645,14 @@ cn10k_sso_port_link(struct rte_eventdev *event_dev, void *port,
+ 	RTE_SET_USED(priorities);
+ 	for (link = 0; link < nb_links; link++)
+ 		hwgrp_ids[link] = queues[link];
+-	nb_links = cn10k_sso_hws_link(dev, port, hwgrp_ids, nb_links);
++	nb_links = cn10k_sso_hws_link(dev, port, hwgrp_ids, nb_links, profile);
+ 
+ 	return (int)nb_links;
+ }
+ 
+ static int
+-cn10k_sso_port_unlink(struct rte_eventdev *event_dev, void *port,
+-		      uint8_t queues[], uint16_t nb_unlinks)
++cn10k_sso_port_unlink_profile(struct rte_eventdev *event_dev, void *port, uint8_t queues[],
++			      uint16_t nb_unlinks, uint8_t profile)
+ {
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	uint16_t hwgrp_ids[nb_unlinks];
+@@ -659,11 +660,25 @@ cn10k_sso_port_unlink(struct rte_eventdev *event_dev, void *port,
+ 
+ 	for (unlink = 0; unlink < nb_unlinks; unlink++)
+ 		hwgrp_ids[unlink] = queues[unlink];
+-	nb_unlinks = cn10k_sso_hws_unlink(dev, port, hwgrp_ids, nb_unlinks);
++	nb_unlinks = cn10k_sso_hws_unlink(dev, port, hwgrp_ids, nb_unlinks, profile);
+ 
+ 	return (int)nb_unlinks;
+ }
+ 
++static int
++cn10k_sso_port_link(struct rte_eventdev *event_dev, void *port, const uint8_t queues[],
++		    const uint8_t priorities[], uint16_t nb_links)
++{
++	return cn10k_sso_port_link_profile(event_dev, port, queues, priorities, nb_links, 0);
++}
++
++static int
++cn10k_sso_port_unlink(struct rte_eventdev *event_dev, void *port, uint8_t queues[],
++		      uint16_t nb_unlinks)
++{
++	return cn10k_sso_port_unlink_profile(event_dev, port, queues, nb_unlinks, 0);
++}
++
+ static void
+ cn10k_sso_configure_queue_stash(struct rte_eventdev *event_dev)
+ {
+@@ -1020,6 +1035,8 @@ static struct eventdev_ops cn10k_sso_dev_ops = {
+ 	.port_quiesce = cn10k_sso_port_quiesce,
+ 	.port_link = cn10k_sso_port_link,
+ 	.port_unlink = cn10k_sso_port_unlink,
++	.port_link_profile = cn10k_sso_port_link_profile,
++	.port_unlink_profile = cn10k_sso_port_unlink_profile,
+ 	.timeout_ticks = cnxk_sso_timeout_ticks,
+ 
+ 	.eth_rx_adapter_caps_get = cn10k_sso_rx_adapter_caps_get,
+diff --git a/drivers/event/cnxk/cn10k_worker.c b/drivers/event/cnxk/cn10k_worker.c
+index ba3ea4bb35ce4..fc47b6dfbfa36 100644
+--- a/drivers/event/cnxk/cn10k_worker.c
++++ b/drivers/event/cnxk/cn10k_worker.c
+@@ -431,3 +431,14 @@ cn10k_sso_hws_enq_fwd_burst(void *port, const struct rte_event ev[],
+ 
+ 	return 1;
+ }
++
++int __rte_hot
++cn10k_sso_hws_profile_switch(void *port, uint8_t profile)
++{
++	struct cn10k_sso_hws *ws = port;
++
++	ws->gw_wdata &= ~(0xFFUL);
++	ws->gw_wdata |= (profile + 1);
++
++	return 0;
++}
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index a145181de2b8b..ceded2994ccf0 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -340,6 +340,7 @@ uint16_t __rte_hot cn10k_sso_hws_enq_new_burst(void *port,
+ uint16_t __rte_hot cn10k_sso_hws_enq_fwd_burst(void *port,
+ 					       const struct rte_event ev[],
+ 					       uint16_t nb_events);
++int __rte_hot cn10k_sso_hws_profile_switch(void *port, uint8_t profile);
+ 
+ #define R(name, flags)                                                         \
+ 	uint16_t __rte_hot cn10k_sso_hws_deq_##name(                           \
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index fe6f5d9f86d83..9fb9ca0d63ec8 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -15,7 +15,7 @@
+ 	enq_op = enq_ops[dev->tx_offloads & (NIX_TX_OFFLOAD_MAX - 1)]
+ 
+ static int
+-cn9k_sso_hws_link(void *arg, void *port, uint16_t *map, uint16_t nb_link)
++cn9k_sso_hws_link(void *arg, void *port, uint16_t *map, uint16_t nb_link, uint8_t profile)
+ {
+ 	struct cnxk_sso_evdev *dev = arg;
+ 	struct cn9k_sso_hws_dual *dws;
+@@ -24,22 +24,20 @@ cn9k_sso_hws_link(void *arg, void *port, uint16_t *map, uint16_t nb_link)
+ 
+ 	if (dev->dual_ws) {
+ 		dws = port;
+-		rc = roc_sso_hws_link(&dev->sso,
+-				      CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 0), map,
+-				      nb_link);
+-		rc |= roc_sso_hws_link(&dev->sso,
+-				       CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 1),
+-				       map, nb_link);
++		rc = roc_sso_hws_link(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 0), map, nb_link,
++				      profile);
++		rc |= roc_sso_hws_link(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 1), map,
++				       nb_link, profile);
+ 	} else {
+ 		ws = port;
+-		rc = roc_sso_hws_link(&dev->sso, ws->hws_id, map, nb_link);
++		rc = roc_sso_hws_link(&dev->sso, ws->hws_id, map, nb_link, profile);
+ 	}
+ 
+ 	return rc;
+ }
+ 
+ static int
+-cn9k_sso_hws_unlink(void *arg, void *port, uint16_t *map, uint16_t nb_link)
++cn9k_sso_hws_unlink(void *arg, void *port, uint16_t *map, uint16_t nb_link, uint8_t profile)
+ {
+ 	struct cnxk_sso_evdev *dev = arg;
+ 	struct cn9k_sso_hws_dual *dws;
+@@ -48,15 +46,13 @@ cn9k_sso_hws_unlink(void *arg, void *port, uint16_t *map, uint16_t nb_link)
+ 
+ 	if (dev->dual_ws) {
+ 		dws = port;
+-		rc = roc_sso_hws_unlink(&dev->sso,
+-					CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 0),
+-					map, nb_link);
+-		rc |= roc_sso_hws_unlink(&dev->sso,
+-					 CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 1),
+-					 map, nb_link);
++		rc = roc_sso_hws_unlink(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 0), map,
++					nb_link, profile);
++		rc |= roc_sso_hws_unlink(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 1), map,
++					 nb_link, profile);
+ 	} else {
+ 		ws = port;
+-		rc = roc_sso_hws_unlink(&dev->sso, ws->hws_id, map, nb_link);
++		rc = roc_sso_hws_unlink(&dev->sso, ws->hws_id, map, nb_link, profile);
+ 	}
+ 
+ 	return rc;
+@@ -97,21 +93,24 @@ cn9k_sso_hws_release(void *arg, void *hws)
+ 	struct cnxk_sso_evdev *dev = arg;
+ 	struct cn9k_sso_hws_dual *dws;
+ 	struct cn9k_sso_hws *ws;
+-	uint16_t i;
++	uint16_t i, k;
+ 
+ 	if (dev->dual_ws) {
+ 		dws = hws;
+ 		for (i = 0; i < dev->nb_event_queues; i++) {
+-			roc_sso_hws_unlink(&dev->sso,
+-					   CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 0), &i, 1);
+-			roc_sso_hws_unlink(&dev->sso,
+-					   CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 1), &i, 1);
++			for (k = 0; k < CNXK_SSO_MAX_PROFILES; k++) {
++				roc_sso_hws_unlink(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 0),
++						   &i, 1, k);
++				roc_sso_hws_unlink(&dev->sso, CN9K_DUAL_WS_PAIR_ID(dws->hws_id, 1),
++						   &i, 1, k);
++			}
+ 		}
+ 		memset(dws, 0, sizeof(*dws));
+ 	} else {
+ 		ws = hws;
+ 		for (i = 0; i < dev->nb_event_queues; i++)
+-			roc_sso_hws_unlink(&dev->sso, ws->hws_id, &i, 1);
++			for (k = 0; k < CNXK_SSO_MAX_PROFILES; k++)
++				roc_sso_hws_unlink(&dev->sso, ws->hws_id, &i, 1, k);
+ 		memset(ws, 0, sizeof(*ws));
+ 	}
+ }
+@@ -438,6 +437,7 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 	event_dev->enqueue_burst = cn9k_sso_hws_enq_burst;
+ 	event_dev->enqueue_new_burst = cn9k_sso_hws_enq_new_burst;
+ 	event_dev->enqueue_forward_burst = cn9k_sso_hws_enq_fwd_burst;
++	event_dev->profile_switch = cn9k_sso_hws_profile_switch;
+ 	if (dev->rx_offloads & NIX_RX_MULTI_SEG_F) {
+ 		CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue, sso_hws_deq_seg);
+ 		CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue_burst,
+@@ -475,6 +475,7 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 		event_dev->enqueue_forward_burst =
+ 			cn9k_sso_hws_dual_enq_fwd_burst;
+ 		event_dev->ca_enqueue = cn9k_sso_hws_dual_ca_enq;
++		event_dev->profile_switch = cn9k_sso_hws_dual_profile_switch;
+ 
+ 		if (dev->rx_offloads & NIX_RX_MULTI_SEG_F) {
+ 			CN9K_SET_EVDEV_DEQ_OP(dev, event_dev->dequeue,
+@@ -708,9 +709,8 @@ cn9k_sso_port_quiesce(struct rte_eventdev *event_dev, void *port,
+ }
+ 
+ static int
+-cn9k_sso_port_link(struct rte_eventdev *event_dev, void *port,
+-		   const uint8_t queues[], const uint8_t priorities[],
+-		   uint16_t nb_links)
++cn9k_sso_port_link_profile(struct rte_eventdev *event_dev, void *port, const uint8_t queues[],
++			   const uint8_t priorities[], uint16_t nb_links, uint8_t profile)
+ {
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	uint16_t hwgrp_ids[nb_links];
+@@ -719,14 +719,14 @@ cn9k_sso_port_link(struct rte_eventdev *event_dev, void *port,
+ 	RTE_SET_USED(priorities);
+ 	for (link = 0; link < nb_links; link++)
+ 		hwgrp_ids[link] = queues[link];
+-	nb_links = cn9k_sso_hws_link(dev, port, hwgrp_ids, nb_links);
++	nb_links = cn9k_sso_hws_link(dev, port, hwgrp_ids, nb_links, profile);
+ 
+ 	return (int)nb_links;
+ }
+ 
+ static int
+-cn9k_sso_port_unlink(struct rte_eventdev *event_dev, void *port,
+-		     uint8_t queues[], uint16_t nb_unlinks)
++cn9k_sso_port_unlink_profile(struct rte_eventdev *event_dev, void *port, uint8_t queues[],
++			     uint16_t nb_unlinks, uint8_t profile)
+ {
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	uint16_t hwgrp_ids[nb_unlinks];
+@@ -734,11 +734,25 @@ cn9k_sso_port_unlink(struct rte_eventdev *event_dev, void *port,
+ 
+ 	for (unlink = 0; unlink < nb_unlinks; unlink++)
+ 		hwgrp_ids[unlink] = queues[unlink];
+-	nb_unlinks = cn9k_sso_hws_unlink(dev, port, hwgrp_ids, nb_unlinks);
++	nb_unlinks = cn9k_sso_hws_unlink(dev, port, hwgrp_ids, nb_unlinks, profile);
+ 
+ 	return (int)nb_unlinks;
+ }
+ 
++static int
++cn9k_sso_port_link(struct rte_eventdev *event_dev, void *port, const uint8_t queues[],
++		   const uint8_t priorities[], uint16_t nb_links)
++{
++	return cn9k_sso_port_link_profile(event_dev, port, queues, priorities, nb_links, 0);
++}
++
++static int
++cn9k_sso_port_unlink(struct rte_eventdev *event_dev, void *port, uint8_t queues[],
++		     uint16_t nb_unlinks)
++{
++	return cn9k_sso_port_unlink_profile(event_dev, port, queues, nb_unlinks, 0);
++}
++
+ static int
+ cn9k_sso_start(struct rte_eventdev *event_dev)
+ {
+@@ -1019,6 +1033,8 @@ static struct eventdev_ops cn9k_sso_dev_ops = {
+ 	.port_quiesce = cn9k_sso_port_quiesce,
+ 	.port_link = cn9k_sso_port_link,
+ 	.port_unlink = cn9k_sso_port_unlink,
++	.port_link_profile = cn9k_sso_port_link_profile,
++	.port_unlink_profile = cn9k_sso_port_unlink_profile,
+ 	.timeout_ticks = cnxk_sso_timeout_ticks,
+ 
+ 	.eth_rx_adapter_caps_get = cn9k_sso_rx_adapter_caps_get,
+diff --git a/drivers/event/cnxk/cn9k_worker.c b/drivers/event/cnxk/cn9k_worker.c
+index abbbfffd853b2..a9ac49a5a7bf2 100644
+--- a/drivers/event/cnxk/cn9k_worker.c
++++ b/drivers/event/cnxk/cn9k_worker.c
+@@ -66,6 +66,17 @@ cn9k_sso_hws_enq_fwd_burst(void *port, const struct rte_event ev[],
+ 	return 1;
+ }
+ 
++int __rte_hot
++cn9k_sso_hws_profile_switch(void *port, uint8_t profile)
++{
++	struct cn9k_sso_hws *ws = port;
++
++	ws->gw_wdata &= ~(0xFFUL);
++	ws->gw_wdata |= (profile + 1);
++
++	return 0;
++}
++
+ /* Dual ws ops. */
+ 
+ uint16_t __rte_hot
+@@ -149,3 +160,14 @@ cn9k_sso_hws_dual_ca_enq(void *port, struct rte_event ev[], uint16_t nb_events)
+ 	return cn9k_cpt_crypto_adapter_enqueue(dws->base[!dws->vws],
+ 					       ev->event_ptr);
+ }
++
++int __rte_hot
++cn9k_sso_hws_dual_profile_switch(void *port, uint8_t profile)
++{
++	struct cn9k_sso_hws_dual *dws = port;
++
++	dws->gw_wdata &= ~(0xFFUL);
++	dws->gw_wdata |= (profile + 1);
++
++	return 0;
++}
+diff --git a/drivers/event/cnxk/cn9k_worker.h b/drivers/event/cnxk/cn9k_worker.h
+index 8d14116ac6bcd..04511578126d9 100644
+--- a/drivers/event/cnxk/cn9k_worker.h
++++ b/drivers/event/cnxk/cn9k_worker.h
+@@ -366,6 +366,7 @@ uint16_t __rte_hot cn9k_sso_hws_enq_new_burst(void *port,
+ uint16_t __rte_hot cn9k_sso_hws_enq_fwd_burst(void *port,
+ 					      const struct rte_event ev[],
+ 					      uint16_t nb_events);
++int __rte_hot cn9k_sso_hws_profile_switch(void *port, uint8_t profile);
+ 
+ uint16_t __rte_hot cn9k_sso_hws_dual_enq(void *port,
+ 					 const struct rte_event *ev);
+@@ -382,6 +383,7 @@ uint16_t __rte_hot cn9k_sso_hws_ca_enq(void *port, struct rte_event ev[],
+ 				       uint16_t nb_events);
+ uint16_t __rte_hot cn9k_sso_hws_dual_ca_enq(void *port, struct rte_event ev[],
+ 					    uint16_t nb_events);
++int __rte_hot cn9k_sso_hws_dual_profile_switch(void *port, uint8_t profile);
+ 
+ #define R(name, flags)                                                         \
+ 	uint16_t __rte_hot cn9k_sso_hws_deq_##name(                            \
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index 3d14e37ab7683..15cbe608f4866 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -30,7 +30,9 @@ cnxk_sso_info_get(struct cnxk_sso_evdev *dev,
+ 				  RTE_EVENT_DEV_CAP_NONSEQ_MODE |
+ 				  RTE_EVENT_DEV_CAP_CARRY_FLOW_ID |
+ 				  RTE_EVENT_DEV_CAP_MAINTENANCE_FREE |
+-				  RTE_EVENT_DEV_CAP_RUNTIME_QUEUE_ATTR;
++				  RTE_EVENT_DEV_CAP_RUNTIME_QUEUE_ATTR |
++				  RTE_EVENT_DEV_CAP_PROFILE_LINK;
++	dev_info->max_profiles_per_port = CNXK_SSO_MAX_PROFILES;
+ }
+ 
+ int
+@@ -124,23 +126,25 @@ cnxk_sso_restore_links(const struct rte_eventdev *event_dev,
+ {
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	uint16_t *links_map, hwgrp[CNXK_SSO_MAX_HWGRP];
+-	int i, j;
++	int i, j, k;
+ 
+ 	for (i = 0; i < dev->nb_event_ports; i++) {
+-		uint16_t nb_hwgrp = 0;
+-
+-		links_map = event_dev->data->links_map[0];
+-		/* Point links_map to this port specific area */
+-		links_map += (i * RTE_EVENT_MAX_QUEUES_PER_DEV);
++		for (k = 0; k < CNXK_SSO_MAX_PROFILES; k++) {
++			uint16_t nb_hwgrp = 0;
++
++			links_map = event_dev->data->links_map[k];
++			/* Point links_map to this port specific area */
++			links_map += (i * RTE_EVENT_MAX_QUEUES_PER_DEV);
++
++			for (j = 0; j < dev->nb_event_queues; j++) {
++				if (links_map[j] == 0xdead)
++					continue;
++				hwgrp[nb_hwgrp] = j;
++				nb_hwgrp++;
++			}
+ 
+-		for (j = 0; j < dev->nb_event_queues; j++) {
+-			if (links_map[j] == 0xdead)
+-				continue;
+-			hwgrp[nb_hwgrp] = j;
+-			nb_hwgrp++;
++			link_fn(dev, event_dev->data->ports[i], hwgrp, nb_hwgrp, k);
+ 		}
+-
+-		link_fn(dev, event_dev->data->ports[i], hwgrp, nb_hwgrp);
+ 	}
+ }
+ 
+@@ -430,7 +434,7 @@ cnxk_sso_close(struct rte_eventdev *event_dev, cnxk_sso_unlink_t unlink_fn)
+ {
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	uint16_t all_queues[CNXK_SSO_MAX_HWGRP];
+-	uint16_t i;
++	uint16_t i, j;
+ 	void *ws;
+ 
+ 	if (!dev->configured)
+@@ -441,7 +445,8 @@ cnxk_sso_close(struct rte_eventdev *event_dev, cnxk_sso_unlink_t unlink_fn)
+ 
+ 	for (i = 0; i < dev->nb_event_ports; i++) {
+ 		ws = event_dev->data->ports[i];
+-		unlink_fn(dev, ws, all_queues, dev->nb_event_queues);
++		for (j = 0; j < CNXK_SSO_MAX_PROFILES; j++)
++			unlink_fn(dev, ws, all_queues, dev->nb_event_queues, j);
+ 		rte_free(cnxk_sso_hws_get_cookie(ws));
+ 		event_dev->data->ports[i] = NULL;
+ 	}
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index 8a5ca0db8633a..c3cc6e3a2adfe 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -33,6 +33,8 @@
+ #define CN10K_SSO_GW_MODE  "gw_mode"
+ #define CN10K_SSO_STASH	   "stash"
+ 
++#define CNXK_SSO_MAX_PROFILES 2
++
+ #define NSEC2USEC(__ns)		((__ns) / 1E3)
+ #define USEC2NSEC(__us)		((__us)*1E3)
+ #define NSEC2TICK(__ns, __freq) (((__ns) * (__freq)) / 1E9)
+@@ -57,10 +59,10 @@
+ typedef void *(*cnxk_sso_init_hws_mem_t)(void *dev, uint8_t port_id);
+ typedef void (*cnxk_sso_hws_setup_t)(void *dev, void *ws, uintptr_t grp_base);
+ typedef void (*cnxk_sso_hws_release_t)(void *dev, void *ws);
+-typedef int (*cnxk_sso_link_t)(void *dev, void *ws, uint16_t *map,
+-			       uint16_t nb_link);
+-typedef int (*cnxk_sso_unlink_t)(void *dev, void *ws, uint16_t *map,
+-				 uint16_t nb_link);
++typedef int (*cnxk_sso_link_t)(void *dev, void *ws, uint16_t *map, uint16_t nb_link,
++			       uint8_t profile);
++typedef int (*cnxk_sso_unlink_t)(void *dev, void *ws, uint16_t *map, uint16_t nb_link,
++				 uint8_t profile);
+ typedef void (*cnxk_handle_event_t)(void *arg, struct rte_event ev);
+ typedef void (*cnxk_sso_hws_reset_t)(void *arg, void *ws);
+ typedef int (*cnxk_sso_hws_flush_t)(void *ws, uint8_t queue_id, uintptr_t base,
+-- 
+2.25.1
+

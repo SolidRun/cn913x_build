@@ -1,0 +1,130 @@
+From 581c5c158fefc0ad6330133fe66f0fc6530022bf Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Tue, 14 May 2024 22:37:22 +0530
+Subject: [PATCH 348/513] crypto/cnxk: fix aes-gcm zero len input cases
+
+For aes-gcm (AEAD) zero length input, sg code path is taken unlike
+the digest only cases as AAD is treated as a separate input component.
+Fix the zero len case in SG path by avoiding the gather component
+only when it is a non AEAD algorithm. Also add sg version check as
+the fix only applies to specific model.
+
+Fixes: 4d8166d64988 ("crypto/cnxk: enable digest for zero length input")
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: Ibf81984e10fa57ff613830eaea497a4a3cbfc819
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128749
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 2cd91049dde8fc5bd9ab6760cd8f6f4b2c77f7ee)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128831
+---
+ drivers/crypto/cnxk/cnxk_se.h | 28 +++++++++++++++++-----------
+ 1 file changed, 17 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index 8193e96a9258e..79da55ab5e25d 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -2465,13 +2465,14 @@ fill_sess_gmac(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ }
+ 
+ static __rte_always_inline uint32_t
+-prepare_iov_from_pkt(struct rte_mbuf *pkt, struct roc_se_iov_ptr *iovec, uint32_t start_offset)
++prepare_iov_from_pkt(struct rte_mbuf *pkt, struct roc_se_iov_ptr *iovec, uint32_t start_offset,
++		     const bool is_aead, const bool is_sg_ver2)
+ {
+ 	uint16_t index = 0;
+ 	void *seg_data = NULL;
+ 	int32_t seg_size = 0;
+ 
+-	if (!pkt || pkt->data_len == 0) {
++	if (!pkt || (is_sg_ver2 && (pkt->data_len == 0) && !is_aead)) {
+ 		iovec->buf_cnt = 0;
+ 		return 0;
+ 	}
+@@ -2616,13 +2617,13 @@ fill_sm_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 		fc_params.dst_iov = (void *)dst;
+ 
+ 		/* Store SG I/O in the api for reuse */
+-		if (prepare_iov_from_pkt(m_src, fc_params.src_iov, 0)) {
++		if (prepare_iov_from_pkt(m_src, fc_params.src_iov, 0, false, is_sg_ver2)) {
+ 			plt_dp_err("Prepare src iov failed");
+ 			ret = -EINVAL;
+ 			goto err_exit;
+ 		}
+ 
+-		if (prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0)) {
++		if (prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0, false, is_sg_ver2)) {
+ 			plt_dp_err("Prepare dst iov failed for m_dst %p", m_dst);
+ 			ret = -EINVAL;
+ 			goto err_exit;
+@@ -2814,14 +2815,15 @@ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 		fc_params.dst_iov = (void *)dst;
+ 
+ 		/* Store SG I/O in the api for reuse */
+-		if (prepare_iov_from_pkt(m_src, fc_params.src_iov, 0)) {
++		if (prepare_iov_from_pkt(m_src, fc_params.src_iov, 0, is_aead, is_sg_ver2)) {
+ 			plt_dp_err("Prepare src iov failed");
+ 			ret = -EINVAL;
+ 			goto err_exit;
+ 		}
+ 
+ 		if (unlikely(m_dst != NULL)) {
+-			if (prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0)) {
++			if (prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0, is_aead,
++						 is_sg_ver2)) {
+ 				plt_dp_err("Prepare dst iov failed for "
+ 					   "m_dst %p",
+ 					   m_dst);
+@@ -2955,13 +2957,15 @@ fill_pdcp_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 		fc_params.dst_iov = (void *)dst;
+ 
+ 		/* Store SG I/O in the api for reuse */
+-		if (unlikely(prepare_iov_from_pkt(m_src, fc_params.src_iov, 0))) {
++		if (unlikely(
++			    prepare_iov_from_pkt(m_src, fc_params.src_iov, 0, false, is_sg_ver2))) {
+ 			plt_dp_err("Prepare src iov failed");
+ 			ret = -EINVAL;
+ 			goto err_exit;
+ 		}
+ 
+-		if (unlikely(prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0))) {
++		if (unlikely(
++			    prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0, false, is_sg_ver2))) {
+ 			plt_dp_err("Prepare dst iov failed for m_dst %p", m_dst);
+ 			ret = -EINVAL;
+ 			goto err_exit;
+@@ -3078,14 +3082,16 @@ fill_pdcp_chain_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 		fc_params.dst_iov = (void *)dst;
+ 
+ 		/* Store SG I/O in the api for reuse */
+-		if (unlikely(prepare_iov_from_pkt(m_src, fc_params.src_iov, 0))) {
++		if (unlikely(
++			    prepare_iov_from_pkt(m_src, fc_params.src_iov, 0, false, is_sg_ver2))) {
+ 			plt_dp_err("Could not prepare src iov");
+ 			ret = -EINVAL;
+ 			goto err_exit;
+ 		}
+ 
+ 		if (unlikely(m_dst != NULL)) {
+-			if (unlikely(prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0))) {
++			if (unlikely(prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0, false,
++							  is_sg_ver2))) {
+ 				plt_dp_err("Could not prepare m_dst iov %p", m_dst);
+ 				ret = -EINVAL;
+ 				goto err_exit;
+@@ -3304,7 +3310,7 @@ fill_digest_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	params.src_iov = (void *)src;
+ 
+ 	/*Store SG I/O in the api for reuse */
+-	if (prepare_iov_from_pkt(m_src, params.src_iov, auth_range_off)) {
++	if (prepare_iov_from_pkt(m_src, params.src_iov, auth_range_off, false, is_sg_ver2)) {
+ 		plt_dp_err("Prepare src iov failed");
+ 		ret = -EINVAL;
+ 		goto free_mdata_and_exit;
+-- 
+2.25.1
+

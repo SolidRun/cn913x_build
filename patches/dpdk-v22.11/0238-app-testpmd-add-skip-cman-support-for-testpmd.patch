@@ -1,0 +1,63 @@
+From aa43eb71aebd3de0a8121883a65ff7b157b81448 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Wed, 14 Dec 2022 16:43:26 +0530
+Subject: [PATCH 238/955] app/testpmd: add skip cman support for testpmd
+
+added support for testpmd application to accept
+skip_cman action while configuring policy action
+
+Below is sample command given after configuring meter
+profile for which congestion configuration is applied
+for red and yellow color packets and bypassed for
+green color packets in dpdk-testpmd application
+
+add port meter policy 0 200 g_actions drop / skip_cman / end
+y_actions drop / end r_actions drop / end
+
+Change-Id: I8afb575c220d7110a44199e5c9a45294018bd784
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92617
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test-pmd/cmdline_flow.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/app/test-pmd/cmdline_flow.c b/app/test-pmd/cmdline_flow.c
+index 88108498e0c3e..fc003e00960ad 100644
+--- a/app/test-pmd/cmdline_flow.c
++++ b/app/test-pmd/cmdline_flow.c
+@@ -472,6 +472,7 @@ enum index {
+ 	ACTION_END,
+ 	ACTION_VOID,
+ 	ACTION_PASSTHRU,
++	ACTION_SKIP_CMAN,
+ 	ACTION_JUMP,
+ 	ACTION_JUMP_GROUP,
+ 	ACTION_MARK,
+@@ -1825,6 +1826,7 @@ static const enum index next_action[] = {
+ 	ACTION_END,
+ 	ACTION_VOID,
+ 	ACTION_PASSTHRU,
++	ACTION_SKIP_CMAN,
+ 	ACTION_JUMP,
+ 	ACTION_MARK,
+ 	ACTION_FLAG,
+@@ -5159,6 +5161,13 @@ static const struct token token_list[] = {
+ 		.next = NEXT(NEXT_ENTRY(ACTION_NEXT)),
+ 		.call = parse_vc,
+ 	},
++	[ACTION_SKIP_CMAN] = {
++		.name = "skip_cman",
++		.help = "bypass cman on received packets",
++		.priv = PRIV_ACTION(SKIP_CMAN, 0),
++		.next = NEXT(NEXT_ENTRY(ACTION_NEXT)),
++		.call = parse_vc,
++	},
+ 	[ACTION_JUMP] = {
+ 		.name = "jump",
+ 		.help = "redirect traffic to a given group",
+-- 
+2.25.1
+

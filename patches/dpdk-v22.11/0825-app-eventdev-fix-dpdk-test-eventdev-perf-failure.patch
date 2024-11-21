@@ -1,0 +1,214 @@
+From a48400ccd55e0d4ecb54e4c869f7c15f2addc543 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Thu, 15 Feb 2024 10:51:18 +0530
+Subject: [PATCH 825/955] app/eventdev: fix dpdk-test-eventdev perf failure
+
+Perf runs for prod_type_cryptodev on dpdk-test-eventdev
+were failing with NPA errors below:
+ PMD: npa_q_irq():150 queue_intr=0x1 qintx=1
+ PMD: npa_q_irq():165 Pool=1 NPA_POOL_ERR_INT_RANGE
+
+Fix argument to perf_process_last_stage function call
+in test_perf_atq.c to allow proper freeing of crypto ops
+allocated.
+
+Fixes: c05d2589cdb0 ("app: support DMA adapter test")
+Cc: amitprakashs@marvell.com
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I6a66927c632f4644ef9f2b44cce138988120f04f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121968
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+(cherry picked from commit 4df57fb074e43bfe71e20d7357cdff0e17b440a1)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122289
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ app/test-eventdev/test_perf_atq.c    | 18 ++++++++++--------
+ app/test-eventdev/test_perf_common.h | 19 ++++++++++---------
+ app/test-eventdev/test_perf_queue.c  | 16 +++++++++-------
+ 3 files changed, 29 insertions(+), 24 deletions(-)
+
+diff --git a/app/test-eventdev/test_perf_atq.c b/app/test-eventdev/test_perf_atq.c
+index 07f395a9b6fd4..073f2668c98e3 100644
+--- a/app/test-eventdev/test_perf_atq.c
++++ b/app/test-eventdev/test_perf_atq.c
+@@ -49,7 +49,8 @@ perf_atq_worker(void *arg, const int enable_fwd_latency)
+ 			continue;
+ 		}
+ 
+-		if (prod_crypto_type && (ev.event_type == RTE_EVENT_TYPE_CRYPTODEV)) {
++		if ((prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR) &&
++		    (ev.event_type == RTE_EVENT_TYPE_CRYPTODEV)) {
+ 			if (perf_handle_crypto_ev(&ev, &pe, enable_fwd_latency))
+ 				continue;
+ 		}
+@@ -62,11 +63,11 @@ perf_atq_worker(void *arg, const int enable_fwd_latency)
+ 		/* last stage in pipeline */
+ 		if (unlikely(stage == laststage)) {
+ 			if (enable_fwd_latency)
+-				cnt = perf_process_last_stage_latency(pool, prod_crypto_type,
++				cnt = perf_process_last_stage_latency(pool, prod_type,
+ 					&ev, w, bufs, sz, cnt);
+ 			else
+-				cnt = perf_process_last_stage(pool, prod_crypto_type, &ev, w,
+-					 bufs, sz, cnt);
++				cnt = perf_process_last_stage(pool, prod_type, &ev, w,
++					bufs, sz, cnt);
+ 		} else {
+ 			atq_fwd_event(&ev, sched_type_list, nb_stages);
+ 			do {
+@@ -99,7 +100,8 @@ perf_atq_worker_burst(void *arg, const int enable_fwd_latency)
+ 		}
+ 
+ 		for (i = 0; i < nb_rx; i++) {
+-			if (prod_crypto_type && (ev[i].event_type == RTE_EVENT_TYPE_CRYPTODEV)) {
++			if ((prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR) &&
++			    (ev[i].event_type == RTE_EVENT_TYPE_CRYPTODEV)) {
+ 				if (perf_handle_crypto_ev(&ev[i], &pe, enable_fwd_latency))
+ 					continue;
+ 			}
+@@ -116,9 +118,9 @@ perf_atq_worker_burst(void *arg, const int enable_fwd_latency)
+ 			if (unlikely(stage == laststage)) {
+ 				if (enable_fwd_latency)
+ 					cnt = perf_process_last_stage_latency(pool,
+-						prod_crypto_type, &ev[i], w, bufs, sz, cnt);
++						prod_type, &ev[i], w, bufs, sz, cnt);
+ 				else
+-					cnt = perf_process_last_stage(pool, prod_crypto_type,
++					cnt = perf_process_last_stage(pool, prod_type,
+ 						&ev[i], w, bufs, sz, cnt);
+ 
+ 				ev[i].op = RTE_EVENT_OP_RELEASE;
+@@ -149,7 +151,7 @@ perf_atq_worker_vector(void *arg, const int enable_fwd_latency)
+ 
+ 	RTE_SET_USED(sz);
+ 	RTE_SET_USED(cnt);
+-	RTE_SET_USED(prod_crypto_type);
++	RTE_SET_USED(prod_type);
+ 
+ 	while (t->done == false) {
+ 		deq = rte_event_dequeue_burst(dev, port, &ev, 1, 0);
+diff --git a/app/test-eventdev/test_perf_common.h b/app/test-eventdev/test_perf_common.h
+index bff9c5faadfd9..2b4f572b7f126 100644
+--- a/app/test-eventdev/test_perf_common.h
++++ b/app/test-eventdev/test_perf_common.h
+@@ -105,9 +105,8 @@ struct perf_elt {
+ 	const uint8_t port = w->port_id;\
+ 	const uint8_t prod_timer_type = \
+ 		opt->prod_type == EVT_PROD_TYPE_EVENT_TIMER_ADPTR;\
+-	const uint8_t prod_crypto_type = \
+-		opt->prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR;\
+ 	uint8_t *const sched_type_list = &t->sched_type_list[0];\
++	const enum evt_prod_type prod_type = opt->prod_type;\
+ 	struct rte_mempool *const pool = t->pool;\
+ 	const uint8_t nb_stages = t->opt->nb_stages;\
+ 	const uint8_t laststage = nb_stages - 1;\
+@@ -216,9 +215,9 @@ perf_handle_crypto_vector_ev(struct rte_event *ev, struct perf_elt **pe,
+ }
+ 
+ static __rte_always_inline int
+-perf_process_last_stage(struct rte_mempool *const pool, uint8_t prod_type,
+-		struct rte_event *const ev, struct worker_data *const w,
+-		void *bufs[], int const buf_sz, uint8_t count)
++perf_process_last_stage(struct rte_mempool *const pool, enum evt_prod_type prod_type,
++			struct rte_event *const ev, struct worker_data *const w,
++			void *bufs[], int const buf_sz, uint8_t count)
+ {
+ 	void *to_free_in_bulk;
+ 
+@@ -260,9 +259,9 @@ perf_process_last_stage(struct rte_mempool *const pool, uint8_t prod_type,
+ }
+ 
+ static __rte_always_inline uint8_t
+-perf_process_last_stage_latency(struct rte_mempool *const pool, uint8_t prod_crypto_type,
+-		struct rte_event *const ev, struct worker_data *const w,
+-		void *bufs[], int const buf_sz, uint8_t count)
++perf_process_last_stage_latency(struct rte_mempool *const pool, enum evt_prod_type prod_type,
++				struct rte_event *const ev, struct worker_data *const w,
++				void *bufs[], int const buf_sz, uint8_t count)
+ {
+ 	uint64_t latency;
+ 	struct perf_elt *pe;
+@@ -274,7 +273,7 @@ perf_process_last_stage_latency(struct rte_mempool *const pool, uint8_t prod_cry
+ 	rte_atomic_thread_fence(__ATOMIC_RELEASE);
+ 	w->processed_pkts++;
+ 
+-	if (prod_crypto_type) {
++	if (prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR) {
+ 		struct rte_crypto_op *op = ev->event_ptr;
+ 		struct rte_mbuf *m;
+ 
+@@ -292,6 +291,8 @@ perf_process_last_stage_latency(struct rte_mempool *const pool, uint8_t prod_cry
+ 			to_free_in_bulk = op->asym->modex.result.data;
+ 		}
+ 		rte_crypto_op_free(op);
++	} else if (prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR) {
++		return count;
+ 	} else {
+ 		pe = ev->event_ptr;
+ 		to_free_in_bulk = pe;
+diff --git a/app/test-eventdev/test_perf_queue.c b/app/test-eventdev/test_perf_queue.c
+index 1a388e3e66c40..8b6b85c1ad18f 100644
+--- a/app/test-eventdev/test_perf_queue.c
++++ b/app/test-eventdev/test_perf_queue.c
+@@ -50,7 +50,8 @@ perf_queue_worker(void *arg, const int enable_fwd_latency)
+ 			continue;
+ 		}
+ 
+-		if (prod_crypto_type && (ev.event_type == RTE_EVENT_TYPE_CRYPTODEV)) {
++		if ((prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR) &&
++		    (ev.event_type == RTE_EVENT_TYPE_CRYPTODEV)) {
+ 			if (perf_handle_crypto_ev(&ev, &pe, enable_fwd_latency))
+ 				continue;
+ 		} else {
+@@ -65,10 +66,10 @@ perf_queue_worker(void *arg, const int enable_fwd_latency)
+ 		/* last stage in pipeline */
+ 		if (unlikely(stage == laststage)) {
+ 			if (enable_fwd_latency)
+-				cnt = perf_process_last_stage_latency(pool, prod_crypto_type,
++				cnt = perf_process_last_stage_latency(pool, prod_type,
+ 					&ev, w, bufs, sz, cnt);
+ 			else
+-				cnt = perf_process_last_stage(pool, opt->prod_type,
++				cnt = perf_process_last_stage(pool, prod_type,
+ 					&ev, w, bufs, sz, cnt);
+ 		} else {
+ 			fwd_event(&ev, sched_type_list, nb_stages);
+@@ -101,7 +102,8 @@ perf_queue_worker_burst(void *arg, const int enable_fwd_latency)
+ 		}
+ 
+ 		for (i = 0; i < nb_rx; i++) {
+-			if (prod_crypto_type && (ev[i].event_type == RTE_EVENT_TYPE_CRYPTODEV)) {
++			if ((prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR) &&
++			    (ev[i].event_type == RTE_EVENT_TYPE_CRYPTODEV)) {
+ 				if (perf_handle_crypto_ev(&ev[i], &pe, enable_fwd_latency))
+ 					continue;
+ 			}
+@@ -118,9 +120,9 @@ perf_queue_worker_burst(void *arg, const int enable_fwd_latency)
+ 			if (unlikely(stage == laststage)) {
+ 				if (enable_fwd_latency)
+ 					cnt = perf_process_last_stage_latency(pool,
+-						prod_crypto_type, &ev[i], w, bufs, sz, cnt);
++						prod_type, &ev[i], w, bufs, sz, cnt);
+ 				else
+-					cnt = perf_process_last_stage(pool, opt->prod_type,
++					cnt = perf_process_last_stage(pool, prod_type,
+ 						&ev[i], w, bufs, sz, cnt);
+ 
+ 				ev[i].op = RTE_EVENT_OP_RELEASE;
+@@ -151,7 +153,7 @@ perf_queue_worker_vector(void *arg, const int enable_fwd_latency)
+ 
+ 	RTE_SET_USED(sz);
+ 	RTE_SET_USED(cnt);
+-	RTE_SET_USED(prod_crypto_type);
++	RTE_SET_USED(prod_type);
+ 
+ 	while (t->done == false) {
+ 		deq = rte_event_dequeue_burst(dev, port, &ev, 1, 0);
+-- 
+2.25.1
+

@@ -1,0 +1,197 @@
+From 5411c82adc4f2edbb583c2f796e392e09fc02740 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Wed, 30 Nov 2022 12:19:18 +0530
+Subject: [PATCH 091/955] crypto/cnxk: set salt in dptr as part of IV
+
+Set salt as part of 16B IV in dptr to avoid race
+condition.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I1da907933e5d14e04d5e957b5bc76852832309d3
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92079
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/roc_se.c  |  7 +++-
+ drivers/crypto/cnxk/cnxk_se.h | 76 +++++++++++++++++++----------------
+ 2 files changed, 47 insertions(+), 36 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index 8c19c5fccc97a..f335c2367f9e3 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -462,8 +462,10 @@ roc_se_auth_key_set(struct roc_se_ctx *se_ctx, roc_se_auth_type type,
+ 		return -1;
+ 
+ 	/* For GMAC auth, cipher must be NULL */
+-	if (type == ROC_SE_GMAC_TYPE)
++	if (type == ROC_SE_GMAC_TYPE) {
+ 		fctx->enc.enc_cipher = 0;
++		se_ctx->template_w4.s.opcode_minor = BIT(5);
++	}
+ 
+ 	fctx->enc.hash_type = type;
+ 	se_ctx->hash_type = type;
+@@ -530,6 +532,9 @@ roc_se_ciph_key_set(struct roc_se_ctx *se_ctx, roc_se_cipher_type type,
+ 			return 0;
+ 	}
+ 
++	if (type == ROC_SE_AES_GCM)
++		se_ctx->template_w4.s.opcode_minor = BIT(5);
++
+ 	ret = cpt_ciph_type_set(type, se_ctx, key_len);
+ 	if (unlikely(ret))
+ 		return -1;
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index afe871f787ba7..15137eb049623 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -43,7 +43,8 @@ struct cnxk_se_sess {
+ 	uint16_t dp_thr_type : 8;
+ 	uint16_t aad_length;
+ 	uint8_t is_sha3 : 1;
+-	uint8_t rsvd : 7;
++	uint8_t short_iv : 1;
++	uint8_t rsvd : 6;
+ 	uint8_t mac_len;
+ 	uint8_t iv_length;
+ 	uint8_t auth_iv_length;
+@@ -208,13 +209,6 @@ cpt_mac_len_verify(struct rte_crypto_auth_xform *auth)
+ 	return ret;
+ }
+ 
+-static __rte_always_inline void
+-cpt_fc_salt_update(struct roc_se_ctx *se_ctx, uint8_t *salt)
+-{
+-	struct roc_se_context *fctx = &se_ctx->se_ctx.fctx;
+-	memcpy(fctx->enc.encr_iv, salt, 4);
+-}
+-
+ static __rte_always_inline int
+ sg_inst_prep(struct roc_se_fc_params *params, struct cpt_inst_s *inst, uint64_t offset_ctrl,
+ 	     uint8_t *iv_s, int iv_len, uint8_t pack_iv, uint8_t pdcp_alg_type, int32_t inputlen,
+@@ -1710,8 +1704,17 @@ fill_sess_aead(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 	sess->iv_length = aead_form->iv.length;
+ 	sess->aad_length = aead_form->aad_length;
+ 
+-	if (unlikely(roc_se_ciph_key_set(&sess->roc_se_ctx, enc_type,
+-					 aead_form->key.data,
++	switch (sess->iv_length) {
++	case 12:
++		sess->short_iv = 1;
++	case 16:
++		break;
++	default:
++		plt_dp_err("Crypto: Unsupported IV length %u", sess->iv_length);
++		return -1;
++	}
++
++	if (unlikely(roc_se_ciph_key_set(&sess->roc_se_ctx, enc_type, aead_form->key.data,
+ 					 aead_form->key.length, NULL)))
+ 		return -1;
+ 
+@@ -1719,6 +1722,8 @@ fill_sess_aead(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 					 aead_form->digest_length)))
+ 		return -1;
+ 
++	if (enc_type == ROC_SE_CHACHA20)
++		sess->roc_se_ctx.template_w4.s.opcode_minor |= BIT(5);
+ 	return 0;
+ }
+ 
+@@ -1856,9 +1861,19 @@ fill_sess_cipher(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 	sess->iv_length = c_form->iv.length;
+ 	sess->is_null = is_null;
+ 
+-	if (unlikely(roc_se_ciph_key_set(&sess->roc_se_ctx, enc_type,
+-					 c_form->key.data, c_form->key.length,
+-					 NULL)))
++	if (aes_ctr)
++		switch (sess->iv_length) {
++		case 12:
++			sess->short_iv = 1;
++		case 16:
++			break;
++		default:
++			plt_dp_err("Crypto: Unsupported IV length %u", sess->iv_length);
++			return -1;
++		}
++
++	if (unlikely(roc_se_ciph_key_set(&sess->roc_se_ctx, enc_type, c_form->key.data,
++					 c_form->key.length, NULL)))
+ 		return -1;
+ 
+ 	if ((enc_type >= ROC_SE_ZUC_EEA3) && (enc_type <= ROC_SE_AES_CTR_EEA2))
+@@ -2061,9 +2076,18 @@ fill_sess_gmac(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 	sess->iv_length = a_form->iv.length;
+ 	sess->mac_len = a_form->digest_length;
+ 
+-	if (unlikely(roc_se_ciph_key_set(&sess->roc_se_ctx, enc_type,
+-					 a_form->key.data, a_form->key.length,
+-					 NULL)))
++	switch (sess->iv_length) {
++	case 12:
++		sess->short_iv = 1;
++	case 16:
++		break;
++	default:
++		plt_dp_err("Crypto: Unsupported IV length %u", sess->iv_length);
++		return -1;
++	}
++
++	if (unlikely(roc_se_ciph_key_set(&sess->roc_se_ctx, enc_type, a_form->key.data,
++					 a_form->key.length, NULL)))
+ 		return -1;
+ 
+ 	if (unlikely(roc_se_auth_key_set(&sess->roc_se_ctx, auth_type, NULL, 0,
+@@ -2207,7 +2231,7 @@ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	if (likely(is_kasumi || sess->iv_length)) {
+ 		flags |= ROC_SE_VALID_IV_BUF;
+ 		fc_params.iv_buf = rte_crypto_op_ctod_offset(cop, uint8_t *, sess->iv_offset);
+-		if (!is_aead && sess->aes_ctr && unlikely(sess->iv_length != 16)) {
++		if (sess->short_iv) {
+ 			memcpy((uint8_t *)iv_buf,
+ 			       rte_crypto_op_ctod_offset(cop, uint8_t *, sess->iv_offset), 12);
+ 			iv_buf[3] = rte_cpu_to_be_32(0x1);
+@@ -2224,7 +2248,6 @@ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 
+ 	if (is_aead) {
+ 		struct rte_mbuf *m;
+-		uint8_t *salt;
+ 		uint8_t *aad_data;
+ 		uint16_t aad_len;
+ 
+@@ -2249,13 +2272,6 @@ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 			d_lens = d_lens << 32;
+ 		}
+ 
+-		salt = fc_params.iv_buf;
+-		if (unlikely(*(uint32_t *)salt != sess->salt)) {
+-			cpt_fc_salt_update(&sess->roc_se_ctx, salt);
+-			sess->salt = *(uint32_t *)salt;
+-		}
+-
+-		fc_params.iv_buf = PLT_PTR_ADD(salt, 4);
+ 		m = cpt_m_dst_get(cpt_op, m_src, m_dst);
+ 
+ 		/* Digest immediately following data is best case */
+@@ -2281,16 +2297,6 @@ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 		d_lens = ci_data_length;
+ 		d_lens = (d_lens << 32) | a_data_length;
+ 
+-		/* for gmac, salt should be updated like in gcm */
+-		if (unlikely(sess->is_gmac)) {
+-			uint8_t *salt;
+-			salt = fc_params.iv_buf;
+-			if (unlikely(*(uint32_t *)salt != sess->salt)) {
+-				cpt_fc_salt_update(&sess->roc_se_ctx, salt);
+-				sess->salt = *(uint32_t *)salt;
+-			}
+-			fc_params.iv_buf = salt + 4;
+-		}
+ 		if (likely(sess->mac_len)) {
+ 			struct rte_mbuf *m = cpt_m_dst_get(cpt_op, m_src, m_dst);
+ 
+-- 
+2.25.1
+

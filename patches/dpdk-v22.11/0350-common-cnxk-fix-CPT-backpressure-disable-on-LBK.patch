@@ -1,0 +1,61 @@
+From 77fae0e9cd1dd5a3491dd203ace62575df8cbda8 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 6 Apr 2023 16:17:15 +0530
+Subject: [PATCH 350/955] common/cnxk: fix CPT backpressure disable on LBK
+
+For LBK interfaces, roc_nix_inl_inb_is_enabled() is false,
+hence backpressure on CPT is disabled and causing CQ full
+interrupt.
+NIXX_AF_RX_CHAN[0x800]_CFG is global config for all PF, VF
+of RPM/LBK, hence backpressure disable on CPT is not required.
+
+Fixes: 0663a84524e ("common/cnxk: enable backpressure on CPT with inline inbound")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ib2addad1b307eeddd8411e5a84cbf6b75e64a85d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100846
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 43a4a473e9ce4554615212d5283c0f57318199eb)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101077
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_fc.c | 18 ++----------------
+ 1 file changed, 2 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index bbc27a64210b9..0bbc233376232 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -87,25 +87,11 @@ nix_fc_rxchan_bpid_set(struct roc_nix *roc_nix, bool enable)
+ 		if (rc)
+ 			goto exit;
+ 		nix->cpt_lbpid = rsp->chan_bpid[0] & 0x1FF;
+-	} else {
+-		req = mbox_alloc_msg_nix_cpt_bp_disable(mbox);
+-		if (req == NULL)
+-			goto exit;
+-		req->chan_base = 0;
+-		if (roc_nix_is_lbk(roc_nix) || roc_nix_is_sdp(roc_nix))
+-			req->chan_cnt = NIX_LBK_MAX_CHAN;
+-		else
+-			req->chan_cnt = NIX_CGX_MAX_CHAN;
+-		req->bpid_per_chan = 0;
+-
+-		rc = mbox_process_msg(mbox, (void *)&rsp);
+-		if (rc)
+-			goto exit;
+-		nix->cpt_lbpid = 0;
+ 	}
+ 
+ 	/* CPT to NIX BP on all channels */
+-	if (!roc_feature_nix_has_rxchan_multi_bpid() || !nix->cpt_nixbpid)
++	if (!roc_feature_nix_has_rxchan_multi_bpid() || !nix->cpt_nixbpid ||
++	    !roc_nix_inl_inb_is_enabled(roc_nix))
+ 		goto exit;
+ 
+ 	mbox_put(mbox);
+-- 
+2.25.1
+

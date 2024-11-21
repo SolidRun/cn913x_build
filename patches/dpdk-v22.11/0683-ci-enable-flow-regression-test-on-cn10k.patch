@@ -1,0 +1,32 @@
+From c3d9c71d5d2bf6e23082ea2d9821c6c4e70e4b1d Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Mon, 13 Nov 2023 12:58:31 +0530
+Subject: [PATCH 683/955] ci: enable flow regression test on cn10k
+
+Enabled flow_regression test on cn10k.
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Ie3bffe392b5d2cdc349737a9548b4391822f5718
+Reviewed-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115872
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn10k.env | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 18b07d35e341e..1f4d8b65cc362 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -109,7 +109,6 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_fwd_perf
+ 	cnxk_ptp_test
+ 	flow_perf
+-	flow_regression
+ 	cnxk_gpio_test
+ 	cnxk_mbuf_perf
+ 	cnxk_ipsec_reassembly_perf
+-- 
+2.25.1
+

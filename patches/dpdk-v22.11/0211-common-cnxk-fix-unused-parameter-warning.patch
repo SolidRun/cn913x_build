@@ -1,0 +1,49 @@
+From f355a2eeaaa51dfd9191f4a584fa8df041169fbb Mon Sep 17 00:00:00 2001
+From: Mohammad Iqbal Ahmad <mahmad@marvell.com>
+Date: Wed, 15 Feb 2023 00:48:49 +0530
+Subject: [PATCH 211/955] common/cnxk: fix unused parameter warning
+
+Fix the unused parameter warning.
+Fixes: a642441b5f10 ("common/cnxk: add separate inline dev stats API")
+
+Signed-off-by: Mohammad Iqbal Ahmad <mahmad@marvell.com>
+Change-Id: I0382961002cece44ea86e8e6fe8370651677654e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96881
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.h     | 2 +-
+ drivers/common/cnxk/roc_nix_inl_dev.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index 6c9c78cf9885a..3bb37ce225758 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -152,7 +152,7 @@ bool __roc_api roc_nix_inl_dev_is_probed(void);
+ void __roc_api roc_nix_inl_dev_lock(void);
+ void __roc_api roc_nix_inl_dev_unlock(void);
+ int __roc_api roc_nix_inl_dev_xaq_realloc(uint64_t aura_handle);
+-int __roc_api roc_nix_inl_dev_stats_get(struct roc_nix *roc_nix, struct roc_nix_stats *stats);
++int __roc_api roc_nix_inl_dev_stats_get(struct roc_nix_stats *stats);
+ uint16_t __roc_api roc_nix_inl_dev_pffunc_get(void);
+ 
+ /* NIX Inline Inbound API */
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index 1c1ecb7935e4f..196a04db095cb 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -835,7 +835,7 @@ nix_inl_outb_poll_thread_setup(struct nix_inl_dev *inl_dev)
+ }
+ 
+ int
+-roc_nix_inl_dev_stats_get(struct roc_nix *roc_nix, struct roc_nix_stats *stats)
++roc_nix_inl_dev_stats_get(struct roc_nix_stats *stats)
+ {
+ 	struct idev_cfg *idev = idev_get_cfg();
+ 	struct nix_inl_dev *inl_dev = NULL;
+-- 
+2.25.1
+

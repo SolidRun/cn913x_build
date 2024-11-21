@@ -1,0 +1,137 @@
+From 3dd4fb30bc1eaf68830450296807684d9fa0304f Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Wed, 31 Jan 2024 15:08:05 +0530
+Subject: [PATCH 189/513] net/cnxk: flow list cleanup sequence
+
+For establishing a communication between port representors and
+native VFs, few flow rules are added during VF probing. On teardown
+of VF or application hosting representors these flow rules should
+be cleaned up and this should happen before ESW NIX LF is removed.
+Fixing this cleanup sequence as it causes segfault.
+
+Change-Id: Idc664f763d26d04b3f84b4f7f4afb69fa988705e
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120815
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_eswitch.c | 46 +++++++++++++++------------------
+ 1 file changed, 21 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_eswitch.c b/drivers/net/cnxk/cnxk_eswitch.c
+index 80c588b739e53..79f44de06e941 100644
+--- a/drivers/net/cnxk/cnxk_eswitch.c
++++ b/drivers/net/cnxk/cnxk_eswitch.c
+@@ -51,7 +51,7 @@ cnxk_eswitch_representor_hw_info(struct cnxk_eswitch_dev *eswitch_dev, uint16_t
+ }
+ 
+ static int
+-eswitch_hw_rsrc_cleanup(struct cnxk_eswitch_dev *eswitch_dev)
++eswitch_hw_rsrc_cleanup(struct cnxk_eswitch_dev *eswitch_dev, struct rte_pci_device *pci_dev)
+ {
+ 	struct roc_nix *nix;
+ 	int rc = 0;
+@@ -66,9 +66,22 @@ eswitch_hw_rsrc_cleanup(struct cnxk_eswitch_dev *eswitch_dev)
+ 		goto exit;
+ 	}
+ 
++	/* Check if this device is hosting common resource */
++	nix = roc_idev_npa_nix_get();
++	if (!nix || nix->pci_dev != pci_dev) {
++		rc = 0;
++		goto exit;
++	}
++
++	/* Try nix fini now */
+ 	rc = roc_nix_dev_fini(nix);
+-	if (rc && rc != -EAGAIN)
++	if (rc == -EAGAIN) {
++		plt_info("Common resource in use by other devices %s", pci_dev->name);
++		goto exit;
++	} else if (rc) {
+ 		plt_err("Failed in nix dev fini, rc=%d", rc);
++		goto exit;
++	}
+ 
+ 	rte_free(eswitch_dev->txq);
+ 	rte_free(eswitch_dev->rxq);
+@@ -82,7 +95,6 @@ static int
+ cnxk_eswitch_dev_remove(struct rte_pci_device *pci_dev)
+ {
+ 	struct cnxk_eswitch_dev *eswitch_dev;
+-	struct roc_nix *nix;
+ 	int rc = 0;
+ 
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+@@ -139,28 +151,12 @@ cnxk_eswitch_dev_remove(struct rte_pci_device *pci_dev)
+ 		cnxk_rep_dev_remove(eswitch_dev);
+ 	}
+ 
+-	eswitch_hw_rsrc_cleanup(eswitch_dev);
+-
+ 	/* Cleanup NPC rxtx flow rules */
+ 	cnxk_eswitch_flow_rules_remove_list(eswitch_dev, &eswitch_dev->esw_flow_list,
+ 					    eswitch_dev->npc.pf_func);
+ 
+-	/* Check if this device is hosting common resource */
+-	nix = roc_idev_npa_nix_get();
+-	if (!nix || nix->pci_dev != pci_dev) {
+-		rc = -EINVAL;
+-		goto exit;
+-	}
+-
+-	/* Try nix fini now */
+-	rc = roc_nix_dev_fini(&eswitch_dev->nix);
+-	if (rc == -EAGAIN) {
+-		plt_esw_dbg("%s: common resource in use by other devices", pci_dev->name);
+-		goto exit;
+-	} else if (rc) {
+-		plt_err("Failed in nix dev fini, rc=%d", rc);
+-		goto exit;
+-	}
++	/* Cleanup HW resources */
++	eswitch_hw_rsrc_cleanup(eswitch_dev, pci_dev);
+ 
+ 	rte_free(eswitch_dev);
+ exit:
+@@ -618,7 +614,7 @@ nix_lf_setup(struct cnxk_eswitch_dev *eswitch_dev)
+ }
+ 
+ static int
+-eswitch_hw_rsrc_setup(struct cnxk_eswitch_dev *eswitch_dev)
++eswitch_hw_rsrc_setup(struct cnxk_eswitch_dev *eswitch_dev, struct rte_pci_device *pci_dev)
+ {
+ 	struct roc_nix *nix;
+ 	int rc;
+@@ -643,7 +639,7 @@ eswitch_hw_rsrc_setup(struct cnxk_eswitch_dev *eswitch_dev)
+ 
+ 	return rc;
+ rsrc_cleanup:
+-	eswitch_hw_rsrc_cleanup(eswitch_dev);
++	eswitch_hw_rsrc_cleanup(eswitch_dev, pci_dev);
+ fail:
+ 	return rc;
+ }
+@@ -740,7 +736,7 @@ cnxk_eswitch_dev_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pc
+ 		eswitch_dev = mz->addr;
+ 		eswitch_dev->pci_dev = pci_dev;
+ 
+-		rc = eswitch_hw_rsrc_setup(eswitch_dev);
++		rc = eswitch_hw_rsrc_setup(eswitch_dev, pci_dev);
+ 		if (rc) {
+ 			plt_err("Failed to setup hw rsrc, rc=%d(%s)", rc, roc_error_msg_get(rc));
+ 			goto free_mem;
+@@ -784,7 +780,7 @@ cnxk_eswitch_dev_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pc
+ 
+ 	return rc;
+ rsrc_cleanup:
+-	eswitch_hw_rsrc_cleanup(eswitch_dev);
++	eswitch_hw_rsrc_cleanup(eswitch_dev, pci_dev);
+ free_mem:
+ 	rte_memzone_free(mz);
+ fail:
+-- 
+2.25.1
+

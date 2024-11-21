@@ -1,0 +1,269 @@
+From bbc229f3c2a3637fa4db7c01a35671d156af0ebf Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Sun, 21 Jan 2024 12:40:46 +0530
+Subject: [PATCH 777/955] config/arm: avoid mcpu and march conflicts
+
+The compiler options march and mtune are a subset
+of mcpu and will lead to conflicts if improper march
+is chosen for a given mcpu.
+To avoid conflicts, force part number march when
+mcpu is available and is supported by the compiler.
+
+Example:
+	march = armv9-a
+	mcpu = neoverse-n2
+
+	mcpu supported, march supported
+	machine_args = ['-mcpu=neoverse-n2', '-march=armv9-a']
+
+	mcpu supported, march not supported
+	machine_args = ['-mcpu=neoverse-n2']
+
+	mcpu not supported, march supported
+	machine_args = ['-march=armv9-a']
+
+	mcpu not supported, march not supported
+	machine_args = ['-march=armv8.6-a']
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Iba4bea71846659645b4b4c819dd1cdb027eefdf0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120215
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ config/arm/meson.build | 147 +++++++++++++++++++++++++++--------------
+ 1 file changed, 96 insertions(+), 51 deletions(-)
+
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index 69b281ad6cacc..4cbdbf0192ba3 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -56,17 +56,18 @@ implementer_generic = {
+ }
+ 
+ part_number_config_arm = {
+-    '0xd03': {'compiler_options':  ['-mcpu=cortex-a53']},
+-    '0xd04': {'compiler_options':  ['-mcpu=cortex-a35']},
+-    '0xd07': {'compiler_options':  ['-mcpu=cortex-a57']},
+-    '0xd08': {'compiler_options':  ['-mcpu=cortex-a72']},
+-    '0xd09': {'compiler_options':  ['-mcpu=cortex-a73']},
+-    '0xd0a': {'compiler_options':  ['-mcpu=cortex-a75']},
+-    '0xd0b': {'compiler_options':  ['-mcpu=cortex-a76']},
++    '0xd03': {'mcpu': 'cortex-a53'},
++    '0xd04': {'mcpu': 'cortex-a35'},
++    '0xd05': {'mcpu': 'cortex-a55'},
++    '0xd07': {'mcpu': 'cortex-a57'},
++    '0xd08': {'mcpu': 'cortex-a72'},
++    '0xd09': {'mcpu': 'cortex-a73'},
++    '0xd0a': {'mcpu': 'cortex-a75'},
++    '0xd0b': {'mcpu': 'cortex-a76'},
+     '0xd0c': {
+         'march': 'armv8.2-a',
+-        'march_features': ['crypto'],
+-        'compiler_options':  ['-mcpu=neoverse-n1'],
++        'march_features': ['crypto', 'rcpc'],
++        'mcpu': 'neoverse-n1',
+         'flags': [
+             ['RTE_MACHINE', '"neoverse-n1"'],
+             ['RTE_ARM_FEATURE_ATOMICS', true],
+@@ -78,7 +79,7 @@ part_number_config_arm = {
+     '0xd40': {
+         'march': 'armv8.4-a',
+         'march_features': ['sve'],
+-        'compiler_options':  ['-mcpu=neoverse-v1'],
++        'mcpu': 'neoverse-v1',
+         'flags': [
+             ['RTE_MACHINE', '"neoverse-v1"'],
+             ['RTE_ARM_FEATURE_ATOMICS', true],
+@@ -88,6 +89,7 @@ part_number_config_arm = {
+     '0xd49': {
+         'march': 'armv9-a',
+         'march_features': ['sve2'],
++        'mcpu': 'neoverse-n2',
+         'flags': [
+             ['RTE_MACHINE', '"neoverse-n2"'],
+             ['RTE_ARM_FEATURE_ATOMICS', true],
+@@ -121,21 +123,22 @@ implementer_cavium = {
+     ],
+     'part_number_config': {
+         '0xa1': {
+-            'compiler_options': ['-mcpu=thunderxt88'],
++            'mcpu': 'thunderxt88',
+             'flags': flags_part_number_thunderx
+         },
+         '0xa2': {
+-            'compiler_options': ['-mcpu=thunderxt81'],
++            'mcpu': 'thunderxt81',
+             'flags': flags_part_number_thunderx
+         },
+         '0xa3': {
+-            'compiler_options': ['-march=armv8-a+crc', '-mcpu=thunderxt83'],
++            'mcpu': 'thunderxt83',
++            'compiler_options': ['-march=armv8-a+crc'],
+             'flags': flags_part_number_thunderx
+         },
+         '0xaf': {
+             'march': 'armv8.1-a',
+             'march_features': ['crc', 'crypto'],
+-            'compiler_options': ['-mcpu=thunderx2t99'],
++            'mcpu': 'thunderx2t99',
+             'flags': [
+                 ['RTE_MACHINE', '"thunderx2"'],
+                 ['RTE_ARM_FEATURE_ATOMICS', true],
+@@ -147,7 +150,7 @@ implementer_cavium = {
+         '0xb2': {
+             'march': 'armv8.2-a',
+             'march_features': ['crc', 'crypto', 'lse'],
+-            'compiler_options': ['-mcpu=octeontx2'],
++            'mcpu': 'octeontx2',
+             'flags': [
+                 ['RTE_MACHINE', '"cn9k"'],
+                 ['RTE_ARM_FEATURE_ATOMICS', true],
+@@ -171,7 +174,22 @@ implementer_ampere = {
+         '0x0': {
+             'march': 'armv8-a',
+             'march_features': ['crc', 'crypto'],
+-            'compiler_options':  ['-mtune=emag']
++            'mcpu': 'emag',
++            'flags': [
++                ['RTE_MACHINE', '"eMAG"'],
++                ['RTE_MAX_LCORE', 32],
++                ['RTE_MAX_NUMA_NODES', 1]
++            ]
++        },
++        '0xac3': {
++            'march': 'armv8.6-a',
++            'march_features': ['crc', 'crypto'],
++            'mcpu': 'ampere1',
++            'flags': [
++                ['RTE_MACHINE', '"AmpereOne"'],
++                ['RTE_MAX_LCORE', 320],
++                ['RTE_MAX_NUMA_NODES', 8]
++            ]
+         }
+     }
+ }
+@@ -186,7 +204,7 @@ implementer_hisilicon = {
+         '0xd01': {
+             'march': 'armv8.2-a',
+             'march_features': ['crypto'],
+-            'compiler_options': ['-mtune=tsv110'],
++            'mcpu': 'tsv110',
+             'flags': [
+                 ['RTE_MACHINE', '"Kunpeng 920"'],
+                 ['RTE_ARM_FEATURE_ATOMICS', true],
+@@ -610,50 +628,77 @@ if update_flags
+ 
+     machine_args = [] # Clear previous machine args
+ 
++    candidate_mcpu = ''
++    support_mcpu = false
++    if part_number_config.has_key('mcpu')
++        mcpu = part_number_config['mcpu']
++        if (cc.has_argument('-mcpu=' + mcpu))
++            candidate_mcpu = mcpu
++            support_mcpu = true
++        endif
++    endif
++
+     # probe supported archs and their features
+     candidate_march = ''
+     if part_number_config.has_key('march')
+-        supported_marchs = ['armv9-a', 'armv8.6-a', 'armv8.5-a', 'armv8.4-a', 'armv8.3-a',
+-                            'armv8.2-a', 'armv8.1-a', 'armv8-a']
+-        check_compiler_support = false
+-        foreach supported_march: supported_marchs
+-            if supported_march == part_number_config['march']
+-                # start checking from this version downwards
+-                check_compiler_support = true
+-            endif
+-            if (check_compiler_support and
+-                cc.has_argument('-march=' + supported_march))
+-                candidate_march = supported_march
+-                # highest supported march version found
+-                break
++        if part_number_config.get('force_march', false) or support_mcpu
++            if cc.has_argument('-march=' +  part_number_config['march'])
++                candidate_march = part_number_config['march']
+             endif
+-        endforeach
+-        if candidate_march == ''
+-            error('No suitable armv8 march version found.')
++        else
++            supported_marchs = ['armv9-a', 'armv8.6-a', 'armv8.5-a', 'armv8.4-a', 'armv8.3-a',
++                                'armv8.2-a', 'armv8.1-a', 'armv8-a']
++            check_compiler_support = false
++            foreach supported_march: supported_marchs
++                if supported_march == part_number_config['march']
++                    # start checking from this version downwards
++                    check_compiler_support = true
++                endif
++                if (check_compiler_support and
++                    cc.has_argument('-march=' + supported_march))
++                    candidate_march = supported_march
++                    # highest supported march version found
++                    break
++                endif
++            endforeach
+         endif
++
+         if candidate_march != part_number_config['march']
+-            warning('Configuration march version is ' +
+-                    '@0@, but the compiler supports only @1@.'
+-                    .format(part_number_config['march'], candidate_march))
++            warning('Configuration march version is @0@, not supported.'
++                    .format(part_number_config['march']))
++            if candidate_march != ''
++                warning('Using march version @0@.'.format(candidate_march))
++            endif
+         endif
+-        candidate_march = '-march=' + candidate_march
+ 
+-        march_features = []
+-        if part_number_config.has_key('march_features')
+-            march_features += part_number_config['march_features']
+-        endif
+-        if soc_config.has_key('extra_march_features')
+-            march_features += soc_config['extra_march_features']
++        if candidate_march == '' and candidate_mcpu == ''
++            error('No suitable ARM march/mcpu version found.')
+         endif
+-        foreach feature: march_features
+-            if cc.has_argument('+'.join([candidate_march, feature]))
+-                candidate_march = '+'.join([candidate_march, feature])
+-            else
+-                warning('The compiler does not support feature @0@'
+-                    .format(feature))
++
++        if candidate_march != ''
++            candidate_march = '-march=' + candidate_march
++            march_features = []
++            if part_number_config.has_key('march_features')
++                march_features += part_number_config['march_features']
+             endif
+-        endforeach
+-        machine_args += candidate_march
++            if soc_config.has_key('extra_march_features')
++                march_features += soc_config['extra_march_features']
++            endif
++            foreach feature: march_features
++                if cc.has_argument('+'.join([candidate_march, feature]))
++                    candidate_march = '+'.join([candidate_march, feature])
++                else
++                    warning('The compiler does not support feature @0@'
++                        .format(feature))
++                endif
++            endforeach
++            machine_args += candidate_march
++        endif
++    endif
++
++    if candidate_mcpu != ''
++        candidate_mcpu = '-mcpu=' + candidate_mcpu
++        machine_args += candidate_mcpu
+     endif
+ 
+     # apply supported compiler options
+-- 
+2.25.1
+

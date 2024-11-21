@@ -1,0 +1,427 @@
+From 76c59c13fb1635bd4547a57b2dde1b9dca9e038a Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 27 Aug 2024 23:41:39 +0530
+Subject: [PATCH 471/513] common/cnxk: implement SSO HW info
+
+Add SSO HW info mbox to get hardware capabilities, and reuse
+them instead of depending on hardcoded values.
+Remove redundant includes.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I2ddffce6ca744548b966a53613f9bf0414f9e007
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134408
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_mbox.h              | 28 ++++++++++
+ drivers/common/cnxk/roc_sso.c               | 58 ++++++++++++++++++---
+ drivers/common/cnxk/roc_sso.h               |  9 ++--
+ drivers/common/cnxk/version.map             |  1 +
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c   |  5 +-
+ drivers/crypto/cnxk/cn9k_cryptodev_ops.c    |  9 +---
+ drivers/event/cnxk/cn10k_eventdev.c         |  1 +
+ drivers/event/cnxk/cn10k_eventdev.h         |  1 +
+ drivers/event/cnxk/cn10k_worker.c           |  7 +--
+ drivers/event/cnxk/cnxk_eventdev.c          |  4 +-
+ drivers/event/cnxk/cnxk_eventdev.h          |  3 --
+ drivers/event/cnxk/cnxk_eventdev_selftest.c |  2 +
+ drivers/event/cnxk/cnxk_eventdev_stats.c    |  2 +
+ drivers/event/cnxk/cnxk_tim_evdev.c         |  2 +-
+ drivers/event/cnxk/cnxk_tim_worker.c        |  2 +
+ drivers/event/cnxk/cnxk_worker.c            |  4 +-
+ 16 files changed, 103 insertions(+), 35 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 0864c0e8c062b..645da563c2026 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -147,6 +147,7 @@ struct mbox_msghdr {
+ 	  msg_rsp)                                                             \
+ 	M(SSO_GRP_STASH_CONFIG, 0x614, sso_grp_stash_config,                   \
+ 	  sso_grp_stash_cfg, msg_rsp)                                          \
++	M(SSO_GET_HW_INFO, 0x617, sso_get_hw_info, msg_req, sso_hw_info)       \
+ 	/* TIM mbox IDs (range 0x800 - 0x9FF) */                               \
+ 	M(TIM_LF_ALLOC, 0x800, tim_lf_alloc, tim_lf_alloc_req,                 \
+ 	  tim_lf_alloc_rsp)                                                    \
+@@ -2117,6 +2118,33 @@ struct ssow_chng_mship {
+ 	uint16_t __io hwgrps[MAX_RVU_BLKLF_CNT]; /* Array of hwgrps. */
+ };
+ 
++struct sso_feat_info {
++	uint8_t __io hw_flr : 1;
++	uint8_t __io hw_prefetch : 1;
++	uint8_t __io sw_prefetch : 1;
++	uint8_t __io lsw : 1;
++	uint8_t __io fwd_grp : 1;
++	uint8_t __io eva_present : 1;
++	uint8_t __io no_nsched : 1;
++	uint8_t __io tag_cfg : 1;
++	uint8_t __io gwc_per_core;
++	uint16_t __io hws;
++	uint16_t __io hwgrps;
++	uint16_t __io hwgrps_per_pf;
++	uint16_t __io iue;
++	uint16_t __io taq_lines;
++	uint16_t __io taq_ent_per_line;
++	uint16_t __io xaq_buf_size;
++	uint16_t __io xaq_wq_entries;
++	uint32_t __io eva_ctx_per_hwgrp;
++	uint64_t __io rsvd[2];
++};
++
++struct sso_hw_info {
++	struct mbox_msghdr hdr;
++	struct sso_feat_info feat;
++};
++
+ struct sso_hw_setconfig {
+ 	struct mbox_msghdr hdr;
+ 	uint32_t __io npa_aura_id;
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index 293b0c81a1b54..f5719dc84f31d 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -191,7 +191,7 @@ sso_rsrc_get(struct roc_sso *roc_sso)
+ 		goto exit;
+ 	}
+ 
+-	roc_sso->max_hwgrp = rsrc_cnt->sso;
++	roc_sso->max_hwgrp = PLT_MIN(rsrc_cnt->sso, roc_sso->feat.hwgrps_per_pf);
+ 	roc_sso->max_hws = rsrc_cnt->ssow;
+ 
+ 	rc = 0;
+@@ -200,6 +200,37 @@ sso_rsrc_get(struct roc_sso *roc_sso)
+ 	return rc;
+ }
+ 
++static int
++sso_hw_info_get(struct roc_sso *roc_sso)
++{
++	struct dev *dev = &roc_sso_to_sso_priv(roc_sso)->dev;
++	struct mbox *mbox = mbox_get(dev->mbox);
++	struct sso_hw_info *rsp;
++	int rc;
++
++	mbox_alloc_msg_sso_get_hw_info(mbox);
++	rc = mbox_process_msg(mbox, (void **)&rsp);
++	if (rc && rc != MBOX_MSG_INVALID) {
++		plt_err("Failed to get SSO HW info\n");
++		rc = -EIO;
++		goto exit;
++	}
++
++	if (rc == MBOX_MSG_INVALID) {
++		roc_sso->feat.hwgrps_per_pf = ROC_SSO_MAX_HWGRP_PER_PF;
++	} else {
++		mbox_memcpy(&roc_sso->feat, &rsp->feat, sizeof(roc_sso->feat));
++
++		if (!roc_sso->feat.hwgrps_per_pf)
++			roc_sso->feat.hwgrps_per_pf = ROC_SSO_MAX_HWGRP_PER_PF;
++	}
++
++	rc = 0;
++exit:
++	mbox_put(mbox);
++	return rc;
++}
++
+ void
+ sso_hws_link_modify(uint8_t hws, uintptr_t base, struct plt_bitmap *bmp, uint16_t hwgrp[],
+ 		    uint16_t n, uint8_t set, uint16_t enable)
+@@ -319,6 +350,12 @@ roc_sso_hwgrp_base_get(struct roc_sso *roc_sso, uint16_t hwgrp)
+ 	return dev->bar2 + (RVU_BLOCK_ADDR_SSO << 20 | hwgrp << 12);
+ }
+ 
++uint16_t
++roc_sso_pf_func_get(void)
++{
++	return idev_sso_pffunc_get();
++}
++
+ uint64_t
+ roc_sso_ns_to_gw(uint64_t base, uint64_t ns)
+ {
+@@ -670,9 +707,8 @@ roc_sso_hwgrp_init_xaq_aura(struct roc_sso *roc_sso, uint32_t nb_xae)
+ 	struct dev *dev = &sso->dev;
+ 	int rc;
+ 
+-	rc = sso_hwgrp_init_xaq_aura(dev, &roc_sso->xaq, nb_xae,
+-				     roc_sso->xae_waes, roc_sso->xaq_buf_size,
+-				     roc_sso->nb_hwgrp);
++	rc = sso_hwgrp_init_xaq_aura(dev, &roc_sso->xaq, nb_xae, roc_sso->feat.xaq_wq_entries,
++				     roc_sso->feat.xaq_buf_size, roc_sso->nb_hwgrp);
+ 	return rc;
+ }
+ 
+@@ -946,9 +982,11 @@ roc_sso_rsrc_init(struct roc_sso *roc_sso, uint8_t nb_hws, uint16_t nb_hwgrp, ui
+ 		goto hwgrp_alloc_fail;
+ 	}
+ 
+-	roc_sso->xaq_buf_size = rsp_hwgrp->xaq_buf_size;
+-	roc_sso->xae_waes = rsp_hwgrp->xaq_wq_entries;
+-	roc_sso->iue = rsp_hwgrp->in_unit_entries;
++	if (!roc_sso->feat.xaq_buf_size || !roc_sso->feat.xaq_wq_entries || !roc_sso->feat.iue) {
++		roc_sso->feat.xaq_buf_size = rsp_hwgrp->xaq_buf_size;
++		roc_sso->feat.xaq_wq_entries = rsp_hwgrp->xaq_wq_entries;
++		roc_sso->feat.iue = rsp_hwgrp->in_unit_entries;
++	}
+ 
+ 	rc = sso_msix_fill(roc_sso, nb_hws, nb_hwgrp);
+ 	if (rc < 0) {
+@@ -1052,6 +1090,12 @@ roc_sso_dev_init(struct roc_sso *roc_sso)
+ 		goto fail;
+ 	}
+ 
++	rc = sso_hw_info_get(roc_sso);
++	if (rc < 0) {
++		plt_err("Failed to get SSO HW info");
++		goto fail;
++	}
++
+ 	rc = sso_rsrc_get(roc_sso);
+ 	if (rc < 0) {
+ 		plt_err("Failed to get SSO resources");
+diff --git a/drivers/common/cnxk/roc_sso.h b/drivers/common/cnxk/roc_sso.h
+index 4ac901762e679..021db22c86311 100644
+--- a/drivers/common/cnxk/roc_sso.h
++++ b/drivers/common/cnxk/roc_sso.h
+@@ -8,7 +8,7 @@
+ #include "hw/ssow.h"
+ 
+ #define ROC_SSO_AW_PER_LMT_LINE_LOG2 3
+-#define ROC_SSO_XAE_PER_XAQ	     352
++#define ROC_SSO_MAX_HWGRP_PER_PF     256
+ 
+ struct roc_sso_hwgrp_qos {
+ 	uint16_t hwgrp;
+@@ -57,9 +57,7 @@ struct roc_sso {
+ 	uintptr_t lmt_base;
+ 	struct roc_sso_xaq_data xaq;
+ 	/* HW Const. */
+-	uint32_t xae_waes;
+-	uint32_t xaq_buf_size;
+-	uint32_t iue;
++	struct sso_feat_info feat;
+ 	/* Private data. */
+ #define ROC_SSO_MEM_SZ (16 * 1024)
+ 	uint8_t reserved[ROC_SSO_MEM_SZ] __plt_cache_aligned;
+@@ -103,6 +101,9 @@ int __roc_api roc_sso_hwgrp_stash_config(struct roc_sso *roc_sso,
+ void __roc_api roc_sso_hws_gwc_invalidate(struct roc_sso *roc_sso, uint8_t *hws,
+ 					  uint8_t nb_hws);
+ 
++/* Utility function */
++uint16_t __roc_api roc_sso_pf_func_get(void);
++
+ /* Debug */
+ void __roc_api roc_sso_dump(struct roc_sso *roc_sso, uint8_t nb_hws,
+ 			    uint16_t hwgrp, FILE *f);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index bb77aa5168ea2..ebf07bd9ad17e 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -517,6 +517,7 @@ INTERNAL {
+ 	roc_sso_hws_gwc_invalidate;
+ 	roc_sso_hws_unlink;
+ 	roc_sso_ns_to_gw;
++	roc_sso_pf_func_get;
+ 	roc_sso_rsrc_fini;
+ 	roc_sso_rsrc_init;
+ 	roc_tim_fini;
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index b35ce6144ce0f..a3eead2049345 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -11,10 +11,7 @@
+ 
+ #include <ethdev_driver.h>
+ 
+-#include "roc_cpt.h"
+-#include "roc_idev.h"
+-#include "roc_sso.h"
+-#include "roc_sso_dp.h"
++#include "roc_api.h"
+ 
+ #include "cn10k_cryptodev.h"
+ #include "cn10k_cryptodev_event_dp.h"
+diff --git a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+index ada9caac83184..dbe0852e49da0 100644
+--- a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+@@ -8,14 +8,7 @@
+ #include <rte_ip.h>
+ #include <rte_vect.h>
+ 
+-#include "roc_cpt.h"
+-#if defined(__aarch64__)
+-#include "roc_io.h"
+-#else
+-#include "roc_io_generic.h"
+-#endif
+-#include "roc_sso.h"
+-#include "roc_sso_dp.h"
++#include "roc_api.h"
+ 
+ #include "cn9k_cryptodev.h"
+ #include "cn9k_cryptodev_ops.h"
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index 229d7a03fee28..8922aee60d5fc 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -64,6 +64,7 @@ cn10k_sso_init_hws_mem(void *arg, uint8_t port_id)
+ 	ws->gw_wdata = cn10k_sso_gw_mode_wdata(dev);
+ 	ws->gw_rdata = SSO_TT_EMPTY << 32;
+ 	ws->lmt_base = dev->sso.lmt_base;
++	ws->xae_waes = dev->sso.feat.xaq_wq_entries;
+ 
+ 	return ws;
+ }
+diff --git a/drivers/event/cnxk/cn10k_eventdev.h b/drivers/event/cnxk/cn10k_eventdev.h
+index e79b68e0ac974..f60dff3567e23 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.h
++++ b/drivers/event/cnxk/cn10k_eventdev.h
+@@ -23,6 +23,7 @@ struct cn10k_sso_hws {
+ 	int64_t *fc_cache_space;
+ 	uintptr_t aw_lmt;
+ 	uintptr_t grp_base;
++	uint16_t xae_waes;
+ 	int32_t xaq_lmt;
+ 	/* Tx Fastpath data */
+ 	uintptr_t lmt_base __rte_cache_aligned;
+diff --git a/drivers/event/cnxk/cn10k_worker.c b/drivers/event/cnxk/cn10k_worker.c
+index d59769717e4f1..a8b749f9c9be9 100644
+--- a/drivers/event/cnxk/cn10k_worker.c
++++ b/drivers/event/cnxk/cn10k_worker.c
+@@ -2,6 +2,8 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
++#include "roc_api.h"
++
+ #include "cn10k_worker.h"
+ #include "cnxk_eventdev.h"
+ #include "cnxk_worker.h"
+@@ -80,8 +82,7 @@ cn10k_sso_hws_forward_event(struct cn10k_sso_hws *ws,
+ static inline int32_t
+ sso_read_xaq_space(struct cn10k_sso_hws *ws)
+ {
+-	return (ws->xaq_lmt - __atomic_load_n(ws->fc_mem, __ATOMIC_RELAXED)) *
+-	       ROC_SSO_XAE_PER_XAQ;
++	return (ws->xaq_lmt - __atomic_load_n(ws->fc_mem, __ATOMIC_RELAXED)) * ws->xae_waes;
+ }
+ 
+ static inline void
+@@ -398,7 +399,7 @@ cn10k_sso_hws_enq_new_burst(void *port, const struct rte_event ev[],
+ 	int32_t space;
+ 
+ 	/* Do a common back-pressure check and return */
+-	space = sso_read_xaq_space(ws) - ROC_SSO_XAE_PER_XAQ;
++	space = sso_read_xaq_space(ws) - ws->xae_waes;
+ 	if (space <= 0)
+ 		return 0;
+ 	nb_events = space < nb_events ? space : nb_events;
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index 2ffa686f9379c..02606a47ff6ad 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -2,7 +2,7 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
+-#include "roc_npa.h"
++#include "roc_api.h"
+ 
+ #include "cnxk_eventdev.h"
+ #include "cnxk_eventdev_dp.h"
+@@ -44,7 +44,7 @@ cnxk_sso_xaq_allocate(struct cnxk_sso_evdev *dev)
+ 	if (dev->num_events > 0)
+ 		xae_cnt = dev->num_events;
+ 	else
+-		xae_cnt = dev->sso.iue;
++		xae_cnt = dev->sso.feat.iue;
+ 
+ 	if (dev->xae_cnt)
+ 		xae_cnt += dev->xae_cnt;
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index fa99dede857c3..5b1359a32e2c2 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -21,9 +21,6 @@
+ 
+ #include "cnxk_eventdev_dp.h"
+ 
+-#include "roc_platform.h"
+-#include "roc_sso.h"
+-
+ #include "cnxk_tim_evdev.h"
+ 
+ #define CNXK_SSO_XAE_CNT   "xae_cnt"
+diff --git a/drivers/event/cnxk/cnxk_eventdev_selftest.c b/drivers/event/cnxk/cnxk_eventdev_selftest.c
+index 95c0f1b1f71f3..a371e44300a6c 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_selftest.c
++++ b/drivers/event/cnxk/cnxk_eventdev_selftest.c
+@@ -18,6 +18,8 @@
+ #include <rte_random.h>
+ #include <rte_test.h>
+ 
++#include "roc_api.h"
++
+ #include "cnxk_eventdev.h"
+ #include "cnxk_eventdev_dp.h"
+ 
+diff --git a/drivers/event/cnxk/cnxk_eventdev_stats.c b/drivers/event/cnxk/cnxk_eventdev_stats.c
+index a8a87a06e43ef..6dea91aedf317 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_stats.c
++++ b/drivers/event/cnxk/cnxk_eventdev_stats.c
+@@ -2,6 +2,8 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
++#include "roc_api.h"
++
+ #include "cnxk_eventdev.h"
+ #include "cnxk_eventdev_dp.h"
+ 
+diff --git a/drivers/event/cnxk/cnxk_tim_evdev.c b/drivers/event/cnxk/cnxk_tim_evdev.c
+index 6d59fdf909830..f8753b29ad8c4 100644
+--- a/drivers/event/cnxk/cnxk_tim_evdev.c
++++ b/drivers/event/cnxk/cnxk_tim_evdev.c
+@@ -4,7 +4,7 @@
+ 
+ #include <math.h>
+ 
+-#include "roc_npa.h"
++#include "roc_api.h"
+ 
+ #include "cnxk_eventdev.h"
+ #include "cnxk_tim_evdev.h"
+diff --git a/drivers/event/cnxk/cnxk_tim_worker.c b/drivers/event/cnxk/cnxk_tim_worker.c
+index 944490da9e3b7..863720f269eac 100644
+--- a/drivers/event/cnxk/cnxk_tim_worker.c
++++ b/drivers/event/cnxk/cnxk_tim_worker.c
+@@ -2,6 +2,8 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
++#include "roc_api.h"
++
+ #include "cnxk_tim_evdev.h"
+ #include "cnxk_tim_worker.h"
+ 
+diff --git a/drivers/event/cnxk/cnxk_worker.c b/drivers/event/cnxk/cnxk_worker.c
+index 60876abcffa0d..a07c9185d9c00 100644
+--- a/drivers/event/cnxk/cnxk_worker.c
++++ b/drivers/event/cnxk/cnxk_worker.c
+@@ -6,9 +6,7 @@
+ #include <rte_pmd_cnxk_eventdev.h>
+ #include <rte_eventdev.h>
+ 
+-#include "roc_platform.h"
+-#include "roc_sso.h"
+-#include "roc_sso_dp.h"
++#include "roc_api.h"
+ 
+ struct pwords {
+ 	uint64_t u[5];
+-- 
+2.25.1
+

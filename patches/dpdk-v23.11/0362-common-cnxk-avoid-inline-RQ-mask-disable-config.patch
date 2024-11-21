@@ -1,0 +1,37 @@
+From 1cc9f9e33b6ff433c92d013de53994e4e3b0ee33 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 13 Jun 2024 16:22:38 +0530
+Subject: [PATCH 362/513] common/cnxk: avoid inline RQ mask disable config
+
+Avoid inline RQ mask disable configuration during RQ disable
+in port stop process to avoid 2nd pass buffer leak in between
+port stop and close.
+It will be cleared out during port close.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ibe6f4facc06233d65e4de9f6e26a678f3c11eb0f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129687
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 74a688abbd046..7f84599c11351 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -1467,7 +1467,7 @@ roc_nix_inl_rq_ena_dis(struct roc_nix *roc_nix, bool enable)
+ 	if (!idev)
+ 		return -EFAULT;
+ 
+-	if (roc_feature_nix_has_inl_rq_mask()) {
++	if (roc_feature_nix_has_inl_rq_mask() && enable) {
+ 		rc = nix_inl_rq_mask_cfg(roc_nix, enable);
+ 		if (rc) {
+ 			plt_err("Failed to get rq mask rc=%d", rc);
+-- 
+2.25.1
+

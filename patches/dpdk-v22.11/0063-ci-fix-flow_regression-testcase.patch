@@ -1,0 +1,46 @@
+From 13e84999853e6c709f50673a640b16a2514eef06 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Thu, 8 Dec 2022 11:51:00 +0530
+Subject: [PATCH 063/955] ci: fix flow_regression testcase
+
+The option "--rx-metadata" has been removed in dpdk-testpmd
+application. Removed it in the test script.
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Ibd5c57b6f60ff9f374596efd1557fef8edd94e87
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92118
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/flow_regression/cnxk_flow_regression.sh     | 2 +-
+ marvell-ci/test/env/cn9k.env                                    | 1 -
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh b/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh
+index 29cd29eb10296..33d28021c4143 100755
+--- a/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh
++++ b/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh
+@@ -191,7 +191,7 @@ function testpmd_check_vlan_flags()
+ echo "Testpmd running with $TESTPMD_PORT, Coremask=$TESTPMD_COREMASK"
+ testpmd_launch $PRFX \
+ 		" -c $TESTPMD_COREMASK -a $TESTPMD_PORT" \
+-		" --no-flush-rx --rx-metadata --nb-cores=1 --rxq 8 --txq 8" \
++		" --no-flush-rx --nb-cores=1 --rxq 8 --txq 8" \
+ 		" --port-topology=loop"
+ 
+ testpmd_test_flow $PRFX FLOW_ETH "flow create 0 ingress pattern eth dst is \
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index e9e66acb4f3b0..08d1c60f5c894 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -71,7 +71,6 @@ FIXME_SKIP_TESTS="
+ 	cnxk_txrx_stats
+ 	cnxk_dpdk_event_tests
+ 	cnxk_tm_test
+-	flow_regression
+ 	cnxk_extbuf_tests
+ 	cnxk_q_intr_test
+ 	cnxk_hotplug_test
+-- 
+2.25.1
+

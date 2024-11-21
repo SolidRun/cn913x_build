@@ -1,0 +1,210 @@
+From 523656b44633bad0056fee346659b45af64c83c1 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Fri, 2 Feb 2024 15:14:45 +0530
+Subject: [PATCH 192/513] event/cnxk: remove unused files
+
+Remove unused template files.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Iba70fa408a0417d5aecfa066f839aef46ec04f48
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121038
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/event/cnxk/deq/cn10k/deq_0_15_dual.c    | 16 ----------------
+ drivers/event/cnxk/deq/cn10k/deq_112_127_dual.c | 16 ----------------
+ drivers/event/cnxk/deq/cn10k/deq_16_31_dual.c   | 16 ----------------
+ drivers/event/cnxk/deq/cn10k/deq_32_47_dual.c   | 16 ----------------
+ drivers/event/cnxk/deq/cn10k/deq_48_63_dual.c   | 16 ----------------
+ drivers/event/cnxk/deq/cn10k/deq_64_79_dual.c   | 16 ----------------
+ drivers/event/cnxk/deq/cn10k/deq_80_95_dual.c   | 16 ----------------
+ drivers/event/cnxk/deq/cn10k/deq_96_111_dual.c  | 16 ----------------
+ 8 files changed, 128 deletions(-)
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_0_15_dual.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_112_127_dual.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_16_31_dual.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_32_47_dual.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_48_63_dual.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_64_79_dual.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_80_95_dual.c
+ delete mode 100644 drivers/event/cnxk/deq/cn10k/deq_96_111_dual.c
+
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_0_15_dual.c b/drivers/event/cnxk/deq/cn10k/deq_0_15_dual.c
+deleted file mode 100644
+index 50252c79caadf..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_0_15_dual.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_dual_deq_##name, flags)                     \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_reas_dual_deq_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_0_15
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_112_127_dual.c b/drivers/event/cnxk/deq/cn10k/deq_112_127_dual.c
+deleted file mode 100644
+index 8a51f357f3e25..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_112_127_dual.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_dual_deq_##name, flags)                     \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_reas_dual_deq_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_112_127
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_16_31_dual.c b/drivers/event/cnxk/deq/cn10k/deq_16_31_dual.c
+deleted file mode 100644
+index f5dfd67901a40..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_16_31_dual.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_dual_deq_##name, flags)                     \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_reas_dual_deq_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_16_31
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_32_47_dual.c b/drivers/event/cnxk/deq/cn10k/deq_32_47_dual.c
+deleted file mode 100644
+index dc98e18d9afab..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_32_47_dual.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_dual_deq_##name, flags)                     \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_reas_dual_deq_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_32_47
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_48_63_dual.c b/drivers/event/cnxk/deq/cn10k/deq_48_63_dual.c
+deleted file mode 100644
+index 9bdac3e28489c..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_48_63_dual.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_dual_deq_##name, flags)                     \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_reas_dual_deq_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_48_63
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_64_79_dual.c b/drivers/event/cnxk/deq/cn10k/deq_64_79_dual.c
+deleted file mode 100644
+index bbe38f9163329..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_64_79_dual.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_dual_deq_##name, flags)                     \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_reas_dual_deq_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_64_79
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_80_95_dual.c b/drivers/event/cnxk/deq/cn10k/deq_80_95_dual.c
+deleted file mode 100644
+index b9676a9f0706b..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_80_95_dual.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_dual_deq_##name, flags)                     \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_reas_dual_deq_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_80_95
+-#undef R
+diff --git a/drivers/event/cnxk/deq/cn10k/deq_96_111_dual.c b/drivers/event/cnxk/deq/cn10k/deq_96_111_dual.c
+deleted file mode 100644
+index 4fb603a91b572..0000000000000
+--- a/drivers/event/cnxk/deq/cn10k/deq_96_111_dual.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2022 Marvell.
+- */
+-
+-#include "cn10k_worker.h"
+-
+-#ifdef _ROC_API_H_
+-#error "roc_api.h is included"
+-#endif
+-
+-#define R(name, flags)                                                         \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_dual_deq_##name, flags)                     \
+-	SSO_DUAL_DEQ(cn10k_sso_hws_reas_dual_deq_##name, flags | NIX_RX_REAS_F)
+-
+-NIX_RX_FASTPATH_MODES_96_111
+-#undef R
+-- 
+2.25.1
+

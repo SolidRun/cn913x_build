@@ -1,0 +1,36 @@
+From fbc2b8ba22ad55f5a0a6232405e3fcd64311d876 Mon Sep 17 00:00:00 2001
+From: Stephen Hemminger <stephen@networkplumber.org>
+Date: Tue, 3 Jan 2023 19:38:11 -0800
+Subject: [PATCH 578/955] app/dumpcap: remove unused variable
+
+The port2intf variable was set but never used.
+
+Signed-off-by: Stephen Hemminger <stephen@networkplumber.org>
+Change-Id: Id5758995a6958be555eb1ffd12063e9b13fba472
+---
+ app/dumpcap/main.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/app/dumpcap/main.c b/app/dumpcap/main.c
+index 4751ca26b892a..1c47ff8512520 100644
+--- a/app/dumpcap/main.c
++++ b/app/dumpcap/main.c
+@@ -90,7 +90,6 @@ struct interface {
+ 
+ TAILQ_HEAD(interface_list, interface);
+ static struct interface_list interfaces = TAILQ_HEAD_INITIALIZER(interfaces);
+-static struct interface *port2intf[RTE_MAX_ETHPORTS];
+ 
+ /* Can do either pcap or pcapng format output */
+ typedef union {
+@@ -207,7 +206,6 @@ static void add_interface(uint16_t port, const char *name)
+ 
+ 	printf("Capturing on '%s'\n", name);
+ 
+-	port2intf[port] = intf;
+ 	TAILQ_INSERT_TAIL(&interfaces, intf, next);
+ }
+ 
+-- 
+2.25.1
+

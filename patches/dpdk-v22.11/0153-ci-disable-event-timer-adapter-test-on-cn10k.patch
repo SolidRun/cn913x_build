@@ -1,0 +1,36 @@
+From 1768cb3a95eca7c750979b9c1997f31f6bb58af2 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Wed, 11 Jan 2023 15:26:17 +0530
+Subject: [PATCH 153/955] ci: disable event timer adapter test on cn10k
+
+Disabled event_timer_adapter_test on cn10k. This is because, one of the
+cn10k board in CI is running at an SCLK of 1100 and is triggering a HW
+bug. This test will be re-enabled after moving the test to a new stage
+which will run only on boards with an SCLK of 1000.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: Ie9e719c3affe028f79eec41e919e87283cb8fb60
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94294
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh b/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
+index 17e21eef43579..0924c4a6b7291 100755
+--- a/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
++++ b/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
+@@ -65,7 +65,8 @@ run_event_tests() {
+ register_cn9k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE,single_ws=1,tim_stats_ena=1"
+ register_cn9k_event_test	eventdev_selftest_cn9k		"-l $ISOLCPUS"
+ register_cn10k_event_test	eventdev_selftest_cn10k		"-l $ISOLCPUS"
+-register_cn10k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE,gw_mode=0,tim_stats_ena=1"
++# TODO: re-enable after moving test to new stage
++#register_cn10k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE,gw_mode=0,tim_stats_ena=1"
+ register_cnxk_event_test	event_eth_rx_adapter_autotest	"-l $ISOLCPUS"
+ register_cnxk_event_test	event_crypto_adapter_autotest	"-l 0,1"
+ 
+-- 
+2.25.1
+

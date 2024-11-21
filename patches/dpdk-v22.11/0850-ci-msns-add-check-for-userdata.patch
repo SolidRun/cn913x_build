@@ -1,0 +1,53 @@
+From 7b0766a707982aacc56b11d49355e64c380dcebe Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 4 Apr 2024 20:51:29 +0530
+Subject: [PATCH 850/955] ci: msns: add check for userdata
+
+Change-Id: I2dc5a5bc96fa0f1dcb2ed980feb4ca3390da7efc
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/124977
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+index 345aaeb505ce1..2b959679b75a2 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+@@ -1099,6 +1099,7 @@ ut_ipsec_encap_decap(struct test_ipsec_vector *vector, enum rte_security_ipsec_t
+ 	struct rte_mbuf *tx_pkts = NULL;
+ 	struct rte_mbuf *rx_pkts = NULL;
+ 	uint16_t sa_hi = 0, sa_lo = 0;
++	uint64_t userdata;
+ 	int ret = 0;
+ 
+ 	nb_tx = 1;
+@@ -1219,6 +1220,7 @@ ut_ipsec_encap_decap(struct test_ipsec_vector *vector, enum rte_security_ipsec_t
+ 	conf.protocol = RTE_SECURITY_PROTOCOL_IPSEC;
+ 	memcpy(&conf.ipsec, &sa_data.ipsec_xform, sizeof(struct rte_security_ipsec_xform));
+ 	conf.crypto_xform = &sa_data.xform.aead;
++	conf.userdata = (void *)(uint64_t)(alg);
+ 	ret = rte_security_session_update(sec_ctx, in_ses, &conf);
+ 	if (ret) {
+ 		printf("Security session update failed inbound\n");
+@@ -1268,6 +1270,15 @@ ut_ipsec_encap_decap(struct test_ipsec_vector *vector, enum rte_security_ipsec_t
+ 		goto out;
+ 	}
+ 
++	/* Check for userdata match */
++	userdata = *rte_security_dynfield(rx_pkts);
++	if (userdata != alg) {
++		printf("\nDecrypted packet userdata mismatch %lx != %x\n",
++		       userdata, alg);
++		ret = -1;
++		goto out;
++	}
++
+ 	if (vector->full_pkt->len != rx_pkts->pkt_len) {
+ 		printf("\nDecrypted packet length mismatch\n");
+ 		ret = -1;
+-- 
+2.25.1
+

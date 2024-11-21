@@ -1,0 +1,220 @@
+From d307e61a35869c2a2c97670396e677a1a19f843f Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 31 Jan 2024 10:05:51 +0530
+Subject: [PATCH 251/513] common/cnxk: sync from dpdk upstream
+
+Change-Id: Ia478882ebc77ff9bf104c97d49250437ec1c26e0
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122618
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/cnxk_security.c | 20 --------------------
+ drivers/common/cnxk/roc_cpt_debug.c | 23 +++++++++++++----------
+ drivers/common/cnxk/roc_nix_priv.h  | 10 ++++++----
+ drivers/net/cnxk/cn10k_tx.h         | 12 ++++++++----
+ drivers/net/cnxk/cn9k_tx.h          | 12 ++++++++----
+ 5 files changed, 35 insertions(+), 42 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index abf553cbad227..bab015e3b3be9 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -574,26 +574,6 @@ cnxk_ot_ipsec_outb_sa_valid(struct roc_ot_ipsec_outb_sa *sa)
+ 	return !!sa->w2.s.valid;
+ }
+ 
+-static inline int
+-ipsec_xfrm_verify(struct rte_security_ipsec_xform *ipsec_xfrm,
+-		  struct rte_crypto_sym_xform *crypto_xfrm)
+-{
+-	if (crypto_xfrm->next == NULL)
+-		return -EINVAL;
+-
+-	if (ipsec_xfrm->direction == RTE_SECURITY_IPSEC_SA_DIR_INGRESS) {
+-		if (crypto_xfrm->type != RTE_CRYPTO_SYM_XFORM_AUTH ||
+-		    crypto_xfrm->next->type != RTE_CRYPTO_SYM_XFORM_CIPHER)
+-			return -EINVAL;
+-	} else {
+-		if (crypto_xfrm->type != RTE_CRYPTO_SYM_XFORM_CIPHER ||
+-		    crypto_xfrm->next->type != RTE_CRYPTO_SYM_XFORM_AUTH)
+-			return -EINVAL;
+-	}
+-
+-	return 0;
+-}
+-
+ uint8_t
+ cnxk_ipsec_ivlen_get(enum rte_crypto_cipher_algorithm c_algo,
+ 		     enum rte_crypto_auth_algorithm a_algo,
+diff --git a/drivers/common/cnxk/roc_cpt_debug.c b/drivers/common/cnxk/roc_cpt_debug.c
+index 111234391309a..8e69b0a0e5214 100644
+--- a/drivers/common/cnxk/roc_cpt_debug.c
++++ b/drivers/common/cnxk/roc_cpt_debug.c
+@@ -23,30 +23,31 @@ roc_cpt_parse_hdr_dump(FILE *file, const struct cpt_parse_hdr_s *cpth)
+ 
+ 	/* W0 */
+ 	cpt_dump(file, "W0: cookie \t0x%x\t\tmatch_id \t0x%04x \t",
+-		 cpth->w0.cookie, cpth->w0.match_id);
++		  cpth->w0.cookie, cpth->w0.match_id);
+ 	cpt_dump(file, "W0: err_sum \t%u \t", cpth->w0.err_sum);
+ 	cpt_dump(file, "W0: reas_sts \t0x%x\t\tet_owr \t%u\t\tpkt_fmt \t%u \t",
+-		 cpth->w0.reas_sts, cpth->w0.et_owr, cpth->w0.pkt_fmt);
++		  cpth->w0.reas_sts, cpth->w0.et_owr, cpth->w0.pkt_fmt);
+ 	cpt_dump(file, "W0: pad_len \t%u\t\tnum_frags \t%u\t\tpkt_out \t%u \t",
+-		 cpth->w0.pad_len, cpth->w0.num_frags, cpth->w0.pkt_out);
++		  cpth->w0.pad_len, cpth->w0.num_frags, cpth->w0.pkt_out);
+ 
+ 	/* W1 */
+-	cpt_dump(file, "W1: wqe_ptr \t0x%016lx\t", plt_be_to_cpu_64(cpth->wqe_ptr));
++	cpt_dump(file, "W1: wqe_ptr \t0x%016lx\t",
++			plt_be_to_cpu_64(cpth->wqe_ptr));
+ 
+ 	/* W2 */
+ 	cpt_dump(file, "W2: frag_age \t0x%x\t\torig_pf_func \t0x%04x",
+-		 cpth->w2.frag_age, cpth->w2.orig_pf_func);
++		  cpth->w2.frag_age, cpth->w2.orig_pf_func);
+ 	cpt_dump(file, "W2: il3_off \t0x%x\t\tfi_pad \t0x%x \t",
+-		 cpth->w2.il3_off, cpth->w2.fi_pad);
++		  cpth->w2.il3_off, cpth->w2.fi_pad);
+ 	cpt_dump(file, "W2: fi_offset \t0x%x \t", cpth->w2.fi_offset);
+ 
+ 	/* W3 */
+ 	cpt_dump(file, "W3: hw_ccode \t0x%x\t\tuc_ccode \t0x%x\t\tspi \t0x%08x",
+-		 cpth->w3.hw_ccode, cpth->w3.uc_ccode, cpth->w3.spi);
++		  cpth->w3.hw_ccode, cpth->w3.uc_ccode, cpth->w3.spi);
+ 
+ 	/* W4 */
+ 	cpt_dump(file, "W4: esn \t%" PRIx64 " \t OR frag1_wqe_ptr \t0x%" PRIx64,
+-		 cpth->esn, plt_be_to_cpu_64(cpth->frag1_wqe_ptr));
++		  cpth->esn, plt_be_to_cpu_64(cpth->frag1_wqe_ptr));
+ 
+ 	/* offset of 0 implies 256B, otherwise it implies offset*8B */
+ 	offset = cpth->w2.fi_offset;
+@@ -68,8 +69,10 @@ roc_cpt_parse_hdr_dump(FILE *file, const struct cpt_parse_hdr_s *cpth)
+ 	cpt_dump(file, "W1: frag_size3 \t0x%x", frag_info->w1.frag_size3);
+ 
+ 	slot = (uint64_t *)(frag_info + 1);
+-	cpt_dump(file, "Frag Slot2:  WQE ptr \t%p", (void *)plt_be_to_cpu_64(slot[0]));
+-	cpt_dump(file, "Frag Slot3:  WQE ptr \t%p", (void *)plt_be_to_cpu_64(slot[1]));
++	cpt_dump(file, "Frag Slot2:  WQE ptr \t%p",
++		  (void *)plt_be_to_cpu_64(slot[0]));
++	cpt_dump(file, "Frag Slot3:  WQE ptr \t%p",
++		  (void *)plt_be_to_cpu_64(slot[1]));
+ }
+ 
+ static int
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 275ffc8ea32d3..e0fa3e2a88e98 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -470,10 +470,12 @@ void nix_tm_shaper_profile_free(struct nix_tm_shaper_profile *profile);
+ uint64_t nix_get_blkaddr(struct dev *dev);
+ void nix_lf_rq_dump(__io struct nix_cn10k_rq_ctx_s *ctx, FILE *file);
+ int nix_lf_gen_reg_dump(uintptr_t nix_lf_base, uint64_t *data);
+-int nix_lf_stat_reg_dump(uintptr_t nix_lf_base, uint64_t *data, uint8_t lf_tx_stats,
+-			 uint8_t lf_rx_stats);
+-int nix_lf_int_reg_dump(uintptr_t nix_lf_base, uint64_t *data, uint16_t qints, uint16_t cints);
+-int nix_q_ctx_get(struct dev *dev, uint8_t ctype, uint16_t qid, __io void **ctx_p);
++int nix_lf_stat_reg_dump(uintptr_t nix_lf_base, uint64_t *data,
++			 uint8_t lf_tx_stats, uint8_t lf_rx_stats);
++int nix_lf_int_reg_dump(uintptr_t nix_lf_base, uint64_t *data, uint16_t qints,
++			uint16_t cints);
++int nix_q_ctx_get(struct dev *dev, uint8_t ctype, uint16_t qid,
++		  __io void **ctx_p);
+ uint8_t nix_tm_lbk_relchan_get(struct nix *nix);
+ int nix_vlan_tpid_set(struct mbox *mbox, uint16_t pcifunc, uint32_t type, uint16_t tpid);
+ 
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index d61035989277c..5c4b9e559e5b4 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -806,7 +806,8 @@ cn10k_nix_prefree_seg_vec(struct rte_mbuf **mbufs, struct rte_mbuf **extm,
+ 			m0->next = *extm;
+ 			*extm = m0;
+ 		} else {
+-			sqe_id = __atomic_fetch_add(&txq->tx_compl.sqe_id, 1, __ATOMIC_RELAXED);
++			sqe_id = rte_atomic_fetch_add_explicit(&txq->tx_compl.sqe_id, 1,
++							       rte_memory_order_relaxed);
+ 			sqe_id = sqe_id & nb_desc_mask;
+ 			/* Set PNC */
+ 			w0 |= BIT_ULL(43);
+@@ -836,7 +837,8 @@ cn10k_nix_prefree_seg_vec(struct rte_mbuf **mbufs, struct rte_mbuf **extm,
+ 			m1->next = *extm;
+ 			*extm = m1;
+ 		} else {
+-			sqe_id = __atomic_fetch_add(&txq->tx_compl.sqe_id, 1, __ATOMIC_RELAXED);
++			sqe_id = rte_atomic_fetch_add_explicit(&txq->tx_compl.sqe_id, 1,
++							       rte_memory_order_relaxed);
+ 			sqe_id = sqe_id & nb_desc_mask;
+ 			/* Set PNC */
+ 			w0 |= BIT_ULL(43);
+@@ -866,7 +868,8 @@ cn10k_nix_prefree_seg_vec(struct rte_mbuf **mbufs, struct rte_mbuf **extm,
+ 			m2->next = *extm;
+ 			*extm = m2;
+ 		} else {
+-			sqe_id = __atomic_fetch_add(&txq->tx_compl.sqe_id, 1, __ATOMIC_RELAXED);
++			sqe_id = rte_atomic_fetch_add_explicit(&txq->tx_compl.sqe_id, 1,
++							       rte_memory_order_relaxed);
+ 			sqe_id = sqe_id & nb_desc_mask;
+ 			/* Set PNC */
+ 			w0 |= BIT_ULL(43);
+@@ -896,7 +899,8 @@ cn10k_nix_prefree_seg_vec(struct rte_mbuf **mbufs, struct rte_mbuf **extm,
+ 			m3->next = *extm;
+ 			*extm = m3;
+ 		} else {
+-			sqe_id = __atomic_fetch_add(&txq->tx_compl.sqe_id, 1, __ATOMIC_RELAXED);
++			sqe_id = rte_atomic_fetch_add_explicit(&txq->tx_compl.sqe_id, 1,
++							       rte_memory_order_relaxed);
+ 			sqe_id = sqe_id & nb_desc_mask;
+ 			/* Set PNC */
+ 			w0 |= BIT_ULL(43);
+diff --git a/drivers/net/cnxk/cn9k_tx.h b/drivers/net/cnxk/cn9k_tx.h
+index b7d0c3687f3be..018fae2eb7b65 100644
+--- a/drivers/net/cnxk/cn9k_tx.h
++++ b/drivers/net/cnxk/cn9k_tx.h
+@@ -154,7 +154,8 @@ cn9k_nix_prefree_seg_vec(struct rte_mbuf **mbufs, struct rte_mbuf **extm, struct
+ 			m0->next = *extm;
+ 			*extm = m0;
+ 		} else {
+-			sqe_id = __atomic_fetch_add(&txq->tx_compl.sqe_id, 1, __ATOMIC_RELAXED);
++			sqe_id = rte_atomic_fetch_add_explicit(&txq->tx_compl.sqe_id, 1,
++							       rte_memory_order_relaxed);
+ 			sqe_id = sqe_id & nb_desc_mask;
+ 			/* Set PNC */
+ 			w0 |= BIT_ULL(43);
+@@ -184,7 +185,8 @@ cn9k_nix_prefree_seg_vec(struct rte_mbuf **mbufs, struct rte_mbuf **extm, struct
+ 			m1->next = *extm;
+ 			*extm = m1;
+ 		} else {
+-			sqe_id = __atomic_fetch_add(&txq->tx_compl.sqe_id, 1, __ATOMIC_RELAXED);
++			sqe_id = rte_atomic_fetch_add_explicit(&txq->tx_compl.sqe_id, 1,
++							       rte_memory_order_relaxed);
+ 			sqe_id = sqe_id & nb_desc_mask;
+ 			/* Set PNC */
+ 			w0 |= BIT_ULL(43);
+@@ -214,7 +216,8 @@ cn9k_nix_prefree_seg_vec(struct rte_mbuf **mbufs, struct rte_mbuf **extm, struct
+ 			m2->next = *extm;
+ 			*extm = m2;
+ 		} else {
+-			sqe_id = __atomic_fetch_add(&txq->tx_compl.sqe_id, 1, __ATOMIC_RELAXED);
++			sqe_id = rte_atomic_fetch_add_explicit(&txq->tx_compl.sqe_id, 1,
++							       rte_memory_order_relaxed);
+ 			sqe_id = sqe_id & nb_desc_mask;
+ 			/* Set PNC */
+ 			w0 |= BIT_ULL(43);
+@@ -244,7 +247,8 @@ cn9k_nix_prefree_seg_vec(struct rte_mbuf **mbufs, struct rte_mbuf **extm, struct
+ 			m3->next = *extm;
+ 			*extm = m3;
+ 		} else {
+-			sqe_id = __atomic_fetch_add(&txq->tx_compl.sqe_id, 1, __ATOMIC_RELAXED);
++			sqe_id = rte_atomic_fetch_add_explicit(&txq->tx_compl.sqe_id, 1,
++							       rte_memory_order_relaxed);
+ 			sqe_id = sqe_id & nb_desc_mask;
+ 			/* Set PNC */
+ 			w0 |= BIT_ULL(43);
+-- 
+2.25.1
+

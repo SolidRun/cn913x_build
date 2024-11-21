@@ -1,0 +1,110 @@
+From 02aa0735658619c2bab2aef406582aaa9da3c7ce Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 15 Jun 2023 17:30:40 +0530
+Subject: [PATCH 496/955] net/cnxk: sync from upstream
+
+Change-Id: Ida1798afb9ad384e25e4fce40e478676f4e582b4
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_fc.c      | 2 +-
+ drivers/common/cnxk/roc_nix_inl_dev.c | 2 +-
+ drivers/net/cnxk/cn10k_rx_select.c    | 2 +-
+ drivers/net/cnxk/cn10k_rxtx.h         | 1 -
+ drivers/net/cnxk/cn10k_tx_select.c    | 2 +-
+ drivers/net/cnxk/cn9k_rx_select.c     | 2 +-
+ drivers/net/cnxk/cn9k_tx_select.c     | 2 +-
+ 7 files changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 7dc37dc23354c..d8ca5f9996c96 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -442,7 +442,7 @@ nix_rx_chan_multi_bpid_cfg(struct roc_nix *roc_nix, uint8_t chan, uint16_t bpid,
+ 		return -EINVAL;
+ 
+ 	/* Find associated NIX RX channel if Aura BPID is of that of a NIX. */
+-	TAILQ_FOREACH (roc_nix_tmp, nix_list, next) {
++	TAILQ_FOREACH(roc_nix_tmp, nix_list, next) {
+ 		struct nix *nix = roc_nix_to_nix_priv(roc_nix_tmp);
+ 		int i;
+ 
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index c929ab6b465ed..d76158e30d04b 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -737,7 +737,7 @@ inl_outb_soft_exp_poll(struct nix_inl_dev *inl_dev, uint32_t ring_idx)
+ 			inl_dev->work_cb(&tmp, sa, (port_id << 8) | 0x1);
+ 			__atomic_store_n(ring_base + tail_l + 1, 0ULL,
+ 					 __ATOMIC_RELAXED);
+-			__atomic_add_fetch((uint32_t *)ring_base, 1,
++			__atomic_fetch_add((uint32_t *)ring_base, 1,
+ 					   __ATOMIC_ACQ_REL);
+ 		} else
+ 			plt_err("Invalid SA");
+diff --git a/drivers/net/cnxk/cn10k_rx_select.c b/drivers/net/cnxk/cn10k_rx_select.c
+index 86feb5f906983..1d44f2924e7e7 100644
+--- a/drivers/net/cnxk/cn10k_rx_select.c
++++ b/drivers/net/cnxk/cn10k_rx_select.c
+@@ -5,7 +5,7 @@
+ #include "cn10k_ethdev.h"
+ #include "cn10k_rx.h"
+ 
+-static inline void
++static __rte_used void
+ pick_rx_func(struct rte_eth_dev *eth_dev,
+ 	     const eth_rx_burst_t rx_burst[NIX_RX_OFFLOAD_MAX])
+ {
+diff --git a/drivers/net/cnxk/cn10k_rxtx.h b/drivers/net/cnxk/cn10k_rxtx.h
+index a67466a7c8a7f..aeffc4ac924d1 100644
+--- a/drivers/net/cnxk/cn10k_rxtx.h
++++ b/drivers/net/cnxk/cn10k_rxtx.h
+@@ -49,7 +49,6 @@ struct cn10k_eth_txq {
+ 	uint64_t *fc_mem;
+ 	uintptr_t lmt_base;
+ 	rte_iova_t io_addr;
+-	uint16_t sq_desc;
+ 	uint16_t sqes_per_sqb_log2;
+ 	int16_t nb_sqb_bufs_adj;
+ 	uint8_t flag;
+diff --git a/drivers/net/cnxk/cn10k_tx_select.c b/drivers/net/cnxk/cn10k_tx_select.c
+index c5c0380a6fc63..404f5ba979c08 100644
+--- a/drivers/net/cnxk/cn10k_tx_select.c
++++ b/drivers/net/cnxk/cn10k_tx_select.c
+@@ -5,7 +5,7 @@
+ #include "cn10k_ethdev.h"
+ #include "cn10k_tx.h"
+ 
+-static inline void
++static __rte_used inline void
+ pick_tx_func(struct rte_eth_dev *eth_dev,
+ 	     const eth_tx_burst_t tx_burst[NIX_TX_OFFLOAD_MAX])
+ {
+diff --git a/drivers/net/cnxk/cn9k_rx_select.c b/drivers/net/cnxk/cn9k_rx_select.c
+index a44dfaaea1eca..05bc33ce6a40d 100644
+--- a/drivers/net/cnxk/cn9k_rx_select.c
++++ b/drivers/net/cnxk/cn9k_rx_select.c
+@@ -5,7 +5,7 @@
+ #include "cn9k_ethdev.h"
+ #include "cn9k_rx.h"
+ 
+-static inline void
++static __rte_used void
+ pick_rx_func(struct rte_eth_dev *eth_dev,
+ 	     const eth_rx_burst_t rx_burst[NIX_RX_OFFLOAD_MAX])
+ {
+diff --git a/drivers/net/cnxk/cn9k_tx_select.c b/drivers/net/cnxk/cn9k_tx_select.c
+index 214a5eaad13c0..e08883f032df8 100644
+--- a/drivers/net/cnxk/cn9k_tx_select.c
++++ b/drivers/net/cnxk/cn9k_tx_select.c
+@@ -5,7 +5,7 @@
+ #include "cn9k_ethdev.h"
+ #include "cn9k_tx.h"
+ 
+-static inline void
++static __rte_used void
+ pick_tx_func(struct rte_eth_dev *eth_dev,
+ 	     const eth_tx_burst_t tx_burst[NIX_TX_OFFLOAD_MAX])
+ {
+-- 
+2.25.1
+

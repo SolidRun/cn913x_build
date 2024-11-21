@@ -1,0 +1,32 @@
+From 580aa70cdbfd3a10e19f7a899c14b561739f0793 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 25 Nov 2022 00:45:51 -0500
+Subject: [PATCH 113/955] net/cnxk: enable SQ hysteresis
+
+By default fc_hyst was zero, store count on all updates. We enable
+single bit hysteresis with this patch.
+
+Change-Id: I1daf7c2db8159429df1f7be720abd914355ebe7e
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92597
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 22072d29b0ce8..04f050bbe8a2b 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -482,6 +482,7 @@ cnxk_nix_tx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	sq->nb_desc = nb_desc;
+ 	sq->max_sqe_sz = nix_sq_max_sqe_sz(dev);
+ 	sq->tc = ROC_NIX_PFC_CLASS_INVALID;
++	sq->fc_hyst_bits = 0x1;
+ 
+ 	if (nix->tx_compl_ena) {
+ 		sq->cqid = sq->qid + dev->nb_rxq;
+-- 
+2.25.1
+

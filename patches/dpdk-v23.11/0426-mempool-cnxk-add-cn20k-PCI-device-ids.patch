@@ -1,0 +1,42 @@
+From 45d871bbdfd552419e84c89732a5a89ac6cddff7 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Fri, 2 Aug 2024 00:12:01 +0530
+Subject: [PATCH 426/513] mempool/cnxk: add cn20k PCI device ids
+
+Add cn20k PCI device ids.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I627ec25bc1bac03e591a948796c24c1a65e7de7b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132655
+Reviewed-by: Tomasz Duszynski <tduszynski@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/mempool/cnxk/cnxk_mempool.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/mempool/cnxk/cnxk_mempool.c b/drivers/mempool/cnxk/cnxk_mempool.c
+index 1181b6f2650a9..6ff11d8004b8a 100644
+--- a/drivers/mempool/cnxk/cnxk_mempool.c
++++ b/drivers/mempool/cnxk/cnxk_mempool.c
+@@ -161,6 +161,7 @@ npa_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
+ }
+ 
+ static const struct rte_pci_id npa_pci_map[] = {
++	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN20KA, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KA, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KAS, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KB, PCI_DEVID_CNXK_RVU_NPA_PF),
+@@ -172,6 +173,7 @@ static const struct rte_pci_id npa_pci_map[] = {
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN9KD, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN9KE, PCI_DEVID_CNXK_RVU_NPA_PF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CNF9KA, PCI_DEVID_CNXK_RVU_NPA_PF),
++	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN20KA, PCI_DEVID_CNXK_RVU_NPA_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KA, PCI_DEVID_CNXK_RVU_NPA_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KAS, PCI_DEVID_CNXK_RVU_NPA_VF),
+ 	CNXK_PCI_ID(PCI_SUBSYSTEM_DEVID_CN10KB, PCI_DEVID_CNXK_RVU_NPA_VF),
+-- 
+2.25.1
+

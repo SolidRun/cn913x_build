@@ -1,0 +1,96 @@
+From 0fa26513e8420e5ac2742a663a813ed27a91d0aa Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Thu, 20 Jul 2023 08:13:18 -0700
+Subject: [PATCH 564/955] dma/cnxk: add completion ring tail wrap check
+
+Adds a check to avoid tail wrap when completion desc ring
+is full. Also patch increase max desc size to 2048.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Reviewed-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Change-Id: I09ff4c14bd8da2ffda0d055877aa40a9357e4154
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108291
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.c | 22 ++++++++++++++++++++--
+ drivers/dma/cnxk/cnxk_dmadev.h |  2 +-
+ 2 files changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index 166c8983026c9..17e9e2dc764c5 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -430,6 +430,11 @@ cnxk_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t d
+ 	header->cn9k.ptr = (uint64_t)comp_ptr;
+ 	STRM_INC(dpi_conf->c_desc, tail);
+ 
++	if (unlikely(dpi_conf->c_desc.tail == dpi_conf->c_desc.head)) {
++		STRM_DEC(dpi_conf->c_desc, tail);
++		return -ENOSPC;
++	}
++
+ 	header->cn9k.nfst = 1;
+ 	header->cn9k.nlst = 1;
+ 
+@@ -490,6 +495,11 @@ cnxk_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge
+ 	header->cn9k.ptr = (uint64_t)comp_ptr;
+ 	STRM_INC(dpi_conf->c_desc, tail);
+ 
++	if (unlikely(dpi_conf->c_desc.tail == dpi_conf->c_desc.head)) {
++		STRM_DEC(dpi_conf->c_desc, tail);
++		return -ENOSPC;
++	}
++
+ 	/*
+ 	 * For inbound case, src pointers are last pointers.
+ 	 * For all other cases, src pointers are first pointers.
+@@ -557,6 +567,11 @@ cn10k_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t
+ 	header->cn10k.ptr = (uint64_t)comp_ptr;
+ 	STRM_INC(dpi_conf->c_desc, tail);
+ 
++	if (unlikely(dpi_conf->c_desc.tail == dpi_conf->c_desc.head)) {
++		STRM_DEC(dpi_conf->c_desc, tail);
++		return -ENOSPC;
++	}
++
+ 	header->cn10k.nfst = 1;
+ 	header->cn10k.nlst = 1;
+ 
+@@ -609,6 +624,11 @@ cn10k_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge
+ 	header->cn10k.ptr = (uint64_t)comp_ptr;
+ 	STRM_INC(dpi_conf->c_desc, tail);
+ 
++	if (unlikely(dpi_conf->c_desc.tail == dpi_conf->c_desc.head)) {
++		STRM_DEC(dpi_conf->c_desc, tail);
++		return -ENOSPC;
++	}
++
+ 	header->cn10k.nfst = nb_src & DPI_MAX_POINTER;
+ 	header->cn10k.nlst = nb_dst & DPI_MAX_POINTER;
+ 	fptr = &src[0];
+@@ -691,8 +711,6 @@ cnxk_dmadev_completed_status(void *dev_private, uint16_t vchan, const uint16_t n
+ 	struct cnxk_dpi_compl_s *comp_ptr;
+ 	int cnt;
+ 
+-	RTE_SET_USED(last_idx);
+-
+ 	for (cnt = 0; cnt < nb_cpls; cnt++) {
+ 		comp_ptr = c_desc->compl_ptr[c_desc->head];
+ 		status[cnt] = comp_ptr->cdata;
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.h b/drivers/dma/cnxk/cnxk_dmadev.h
+index f375143b16639..9c6c898d233e0 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.h
++++ b/drivers/dma/cnxk/cnxk_dmadev.h
+@@ -9,7 +9,7 @@
+ #define DPI_MAX_POINTER	     15
+ #define STRM_INC(s, var)     ((s).var = ((s).var + 1) & (s).max_cnt)
+ #define STRM_DEC(s, var)     ((s).var = ((s).var - 1) == -1 ? (s).max_cnt : ((s).var - 1))
+-#define DPI_MAX_DESC	     1024
++#define DPI_MAX_DESC	     2048
+ #define DPI_MIN_DESC	     2
+ #define MAX_VCHANS_PER_QUEUE 4
+ 
+-- 
+2.25.1
+

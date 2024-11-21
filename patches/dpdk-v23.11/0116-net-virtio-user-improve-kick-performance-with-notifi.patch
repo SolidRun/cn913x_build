@@ -1,0 +1,392 @@
+From 664d98d2d5af52266eebcae247218845842a2e0a Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Tue, 28 Nov 2023 14:06:52 +0530
+Subject: [PATCH 116/513] net/virtio-user: improve kick performance with
+ notification area mapping
+
+This patch introduces new virtio-user callback to map the vq
+notification area and implements it for the vhost-vDPA backend.
+This is simply done by using mmap()/munmap() for
+the vhost-vDPA fd.
+
+This patch also adds a parameter for configuring feature bit
+VIRTIO_NET_F_NOTIFICATION_DATA. If feature is disabled, also
+update corresponding unsupported feature bit. And also adds
+code to write to queue notify address in notify callback.
+This will help in increasing the kick performance.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I7ccb3ab710995f6ad0ff88af50451a4ee82ce972
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117720
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ doc/guides/nics/virtio.rst                    |  5 ++
+ drivers/net/virtio/virtio_user/vhost.h        |  1 +
+ drivers/net/virtio/virtio_user/vhost_vdpa.c   | 56 +++++++++++++++++++
+ .../net/virtio/virtio_user/virtio_user_dev.c  | 49 ++++++++++++++--
+ .../net/virtio/virtio_user/virtio_user_dev.h  |  5 +-
+ drivers/net/virtio/virtio_user_ethdev.c       | 54 +++++++++++++++---
+ 6 files changed, 156 insertions(+), 14 deletions(-)
+
+diff --git a/doc/guides/nics/virtio.rst b/doc/guides/nics/virtio.rst
+index c22ce56a02f0a..11dd6359e5fca 100644
+--- a/doc/guides/nics/virtio.rst
++++ b/doc/guides/nics/virtio.rst
+@@ -349,6 +349,11 @@ Below devargs are supported by the virtio-user vdev:
+     election.
+     (Default: 0 (disabled))
+ 
++#.  ``notification_data``:
++
++    It is used to enable virtio device notification data feature.
++    (Default: 1 (enabled))
++
+ Virtio paths Selection and Usage
+ --------------------------------
+ 
+diff --git a/drivers/net/virtio/virtio_user/vhost.h b/drivers/net/virtio/virtio_user/vhost.h
+index f817cab77a7dd..1bce00c7acf55 100644
+--- a/drivers/net/virtio/virtio_user/vhost.h
++++ b/drivers/net/virtio/virtio_user/vhost.h
+@@ -90,6 +90,7 @@ struct virtio_user_backend_ops {
+ 	int (*server_disconnect)(struct virtio_user_dev *dev);
+ 	int (*server_reconnect)(struct virtio_user_dev *dev);
+ 	int (*get_intr_fd)(struct virtio_user_dev *dev);
++	int (*map_notification_area)(struct virtio_user_dev *dev, bool map);
+ };
+ 
+ extern struct virtio_user_backend_ops virtio_ops_user;
+diff --git a/drivers/net/virtio/virtio_user/vhost_vdpa.c b/drivers/net/virtio/virtio_user/vhost_vdpa.c
+index 2c36b26224b91..1eb0f9ec48722 100644
+--- a/drivers/net/virtio/virtio_user/vhost_vdpa.c
++++ b/drivers/net/virtio/virtio_user/vhost_vdpa.c
+@@ -5,6 +5,7 @@
+ #include <sys/ioctl.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>
++#include <sys/mman.h>
+ #include <fcntl.h>
+ #include <stdlib.h>
+ #include <unistd.h>
+@@ -622,6 +623,60 @@ vhost_vdpa_get_intr_fd(struct virtio_user_dev *dev __rte_unused)
+ 	return -1;
+ }
+ 
++static int
++unmap_notification_area(struct virtio_user_dev *dev, int nr_vrings)
++{
++	int i;
++
++	for (i = 0; i < nr_vrings; i++) {
++		if (dev->notify_area[i])
++			munmap(dev->notify_area[i], getpagesize());
++	}
++	free(dev->notify_area);
++
++	return 0;
++}
++
++static int
++vhost_vdpa_map_notification_area(struct virtio_user_dev *dev, bool map)
++{
++	struct vhost_vdpa_data *data = dev->backend_data;
++	int nr_vrings, i, page_size = getpagesize();
++	uint16_t **notify_area;
++
++	nr_vrings = dev->max_queue_pairs * 2;
++	if (dev->device_features & (1ull << VIRTIO_NET_F_CTRL_VQ))
++		nr_vrings++;
++
++	if (!map)
++		return unmap_notification_area(dev, nr_vrings);
++
++	notify_area = malloc(nr_vrings * sizeof(*notify_area));
++	if (!notify_area) {
++		PMD_DRV_LOG(ERR, "(%s) Failed to allocate notify area array", dev->path);
++		return -1;
++	}
++	for (i = 0; i < nr_vrings; i++) {
++		notify_area[i] = mmap(NULL, page_size, PROT_WRITE, MAP_SHARED | MAP_FILE,
++				      data->vhostfd, i * page_size);
++		if (notify_area[i] == MAP_FAILED) {
++			PMD_DRV_LOG(ERR, "(%s) Map failed for notify address of queue %d\n",
++				    dev->path, i);
++			goto map_err;
++		}
++	}
++	dev->notify_area = notify_area;
++
++	return 0;
++
++map_err:
++	i--;
++	for (; i >= 0; i--)
++		munmap(notify_area[i], page_size);
++	free(notify_area);
++	return -1;
++}
++
+ struct virtio_user_backend_ops virtio_ops_vdpa = {
+ 	.setup = vhost_vdpa_setup,
+ 	.destroy = vhost_vdpa_destroy,
+@@ -646,4 +701,5 @@ struct virtio_user_backend_ops virtio_ops_vdpa = {
+ 	.dma_unmap = vhost_vdpa_dma_unmap_batch,
+ 	.update_link_state = vhost_vdpa_update_link_state,
+ 	.get_intr_fd = vhost_vdpa_get_intr_fd,
++	.map_notification_area = vhost_vdpa_map_notification_area,
+ };
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.c b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+index af1f8c823779a..dcd698b8db1b7 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.c
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+@@ -18,6 +18,7 @@
+ #include <rte_string_fns.h>
+ #include <rte_eal_memconfig.h>
+ #include <rte_malloc.h>
++#include <rte_io.h>
+ 
+ #include "vhost.h"
+ #include "virtio_user_dev.h"
+@@ -413,6 +414,12 @@ virtio_user_dev_init_notify(struct virtio_user_dev *dev)
+ 		dev->callfds[i] = callfd;
+ 		dev->kickfds[i] = kickfd;
+ 	}
++	dev->notify_area_mapped = false;
++	if (dev->ops->map_notification_area) {
++		if (dev->ops->map_notification_area(dev, true))
++			goto err;
++		dev->notify_area_mapped = true;
++	}
+ 
+ 	return 0;
+ err:
+@@ -445,6 +452,11 @@ virtio_user_dev_uninit_notify(struct virtio_user_dev *dev)
+ 			dev->callfds[i] = -1;
+ 		}
+ 	}
++	if (dev->ops->map_notification_area && dev->notify_area_mapped) {
++		/* Unmap notification area */
++		dev->ops->map_notification_area(dev, false);
++		dev->notify_area_mapped = false;
++	}
+ }
+ 
+ static int
+@@ -674,12 +686,14 @@ virtio_user_free_vrings(struct virtio_user_dev *dev)
+ 	 1ULL << VIRTIO_NET_F_GUEST_TSO6	|	\
+ 	 1ULL << VIRTIO_F_IN_ORDER		|	\
+ 	 1ULL << VIRTIO_F_VERSION_1		|	\
+-	 1ULL << VIRTIO_F_RING_PACKED)
++	 1ULL << VIRTIO_F_RING_PACKED		|	\
++	 1ULL << VIRTIO_F_NOTIFICATION_DATA)
+ 
+ int
+ virtio_user_dev_init(struct virtio_user_dev *dev, char *path, uint16_t queues,
+ 		     int cq, int queue_size, const char *mac, char **ifname,
+ 		     int server, int mrg_rxbuf, int in_order, int packed_vq,
++		     int notification_data,
+ 		     enum virtio_user_backend_type backend_type)
+ {
+ 	uint64_t backend_features;
+@@ -737,6 +751,9 @@ virtio_user_dev_init(struct virtio_user_dev *dev, char *path, uint16_t queues,
+ 	if (!packed_vq)
+ 		dev->unsupported_features |= (1ull << VIRTIO_F_RING_PACKED);
+ 
++	if (!notification_data)
++		dev->unsupported_features |= (1ull << VIRTIO_F_NOTIFICATION_DATA);
++
+ 	if (dev->mac_specified)
+ 		dev->frontend_features |= (1ull << VIRTIO_NET_F_MAC);
+ 	else
+@@ -1039,11 +1056,32 @@ static void
+ virtio_user_control_queue_notify(struct virtqueue *vq, void *cookie)
+ {
+ 	struct virtio_user_dev *dev = cookie;
+-	uint64_t buf = 1;
++	uint64_t notify_data = 1;
+ 
+-	if (write(dev->kickfds[vq->vq_queue_index], &buf, sizeof(buf)) < 0)
+-		PMD_DRV_LOG(ERR, "failed to kick backend: %s",
+-			    strerror(errno));
++	if (!dev->notify_area_mapped) {
++		if (write(dev->kickfds[vq->vq_queue_index], &notify_data, sizeof(notify_data)) < 0)
++			PMD_DRV_LOG(ERR, "failed to kick backend: %s",
++				    strerror(errno));
++		return;
++	}
++
++	if (virtio_with_packed_queue(&dev->hw)) {
++		/* Bit[0:15]: vq queue index
++		 * Bit[16:30]: avail index
++		 * Bit[31]: avail wrap counter
++		 */
++		notify_data = ((uint32_t)(!!(vq->vq_packed.cached_flags &
++				VRING_PACKED_DESC_F_AVAIL)) << 31) |
++				((uint32_t)vq->vq_avail_idx << 16) |
++				vq->vq_queue_index;
++	} else {
++		/* Bit[0:15]: vq queue index
++		 * Bit[16:31]: avail index
++		 */
++		notify_data = ((uint32_t)vq->vq_avail_idx << 16) |
++				vq->vq_queue_index;
++	}
++	rte_write32(notify_data, vq->notify_addr);
+ }
+ 
+ int
+@@ -1062,6 +1100,7 @@ virtio_user_dev_create_shadow_cvq(struct virtio_user_dev *dev, struct virtqueue
+ 
+ 	scvq->cq.notify_queue = &virtio_user_control_queue_notify;
+ 	scvq->cq.notify_cookie = dev;
++	scvq->notify_addr = vq->notify_addr;
+ 	dev->scvq = scvq;
+ 
+ 	return 0;
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.h b/drivers/net/virtio/virtio_user/virtio_user_dev.h
+index 7323d88302305..29ec386da5ad4 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.h
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.h
+@@ -64,6 +64,9 @@ struct virtio_user_dev {
+ 	struct virtqueue	*scvq;
+ 
+ 	void *backend_data;
++
++	bool notify_area_mapped;
++	uint16_t **notify_area;
+ };
+ 
+ int virtio_user_dev_set_features(struct virtio_user_dev *dev);
+@@ -72,7 +75,7 @@ int virtio_user_stop_device(struct virtio_user_dev *dev);
+ int virtio_user_dev_init(struct virtio_user_dev *dev, char *path, uint16_t queues,
+ 			 int cq, int queue_size, const char *mac, char **ifname,
+ 			 int server, int mrg_rxbuf, int in_order,
+-			 int packed_vq,
++			 int packed_vq, int notification_data,
+ 			 enum virtio_user_backend_type backend_type);
+ void virtio_user_dev_uninit(struct virtio_user_dev *dev);
+ void virtio_user_handle_cq(struct virtio_user_dev *dev, uint16_t queue_idx);
+diff --git a/drivers/net/virtio/virtio_user_ethdev.c b/drivers/net/virtio/virtio_user_ethdev.c
+index 3a316428994d3..40900ef859d65 100644
+--- a/drivers/net/virtio/virtio_user_ethdev.c
++++ b/drivers/net/virtio/virtio_user_ethdev.c
+@@ -18,6 +18,7 @@
+ #include <bus_vdev_driver.h>
+ #include <rte_alarm.h>
+ #include <rte_cycles.h>
++#include <rte_io.h>
+ 
+ #include "virtio_ethdev.h"
+ #include "virtio_logs.h"
+@@ -232,6 +233,7 @@ virtio_user_setup_queue(struct virtio_hw *hw, struct virtqueue *vq)
+ 	else
+ 		virtio_user_setup_queue_split(vq, dev);
+ 
++	vq->notify_addr = dev->notify_area[vq->vq_queue_index];
+ 	if (dev->hw_cvq && hw->cvq && (virtnet_cq_to_vq(hw->cvq) == vq))
+ 		return virtio_user_dev_create_shadow_cvq(dev, vq);
+ 
+@@ -262,8 +264,8 @@ virtio_user_del_queue(struct virtio_hw *hw, struct virtqueue *vq)
+ static void
+ virtio_user_notify_queue(struct virtio_hw *hw, struct virtqueue *vq)
+ {
+-	uint64_t buf = 1;
+ 	struct virtio_user_dev *dev = virtio_user_get_dev(hw);
++	uint64_t notify_data = 1;
+ 
+ 	if (hw->cvq && (virtnet_cq_to_vq(hw->cvq) == vq)) {
+ 		virtio_user_handle_cq(dev, vq->vq_queue_index);
+@@ -271,9 +273,31 @@ virtio_user_notify_queue(struct virtio_hw *hw, struct virtqueue *vq)
+ 		return;
+ 	}
+ 
+-	if (write(dev->kickfds[vq->vq_queue_index], &buf, sizeof(buf)) < 0)
+-		PMD_DRV_LOG(ERR, "failed to kick backend: %s",
+-			    strerror(errno));
++	if (!dev->notify_area_mapped) {
++		if (write(dev->kickfds[vq->vq_queue_index], &notify_data,
++			  sizeof(notify_data)) < 0)
++			PMD_DRV_LOG(ERR, "failed to kick backend: %s",
++				    strerror(errno));
++		return;
++	}
++
++	if (virtio_with_packed_queue(hw)) {
++		/* Bit[0:15]: vq queue index
++		 * Bit[16:30]: avail index
++		 * Bit[31]: avail wrap counter
++		 */
++		notify_data = ((uint32_t)(!!(vq->vq_packed.cached_flags &
++				VRING_PACKED_DESC_F_AVAIL)) << 31) |
++				((uint32_t)vq->vq_avail_idx << 16) |
++				vq->vq_queue_index;
++	} else {
++		/* Bit[0:15]: vq queue index
++		 * Bit[16:31]: avail index
++		 */
++		notify_data = ((uint32_t)vq->vq_avail_idx << 16) |
++				vq->vq_queue_index;
++	}
++	rte_write32(notify_data, vq->notify_addr);
+ }
+ 
+ static int
+@@ -329,6 +353,8 @@ static const char *valid_args[] = {
+ 	VIRTIO_USER_ARG_SPEED,
+ #define VIRTIO_USER_ARG_VECTORIZED     "vectorized"
+ 	VIRTIO_USER_ARG_VECTORIZED,
++#define VIRTIO_USER_ARG_NOTIFICATION_DATA  "notification_data"
++	VIRTIO_USER_ARG_NOTIFICATION_DATA,
+ 	NULL
+ };
+ 
+@@ -480,6 +506,7 @@ virtio_user_pmd_probe(struct rte_vdev_device *vdev)
+ 	uint64_t in_order = 1;
+ 	uint64_t packed_vq = 0;
+ 	uint64_t vectorized = 0;
++	uint64_t notification_data = 1;
+ 	char *path = NULL;
+ 	char *ifname = NULL;
+ 	char *mac_addr = NULL;
+@@ -637,6 +664,15 @@ virtio_user_pmd_probe(struct rte_vdev_device *vdev)
+ 		}
+ 	}
+ 
++	if (rte_kvargs_count(kvlist, VIRTIO_USER_ARG_NOTIFICATION_DATA) == 1) {
++		if (rte_kvargs_process(kvlist, VIRTIO_USER_ARG_NOTIFICATION_DATA,
++				       &get_integer_arg, &notification_data) < 0) {
++			PMD_INIT_LOG(ERR, "error to parse %s",
++				     VIRTIO_USER_ARG_NOTIFICATION_DATA);
++			goto end;
++		}
++	}
++
+ 	eth_dev = virtio_user_eth_dev_alloc(vdev);
+ 	if (!eth_dev) {
+ 		PMD_INIT_LOG(ERR, "virtio_user fails to alloc device");
+@@ -645,9 +681,10 @@ virtio_user_pmd_probe(struct rte_vdev_device *vdev)
+ 
+ 	dev = eth_dev->data->dev_private;
+ 	hw = &dev->hw;
+-	if (virtio_user_dev_init(dev, path, (uint16_t)queues, cq,
+-			 queue_size, mac_addr, &ifname, server_mode,
+-			 mrg_rxbuf, in_order, packed_vq, backend_type) < 0) {
++	if (virtio_user_dev_init(dev, path, (uint16_t)queues, cq, queue_size,
++				 mac_addr, &ifname, server_mode, mrg_rxbuf,
++				 in_order, packed_vq, notification_data,
++				 backend_type) < 0) {
+ 		PMD_INIT_LOG(ERR, "virtio_user_dev_init fails");
+ 		virtio_user_eth_dev_free(eth_dev);
+ 		goto end;
+@@ -784,4 +821,5 @@ RTE_PMD_REGISTER_PARAM_STRING(net_virtio_user,
+ 	"in_order=<0|1> "
+ 	"packed_vq=<0|1> "
+ 	"speed=<int> "
+-	"vectorized=<0|1>");
++	"vectorized=<0|1> "
++	"notification_data=<0|1> ");
+-- 
+2.25.1
+

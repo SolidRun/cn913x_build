@@ -1,0 +1,56 @@
+From 549366a800578a1d18cee9d3f345353f68967cfa Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 15 Jan 2024 17:26:27 +0530
+Subject: [PATCH 177/513] common/cnxk: add comments to denote skipped entries
+
+Add comments to denote unused table entries.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I85ca6d997d2bb232e6b8ecd3ea88e6da554092f9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120195
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+---
+ drivers/common/cnxk/roc_ae.c            | 6 +++---
+ drivers/common/cnxk/roc_ae_fpm_tables.c | 6 +++---
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_ae.c b/drivers/common/cnxk/roc_ae.c
+index e6a013d7c48ef..7ef0efe2b33ab 100644
+--- a/drivers/common/cnxk/roc_ae.c
++++ b/drivers/common/cnxk/roc_ae.c
+@@ -151,9 +151,9 @@ const struct roc_ae_ec_group ae_ec_grp[ROC_AE_EC_ID_PMAX] = {
+ 			     0x3F, 0x00},
+ 		    .length = 66},
+ 	},
+-	{},
+-	{},
+-	{},
++	{ /* ROC_AE_EC_ID_P160 */ },
++	{ /* ROC_AE_EC_ID_P320 */ },
++	{ /* ROC_AE_EC_ID_P512 */ },
+ 	{
+ 		.prime = {.data = {0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF,
+ 				   0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+diff --git a/drivers/common/cnxk/roc_ae_fpm_tables.c b/drivers/common/cnxk/roc_ae_fpm_tables.c
+index ead3128e7f01c..942657b56a59a 100644
+--- a/drivers/common/cnxk/roc_ae_fpm_tables.c
++++ b/drivers/common/cnxk/roc_ae_fpm_tables.c
+@@ -1261,9 +1261,9 @@ const struct ae_fpm_entry ae_fpm_tbl_scalar[ROC_AE_EC_ID_PMAX] = {
+ 		.data = ae_fpm_tbl_p521,
+ 		.len = sizeof(ae_fpm_tbl_p521)
+ 	},
+-	{},
+-	{},
+-	{},
++	{ /* ROC_AE_EC_ID_P160 */ },
++	{ /* ROC_AE_EC_ID_P320 */ },
++	{ /* ROC_AE_EC_ID_P512 */ },
+ 	{
+ 		.data = ae_fpm_tbl_p256_sm2,
+ 		.len = sizeof(ae_fpm_tbl_p256_sm2)
+-- 
+2.25.1
+

@@ -1,0 +1,784 @@
+From cdbaa52507190f5b6e9e755e3b258a51622348f3 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Tue, 13 Dec 2022 15:12:29 +0530
+Subject: [PATCH 080/955] mem: telemetry support for memseg and element
+ information
+
+Cherry picked from dpdk-21.11-devel
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I20a42df34338fff35e0a70cbe0f9102a21d7b72e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92467
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ lib/eal/common/eal_common_memory.c | 721 ++++++++++++++++++++++++++++-
+ 1 file changed, 716 insertions(+), 5 deletions(-)
+
+diff --git a/lib/eal/common/eal_common_memory.c b/lib/eal/common/eal_common_memory.c
+index 688dc615d74be..e6b57f34f5a09 100644
+--- a/lib/eal/common/eal_common_memory.c
++++ b/lib/eal/common/eal_common_memory.c
+@@ -3,11 +3,15 @@
+  */
+ 
+ #include <errno.h>
++#include <ctype.h>
+ #include <stdio.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <inttypes.h>
++#ifdef RTE_EXEC_ENV_LINUX
++#include <malloc.h>
++#endif
+ 
+ #include <rte_fbarray.h>
+ #include <rte_memory.h>
+@@ -26,6 +30,7 @@
+ #include "eal_memcfg.h"
+ #include "eal_options.h"
+ #include "malloc_heap.h"
++#include "malloc_elem.h"
+ 
+ /*
+  * Try to mmap *size bytes in /dev/zero. If it is successful, return the
+@@ -1113,11 +1118,23 @@ rte_eal_memory_init(void)
+ }
+ 
+ #ifndef RTE_EXEC_ENV_WINDOWS
+-#define EAL_MEMZONE_LIST_REQ	"/eal/memzone_list"
+-#define EAL_MEMZONE_INFO_REQ	"/eal/memzone_info"
+-#define EAL_HEAP_LIST_REQ	"/eal/heap_list"
+-#define EAL_HEAP_INFO_REQ	"/eal/heap_info"
+-#define ADDR_STR		15
++#define EAL_MEMZONE_LIST_REQ		"/eal/memzone_list"
++#define EAL_MEMZONE_INFO_REQ		"/eal/memzone_info"
++#define EAL_HEAP_LIST_REQ		"/eal/heap_list"
++#define EAL_HEAP_INFO_REQ		"/eal/heap_info"
++#define EAL_MEMSEG_LISTS_REQ		"/eal/memseg_lists"
++#define EAL_MEMSEG_LIST_INFO_REQ	"/eal/memseg_list_info"
++#define EAL_MEMSEG_INFO_REQ		"/eal/memseg_info"
++#define EAL_ELEMENT_LIST_REQ		"/eal/mem_element_list"
++#define EAL_ELEMENT_INFO_REQ		"/eal/mem_element_info"
++
++#ifdef RTE_EXEC_ENV_LINUX
++#define SYSMEMORY_LIST_REQ             "/sysmem/sys_heap_list"
++#define SYSMEMORY_INFO_REQ             "/sysmem/sys_heap_info"
++#endif
++
++#define ADDR_STR			15
++
+ 
+ /* Telemetry callback handler to return heap stats for requested heap id. */
+ static int
+@@ -1265,6 +1282,674 @@ handle_eal_memzone_list_request(const char *cmd __rte_unused,
+ 	return 0;
+ }
+ 
++/* n_vals is the number of params to be parsed. */
++static int
++parse_params(const char *params, uint32_t *vals, size_t n_vals)
++{
++	char dlim[2] = ",";
++	char *params_args;
++	size_t count = 0;
++	char *token;
++
++	if (vals == NULL || params == NULL || strlen(params) == 0)
++		return -1;
++
++	/* strtok expects char * and param is const char *. Hence on using
++	 * params as "const char *" compiler throws warning.
++	 */
++	params_args = strdup(params);
++	if (params_args == NULL)
++		return -1;
++
++	token = strtok(params_args, dlim);
++	while (token && isdigit(*token) && count < n_vals) {
++		vals[count++] = strtoul(token, NULL, 10);
++		token = strtok(NULL, dlim);
++	}
++
++	free(params_args);
++
++	if (count < n_vals)
++		return -1;
++
++	return 0;
++}
++
++static int
++handle_eal_memseg_lists_request(const char *cmd __rte_unused,
++				const char *params __rte_unused,
++				struct rte_tel_data *d)
++{
++	struct rte_mem_config *mcfg;
++	int i;
++
++	rte_tel_data_start_array(d, RTE_TEL_INT_VAL);
++
++	rte_mcfg_mem_read_lock();
++	mcfg = rte_eal_get_configuration()->mem_config;
++
++	for (i = 0; i < RTE_MAX_MEMSEG_LISTS; i++) {
++		struct rte_memseg_list *msl = &mcfg->memsegs[i];
++		if (msl->memseg_arr.count == 0)
++			continue;
++
++		rte_tel_data_add_array_int(d, i);
++	}
++	rte_mcfg_mem_read_unlock();
++
++	return 0;
++}
++
++static int
++handle_eal_memseg_list_info_request(const char *cmd __rte_unused,
++				    const char *params, struct rte_tel_data *d)
++{
++	struct rte_mem_config *mcfg;
++	struct rte_memseg_list *msl;
++	struct rte_fbarray *arr;
++	uint32_t ms_list_idx;
++	int ms_idx;
++	/* size of an array == num params to be parsed. */
++	uint32_t vals[1] = {0};
++
++	if (parse_params(params, vals, RTE_DIM(vals)) < 0)
++		return -1;
++
++	ms_list_idx = vals[0];
++	if (ms_list_idx >= RTE_MAX_MEMSEG_LISTS)
++		return -1;
++
++	rte_tel_data_start_array(d, RTE_TEL_INT_VAL);
++
++	rte_mcfg_mem_read_lock();
++	mcfg = rte_eal_get_configuration()->mem_config;
++	msl = &mcfg->memsegs[ms_list_idx];
++	if (msl->memseg_arr.count == 0)
++		goto done;
++
++	arr = &msl->memseg_arr;
++
++	ms_idx = rte_fbarray_find_next_used(arr, 0);
++	while (ms_idx >= 0) {
++		rte_tel_data_add_array_int(d, ms_idx);
++		ms_idx = rte_fbarray_find_next_used(arr, ms_idx + 1);
++	}
++
++done:
++	rte_mcfg_mem_read_unlock();
++
++	return 0;
++}
++
++static int
++handle_eal_memseg_info_request(const char *cmd __rte_unused,
++			       const char *params, struct rte_tel_data *d)
++{
++	struct rte_mem_config *mcfg;
++	uint64_t ms_start_addr, ms_end_addr, ms_size, hugepage_size;
++	struct rte_memseg_list *msl;
++	const struct rte_memseg *ms;
++	struct rte_fbarray *arr;
++	char addr[ADDR_STR];
++	uint32_t ms_list_idx = 0;
++	uint32_t ms_idx = 0;
++	int32_t ms_socket_id;
++	uint32_t ms_flags;
++	/* size of an array == num params to be parsed. */
++	uint32_t vals[2] = {0};
++
++	if (parse_params(params, vals, RTE_DIM(vals)) < 0)
++		return -1;
++
++	ms_list_idx = vals[0];
++	if (ms_list_idx >= RTE_MAX_MEMSEG_LISTS)
++		return -1;
++
++	ms_idx = vals[1];
++
++	rte_mcfg_mem_read_lock();
++
++	mcfg = rte_eal_get_configuration()->mem_config;
++	msl = &mcfg->memsegs[ms_list_idx];
++	if (msl->memseg_arr.count == 0) {
++		rte_mcfg_mem_read_unlock();
++		return -1;
++	}
++
++	arr = &msl->memseg_arr;
++	ms = rte_fbarray_get(arr, ms_idx);
++	if (ms == NULL) {
++		rte_mcfg_mem_read_unlock();
++		RTE_LOG(DEBUG, EAL, "Error fetching requested memseg.\n");
++		return -1;
++	}
++
++	ms_start_addr = ms->addr_64;
++	ms_end_addr = (uint64_t)RTE_PTR_ADD(ms_start_addr, ms->len);
++	ms_size = ms->len;
++	hugepage_size = ms->hugepage_sz;
++	ms_socket_id = ms->socket_id;
++	ms_flags = ms->flags;
++
++	rte_mcfg_mem_read_unlock();
++
++	rte_tel_data_start_dict(d);
++	rte_tel_data_add_dict_int(d, "Memseg_list_index", ms_list_idx);
++	rte_tel_data_add_dict_int(d, "Memseg_index", ms_idx);
++	snprintf(addr, ADDR_STR, "0x%"PRIx64, ms_start_addr);
++	rte_tel_data_add_dict_string(d, "Start_addr", addr);
++	snprintf(addr, ADDR_STR, "0x%"PRIx64, ms_end_addr);
++	rte_tel_data_add_dict_string(d, "End_addr", addr);
++	rte_tel_data_add_dict_u64(d, "Size", ms_size);
++	rte_tel_data_add_dict_u64(d, "Hugepage_size", hugepage_size);
++	rte_tel_data_add_dict_int(d, "Socket_id", ms_socket_id);
++	rte_tel_data_add_dict_int(d, "flags", ms_flags);
++
++	return 0;
++}
++
++static int
++handle_eal_element_list_request(const char *cmd __rte_unused,
++				const char *params, struct rte_tel_data *d)
++{
++	struct rte_mem_config *mcfg;
++	struct rte_memseg_list *msl;
++	const struct rte_memseg *ms;
++	struct malloc_elem *elem;
++	struct malloc_heap *heap;
++	uint64_t ms_start_addr, ms_end_addr;
++	uint64_t elem_start_addr, elem_end_addr;
++	uint32_t ms_list_idx = 0;
++	uint32_t heap_id = 0;
++	uint32_t ms_idx = 0;
++	int elem_count = 0;
++	/* size of an array == num params to be parsed. */
++	uint32_t vals[3] = {0};
++
++	if (parse_params(params, vals, RTE_DIM(vals)) < 0)
++		return -1;
++
++	heap_id = vals[0];
++	if (heap_id >= RTE_MAX_HEAPS)
++		return -1;
++
++	ms_list_idx = vals[1];
++	if (ms_list_idx >= RTE_MAX_MEMSEG_LISTS)
++		return -1;
++
++	ms_idx = vals[2];
++
++	rte_mcfg_mem_read_lock();
++
++	mcfg = rte_eal_get_configuration()->mem_config;
++	msl = &mcfg->memsegs[ms_list_idx];
++	ms = rte_fbarray_get(&msl->memseg_arr, ms_idx);
++	if (ms == NULL) {
++		rte_mcfg_mem_read_unlock();
++		RTE_LOG(DEBUG, EAL, "Error fetching requested memseg.\n");
++		return -1;
++	}
++
++	ms_start_addr = ms->addr_64;
++	ms_end_addr = (uint64_t)RTE_PTR_ADD(ms_start_addr, ms->len);
++	rte_mcfg_mem_read_unlock();
++
++	rte_tel_data_start_dict(d);
++
++	heap = &mcfg->malloc_heaps[heap_id];
++	rte_spinlock_lock(&heap->lock);
++
++	elem = heap->first;
++	while (elem) {
++		elem_start_addr = (uint64_t)elem;
++		elem_end_addr =
++			(uint64_t)RTE_PTR_ADD(elem_start_addr, elem->size);
++
++		if ((uint64_t)elem_start_addr >= ms_start_addr &&
++		    (uint64_t)elem_end_addr <= ms_end_addr)
++			elem_count++;
++		elem = elem->next;
++	}
++
++	rte_spinlock_unlock(&heap->lock);
++
++	rte_tel_data_add_dict_int(d, "Element_count", elem_count);
++
++	return 0;
++}
++
++static int
++handle_eal_element_info_request(const char *cmd __rte_unused,
++				const char *params, struct rte_tel_data *d)
++{
++	struct rte_mem_config *mcfg;
++	struct rte_memseg_list *msl;
++	const struct rte_memseg *ms;
++	struct malloc_elem *elem;
++	struct malloc_heap *heap;
++	struct rte_tel_data *c;
++	uint64_t ms_start_addr, ms_end_addr;
++	uint64_t elem_start_addr, elem_end_addr;
++	uint32_t ms_list_idx = 0;
++	uint32_t heap_id = 0;
++	uint32_t ms_idx = 0;
++	uint32_t start_elem = 0, end_elem = 0;
++	uint32_t count = 0, elem_count = 0;
++	char str[ADDR_STR];
++	/* size of an array == num params to be parsed. */
++	uint32_t vals[5] = {0};
++
++	if (parse_params(params, vals, RTE_DIM(vals)) < 0)
++		return -1;
++
++	heap_id = vals[0];
++	if (heap_id >= RTE_MAX_HEAPS)
++		return -1;
++
++	ms_list_idx = vals[1];
++	if (ms_list_idx >= RTE_MAX_MEMSEG_LISTS)
++		return -1;
++
++	ms_idx = vals[2];
++	start_elem = vals[3];
++	end_elem = vals[4];
++
++	if (end_elem < start_elem)
++		return -1;
++
++	rte_mcfg_mem_read_lock();
++
++	mcfg = rte_eal_get_configuration()->mem_config;
++	msl = &mcfg->memsegs[ms_list_idx];
++	ms = rte_fbarray_get(&msl->memseg_arr, ms_idx);
++	if (ms == NULL) {
++		rte_mcfg_mem_read_unlock();
++		RTE_LOG(DEBUG, EAL, "Error fetching requested memseg.\n");
++		return -1;
++	}
++
++	ms_start_addr = ms->addr_64;
++	ms_end_addr = (uint64_t)RTE_PTR_ADD(ms_start_addr, ms->len);
++
++	rte_mcfg_mem_read_unlock();
++
++	rte_tel_data_start_dict(d);
++
++	heap = &mcfg->malloc_heaps[heap_id];
++	rte_spinlock_lock(&heap->lock);
++
++	elem = heap->first;
++	while (elem) {
++		elem_start_addr = (uint64_t)elem;
++		elem_end_addr =
++			(uint64_t)RTE_PTR_ADD(elem_start_addr, elem->size);
++
++		if (elem_start_addr < ms_start_addr ||
++				elem_end_addr > ms_end_addr) {
++			elem = elem->next;
++			continue;
++		}
++
++		if (count < start_elem) {
++			elem = elem->next;
++			count++;
++			continue;
++		}
++
++		c = rte_tel_data_alloc();
++		if (c == NULL)
++			break;
++
++		rte_tel_data_start_dict(c);
++		rte_tel_data_add_dict_int(c, "msl_id", ms_list_idx);
++		rte_tel_data_add_dict_int(c, "ms_id", ms_idx);
++		snprintf(str, ADDR_STR, "0x%"PRIx64, ms_start_addr);
++		rte_tel_data_add_dict_string(c, "memseg_start_addr", str);
++		snprintf(str, ADDR_STR, "0x%"PRIx64, ms_end_addr);
++		rte_tel_data_add_dict_string(c, "memseg_end_addr", str);
++		snprintf(str, ADDR_STR, "0x%"PRIx64, elem_start_addr);
++		rte_tel_data_add_dict_string(c, "element_start_addr", str);
++		snprintf(str, ADDR_STR, "0x%"PRIx64, elem_end_addr);
++		rte_tel_data_add_dict_string(c, "element_end_addr", str);
++		rte_tel_data_add_dict_int(c, "element_size", elem->size);
++		snprintf(str, ADDR_STR, "%s", elem->state == 0 ? "Free" :
++			 elem->state == 1 ? "Busy" : elem->state == 2 ?
++			 "Pad" : "Error");
++		rte_tel_data_add_dict_string(c, "element_state", str);
++
++		snprintf(str, ADDR_STR, "%s_%u", "element", count);
++		if (rte_tel_data_add_dict_container(d, str, c, 0) != 0) {
++			rte_tel_data_free(c);
++			break;
++		}
++
++		elem_count++;
++		count++;
++		if (count > end_elem)
++			break;
++
++		elem = elem->next;
++	}
++
++	rte_spinlock_unlock(&heap->lock);
++
++	rte_tel_data_add_dict_int(d, "Element_count", elem_count);
++
++	return 0;
++}
++
++#ifdef RTE_EXEC_ENV_LINUX
++#define MAX_SYS_MEM_ARENAS	128
++#define MAX_TAG_CHAR		128
++
++/* Memory size are in bytes. */
++struct mem_stats {
++	uint64_t fast_count; /* Number of free blocks in fast bin. */
++	uint64_t fast_size;  /* Size in bytes of free blocks in fast bin. */
++	uint64_t rest_count; /* Number of free blocks in bin. */
++	uint64_t rest_size;  /* Size in bytes of free blocks in bin. */
++	uint64_t mmap_count; /* Number of mmap blocks. */
++	uint64_t mmap_size;  /* Size in bytes of mmap'd memory. */
++	uint64_t curr_size;  /* Size in bytes allocated by system. */
++	uint64_t heap_size;  /* Heap size in bytes. */
++	uint64_t heap_count; /* Number of heaps. */
++};
++
++struct rte_heap_mem_stats {
++	unsigned int num_active_arena;
++	struct mem_stats stats[MAX_SYS_MEM_ARENAS];
++};
++
++/* This function shall be called to parse only attributes.
++ * Parsing of the "tags" shall be done by the caller.
++ */
++static int
++parse_attr(char *buf, uint32_t *i, char *attr, const char *key)
++{
++	int j = 0;
++	int keymatch = 0;
++
++	attr[j] = '\0';
++
++	while ((buf[*i] != '>') && (j < MAX_TAG_CHAR)) {
++		/* Ignore spaces. */
++		if (buf[*i] == ' ') {
++			attr[j] = '\0';
++			j = 0;
++			(*i)++;
++			continue;
++		}
++
++		/* Attribute key */
++		if (buf[*i] == '=') {
++			attr[j] = '\0';
++			j = 0;
++			(*i)++;
++
++			/* If the key is matched, extract the value. */
++			if (strncmp(attr, key, strlen(key)) != 0)
++				continue;
++			else
++				keymatch = 1;
++		}
++
++		/* Attribute value */
++		if ((buf[*i] == '"') && (keymatch == 1)) {
++			j = 0;
++			(*i)++;
++
++			while ((buf[*i] != '"') && (j < MAX_TAG_CHAR))
++				attr[(j)++] = buf[(*i)++];
++			attr[j] = '\0';
++			(*i)++;
++			return 0;
++		}
++
++		keymatch = 0;
++		attr[(j)++] = buf[(*i)++];
++	}
++
++	(*i)++;
++	return -1;
++}
++
++/* Get the system memory stats into buffer by calling malloc_info().
++ * malloc_info() returns the stats in XML format. Parse the XML to extract
++ * number of heaps, size of each heap, free memory in heap.
++ */
++static int
++parse_heap_mem_stats(struct rte_heap_mem_stats *heap_stats)
++{
++	char tag[MAX_TAG_CHAR] = {0};
++	int old_mem_index = -1;
++	int mem_index = -1;
++	uint32_t i = 0;
++	uint32_t j = 0;
++	size_t length;
++	char *buf;
++	FILE *fp;
++	int ret;
++
++	/* buf is dynamically allocated by open_memstream. */
++	fp = open_memstream(&buf, &length);
++	if (fp == NULL) {
++		RTE_LOG(DEBUG, EAL, "Error: Failed to open memory stream\n");
++		return -1;
++	}
++
++	/* Gets system memory stat's XML format. */
++	ret = malloc_info(0, fp);
++	fclose(fp);
++
++	if (ret != 0) {
++		RTE_LOG(DEBUG, EAL, "Error: malloc_info returned error\n");
++		return -1;
++	}
++
++	while (i < length) {
++		j = 0;
++		tag[j] = '\0';
++
++		/* Ignore newline and spaces. */
++		if ((buf[i] == '\n') || (buf[i] == ' ') || (buf[i] == '/') ||
++		    (buf[i] == '>')) {
++			i++;
++			continue;
++		}
++
++		if (buf[i] == '<') {
++			i++;
++			while ((buf[i] != ' ') && (buf[i] != '>') &&
++			       (j < MAX_TAG_CHAR)) {
++				tag[j++] = buf[i++];
++			}
++
++			if (strncmp(tag, "heap", strlen("heap")) == 0) {
++				old_mem_index = mem_index++;
++				if (mem_index >= MAX_SYS_MEM_ARENAS) {
++					RTE_LOG(DEBUG, EAL, "Memory arena "
++						"exceeded max limit: %d",
++						MAX_SYS_MEM_ARENAS);
++					goto done;
++				}
++				heap_stats->num_active_arena++;
++			}
++
++			continue;
++		}
++
++		if (mem_index < 0) {
++			i++;
++			continue;
++		}
++
++		if (parse_attr(buf, &i, tag, "type") < 0)
++			continue;
++
++		if (strncmp(tag, "fast", strlen("fast")) == 0) {
++			/* For total of all arenas, "heap" tag is not present
++			 * in xml. Below check is to handle that scenarios.
++			 *
++			 * FIXME: mem_index increment shall be independent of
++			 * the tag.
++			 */
++			if (old_mem_index == mem_index) {
++				mem_index++;
++				if (mem_index >= MAX_SYS_MEM_ARENAS) {
++					RTE_LOG(DEBUG, EAL, "Memory arena "
++						"exceeded max limit: %d\n",
++						MAX_SYS_MEM_ARENAS);
++					goto done;
++				}
++				heap_stats->num_active_arena++;
++			}
++			old_mem_index = mem_index;
++
++			if (parse_attr(buf, &i, tag, "count") == 0)
++				heap_stats->stats[mem_index].fast_count =
++							strtoul(tag, NULL, 10);
++			if (parse_attr(buf, &i, tag, "size") == 0)
++				heap_stats->stats[mem_index].fast_size =
++							strtoul(tag, NULL, 10);
++			continue;
++		}
++
++		if (strncmp(tag, "rest", strlen("rest")) == 0) {
++			if (parse_attr(buf, &i, tag, "count") == 0)
++				heap_stats->stats[mem_index].rest_count =
++							strtoul(tag, NULL, 10);
++			if (parse_attr(buf, &i, tag, "size") == 0)
++				heap_stats->stats[mem_index].rest_size =
++							strtoul(tag, NULL, 10);
++			continue;
++		}
++
++		if (strncmp(tag, "current", strlen("current")) == 0) {
++			if (parse_attr(buf, &i, tag, "size") == 0)
++				heap_stats->stats[mem_index].curr_size =
++							strtoul(tag, NULL, 10);
++			continue;
++		}
++
++		if (strncmp(tag, "total", strlen("total")) == 0) {
++			if (parse_attr(buf, &i, tag, "size") == 0)
++				heap_stats->stats[mem_index].heap_size =
++							strtoul(tag, NULL, 10);
++			continue;
++		}
++
++		if (strncmp(tag, "subheaps", strlen("subheaps")) == 0) {
++			if (parse_attr(buf, &i, tag, "size") == 0)
++				heap_stats->stats[mem_index].heap_count =
++							strtoul(tag, NULL, 10);
++			continue;
++		}
++
++		if (strncmp(tag, "mmap", strlen("mmap")) == 0) {
++			if (parse_attr(buf, &i, tag, "count") == 0)
++				heap_stats->stats[mem_index].mmap_count =
++							strtoul(tag, NULL, 10);
++			if (parse_attr(buf, &i, tag, "size") == 0)
++				heap_stats->stats[mem_index].mmap_size =
++							strtoul(tag, NULL, 10);
++			continue;
++		}
++
++		i++;
++	}
++
++done:
++	/* All done! Let's free the buf. */
++	free(buf);
++	return 0;
++}
++
++static int
++handle_sysmem_list_request(const char *cmd __rte_unused,
++			   const char *params __rte_unused,
++			   struct rte_tel_data *d)
++{
++	struct rte_heap_mem_stats heap_mem_stats;
++	unsigned int num_arena;
++	unsigned int i;
++
++	memset(&heap_mem_stats, 0, sizeof(struct rte_heap_mem_stats));
++	if (parse_heap_mem_stats(&heap_mem_stats) != 0)
++		return -1;
++
++	/* Note:
++	 * Total active arenas are (num_active_arena - 1). The last entry in
++	 * the array is total of all arenas.
++	 */
++	num_arena = heap_mem_stats.num_active_arena;
++
++	rte_tel_data_start_array(d, RTE_TEL_INT_VAL);
++	for (i = 0; i < num_arena; i++)
++		rte_tel_data_add_array_int(d, i);
++
++	return 0;
++}
++
++static int
++handle_sysmem_info_request(const char *cmd __rte_unused, const char *params,
++			   struct rte_tel_data *d)
++{
++	struct rte_heap_mem_stats heap_mem_stats;
++	unsigned int arena_id;
++	uint64_t free_size;
++	uint64_t free_count;
++	uint64_t allocated_size;
++
++	if (params == NULL || strlen(params) == 0 || !isdigit(*params))
++		return -1;
++
++	arena_id = (unsigned int)strtoul(params, NULL, 10);
++	if (arena_id > UINT32_MAX)
++		return -1;
++
++	if (arena_id >= MAX_SYS_MEM_ARENAS)
++		return -1;
++
++	memset(&heap_mem_stats, 0, sizeof(struct rte_heap_mem_stats));
++	if (parse_heap_mem_stats(&heap_mem_stats) != 0)
++		return -1;
++
++	if (arena_id >= heap_mem_stats.num_active_arena) {
++		RTE_LOG(DEBUG, EAL, "Memory arena exceeded max limit: %d\n",
++			MAX_SYS_MEM_ARENAS);
++		return -1;
++	}
++
++	/* Fast and rest account for the total free memory. */
++	free_size = heap_mem_stats.stats[arena_id].fast_size +
++		    heap_mem_stats.stats[arena_id].rest_size;
++
++	free_count = heap_mem_stats.stats[arena_id].fast_count +
++		     heap_mem_stats.stats[arena_id].rest_count;
++
++	/* (System memory - free size) = allocated memory size. */
++	allocated_size = heap_mem_stats.stats[arena_id].curr_size - free_size;
++
++	rte_tel_data_start_dict(d);
++	rte_tel_data_add_dict_int(d, "Arena_id", arena_id);
++	rte_tel_data_add_dict_int(d, "Allocated_size", allocated_size);
++	rte_tel_data_add_dict_u64(d, "Free_count", free_count);
++	rte_tel_data_add_dict_u64(d, "Free_size", free_size);
++	rte_tel_data_add_dict_u64(d, "Curr_size",
++				  heap_mem_stats.stats[arena_id].curr_size);
++	rte_tel_data_add_dict_u64(d, "Mmap_count",
++				  heap_mem_stats.stats[arena_id].mmap_count);
++	rte_tel_data_add_dict_u64(d, "Mmap_size",
++				  heap_mem_stats.stats[arena_id].mmap_size);
++	rte_tel_data_add_dict_u64(d, "Heap_count",
++				  heap_mem_stats.stats[arena_id].heap_count);
++	rte_tel_data_add_dict_u64(d, "Heap_size",
++				  heap_mem_stats.stats[arena_id].heap_size);
++
++	return 0;
++}
++#endif
++
+ RTE_INIT(memory_telemetry)
+ {
+ 	rte_telemetry_register_cmd(
+@@ -1279,5 +1964,31 @@ RTE_INIT(memory_telemetry)
+ 	rte_telemetry_register_cmd(
+ 			EAL_HEAP_INFO_REQ, handle_eal_heap_info_request,
+ 			"Returns malloc heap stats. Parameters: int heap_id");
++	rte_telemetry_register_cmd(
++			EAL_MEMSEG_LISTS_REQ,
++			handle_eal_memseg_lists_request,
++			"Returns array of memseg list IDs. Takes no parameters");
++	rte_telemetry_register_cmd(
++			EAL_MEMSEG_LIST_INFO_REQ,
++			handle_eal_memseg_list_info_request,
++			"Returns memseg list info. Parameters: int memseg_list_id");
++	rte_telemetry_register_cmd(
++			EAL_MEMSEG_INFO_REQ, handle_eal_memseg_info_request,
++			"Returns memseg info. Parameter: int memseg_list_id,int memseg_id");
++	rte_telemetry_register_cmd(EAL_ELEMENT_LIST_REQ,
++			handle_eal_element_list_request,
++			"Returns array of heap element IDs. Parameters: int heap_id, int memseg_list_id, int memseg_id");
++	rte_telemetry_register_cmd(EAL_ELEMENT_INFO_REQ,
++			handle_eal_element_info_request,
++			"Returns element info. Parameters: int heap_id, int memseg_list_id, int memseg_id, int start_elem_id, int end_elem_id");
++
++#ifdef RTE_EXEC_ENV_LINUX
++	rte_telemetry_register_cmd(SYSMEMORY_LIST_REQ,
++			handle_sysmem_list_request,
++			"Returns element information. Takes no parameters");
++	rte_telemetry_register_cmd(SYSMEMORY_INFO_REQ,
++			handle_sysmem_info_request,
++			"Returns element information. Parameters: int arena_id");
++#endif
+ }
+ #endif
+-- 
+2.25.1
+

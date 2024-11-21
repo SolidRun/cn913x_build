@@ -1,0 +1,210 @@
+From 9b20337de7634ecf0bd52fabb36d247274825f10 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Wed, 16 Aug 2023 23:41:52 +0530
+Subject: [PATCH 608/955] test/security: fix buffer leaks in error path
+
+In case of failure of a test in macsec autotest,
+the buffers were not getting cleaned.
+Added appropriate code to clean the buffers.
+
+Fixes: 993ea577a006 ("test/security: add inline MACsec cases")
+Cc: stable@dpdk.org
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I7c80f3d49a0a7d50fe70938a735747bb1b52875a
+(cherry picked from commit d66a6d75098477d0350bb7c6b597a60a09110691)
+---
+ app/test/test_security_inline_macsec.c | 70 ++++++++++++++++++--------
+ 1 file changed, 49 insertions(+), 21 deletions(-)
+
+diff --git a/app/test/test_security_inline_macsec.c b/app/test/test_security_inline_macsec.c
+index 017566299c7c2..3d928ea60324a 100644
+--- a/app/test/test_security_inline_macsec.c
++++ b/app/test/test_security_inline_macsec.c
+@@ -887,6 +887,11 @@ test_macsec_sec_caps_verify(const struct mcs_test_opts *opts,
+ 	return 0;
+ }
+ 
++#define FREE_PKTS(j, m) {		\
++	while (j--)			\
++		rte_pktmbuf_free(m[j]);	\
++}
++
+ static int
+ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs_test_opts *opts)
+ {
+@@ -954,8 +959,7 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 			tx_pkts_burst[j]->ol_flags |= RTE_MBUF_F_TX_MACSEC;
+ 		}
+ 		if (tx_pkts_burst[j] == NULL) {
+-			while (j--)
+-				rte_pktmbuf_free(tx_pkts_burst[j]);
++			FREE_PKTS(j, tx_pkts_burst);
+ 			ret = TEST_FAILED;
+ 			goto out;
+ 		}
+@@ -967,8 +971,7 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 					opts->ar_td[k]->secure_pkt.data,
+ 					opts->ar_td[k]->secure_pkt.len);
+ 				if (tx_pkts_burst[j] == NULL) {
+-					while (j--)
+-						rte_pktmbuf_free(tx_pkts_burst[j]);
++					FREE_PKTS(j, tx_pkts_burst);
+ 					ret = TEST_FAILED;
+ 					goto out;
+ 				}
+@@ -995,8 +998,7 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 				tx_pkts_burst[j]->ol_flags |= RTE_MBUF_F_TX_MACSEC;
+ 			}
+ 			if (tx_pkts_burst[j] == NULL) {
+-				while (j--)
+-					rte_pktmbuf_free(tx_pkts_burst[j]);
++				FREE_PKTS(j, tx_pkts_burst);
+ 				ret = TEST_FAILED;
+ 				goto out;
+ 			}
+@@ -1018,7 +1020,9 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 				id = rte_security_macsec_sa_create(ctx, &sa_conf);
+ 				if (id < 0) {
+ 					printf("MACsec SA create failed : %d.\n", id);
+-					return TEST_FAILED;
++					FREE_PKTS(j, tx_pkts_burst);
++					ret = TEST_FAILED;
++					goto out;
+ 				}
+ 				rx_sa_id[i][an] = (uint16_t)id;
+ 			}
+@@ -1027,6 +1031,8 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 			id = rte_security_macsec_sc_create(ctx, &sc_conf);
+ 			if (id < 0) {
+ 				printf("MACsec SC create failed : %d.\n", id);
++				FREE_PKTS(j, tx_pkts_burst);
++				ret = TEST_FAILED;
+ 				goto out;
+ 			}
+ 			rx_sc_id[i] = (uint16_t)id;
+@@ -1034,19 +1040,26 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 			/* Create Inline IPsec session. */
+ 			ret = fill_session_conf(td[i], port_id, opts, &sess_conf,
+ 					RTE_SECURITY_MACSEC_DIR_RX, rx_sc_id[i], tci_off);
+-			if (ret)
+-				return TEST_FAILED;
+-
++			if (ret) {
++				FREE_PKTS(j, tx_pkts_burst);
++				ret = TEST_FAILED;
++				goto out;
++			}
+ 			rx_sess[i] = rte_security_session_create(ctx, &sess_conf,
+ 					sess_pool);
+ 			if (rx_sess[i] == NULL) {
+ 				printf("SEC Session init failed.\n");
+-				return TEST_FAILED;
++				FREE_PKTS(j, tx_pkts_burst);
++				ret = TEST_FAILED;
++				goto out;
+ 			}
+ 			ret = create_default_flow(td[i], port_id,
+ 					RTE_SECURITY_MACSEC_DIR_RX, rx_sess[i]);
+-			if (ret)
++			if (ret) {
++				FREE_PKTS(j, tx_pkts_burst);
++				ret = TEST_FAILED;
+ 				goto out;
++			}
+ 		}
+ 		if (op == MCS_ENCAP || op == MCS_ENCAP_DECAP ||
+ 				op == MCS_AUTH_ONLY || op == MCS_AUTH_VERIFY) {
+@@ -1059,7 +1072,9 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 			id = rte_security_macsec_sa_create(ctx, &sa_conf);
+ 			if (id < 0) {
+ 				printf("MACsec SA create failed : %d.\n", id);
+-				return TEST_FAILED;
++				FREE_PKTS(j, tx_pkts_burst);
++				ret = TEST_FAILED;
++				goto out;
+ 			}
+ 			tx_sa_id[i][0] = (uint16_t)id;
+ 			tx_sa_id[i][1] = MCS_INVALID_SA;
+@@ -1073,6 +1088,8 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 				id = rte_security_macsec_sa_create(ctx, &sa_conf);
+ 				if (id < 0) {
+ 					printf("MACsec rekey SA create failed : %d.\n", id);
++					FREE_PKTS(j, tx_pkts_burst);
++					ret = TEST_FAILED;
+ 					goto out;
+ 				}
+ 				tx_sa_id[i][1] = (uint16_t)id;
+@@ -1082,6 +1099,8 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 			id = rte_security_macsec_sc_create(ctx, &sc_conf);
+ 			if (id < 0) {
+ 				printf("MACsec SC create failed : %d.\n", id);
++				FREE_PKTS(j, tx_pkts_burst);
++				ret = TEST_FAILED;
+ 				goto out;
+ 			}
+ 			tx_sc_id[i] = (uint16_t)id;
+@@ -1089,19 +1108,26 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 			/* Create Inline IPsec session. */
+ 			ret = fill_session_conf(td[i], port_id, opts, &sess_conf,
+ 					RTE_SECURITY_MACSEC_DIR_TX, tx_sc_id[i], tci_off);
+-			if (ret)
+-				return TEST_FAILED;
+-
++			if (ret) {
++				FREE_PKTS(j, tx_pkts_burst);
++				ret = TEST_FAILED;
++				goto out;
++			}
+ 			tx_sess[i] = rte_security_session_create(ctx, &sess_conf,
+ 					sess_pool);
+ 			if (tx_sess[i] == NULL) {
+ 				printf("SEC Session init failed.\n");
+-				return TEST_FAILED;
++				FREE_PKTS(j, tx_pkts_burst);
++				ret = TEST_FAILED;
++				goto out;
+ 			}
+ 			ret = create_default_flow(td[i], port_id,
+ 					RTE_SECURITY_MACSEC_DIR_TX, tx_sess[i]);
+-			if (ret)
++			if (ret) {
++				FREE_PKTS(j, tx_pkts_burst);
++				ret = TEST_FAILED;
+ 				goto out;
++			}
+ 		}
+ 	}
+ 
+@@ -1118,6 +1144,7 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 
+ 	rte_pause();
+ 
++	j = 0;
+ 	/* Receive back packet on loopback interface. */
+ 	do {
+ 		nb_rx += rte_eth_rx_burst(port_id, 0,
+@@ -1131,8 +1158,7 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 	if (nb_rx != nb_sent) {
+ 		printf("\nUnable to RX all %d packets, received(%i)",
+ 				nb_sent, nb_rx);
+-		while (--nb_rx >= 0)
+-			rte_pktmbuf_free(rx_pkts_burst[nb_rx]);
++		FREE_PKTS(nb_rx, rx_pkts_burst);
+ 		ret = TEST_FAILED;
+ 		if (opts->check_sectag_interrupts == 1)
+ 			ret = TEST_SUCCESS;
+@@ -1156,7 +1182,9 @@ test_macsec(const struct mcs_test_vector *td[], enum mcs_op op, const struct mcs
+ 			id = rte_security_macsec_sa_create(ctx, &sa_conf);
+ 			if (id < 0) {
+ 				printf("MACsec SA create failed : %d.\n", id);
+-				return TEST_FAILED;
++				FREE_PKTS(nb_rx, rx_pkts_burst);
++				ret = TEST_FAILED;
++				goto out;
+ 			}
+ 			tx_sa_id[0][0] = (uint16_t)id;
+ 			break;
+-- 
+2.25.1
+

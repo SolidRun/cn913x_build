@@ -1,0 +1,207 @@
+From 7bd9d4f601b78caf7784905ec9d73b008d71d2b3 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Mon, 19 Feb 2024 13:19:17 +0530
+Subject: [PATCH 240/513] net/cnxk: add xstats callback for representor
+
+Adds xstats callback for representor device
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Change-Id: I74ba0cdc04b3df2fe3d7c5dbd1a7719d073d7f05
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122176
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_rep.h     |   8 ++
+ drivers/net/cnxk/cnxk_rep_ops.c | 132 +++++++++++++++++++++++++++++++-
+ 2 files changed, 139 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cnxk_rep.h b/drivers/net/cnxk/cnxk_rep.h
+index 1b46e202a8ce3..71019cf30aead 100644
+--- a/drivers/net/cnxk/cnxk_rep.h
++++ b/drivers/net/cnxk/cnxk_rep.h
+@@ -137,5 +137,13 @@ uint16_t cnxk_rep_tx_burst_dummy(void *tx_queue, struct rte_mbuf **tx_pkts, uint
+ uint16_t cnxk_rep_rx_burst_dummy(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts);
+ void cnxk_rep_tx_queue_stop(struct rte_eth_dev *ethdev, uint16_t queue_id);
+ void cnxk_rep_rx_queue_stop(struct rte_eth_dev *ethdev, uint16_t queue_id);
++int cnxk_rep_xstats_get(struct rte_eth_dev *eth_dev, struct rte_eth_xstat *stats, unsigned int n);
++int cnxk_rep_xstats_reset(struct rte_eth_dev *eth_dev);
++int cnxk_rep_xstats_get_names(struct rte_eth_dev *eth_dev, struct rte_eth_xstat_name *xstats_names,
++			      unsigned int n);
++int cnxk_rep_xstats_get_by_id(struct rte_eth_dev *eth_dev, const uint64_t *ids, uint64_t *values,
++			      unsigned int n);
++int cnxk_rep_xstats_get_names_by_id(struct rte_eth_dev *eth_dev, const uint64_t *ids,
++				    struct rte_eth_xstat_name *xstats_names, unsigned int n);
+ 
+ #endif /* __CNXK_REP_H__ */
+diff --git a/drivers/net/cnxk/cnxk_rep_ops.c b/drivers/net/cnxk/cnxk_rep_ops.c
+index a300e22fff801..ccc3b59fbd70a 100644
+--- a/drivers/net/cnxk/cnxk_rep_ops.c
++++ b/drivers/net/cnxk/cnxk_rep_ops.c
+@@ -10,6 +10,11 @@
+ #define RX_DESC_PER_QUEUE  256
+ #define NB_REP_VDEV_MBUF   1024
+ 
++static const struct rte_eth_xstat_name cnxk_rep_xstats_string[] = {
++	{"rep_nb_rx"},
++	{"rep_nb_tx"},
++};
++
+ static uint16_t
+ cnxk_rep_tx_burst(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+ {
+@@ -24,6 +29,7 @@ cnxk_rep_tx_burst(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
+ 	plt_rep_dbg("Transmitting %d packets on eswitch queue %d", nb_pkts, txq->qid);
+ 	n_tx = cnxk_eswitch_dev_tx_burst(rep_dev->parent_dev, txq->qid, tx_pkts, nb_pkts,
+ 					 NIX_TX_OFFLOAD_VLAN_QINQ_F);
++	txq->stats.pkts += n_tx;
+ 	return n_tx;
+ }
+ 
+@@ -43,6 +49,7 @@ cnxk_rep_rx_burst(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
+ 		return 0;
+ 
+ 	plt_rep_dbg("Received %d packets on eswitch queue %d", n_rx, rxq->qid);
++	rxq->stats.pkts += n_rx;
+ 	return n_rx;
+ }
+ 
+@@ -696,6 +703,124 @@ cnxk_rep_mac_addr_set(struct rte_eth_dev *eth_dev, struct rte_ether_addr *addr)
+ 	return rc;
+ }
+ 
++int
++cnxk_rep_xstats_get(struct rte_eth_dev *eth_dev, struct rte_eth_xstat *stats, unsigned int n)
++{
++	struct cnxk_rep_dev *rep_dev = cnxk_rep_pmd_priv(eth_dev);
++	unsigned int num = RTE_DIM(cnxk_rep_xstats_string);
++	int cnt = 0;
++
++	if (!rep_dev)
++		return -EINVAL;
++
++	if (n < num)
++		return num;
++
++	stats[cnt].id = cnt;
++	stats[cnt].value = rep_dev->rxq->stats.pkts;
++	cnt++;
++	stats[cnt].id = cnt;
++	stats[cnt].value = rep_dev->txq->stats.pkts;
++	cnt++;
++
++	return cnt;
++}
++
++int
++cnxk_rep_xstats_reset(struct rte_eth_dev *eth_dev)
++{
++	struct cnxk_rep_dev *rep_dev = cnxk_rep_pmd_priv(eth_dev);
++	int rc;
++
++	if (!rep_dev)
++		return -EINVAL;
++
++	rc = cnxk_rep_stats_reset(eth_dev);
++	if (rc < 0 && rc != -ENOTSUP)
++		return rc;
++
++	rep_dev->rxq->stats.pkts = 0;
++	rep_dev->txq->stats.pkts = 0;
++
++	return 0;
++}
++
++int
++cnxk_rep_xstats_get_names(__rte_unused struct rte_eth_dev *eth_dev,
++			  struct rte_eth_xstat_name *xstats_names, unsigned int n)
++{
++	unsigned int num = RTE_DIM(cnxk_rep_xstats_string);
++	unsigned int i;
++
++	if (xstats_names == NULL)
++		return num;
++
++	if (n < num)
++		return num;
++
++	for (i = 0; i < num; i++)
++		rte_strscpy(xstats_names[i].name, cnxk_rep_xstats_string[i].name,
++			    sizeof(xstats_names[i].name));
++
++	return num;
++}
++
++int
++cnxk_rep_xstats_get_by_id(struct rte_eth_dev *eth_dev, const uint64_t *ids, uint64_t *values,
++			  unsigned int n)
++{
++	struct cnxk_rep_dev *rep_dev = cnxk_rep_pmd_priv(eth_dev);
++	unsigned int num = RTE_DIM(cnxk_rep_xstats_string);
++	unsigned int i;
++
++	if (!rep_dev)
++		return -EINVAL;
++
++	if (n < num)
++		return num;
++
++	if (n > num)
++		return -EINVAL;
++
++	for (i = 0; i < n; i++) {
++		switch (ids[i]) {
++		case 0:
++			values[i] = rep_dev->rxq->stats.pkts;
++			break;
++		case 1:
++			values[i] = rep_dev->txq->stats.pkts;
++			break;
++		default:
++			return -EINVAL;
++		}
++	}
++
++	return n;
++}
++
++int
++cnxk_rep_xstats_get_names_by_id(__rte_unused struct rte_eth_dev *eth_dev, const uint64_t *ids,
++				struct rte_eth_xstat_name *xstats_names, unsigned int n)
++{
++	unsigned int num = RTE_DIM(cnxk_rep_xstats_string);
++	unsigned int i;
++
++	if (n < num)
++		return num;
++
++	if (n > num)
++		return -EINVAL;
++
++	for (i = 0; i < n; i++) {
++		if (ids[i] >= num)
++			return -EINVAL;
++		rte_strscpy(xstats_names[i].name, cnxk_rep_xstats_string[ids[i]].name,
++			    sizeof(xstats_names[i].name));
++	}
++
++	return n;
++}
++
+ /* CNXK platform representor dev ops */
+ struct eth_dev_ops cnxk_rep_dev_ops = {
+ 	.dev_infos_get = cnxk_rep_dev_info_get,
+@@ -714,5 +839,10 @@ struct eth_dev_ops cnxk_rep_dev_ops = {
+ 	.dev_stop = cnxk_rep_dev_stop,
+ 	.stats_get = cnxk_rep_stats_get,
+ 	.stats_reset = cnxk_rep_stats_reset,
+-	.flow_ops_get = cnxk_rep_flow_ops_get
++	.flow_ops_get = cnxk_rep_flow_ops_get,
++	.xstats_get = cnxk_rep_xstats_get,
++	.xstats_reset = cnxk_rep_xstats_reset,
++	.xstats_get_names = cnxk_rep_xstats_get_names,
++	.xstats_get_by_id = cnxk_rep_xstats_get_by_id,
++	.xstats_get_names_by_id = cnxk_rep_xstats_get_names_by_id
+ };
+-- 
+2.25.1
+

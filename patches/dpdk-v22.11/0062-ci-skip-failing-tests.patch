@@ -1,0 +1,78 @@
+From a2a0be82d341c39644b1e2981bd92620b3d26228 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 1 Dec 2022 13:27:28 +0530
+Subject: [PATCH 062/955] ci: skip failing tests
+
+Skip all the failing tests.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I37aacaf54bfd14618354362895e51a9e27b4a278
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91643
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn10k.env |  9 +++++++++
+ marvell-ci/test/env/cn9k.env  | 13 +++++++++++++
+ 2 files changed, 22 insertions(+)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 4076105c8d0ec..07717a452d6c0 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -68,6 +68,14 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-}
+ 
++FIXME_SKIP_TESTS="
++	cnxk_txrx_stats
++	cnxk_dpdk_event_tests
++	cpt_2nd_pass_flow
++	cnxk_q_intr_test
++	cnxk_hotplug_test
++"
++
+ DEFAULT_SKIP_TESTS="
+ 	distributor_autotest
+ 	func_reentrancy_autotest
+@@ -103,6 +111,7 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_gpio_test
+ 	cnxk_mbuf_perf
+ 	cnxk_ipsec_reassembly_perf
++	${FIXME_SKIP_TESTS}
+ "
+ 
+ # Tests to skipped.
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index cb52742d2bd7d..e9e66acb4f3b0 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -67,6 +67,18 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-1}
+ 
++FIXME_SKIP_TESTS="
++	cnxk_txrx_stats
++	cnxk_dpdk_event_tests
++	cnxk_tm_test
++	flow_regression
++	cnxk_extbuf_tests
++	cnxk_q_intr_test
++	cnxk_hotplug_test
++	cnxk_tx_vlan
++	cnxk_lso_test
++"
++
+ DEFAULT_SKIP_TESTS="
+ 	distributor_autotest
+ 	func_reentrancy_autotest
+@@ -107,6 +119,7 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_ipsec_reassembly_perf
+ 	cnxk_multi_pool_pkt_tx
+ 	cnxk_multi_pool_pkt_tx_scalar
++	${FIXME_SKIP_TESTS}
+ "
+ 
+ # Tests to skipped.
+-- 
+2.25.1
+

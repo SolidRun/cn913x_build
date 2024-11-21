@@ -1,0 +1,36 @@
+From 06a60220b67c73df347ee949073d519caf4394a8 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 5 Mar 2024 11:20:47 +0000
+Subject: [PATCH 262/513] test/crypto: fix non ASCII character
+
+Fix non ASCII character in the comment. Revert to original text.
+
+Bugzilla ID: 1396
+Fixes: f97c63f4f445 ("test/crypto: add AES-GCM external mbuf case")
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I75ff7c63833189019247e4b8f3ea588c5e104e5b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123284
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_cryptodev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 9b9d09989dafe..6be50f157d68d 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -1618,7 +1618,7 @@ ext_mbuf_create(struct rte_mempool *mbuf_pool, int pkt_len,
+ 			goto fail;
+ 		}
+ 
+-		/* Save shared data (like callback function) in external buffer’s end */
++		/* Save shared data (like callback function) in external buffer's end */
+ 		ret_shinfo = rte_pktmbuf_ext_shinfo_init_helper(ext_buf_addr, &buf_len,
+ 			ext_mbuf_callback_fn_free, &freed);
+ 		if (ret_shinfo == NULL) {
+-- 
+2.25.1
+

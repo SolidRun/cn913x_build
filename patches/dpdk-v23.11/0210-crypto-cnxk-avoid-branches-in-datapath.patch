@@ -1,0 +1,41 @@
+From 7e5fee4bf06065ac4112750404a18e8147de4925 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 5 Feb 2024 16:30:28 +0000
+Subject: [PATCH 210/513] crypto/cnxk: avoid branches in datapath
+
+Avoid branches in datapath.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I22c67afd687eb1caf088eb93cae1a20859f024aa
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121246
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_ipsec_la_ops.h | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h b/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h
+index af2c85022e495..8969a2a6bf59d 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h
++++ b/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h
+@@ -72,12 +72,10 @@ process_outb_sa(struct roc_cpt_lf *lf, struct rte_crypto_op *cop, struct cn10k_s
+ 	roc_cpt_lf_ctx_reload(lf, &sess->sa.out_sa);
+ 	rte_delay_ms(1);
+ #endif
++	const uint64_t ol_flags = m_src->ol_flags;
+ 
+-	if (m_src->ol_flags & RTE_MBUF_F_TX_IP_CKSUM)
+-		inst_w4_u64 &= ~BIT_ULL(33);
+-
+-	if (m_src->ol_flags & RTE_MBUF_F_TX_L4_MASK)
+-		inst_w4_u64 &= ~BIT_ULL(32);
++	inst_w4_u64 &= ~(((uint64_t)(!!(ol_flags & RTE_MBUF_F_TX_IP_CKSUM)) << 33) |
++			 ((uint64_t)(!!(ol_flags & RTE_MBUF_F_TX_L4_MASK)) << 32));
+ 
+ 	if (likely(m_src->next == NULL)) {
+ 		if (unlikely(rte_pktmbuf_tailroom(m_src) < sess->max_extended_len)) {
+-- 
+2.25.1
+

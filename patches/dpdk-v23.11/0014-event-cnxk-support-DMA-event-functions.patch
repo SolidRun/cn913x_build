@@ -1,0 +1,405 @@
+From 7a1b950fdef8183fa345da7c2ac150b84513fcdd Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Tue, 22 Aug 2023 17:06:27 +0530
+Subject: [PATCH 014/513] event/cnxk: support DMA event functions
+
+Added support of dma driver callback assignment to eventdev
+enqueue and dequeue. The change also defines dma adapter
+capabilities function.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I5e1f6e4af5258a7a8b8f871a77ea788a3b99a616
+---
+ drivers/event/cnxk/cn10k_eventdev.c      | 70 +++++++++++++++++
+ drivers/event/cnxk/cn10k_worker.h        |  3 +
+ drivers/event/cnxk/cn9k_eventdev.c       | 67 ++++++++++++++++
+ drivers/event/cnxk/cn9k_worker.h         |  3 +
+ drivers/event/cnxk/cnxk_eventdev.h       |  3 +
+ drivers/event/cnxk/cnxk_eventdev_adptr.c | 97 ++++++++++++++++++++++++
+ drivers/event/cnxk/meson.build           |  3 +-
+ 7 files changed, 244 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index bb0c91055352c..498f97ff2ef0b 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -8,6 +8,9 @@
+ #include "cn10k_cryptodev_ops.h"
+ #include "cnxk_eventdev.h"
+ #include "cnxk_worker.h"
++#include "cnxk_dma_event_dp.h"
++
++#include <rte_dmadev_pmd.h>
+ 
+ #define CN10K_SET_EVDEV_DEQ_OP(dev, deq_op, deq_ops)                           \
+ 	deq_op = deq_ops[dev->rx_offloads & (NIX_RX_OFFLOAD_MAX - 1)]
+@@ -477,6 +480,8 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 	else
+ 		event_dev->ca_enqueue = cn10k_cpt_sg_ver1_crypto_adapter_enqueue;
+ 
++	event_dev->dma_enqueue = cn10k_dma_adapter_enqueue;
++
+ 	if (dev->tx_offloads & NIX_TX_MULTI_SEG_F)
+ 		CN10K_SET_EVDEV_ENQ_OP(dev, event_dev->txa_enqueue, sso_hws_tx_adptr_enq_seg);
+ 	else
+@@ -1020,6 +1025,67 @@ cn10k_crypto_adapter_vec_limits(const struct rte_eventdev *event_dev,
+ 	return 0;
+ }
+ 
++static int
++cn10k_dma_adapter_caps_get(const struct rte_eventdev *event_dev,
++			   const int16_t dma_dev_id, uint32_t *caps)
++{
++	struct rte_dma_dev *dma_dev;
++
++	RTE_SET_USED(event_dev);
++
++	dma_dev = rte_dma_pmd_get_dev_by_id(dma_dev_id);
++	if (dma_dev == NULL)
++		return -EINVAL;
++
++	CNXK_VALID_DEV_OR_ERR_RET(dma_dev->device, "cnxk_dmadev_pci_driver", EINVAL);
++
++	*caps = RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_OP_FWD;
++
++	return 0;
++}
++
++static int
++cn10k_dma_adapter_vchan_add(const struct rte_eventdev *event_dev,
++			    const int16_t dma_dev_id, uint16_t vchan_id,
++			    const struct rte_event *event)
++{
++	struct rte_dma_dev *dma_dev;
++	int ret;
++
++	RTE_SET_USED(event);
++	dma_dev = rte_dma_pmd_get_dev_by_id(dma_dev_id);
++	if (dma_dev == NULL)
++		return -EINVAL;
++
++	CNXK_VALID_DEV_OR_ERR_RET(dma_dev->device, "cnxk_dmadev_pci_driver", EINVAL);
++
++	cn10k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
++
++	ret = cnxk_dma_adapter_vchan_add(event_dev, dma_dev_id, vchan_id);
++	cn10k_sso_set_priv_mem(event_dev, NULL);
++
++	return ret;
++}
++
++static int
++cn10k_dma_adapter_vchan_del(const struct rte_eventdev *event_dev,
++			    const int16_t dma_dev_id, uint16_t vchan_id)
++{
++	struct rte_dma_dev *dma_dev;
++
++	RTE_SET_USED(event_dev);
++
++	dma_dev = rte_dma_pmd_get_dev_by_id(dma_dev_id);
++	if (dma_dev == NULL)
++		return -EINVAL;
++
++	CNXK_VALID_DEV_OR_ERR_RET(dma_dev->device, "cnxk_dmadev_pci_driver", EINVAL);
++
++	return cnxk_dma_adapter_vchan_del(dma_dev_id, vchan_id);
++}
++
++
++
+ static struct eventdev_ops cn10k_sso_dev_ops = {
+ 	.dev_infos_get = cn10k_sso_info_get,
+ 	.dev_configure = cn10k_sso_dev_configure,
+@@ -1061,6 +1127,10 @@ static struct eventdev_ops cn10k_sso_dev_ops = {
+ 	.crypto_adapter_queue_pair_del = cn10k_crypto_adapter_qp_del,
+ 	.crypto_adapter_vector_limits_get = cn10k_crypto_adapter_vec_limits,
+ 
++	.dma_adapter_caps_get = cn10k_dma_adapter_caps_get,
++	.dma_adapter_vchan_add = cn10k_dma_adapter_vchan_add,
++	.dma_adapter_vchan_del = cn10k_dma_adapter_vchan_del,
++
+ 	.xstats_get = cnxk_sso_xstats_get,
+ 	.xstats_reset = cnxk_sso_xstats_reset,
+ 	.xstats_get_names = cnxk_sso_xstats_get_names,
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index 8aa916fa129fa..0036495d9825f 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -7,6 +7,7 @@
+ 
+ #include <rte_eventdev.h>
+ #include "cn10k_cryptodev_event_dp.h"
++#include "cnxk_dma_event_dp.h"
+ #include "cn10k_rx.h"
+ #include "cnxk_worker.h"
+ #include "cn10k_eventdev.h"
+@@ -236,6 +237,8 @@ cn10k_sso_hws_post_process(struct cn10k_sso_hws *ws, uint64_t *u64,
+ 		/* Mark vector mempool object as get */
+ 		RTE_MEMPOOL_CHECK_COOKIES(rte_mempool_from_obj((void *)u64[1]),
+ 					  (void **)&u64[1], 1, 1);
++	} else if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_DMADEV) {
++		u64[1] = cnxk_dma_adapter_dequeue(u64[1]);
+ 	}
+ }
+ 
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 9fb9ca0d63ec8..5365a38f52318 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -6,6 +6,8 @@
+ #include "cnxk_eventdev.h"
+ #include "cnxk_worker.h"
+ 
++#include <rte_dmadev_pmd.h>
++
+ #define CN9K_DUAL_WS_PAIR_ID(x, id) (((x)*CN9K_DUAL_WS_NB_WS) + id)
+ 
+ #define CN9K_SET_EVDEV_DEQ_OP(dev, deq_op, deq_ops)                            \
+@@ -511,6 +513,8 @@ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 					      sso_hws_dual_tx_adptr_enq);
+ 	}
+ 
++	event_dev->dma_enqueue = cn9k_dma_adapter_enqueue;
++
+ 	event_dev->txa_enqueue_same_dest = event_dev->txa_enqueue;
+ 	rte_mb();
+ #else
+@@ -1018,6 +1022,65 @@ cn9k_tim_caps_get(const struct rte_eventdev *evdev, uint64_t flags,
+ 				 cn9k_sso_set_priv_mem);
+ }
+ 
++static int
++cn9k_dma_adapter_caps_get(const struct rte_eventdev *event_dev,
++			  const int16_t dma_dev_id, uint32_t *caps)
++{
++	struct rte_dma_dev *dma_dev;
++	RTE_SET_USED(event_dev);
++
++	dma_dev = rte_dma_pmd_get_dev_by_id(dma_dev_id);
++	if (dma_dev == NULL)
++		return -EINVAL;
++
++	CNXK_VALID_DEV_OR_ERR_RET(dma_dev->device, "cnxk_dmadev_pci_driver", EINVAL);
++
++	*caps = RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_OP_FWD;
++
++	return 0;
++}
++
++static int
++cn9k_dma_adapter_vchan_add(const struct rte_eventdev *event_dev,
++			    const int16_t dma_dev_id, uint16_t vchan_id,
++			    const struct rte_event *event)
++{
++	struct rte_dma_dev *dma_dev;
++	int ret;
++
++	RTE_SET_USED(event);
++
++	dma_dev = rte_dma_pmd_get_dev_by_id(dma_dev_id);
++	if (dma_dev == NULL)
++		return -EINVAL;
++
++	CNXK_VALID_DEV_OR_ERR_RET(dma_dev->device, "cnxk_dmadev_pci_driver", EINVAL);
++
++	cn9k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
++
++	ret = cnxk_dma_adapter_vchan_add(event_dev, dma_dev_id, vchan_id);
++	cn9k_sso_set_priv_mem(event_dev, NULL);
++
++	return ret;
++}
++
++static int
++cn9k_dma_adapter_vchan_del(const struct rte_eventdev *event_dev,
++			    const int16_t dma_dev_id, uint16_t vchan_id)
++{
++	struct rte_dma_dev *dma_dev;
++
++	RTE_SET_USED(event_dev);
++
++	dma_dev = rte_dma_pmd_get_dev_by_id(dma_dev_id);
++	if (dma_dev == NULL)
++		return -EINVAL;
++
++	CNXK_VALID_DEV_OR_ERR_RET(dma_dev->device, "cnxk_dmadev_pci_driver", EINVAL);
++
++	return cnxk_dma_adapter_vchan_del(dma_dev_id, vchan_id);
++}
++
+ static struct eventdev_ops cn9k_sso_dev_ops = {
+ 	.dev_infos_get = cn9k_sso_info_get,
+ 	.dev_configure = cn9k_sso_dev_configure,
+@@ -1056,6 +1119,10 @@ static struct eventdev_ops cn9k_sso_dev_ops = {
+ 	.crypto_adapter_queue_pair_add = cn9k_crypto_adapter_qp_add,
+ 	.crypto_adapter_queue_pair_del = cn9k_crypto_adapter_qp_del,
+ 
++	.dma_adapter_caps_get = cn9k_dma_adapter_caps_get,
++	.dma_adapter_vchan_add = cn9k_dma_adapter_vchan_add,
++	.dma_adapter_vchan_del = cn9k_dma_adapter_vchan_del,
++
+ 	.xstats_get = cnxk_sso_xstats_get,
+ 	.xstats_reset = cnxk_sso_xstats_reset,
+ 	.xstats_get_names = cnxk_sso_xstats_get_names,
+diff --git a/drivers/event/cnxk/cn9k_worker.h b/drivers/event/cnxk/cn9k_worker.h
+index 04511578126d9..e8863e42fceff 100644
+--- a/drivers/event/cnxk/cn9k_worker.h
++++ b/drivers/event/cnxk/cn9k_worker.h
+@@ -11,6 +11,7 @@
+ #include "cnxk_ethdev.h"
+ #include "cnxk_eventdev.h"
+ #include "cnxk_worker.h"
++#include "cnxk_dma_event_dp.h"
+ #include "cn9k_cryptodev_ops.h"
+ 
+ #include "cn9k_ethdev.h"
+@@ -205,6 +206,8 @@ cn9k_sso_hws_post_process(uint64_t *u64, uint64_t mbuf, const uint32_t flags,
+ 		if (flags & NIX_RX_OFFLOAD_TSTAMP_F)
+ 			cn9k_sso_process_tstamp(u64[1], mbuf, tstamp[port]);
+ 		u64[1] = mbuf;
++	} else if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_DMADEV) {
++		u64[1] = cnxk_dma_adapter_dequeue(u64[1]);
+ 	}
+ }
+ 
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index d42d1afa1a178..fa99dede857c3 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -284,4 +284,7 @@ int cnxk_crypto_adapter_qp_add(const struct rte_eventdev *event_dev,
+ 			       const struct rte_event_crypto_adapter_queue_conf *conf);
+ int cnxk_crypto_adapter_qp_del(const struct rte_cryptodev *cdev, int32_t queue_pair_id);
+ 
++int cnxk_dma_adapter_vchan_add(const struct rte_eventdev *event_dev,
++			       const int16_t dma_dev_id, uint16_t vchan_id);
++int cnxk_dma_adapter_vchan_del(const int16_t dma_dev_id, uint16_t vchan_id);
+ #endif /* __CNXK_EVENTDEV_H__ */
+diff --git a/drivers/event/cnxk/cnxk_eventdev_adptr.c b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+index 92aea92389ae7..a2a59b16c912d 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_adptr.c
++++ b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+@@ -5,6 +5,7 @@
+ #include "cnxk_cryptodev_ops.h"
+ #include "cnxk_ethdev.h"
+ #include "cnxk_eventdev.h"
++#include "cnxk_dmadev.h"
+ 
+ void
+ cnxk_sso_updt_xae_cnt(struct cnxk_sso_evdev *dev, void *data,
+@@ -737,3 +738,99 @@ cnxk_crypto_adapter_qp_del(const struct rte_cryptodev *cdev,
+ 
+ 	return 0;
+ }
++
++static int
++dma_adapter_vchan_setup(const int16_t dma_dev_id, struct cnxk_dpi_conf *vchan,
++			uint16_t vchan_id)
++{
++	char name[RTE_MEMPOOL_NAMESIZE];
++	uint32_t cache_size, nb_req;
++	unsigned int req_size;
++
++	snprintf(name, RTE_MEMPOOL_NAMESIZE, "cnxk_dma_req_%u:%u", dma_dev_id, vchan_id);
++	req_size = sizeof(struct cnxk_dpi_compl_s);
++
++	nb_req = vchan->c_desc.max_cnt;
++	cache_size = 16;
++	nb_req += (cache_size * rte_lcore_count());
++
++	vchan->adapter_info.req_mp = rte_mempool_create(name, nb_req, req_size, cache_size, 0,
++							NULL, NULL, NULL, NULL, rte_socket_id(), 0);
++	if (vchan->adapter_info.req_mp == NULL)
++		return -ENOMEM;
++
++	vchan->adapter_info.enabled = true;
++
++	return 0;
++}
++
++int
++cnxk_dma_adapter_vchan_add(const struct rte_eventdev *event_dev,
++			   const int16_t dma_dev_id, uint16_t vchan_id)
++{
++	struct cnxk_sso_evdev *sso_evdev = cnxk_sso_pmd_priv(event_dev);
++	uint32_t adptr_xae_cnt = 0;
++	struct cnxk_dpi_vf_s *dpivf;
++	struct cnxk_dpi_conf *vchan;
++	int ret;
++
++	dpivf = rte_dma_fp_objs[dma_dev_id].dev_private;
++	if ((int16_t)vchan_id == -1) {
++		uint16_t vchan_id;
++
++		for (vchan_id = 0; vchan_id < dpivf->num_vchans; vchan_id++) {
++			vchan = &dpivf->conf[vchan_id];
++			ret = dma_adapter_vchan_setup(dma_dev_id, vchan, vchan_id);
++			if (ret) {
++				cnxk_dma_adapter_vchan_del(dma_dev_id, -1);
++				return ret;
++			}
++			adptr_xae_cnt += vchan->adapter_info.req_mp->size;
++		}
++	} else {
++		vchan = &dpivf->conf[vchan_id];
++		ret = dma_adapter_vchan_setup(dma_dev_id, vchan, vchan_id);
++		if (ret)
++			return ret;
++		adptr_xae_cnt = vchan->adapter_info.req_mp->size;
++	}
++
++	/* Update dma adapter XAE count */
++	sso_evdev->adptr_xae_cnt += adptr_xae_cnt;
++	cnxk_sso_xae_reconfigure((struct rte_eventdev *)(uintptr_t)event_dev);
++
++	return 0;
++}
++
++static int
++dma_adapter_vchan_free(struct cnxk_dpi_conf *vchan)
++{
++	rte_mempool_free(vchan->adapter_info.req_mp);
++	vchan->adapter_info.enabled = false;
++
++	return 0;
++}
++
++int
++cnxk_dma_adapter_vchan_del(const int16_t dma_dev_id, uint16_t vchan_id)
++{
++	struct cnxk_dpi_vf_s *dpivf;
++	struct cnxk_dpi_conf *vchan;
++
++	dpivf = rte_dma_fp_objs[dma_dev_id].dev_private;
++	if ((int16_t)vchan_id == -1) {
++		uint16_t vchan_id;
++
++		for (vchan_id = 0; vchan_id < dpivf->num_vchans; vchan_id++) {
++			vchan = &dpivf->conf[vchan_id];
++			if (vchan->adapter_info.enabled)
++				dma_adapter_vchan_free(vchan);
++		}
++	} else {
++		vchan = &dpivf->conf[vchan_id];
++		if (vchan->adapter_info.enabled)
++			dma_adapter_vchan_free(vchan);
++	}
++
++	return 0;
++}
+diff --git a/drivers/event/cnxk/meson.build b/drivers/event/cnxk/meson.build
+index 13281d687f7d3..f2e07b86656aa 100644
+--- a/drivers/event/cnxk/meson.build
++++ b/drivers/event/cnxk/meson.build
+@@ -316,8 +316,7 @@ foreach flag: extra_flags
+ endforeach
+ 
+ headers = files('rte_pmd_cnxk_eventdev.h')
+-deps += ['bus_pci', 'common_cnxk', 'net_cnxk', 'crypto_cnxk']
+-
++deps += ['bus_pci', 'common_cnxk', 'net_cnxk', 'crypto_cnxk', 'dma_cnxk']
+ require_iova_in_mbuf = false
+ 
+ annotate_locks = false
+-- 
+2.25.1
+

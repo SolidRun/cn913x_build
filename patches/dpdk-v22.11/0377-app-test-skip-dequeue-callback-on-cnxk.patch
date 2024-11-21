@@ -1,0 +1,39 @@
+From 19653d481b470f3da8193237fd61bb77efeaced6 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Thu, 20 Apr 2023 13:03:43 +0530
+Subject: [PATCH 377/955] app/test: skip dequeue callback on cnxk
+
+Skipping dequeue callback test case in CNXK crypto PMD.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I3805cbea62156e5a9bd739c5bb2d20ea227a0036
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101857
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index b51ce947b4e43..76c7f7cae232b 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12897,6 +12897,13 @@ test_deq_callback_setup(void)
+ 	struct rte_cryptodev_cb *cb;
+ 	uint16_t qp_id = 0;
+ 
++	if (gbl_driver_id == rte_cryptodev_driver_id_get(
++			RTE_STR(CRYPTODEV_NAME_CN9K_PMD)))
++		return TEST_SKIPPED;
++	else if (gbl_driver_id == rte_cryptodev_driver_id_get(
++			RTE_STR(CRYPTODEV_NAME_CN10K_PMD)))
++		return TEST_SKIPPED;
++
+ 	/* Stop the device in case it's started so it can be configured */
+ 	rte_cryptodev_stop(ts_params->valid_devs[0]);
+ 
+-- 
+2.25.1
+

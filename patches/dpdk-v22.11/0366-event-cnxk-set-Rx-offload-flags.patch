@@ -1,0 +1,50 @@
+From 4ca3ef06e1689cd1f6e495c3015d5bffe95732f4 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Wed, 12 Apr 2023 15:06:16 +0530
+Subject: [PATCH 366/955] event/cnxk: set Rx offload flags
+
+Configure event dev Rx offload flags with rx adapter
+start/stop callbacks.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I58801c943891d73811e6be6ca54a597e77582298
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101327
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cnxk_eventdev_adptr.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/event/cnxk/cnxk_eventdev_adptr.c b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+index 946f56f63ec69..1616cfa895ed5 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_adptr.c
++++ b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+@@ -307,9 +307,9 @@ int
+ cnxk_sso_rx_adapter_start(const struct rte_eventdev *event_dev,
+ 			  const struct rte_eth_dev *eth_dev)
+ {
+-	RTE_SET_USED(event_dev);
+-	RTE_SET_USED(eth_dev);
+-
++	struct cnxk_eth_dev *cnxk_eth_dev = eth_dev->data->dev_private;
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	dev->rx_offloads |= cnxk_eth_dev->rx_offload_flags;
+ 	return 0;
+ }
+ 
+@@ -317,9 +317,9 @@ int
+ cnxk_sso_rx_adapter_stop(const struct rte_eventdev *event_dev,
+ 			 const struct rte_eth_dev *eth_dev)
+ {
+-	RTE_SET_USED(event_dev);
+ 	RTE_SET_USED(eth_dev);
+-
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	dev->rx_offloads = 0;
+ 	return 0;
+ }
+ 
+-- 
+2.25.1
+

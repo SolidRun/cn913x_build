@@ -1,0 +1,77 @@
+From 991acdf5e0e27e394f334edc3288aff926086ecd Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 1 Jan 2024 22:28:51 +0530
+Subject: [PATCH 118/513] ci: tm test enabled
+
+traffic generator modified to flowgen from txonly.
+
+Change-Id: I993c30344b4112937777ea75efac5152bc9095ae
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118874
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh | 6 +++---
+ marvell-ci/test/env/cn10k.env                      | 1 -
+ marvell-ci/test/env/cn9k.env                       | 1 -
+ 3 files changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh b/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh
+index 22ff787f0ed45..db50d30ea3cc5 100755
+--- a/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh
++++ b/marvell-ci/test/cnxk-tests/tm_test/cnxk_tm_test.sh
+@@ -20,7 +20,7 @@ BPSY=950000000
+ QCNT_UP=100000
+ #Packet Count should be lessthan this, in few cases when Queue was not
+ #scheduled due to priority queue TX count may be ~512 instead of 0
+-QCNT_DOWN=1000
++QCNT_DOWN=2000
+ retry_cnt=10
+ percentage=95
+ 
+@@ -327,14 +327,14 @@ trap "sig_handler EXIT" EXIT
+ echo "Testpmd running with $PORT0, Coremask=$COREMASK"
+ testpmd_launch $PRFX \
+ 	"-c $COREMASK -a $PORT0" \
+-	"--nb-cores=3 --rxq=4 --txq=4 --forward-mode=txonly --txonly-multi-flow --txpkts=512 -i"
++	"--nb-cores=3 --rxq=4 --txq=4 --forward-mode=flowgen --txonly-multi-flow --txpkts=256 -i"
+ 
+ testpmd_cmd $PRFX "start"
+ 
+ # Launch capture testpmd
+ testpmd_launch $CAP_PRFX \
+ 	"-c $CAP_COREMASK -a $CAP_PORT0 -a $CAP_PORT1" \
+-        "--rxq=8 --txq=8 --nb-cores=8 --no-flush-rx -i"
++        "--rxq=8 --txq=8 --nb-cores=8 --rss-udp --no-flush-rx -i"
+ 
+ # Start capturing
+ #2Gbps PIR
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 4f0430f95d646..4e2250e0dc2e2 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -75,7 +75,6 @@ STATUS_OUTFILE=${STATUS_OUTFILE:-}
+ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
+-	cnxk_tm_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index 890d5939865dc..7b7f41b532f3c 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -74,7 +74,6 @@ STATUS_OUTFILE=${STATUS_OUTFILE:-}
+ TM_SETUP=${TM_SETUP:-1}
+ 
+ FIXME_SKIP_TESTS="
+-	cnxk_tm_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+-- 
+2.25.1
+

@@ -1,0 +1,39 @@
+From db500ebd2d1cac9921276f0fea5f9f0ceff60bbb Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Tue, 30 Jan 2024 22:19:28 +0530
+Subject: [PATCH 181/513] marvell-ci: check 106B0 chiprevision only for 10k
+
+CN106B0 chip revision is available only for 10xxx boards,
+hence skipping chip revision get from /proc on 9k boards.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Id4e57d2708e06eb49bd74fafd76e3724426a5bf1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120731
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh b/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
+index 936b01148469c..bcf7d5a628990 100755
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
+@@ -24,13 +24,13 @@ IS_CN10K=$?
+ 
+ ! $(cat /proc/device-tree/compatible | grep -q "cn10kb")
+ IS_CN103=$?
+-PART_106B0=$(cat /proc/device-tree/soc\@0/chiprevision)
+ 
+ if [[ $IS_CN10K -ne 0 ]]; then
+ 	DEVTYPE="crypto_cn10k"
+ 	CRYPTO_DEVICE=$(lspci -d :a0f3 | head -1 | awk -e '{ print $1 }')
+ 	FEXT="106xx"
+ 	HW="cn10k"
++	PART_106B0=$(cat /proc/device-tree/soc\@0/chiprevision)
+ else
+ 	DEVTYPE="crypto_cn9k"
+ 	CRYPTO_DEVICE=$(lspci -d :a0fe | head -1 | awk -e '{ print $1 }')
+-- 
+2.25.1
+

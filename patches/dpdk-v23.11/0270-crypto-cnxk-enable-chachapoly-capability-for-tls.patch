@@ -1,0 +1,162 @@
+From 40259e203dc06b7cb0ef21a00a13aa945769ad48 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 7 Feb 2024 23:17:20 -0800
+Subject: [PATCH 270/513] crypto/cnxk: enable chachapoly capability for tls
+
+Enable CHACHA20-POLY1305 support for TLS-1.3.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I04027851993717ecadfd7d5f2f19d73fd65f0533
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121556
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/roc_ie_ot_tls.h           |  1 +
+ drivers/crypto/cnxk/cn10k_tls.c               | 40 ++++++++++++-------
+ drivers/crypto/cnxk/cnxk_cryptodev.h          |  4 +-
+ .../crypto/cnxk/cnxk_cryptodev_capabilities.c | 31 ++++++++++++++
+ 4 files changed, 60 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_ie_ot_tls.h b/drivers/common/cnxk/roc_ie_ot_tls.h
+index 925b301cfde8a..81b399fd9969c 100644
+--- a/drivers/common/cnxk/roc_ie_ot_tls.h
++++ b/drivers/common/cnxk/roc_ie_ot_tls.h
+@@ -39,6 +39,7 @@ enum roc_ie_ot_tls_cipher_type {
+ 	ROC_IE_OT_TLS_CIPHER_AES_CBC = 3,
+ 	ROC_IE_OT_TLS_CIPHER_AES_GCM = 7,
+ 	ROC_IE_OT_TLS_CIPHER_AES_CCM = 10,
++	ROC_IE_OT_TLS_CIPHER_CHACHA_POLY = 9,
+ };
+ 
+ enum roc_ie_ot_tls_ver {
+diff --git a/drivers/crypto/cnxk/cn10k_tls.c b/drivers/crypto/cnxk/cn10k_tls.c
+index 475ef4c7cf366..3e248c61cbf45 100644
+--- a/drivers/crypto/cnxk/cn10k_tls.c
++++ b/drivers/crypto/cnxk/cn10k_tls.c
+@@ -97,6 +97,9 @@ tls_xform_aead_verify(struct rte_security_tls_record_xform *tls_xform,
+ 			return 0;
+ 	}
+ 
++	if ((crypto_xform->aead.algo == RTE_CRYPTO_AEAD_CHACHA20_POLY1305) && (keylen == 32))
++		return 0;
++
+ 	return -EINVAL;
+ }
+ 
+@@ -351,15 +354,20 @@ tls_read_sa_fill(struct roc_ie_ot_tls_read_sa *read_sa,
+ 	cipher_key = read_sa->cipher_key;
+ 
+ 	/* Set encryption algorithm */
+-	if ((crypto_xfrm->type == RTE_CRYPTO_SYM_XFORM_AEAD) &&
+-	    (crypto_xfrm->aead.algo == RTE_CRYPTO_AEAD_AES_GCM)) {
+-		read_sa->w2.s.cipher_select = ROC_IE_OT_TLS_CIPHER_AES_GCM;
+-
++	if (crypto_xfrm->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
+ 		length = crypto_xfrm->aead.key.length;
+-		if (length == 16)
+-			read_sa->w2.s.aes_key_len = ROC_IE_OT_TLS_AES_KEY_LEN_128;
+-		else
++		if (crypto_xfrm->aead.algo == RTE_CRYPTO_AEAD_AES_GCM) {
++			read_sa->w2.s.cipher_select = ROC_IE_OT_TLS_CIPHER_AES_GCM;
++			if (length == 16)
++				read_sa->w2.s.aes_key_len = ROC_IE_OT_TLS_AES_KEY_LEN_128;
++			else
++				read_sa->w2.s.aes_key_len = ROC_IE_OT_TLS_AES_KEY_LEN_256;
++		}
++
++		if (crypto_xfrm->aead.algo == RTE_CRYPTO_AEAD_CHACHA20_POLY1305) {
++			read_sa->w2.s.cipher_select = ROC_IE_OT_TLS_CIPHER_CHACHA_POLY;
+ 			read_sa->w2.s.aes_key_len = ROC_IE_OT_TLS_AES_KEY_LEN_256;
++		}
+ 
+ 		key = crypto_xfrm->aead.key.data;
+ 		memcpy(cipher_key, key, length);
+@@ -500,15 +508,19 @@ tls_write_sa_fill(struct roc_ie_ot_tls_write_sa *write_sa,
+ 	cipher_key = write_sa->cipher_key;
+ 
+ 	/* Set encryption algorithm */
+-	if ((crypto_xfrm->type == RTE_CRYPTO_SYM_XFORM_AEAD) &&
+-	    (crypto_xfrm->aead.algo == RTE_CRYPTO_AEAD_AES_GCM)) {
+-		write_sa->w2.s.cipher_select = ROC_IE_OT_TLS_CIPHER_AES_GCM;
+-
++	if (crypto_xfrm->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
+ 		length = crypto_xfrm->aead.key.length;
+-		if (length == 16)
+-			write_sa->w2.s.aes_key_len = ROC_IE_OT_TLS_AES_KEY_LEN_128;
+-		else
++		if (crypto_xfrm->aead.algo == RTE_CRYPTO_AEAD_AES_GCM) {
++			write_sa->w2.s.cipher_select = ROC_IE_OT_TLS_CIPHER_AES_GCM;
++			if (length == 16)
++				write_sa->w2.s.aes_key_len = ROC_IE_OT_TLS_AES_KEY_LEN_128;
++			else
++				write_sa->w2.s.aes_key_len = ROC_IE_OT_TLS_AES_KEY_LEN_256;
++		}
++		if (crypto_xfrm->aead.algo == RTE_CRYPTO_AEAD_CHACHA20_POLY1305) {
++			write_sa->w2.s.cipher_select = ROC_IE_OT_TLS_CIPHER_CHACHA_POLY;
+ 			write_sa->w2.s.aes_key_len = ROC_IE_OT_TLS_AES_KEY_LEN_256;
++		}
+ 
+ 		key = crypto_xfrm->aead.key.data;
+ 		memcpy(cipher_key, key, length);
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.h b/drivers/crypto/cnxk/cnxk_cryptodev.h
+index a6dd4e42a75c4..bcd1a121e7898 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.h
+@@ -13,9 +13,9 @@
+ 
+ #define CNXK_CPT_MAX_CAPS		 55
+ #define CNXK_SEC_IPSEC_CRYPTO_MAX_CAPS	 16
+-#define CNXK_SEC_TLS_1_3_CRYPTO_MAX_CAPS 2
++#define CNXK_SEC_TLS_1_3_CRYPTO_MAX_CAPS 3
+ #define CNXK_SEC_TLS_1_2_CRYPTO_MAX_CAPS 7
+-#define CNXK_SEC_MAX_CAPS		 18
++#define CNXK_SEC_MAX_CAPS		 19
+ 
+ /**
+  * Device private data
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index 5bafa226e0c41..0d5d64b6e7a85 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -1693,6 +1693,37 @@ static const struct rte_cryptodev_capabilities sec_tls13_caps_aes[] = {
+ 			}, }
+ 		}, }
+ 	},
++	{	/* CHACHA POLY */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AEAD,
++			{.aead = {
++				.algo = RTE_CRYPTO_AEAD_CHACHA20_POLY1305,
++				.block_size = 64,
++				.key_size = {
++					.min = 32,
++					.max = 32,
++					.increment = 0
++				},
++				.digest_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				},
++				.aad_size = {
++					.min = 5,
++					.max = 5,
++					.increment = 0
++				},
++				.iv_size = {
++					.min = 0,
++					.max = 0,
++					.increment = 0
++				}
++			}, }
++		}, }
++	},
++
+ };
+ 
+ 
+-- 
+2.25.1
+

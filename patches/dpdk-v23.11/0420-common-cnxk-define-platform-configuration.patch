@@ -1,0 +1,47 @@
+From 9c11c8d3e9fe6d7aa829cc2d24b2dc215c5e57bd Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Thu, 1 Aug 2024 17:41:16 +0530
+Subject: [PATCH 420/513] common/cnxk: define platform configuration
+
+Defining compile time platform configuration to discrimate
+among different SOCs.
+
+Change-Id: I4ab690679da6fd0664abeace67be36cf7cae38f3
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132613
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/meson.build | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/common/cnxk/meson.build b/drivers/common/cnxk/meson.build
+index e0e4600989f6c..dc2ddf1f20d58 100644
+--- a/drivers/common/cnxk/meson.build
++++ b/drivers/common/cnxk/meson.build
+@@ -91,6 +91,19 @@ sources += files('cnxk_telemetry_bphy.c',
+                  'cnxk_telemetry_sso.c',
+ )
+ 
++if meson.is_cross_build()
++    soc_type = meson.get_cross_property('platform', '')
++else
++    soc_type = platform
++endif
++if soc_type == 'cn9k'
++    dpdk_conf.set('ROC_PLATFORM_CN9K', 1)
++elif soc_type == 'cn10k'
++    dpdk_conf.set('ROC_PLATFORM_CN10K', 1)
++elif soc_type == 'cn20k'
++    dpdk_conf.set('ROC_PLATFORM_CN20K', 1)
++endif
++
+ deps += ['bus_pci', 'net', 'telemetry']
+ 
+ require_iova_in_mbuf = false
+-- 
+2.25.1
+

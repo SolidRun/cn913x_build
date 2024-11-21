@@ -1,0 +1,33 @@
+From d543e91858e04c8cfe1bad7326695c733636ba14 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 14 Mar 2023 11:33:11 +0530
+Subject: [PATCH 354/955] event/cnxk: restrict stashing to multi-core
+
+Enable WQE stashing by default only when multiple event ports are
+enabled.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I49931e8853fb8a98eff490d30a9e27902c37bfab
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99090
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_eventdev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index afd8e323b87ce..fd71ff15cabb8 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -902,7 +902,7 @@ cn10k_sso_rx_adapter_queue_add(
+ 	lookup_mem = rxq->lookup_mem;
+ 	cn10k_sso_set_priv_mem(event_dev, lookup_mem);
+ 	cn10k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
+-	if (roc_feature_sso_has_stash()) {
++	if (roc_feature_sso_has_stash() && dev->nb_event_ports > 1) {
+ 		stash.hwgrp = queue_conf->ev.queue_id;
+ 		stash.stash_offset = CN10K_SSO_DEFAULT_STASH_OFFSET;
+ 		stash.stash_count = CN10K_SSO_DEFAULT_STASH_LENGTH;
+-- 
+2.25.1
+

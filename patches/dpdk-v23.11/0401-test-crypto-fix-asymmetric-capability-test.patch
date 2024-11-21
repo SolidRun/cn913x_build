@@ -1,0 +1,48 @@
+From 39ab98ecfc1542286d80b66d19243c1ec0a26517 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Fri, 12 Jul 2024 15:06:39 +0530
+Subject: [PATCH 401/513] test/crypto: fix asymmetric capability test
+
+Fix asymmetric capability test for below:
+ * Skip test if asymmetric crypto feature is not supported by device.
+ * Assert return value of RTE function to get asymmetric capability.
+
+Coverity issue: 373365
+Fixes: 2c6dab9cd93 ("test/crypto: add RSA and Mod tests")
+Cc: stable@dpdk.org
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I2715f080112965cfb1fdaba78c80a5f6c20424af
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131240
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev_asym.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_cryptodev_asym.c b/app/test/test_cryptodev_asym.c
+index b17f577700b8c..f0b5d385432b1 100644
+--- a/app/test/test_cryptodev_asym.c
++++ b/app/test/test_cryptodev_asym.c
+@@ -626,7 +626,7 @@ test_capability(void)
+ 				RTE_CRYPTODEV_FF_ASYMMETRIC_CRYPTO)) {
+ 		RTE_LOG(INFO, USER1,
+ 				"Device doesn't support asymmetric. Test Skipped\n");
+-		return TEST_SUCCESS;
++		return TEST_SKIPPED;
+ 	}
+ 
+ 	/* print xform capability */
+@@ -641,6 +641,7 @@ test_capability(void)
+ 			capa = rte_cryptodev_asym_capability_get(dev_id,
+ 				(const struct
+ 				rte_cryptodev_asym_capability_idx *) &idx);
++			TEST_ASSERT_NOT_NULL(capa, "Failed to get asymmetric capability");
+ 			print_asym_capa(capa);
+ 			}
+ 	}
+-- 
+2.25.1
+

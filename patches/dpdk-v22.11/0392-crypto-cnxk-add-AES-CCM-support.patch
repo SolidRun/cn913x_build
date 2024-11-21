@@ -1,0 +1,249 @@
+From a66a9a4da840cd484b8698e9ba85f3f779083efd Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Mon, 20 Mar 2023 16:58:03 +0530
+Subject: [PATCH 392/955] crypto/cnxk: add AES CCM support
+
+Adding 98XX AES CCM support to lookaside crypto PMD.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I0302b283fd9e81ebee02026d3c86184a9bdaed09
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99622
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/roc_se.c                  |  4 +-
+ drivers/common/cnxk/roc_se.h                  |  1 +
+ .../crypto/cnxk/cnxk_cryptodev_capabilities.c | 30 ++++++++++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c      |  2 +-
+ drivers/crypto/cnxk/cnxk_se.h                 | 55 ++++++++++++++-----
+ 5 files changed, 77 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index 7ce89e10b031e..cda1c5016d651 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -71,6 +71,7 @@ cpt_ciph_type_set(roc_se_cipher_type type, struct roc_se_ctx *ctx, uint16_t key_
+ 	case ROC_SE_AES_CFB:
+ 	case ROC_SE_AES_CTR:
+ 	case ROC_SE_AES_GCM:
++	case ROC_SE_AES_CCM:
+ 	case ROC_SE_AES_DOCSISBPI:
+ 		if (unlikely(cpt_ciph_aes_key_validate(key_len) != 0))
+ 			return -1;
+@@ -532,7 +533,7 @@ roc_se_ciph_key_set(struct roc_se_ctx *se_ctx, roc_se_cipher_type type, const ui
+ 		zuc_const = zs_ctx->zuc.otk_ctx.zuc_const;
+ 	}
+ 
+-	if (type == ROC_SE_AES_GCM)
++	if ((type == ROC_SE_AES_GCM) || (type == ROC_SE_AES_CCM))
+ 		se_ctx->template_w4.s.opcode_minor = BIT(5);
+ 
+ 	ret = cpt_ciph_type_set(type, se_ctx, key_len);
+@@ -581,6 +582,7 @@ roc_se_ciph_key_set(struct roc_se_ctx *se_ctx, roc_se_cipher_type type, const ui
+ 		cpt_ciph_aes_key_type_set(fctx, key_len);
+ 		break;
+ 	case ROC_SE_AES_GCM:
++	case ROC_SE_AES_CCM:
+ 		cpt_ciph_aes_key_type_set(fctx, key_len);
+ 		break;
+ 	case ROC_SE_AES_XTS:
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index 9e04ccd7b1c77..93ab2b1870b7c 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -113,6 +113,7 @@ typedef enum {
+ 	ROC_SE_AES_GCM = 0x7,
+ 	ROC_SE_AES_XTS = 0x8,
+ 	ROC_SE_CHACHA20 = 0x9,
++	ROC_SE_AES_CCM = 0xA,
+ 
+ 	/* These are only for software use */
+ 	ROC_SE_ZUC_EEA3 = 0x90,
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index 0b02cea308221..bb5cc85331fcd 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -805,6 +805,36 @@ static const struct rte_cryptodev_capabilities caps_aes[] = {
+ 			}, }
+ 		}, }
+ 	},
++	{	/* AES CCM */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AEAD,
++			{.aead = {
++				.algo = RTE_CRYPTO_AEAD_AES_CCM,
++				.block_size = 16,
++				.key_size = {
++					.min = 16,
++					.max = 32,
++					.increment = 8
++				},
++				.digest_size = {
++					.min = 4,
++					.max = 16,
++					.increment = 1
++				},
++				.aad_size = {
++					.min = 0,
++					.max = 1024,
++					.increment = 1
++				},
++				.iv_size = {
++					.min = 11,
++					.max = 13,
++					.increment = 0
++				}
++			}, }
++		}, }
++	},
+ 	{	/* AES CMAC */
+ 		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
+ 		{.sym = {
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 649b5754c86d4..d40578666827c 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -690,7 +690,7 @@ sym_session_configure(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xfor
+ 	if (sess_priv->cpt_op & ROC_SE_OP_CIPHER_MASK) {
+ 		switch (sess_priv->roc_se_ctx.fc_type) {
+ 		case ROC_SE_FC_GEN:
+-			if (sess_priv->aes_gcm || sess_priv->chacha_poly)
++			if (sess_priv->aes_gcm || sess_priv->aes_ccm || sess_priv->chacha_poly)
+ 				thr_type = CPT_DP_THREAD_TYPE_FC_AEAD;
+ 			else
+ 				thr_type = CPT_DP_THREAD_TYPE_FC_CHAIN;
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index ad915f5ecfe38..62e2fea18716c 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -8,6 +8,8 @@
+ 
+ #include <rte_cryptodev.h>
+ 
++#include "roc_model.h"
++
+ #include "cnxk_cryptodev.h"
+ #include "cnxk_cryptodev_ops.h"
+ #include "cnxk_sg.h"
+@@ -31,6 +33,7 @@ struct cnxk_se_sess {
+ 	uint16_t cpt_op : 4;
+ 	uint16_t zsk_flag : 4;
+ 	uint16_t aes_gcm : 1;
++	uint16_t aes_ccm : 1;
+ 	uint16_t aes_ctr : 1;
+ 	uint16_t chacha_poly : 1;
+ 	uint16_t is_null : 1;
+@@ -1818,10 +1821,10 @@ static __rte_always_inline int
+ fill_sess_aead(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ {
+ 	struct rte_crypto_aead_xform *aead_form;
++	uint8_t aes_gcm = 0, aes_ccm = 0;
+ 	roc_se_cipher_type enc_type = 0; /* NULL Cipher type */
+ 	roc_se_auth_type auth_type = 0;	 /* NULL Auth type */
+ 	uint32_t cipher_key_len = 0;
+-	uint8_t aes_gcm = 0;
+ 	aead_form = &xform->aead;
+ 
+ 	if (aead_form->op == RTE_CRYPTO_AEAD_OP_ENCRYPT) {
+@@ -1841,9 +1844,14 @@ fill_sess_aead(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 		aes_gcm = 1;
+ 		break;
+ 	case RTE_CRYPTO_AEAD_AES_CCM:
+-		plt_dp_err("Crypto: Unsupported cipher algo %u",
+-			   aead_form->algo);
+-		return -1;
++		if (!roc_model_is_cn98xx()) {
++			plt_dp_err("AES CCM is not supported\n");
++			return -1;
++		}
++		enc_type = ROC_SE_AES_CCM;
++		cipher_key_len = 16;
++		aes_ccm = 1;
++		break;
+ 	case RTE_CRYPTO_AEAD_CHACHA20_POLY1305:
+ 		enc_type = ROC_SE_CHACHA20;
+ 		auth_type = ROC_SE_POLY1305;
+@@ -1862,19 +1870,27 @@ fill_sess_aead(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 	}
+ 	sess->zsk_flag = 0;
+ 	sess->aes_gcm = aes_gcm;
++	sess->aes_ccm = aes_ccm;
+ 	sess->mac_len = aead_form->digest_length;
+ 	sess->iv_offset = aead_form->iv.offset;
+ 	sess->iv_length = aead_form->iv.length;
+ 	sess->aad_length = aead_form->aad_length;
+ 
+-	switch (sess->iv_length) {
+-	case 12:
+-		sess->short_iv = 1;
+-	case 16:
+-		break;
+-	default:
+-		plt_dp_err("Crypto: Unsupported IV length %u", sess->iv_length);
+-		return -1;
++	if (aes_ccm) {
++		if ((sess->iv_length < 11) || (sess->iv_length > 13)) {
++			plt_dp_err("Crypto: Unsupported IV length %u", sess->iv_length);
++			return -1;
++		}
++	} else {
++		switch (sess->iv_length) {
++		case 12:
++			sess->short_iv = 1;
++		case 16:
++			break;
++		default:
++			plt_dp_err("Crypto: Unsupported IV length %u", sess->iv_length);
++			return -1;
++		}
+ 	}
+ 
+ 	if (unlikely(roc_se_ciph_key_set(&sess->roc_se_ctx, enc_type, aead_form->key.data,
+@@ -2019,6 +2035,7 @@ fill_sess_cipher(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 	sess->zsk_flag = zsk_flag;
+ 	sess->zs_cipher = zs_cipher;
+ 	sess->aes_gcm = 0;
++	sess->aes_ccm = 0;
+ 	sess->aes_ctr = aes_ctr;
+ 	sess->iv_offset = c_form->iv.offset;
+ 	sess->iv_length = c_form->iv.length;
+@@ -2389,6 +2406,7 @@ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	struct roc_se_fc_params fc_params;
+ 	char src[SRC_IOV_SIZE];
+ 	char dst[SRC_IOV_SIZE];
++	uint8_t ccm_iv_buf[16];
+ 	uint32_t iv_buf[4];
+ 	int ret;
+ 
+@@ -2408,6 +2426,13 @@ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 			iv_buf[3] = rte_cpu_to_be_32(0x1);
+ 			fc_params.iv_buf = iv_buf;
+ 		}
++		if (sess->aes_ccm) {
++			memcpy((uint8_t *)ccm_iv_buf,
++			       rte_crypto_op_ctod_offset(cop, uint8_t *, sess->iv_offset),
++			       sess->iv_length + 1);
++			ccm_iv_buf[0] = 14 - sess->iv_length;
++			fc_params.iv_buf = ccm_iv_buf;
++		}
+ 	}
+ 
+ 	/* Kasumi would need SG mode */
+@@ -2435,7 +2460,11 @@ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 			d_offs = (d_offs - aad_len) | (d_offs << 16);
+ 			d_lens = (d_lens + aad_len) | (d_lens << 32);
+ 		} else {
+-			fc_params.aad_buf.vaddr = sym_op->aead.aad.data;
++			/* For AES CCM, AAD is written 18B after aad.data as per API */
++			if (sess->aes_ccm)
++				fc_params.aad_buf.vaddr = PLT_PTR_ADD(sym_op->aead.aad.data, 18);
++			else
++				fc_params.aad_buf.vaddr = sym_op->aead.aad.data;
+ 			fc_params.aad_buf.size = aad_len;
+ 			flags |= ROC_SE_VALID_AAD_BUF;
+ 			inplace = 0;
+-- 
+2.25.1
+

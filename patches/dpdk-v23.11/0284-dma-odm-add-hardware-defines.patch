@@ -1,0 +1,210 @@
+From 2a48d862947364f4bbf5215bbb1fdeb348a7d027 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 27 Feb 2024 14:50:05 +0000
+Subject: [PATCH 284/513] dma/odm: add hardware defines
+
+Add ODM registers and structures. Add mailbox structs as well.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I6846fd9e38ee4be22723d3c43d5ce01725deacf3
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122742
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/dma/odm/odm.h      | 116 +++++++++++++++++++++++++++++++++++++
+ drivers/dma/odm/odm_priv.h |  49 ++++++++++++++++
+ 2 files changed, 165 insertions(+)
+ create mode 100644 drivers/dma/odm/odm_priv.h
+
+diff --git a/drivers/dma/odm/odm.h b/drivers/dma/odm/odm.h
+index 0ef308e301ce1..c121f0f8135e8 100644
+--- a/drivers/dma/odm/odm.h
++++ b/drivers/dma/odm/odm.h
+@@ -9,11 +9,127 @@
+ 
+ extern int odm_logtype;
+ 
++/* ODM VF register offsets from VF_BAR0 */
++#define ODM_VDMA_EN(x)		(0x00 | (x << 3))
++#define ODM_VDMA_REQQ_CTL(x)	(0x80 | (x << 3))
++#define ODM_VDMA_DBELL(x)	(0x100 | (x << 3))
++#define ODM_VDMA_RING_CFG(x)	(0x180 | (x << 3))
++#define ODM_VDMA_IRING_BADDR(x) (0x200 | (x << 3))
++#define ODM_VDMA_CRING_BADDR(x) (0x280 | (x << 3))
++#define ODM_VDMA_COUNTS(x)	(0x300 | (x << 3))
++#define ODM_VDMA_IRING_NADDR(x) (0x380 | (x << 3))
++#define ODM_VDMA_CRING_NADDR(x) (0x400 | (x << 3))
++#define ODM_VDMA_IRING_DBG(x)	(0x480 | (x << 3))
++#define ODM_VDMA_CNT(x)		(0x580 | (x << 3))
++#define ODM_VF_INT		(0x1000)
++#define ODM_VF_INT_W1S		(0x1008)
++#define ODM_VF_INT_ENA_W1C	(0x1010)
++#define ODM_VF_INT_ENA_W1S	(0x1018)
++#define ODM_MBOX_VF_PF_DATA(i)	(0x2000 | (i << 3))
++
++#define ODM_MBOX_RETRY_CNT	(0xfffffff)
++#define ODM_MBOX_ERR_CODE_MAX	(0xf)
++#define ODM_IRING_IDLE_WAIT_CNT (0xfffffff)
++
++/**
++ * Enumeration odm_hdr_xtype_e
++ *
++ * ODM Transfer Type Enumeration
++ * Enumerates the pointer type in ODM_DMA_INSTR_HDR_S[XTYPE]
++ */
++#define ODM_XTYPE_INTERNAL 2
++#define ODM_XTYPE_FILL0	   4
++#define ODM_XTYPE_FILL1	   5
++
++/**
++ *  ODM Header completion type enumeration
++ *  Enumerates the completion type in ODM_DMA_INSTR_HDR_S[CT]
++ */
++#define ODM_HDR_CT_CW_CA 0x0
++#define ODM_HDR_CT_CW_NC 0x1
++
++#define ODM_MAX_QUEUES_PER_DEV 16
++
+ #define odm_err(fmt, args...)                                                                      \
+ 	rte_log(RTE_LOG_ERR, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
+ #define odm_info(fmt, args...)                                                                     \
+ 	rte_log(RTE_LOG_INFO, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
+ 
++/**
++ * Structure odm_instr_hdr_s for ODM
++ *
++ * ODM DMA Instruction Header Format
++ */
++union odm_instr_hdr_s {
++	uint64_t u;
++	struct odm_instr_hdr {
++		uint64_t nfst : 3;
++		uint64_t reserved_3 : 1;
++		uint64_t nlst : 3;
++		uint64_t reserved_7_9 : 3;
++		uint64_t ct : 2;
++		uint64_t stse : 1;
++		uint64_t reserved_13_28 : 16;
++		uint64_t sts : 1;
++		uint64_t reserved_30_49 : 20;
++		uint64_t xtype : 3;
++		uint64_t reserved_53_63 : 11;
++	} s;
++};
++
++/**
++ *  ODM Completion Entry Structure
++ *
++ */
++union odm_cmpl_ent_s {
++	uint32_t u;
++	struct odm_cmpl_ent {
++		uint32_t cmp_code : 8;
++		uint32_t rsvd : 23;
++		uint32_t valid : 1;
++	} s;
++};
++
++/**
++ * ODM DMA Ring Configuration Register
++ */
++union odm_vdma_ring_cfg_s {
++	uint64_t u;
++	struct {
++		uint64_t isize : 8;
++		uint64_t rsvd_8_15 : 8;
++		uint64_t csize : 8;
++		uint64_t rsvd_24_63 : 40;
++	} s;
++};
++
++/**
++ * ODM DMA Instruction Ring DBG
++ */
++union odm_vdma_iring_dbg_s {
++	uint64_t u;
++	struct {
++		uint64_t dbell_cnt : 32;
++		uint64_t offset : 16;
++		uint64_t rsvd_48_62 : 15;
++		uint64_t iwbusy : 1;
++	} s;
++};
++
++/**
++ * ODM DMA Counts
++ */
++union odm_vdma_counts_s {
++	uint64_t u;
++	struct {
++		uint64_t dbell : 32;
++		uint64_t buf_used_cnt : 9;
++		uint64_t rsvd_41_43 : 3;
++		uint64_t rsvd_buf_used_cnt : 3;
++		uint64_t rsvd_47_63 : 17;
++	} s;
++};
++
+ struct odm_dev {
+ 	struct rte_pci_device *pci_dev;
+ 	uint8_t *rbase;
+diff --git a/drivers/dma/odm/odm_priv.h b/drivers/dma/odm/odm_priv.h
+new file mode 100644
+index 0000000000000..1878f4d9a6fdf
+--- /dev/null
++++ b/drivers/dma/odm/odm_priv.h
+@@ -0,0 +1,49 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#ifndef _ODM_PRIV_H_
++#define _ODM_PRIV_H_
++
++#define ODM_MAX_VFS    16
++#define ODM_MAX_QUEUES 32
++
++#define ODM_CMD_QUEUE_SIZE 4096
++
++#define ODM_DEV_INIT	0x1
++#define ODM_DEV_CLOSE	0x2
++#define ODM_QUEUE_OPEN	0x3
++#define ODM_QUEUE_CLOSE 0x4
++#define ODM_REG_DUMP	0x5
++
++struct odm_mbox_dev_msg {
++	/* Response code */
++	uint64_t rsp : 8;
++	/* Number of VFs */
++	uint64_t nvfs : 2;
++	/* Error code */
++	uint64_t err : 6;
++	/* Reserved */
++	uint64_t rsvd_16_63 : 48;
++};
++
++struct odm_mbox_queue_msg {
++	/* Command code */
++	uint64_t cmd : 8;
++	/* VF ID to configure */
++	uint64_t vfid : 8;
++	/* Queue index in the VF */
++	uint64_t qidx : 8;
++	/* Reserved */
++	uint64_t rsvd_24_63 : 40;
++};
++
++union odm_mbox_msg {
++	uint64_t u[2];
++	struct {
++		struct odm_mbox_dev_msg d;
++		struct odm_mbox_queue_msg q;
++	};
++};
++
++#endif /* _ODM_PRIV_H_ */
+-- 
+2.25.1
+

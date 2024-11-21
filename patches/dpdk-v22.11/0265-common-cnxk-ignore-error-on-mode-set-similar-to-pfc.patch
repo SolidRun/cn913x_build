@@ -1,0 +1,92 @@
+From 3c5027eb2f8bf133ef1d84bf77f1495be361cbe5 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 14 Mar 2023 12:16:46 +0530
+Subject: [PATCH 265/955] common/cnxk: ignore error on mode set similar to pfc
+
+Ignore error reported for other PF/VF using FC similar to PFC.
+Also skip calling mode set if it is already in same state.
+
+Change-Id: I77b1bc40572f9274a1f1d5ab3d5dea95bf2cceda
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99324
+Reviewed-by: Devapraba Muthumani <dmuthumani@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c      |  1 +
+ drivers/common/cnxk/roc_nix_fc.c   | 16 +---------------
+ drivers/net/cnxk/cnxk_ethdev_ops.c |  4 ++++
+ 3 files changed, 6 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 3f186eda0c22b..3125f9dda24a1 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -433,6 +433,7 @@ process_msgs(struct dev *dev, struct mbox *mbox)
+ 			dev->pf_func = msg->pcifunc;
+ 			break;
+ 		case MBOX_MSG_CGX_PRIO_FLOW_CTRL_CFG:
++		case MBOX_MSG_CGX_CFG_PAUSE_FRM:
+ 			/* Handling the case where one VF tries to disable PFC
+ 			 * while PFC already configured on other VFs. This is
+ 			 * not an error but a warning which can be ignored.
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index e5918c3d847a5..bc30df99f6e1e 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -383,7 +383,7 @@ roc_nix_fc_mode_set(struct roc_nix *roc_nix, enum roc_nix_fc_mode mode)
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	struct dev *dev = &nix->dev;
+ 	struct mbox *mbox = mbox_get(dev->mbox);
+-	struct cgx_pause_frm_cfg *req, *rsp;
++	struct cgx_pause_frm_cfg *req;
+ 	uint8_t tx_pause, rx_pause;
+ 	int rc = -ENOSPC;
+ 
+@@ -398,18 +398,6 @@ roc_nix_fc_mode_set(struct roc_nix *roc_nix, enum roc_nix_fc_mode mode)
+ 		goto exit;
+ 	}
+ 
+-	/* Skip set if already in same state to avoid errors */
+-	req = mbox_alloc_msg_cgx_cfg_pause_frm(mbox);
+-	if (req == NULL)
+-		goto exit;
+-
+-	rc = mbox_process_msg(mbox, (void *)&rsp);
+-	if (rc)
+-		goto exit;
+-
+-	if (rsp->rx_pause == rx_pause && rsp->tx_pause == tx_pause)
+-		goto skip_set;
+-
+ 	/* Set new config */
+ 	req = mbox_alloc_msg_cgx_cfg_pause_frm(mbox);
+ 	if (req == NULL)
+@@ -422,10 +410,8 @@ roc_nix_fc_mode_set(struct roc_nix *roc_nix, enum roc_nix_fc_mode mode)
+ 	if (rc)
+ 		goto exit;
+ 
+-skip_set:
+ 	nix->rx_pause = rx_pause;
+ 	nix->tx_pause = tx_pause;
+-
+ exit:
+ 	mbox_put(mbox);
+ 	return rc;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index 3ef6157f17a1e..b7f12210a45d4 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -342,6 +342,10 @@ cnxk_nix_flow_ctrl_set(struct rte_eth_dev *eth_dev,
+ 			return rc;
+ 	}
+ 
++	/* Skip mode set if it is we are in same state */
++	if (fc->rx_pause == tx_pause && fc->tx_pause == tx_pause)
++		return 0;
++
+ 	rc = roc_nix_fc_mode_set(nix, mode_map[fc_conf->mode]);
+ 	if (rc)
+ 		return rc;
+-- 
+2.25.1
+

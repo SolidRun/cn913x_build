@@ -1,0 +1,47 @@
+From a79b67450d3fbd446bb9da5107fdcbf933ba12ac Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 31 Aug 2023 21:11:37 +0530
+Subject: [PATCH 630/955] test/mbuf: fix multiple attach of external buffer
+
+In the mbuf_autotest, an external buffer is attached to an
+mbuf, then the mbuf is cloned and then the same external
+mbuf is being attached to the clone.
+
+In debug builds, this second attach of external buffer to
+the clone triggers an assert as the cloned mbuf will already
+have the RTE_MBUF_F_EXTERNAL flag set.
+
+Fix this assert by avoiding the second attach of external
+buffer to the clone.
+
+Fixes: 7b295dceea07 ("test/mbuf: add unit test cases")
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Cc: lavanyax.govindarajan@intel.com
+Change-Id: I9ff272174d7f95f9078b69d12679ca50525ca0fc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110963
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test/test_mbuf.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/app/test/test_mbuf.c b/app/test/test_mbuf.c
+index cfcb7c7dff2b0..220cc71e8554e 100644
+--- a/app/test/test_mbuf.c
++++ b/app/test/test_mbuf.c
+@@ -2374,10 +2374,6 @@ test_pktmbuf_ext_shinfo_init_helper(struct rte_mempool *pktmbuf_pool)
+ 	if (rte_pktmbuf_pkt_len(clone) != 0)
+ 		GOTO_FAIL("%s: Bad packet length\n", __func__);
+ 
+-	/* attach the same external buffer to the cloned mbuf */
+-	clone->ol_flags = 0;
+-	rte_pktmbuf_attach_extbuf(clone, ext_buf_addr, buf_iova, buf_len,
+-			ret_shinfo);
+ 	if (clone->ol_flags != RTE_MBUF_F_EXTERNAL)
+ 		GOTO_FAIL("%s: External buffer is not attached to mbuf\n",
+ 				__func__);
+-- 
+2.25.1
+

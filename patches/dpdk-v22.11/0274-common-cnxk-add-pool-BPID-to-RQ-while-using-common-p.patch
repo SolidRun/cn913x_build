@@ -1,0 +1,436 @@
+From dab6e8f098832affad234ebcd25f31227d5aed8f Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Tue, 7 Feb 2023 14:27:57 +0530
+Subject: [PATCH 274/955] common/cnxk: add pool BPID to RQ while using common
+ pool
+
+When RQs of two different traffic classes are using the same mempool,
+BPIDs could differ between the RQs and BPID of only one RQ can be
+configured per pool. In such cases, a new BPID is configured on both RQs
+and pool or pool back-pressure is disabled.
+
+CN103xx and CN106xx B0 supports configuring multiple BPID per RQ.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I33931c22dac1b845b7df31664b0a04eff7d23493
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94277
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_idev.c      |  12 ++
+ drivers/common/cnxk/roc_idev.h      |   1 +
+ drivers/common/cnxk/roc_idev_priv.h |   1 +
+ drivers/common/cnxk/roc_nix.c       |   5 +
+ drivers/common/cnxk/roc_nix.h       |   3 +
+ drivers/common/cnxk/roc_nix_fc.c    | 164 ++++++++++++++++------------
+ drivers/common/cnxk/roc_npa.c       |  48 ++++++++
+ drivers/common/cnxk/roc_npa.h       |   2 +
+ drivers/common/cnxk/version.map     |   2 +
+ 9 files changed, 170 insertions(+), 68 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_idev.c b/drivers/common/cnxk/roc_idev.c
+index 62a4fd8880882..f420f0158d247 100644
+--- a/drivers/common/cnxk/roc_idev.c
++++ b/drivers/common/cnxk/roc_idev.c
+@@ -39,6 +39,7 @@ idev_set_defaults(struct idev_cfg *idev)
+ 	idev->bphy = NULL;
+ 	idev->cpt = NULL;
+ 	idev->nix_inl_dev = NULL;
++	TAILQ_INIT(&idev->roc_nix_list);
+ 	plt_spinlock_init(&idev->nix_inl_dev_lock);
+ 	plt_spinlock_init(&idev->npa_dev_lock);
+ 	__atomic_store_n(&idev->npa_refcnt, 0, __ATOMIC_RELEASE);
+@@ -201,6 +202,17 @@ roc_nix_inl_outb_ring_base_get(struct roc_nix *roc_nix)
+ 	return (uint64_t *)&inl_dev->sa_soft_exp_ring[nix->outb_se_ring_base];
+ }
+ 
++struct roc_nix_list *
++roc_idev_nix_list_get(void)
++{
++	struct idev_cfg *idev;
++
++	idev = idev_get_cfg();
++	if (idev != NULL)
++		return &idev->roc_nix_list;
++	return NULL;
++}
++
+ void
+ roc_idev_cpt_set(struct roc_cpt *cpt)
+ {
+diff --git a/drivers/common/cnxk/roc_idev.h b/drivers/common/cnxk/roc_idev.h
+index 926aac0634658..640ca97708591 100644
+--- a/drivers/common/cnxk/roc_idev.h
++++ b/drivers/common/cnxk/roc_idev.h
+@@ -17,5 +17,6 @@ void __roc_api roc_idev_cpt_set(struct roc_cpt *cpt);
+ 
+ struct roc_nix *__roc_api roc_idev_npa_nix_get(void);
+ uint64_t __roc_api roc_idev_nix_inl_meta_aura_get(void);
++struct roc_nix_list *__roc_api roc_idev_nix_list_get(void);
+ 
+ #endif /* _ROC_IDEV_H_ */
+diff --git a/drivers/common/cnxk/roc_idev_priv.h b/drivers/common/cnxk/roc_idev_priv.h
+index b97d2936a26c0..d83522799fc2e 100644
+--- a/drivers/common/cnxk/roc_idev_priv.h
++++ b/drivers/common/cnxk/roc_idev_priv.h
+@@ -32,6 +32,7 @@ struct idev_cfg {
+ 	struct roc_sso *sso;
+ 	struct nix_inl_dev *nix_inl_dev;
+ 	struct idev_nix_inl_cfg inl_cfg;
++	struct roc_nix_list roc_nix_list;
+ 	plt_spinlock_t nix_inl_dev_lock;
+ 	plt_spinlock_t npa_dev_lock;
+ };
+diff --git a/drivers/common/cnxk/roc_nix.c b/drivers/common/cnxk/roc_nix.c
+index 97ef1c713316e..39943e4ba749b 100644
+--- a/drivers/common/cnxk/roc_nix.c
++++ b/drivers/common/cnxk/roc_nix.c
+@@ -417,6 +417,7 @@ roc_nix_dev_init(struct roc_nix *roc_nix)
+ 	nix = roc_nix_to_nix_priv(roc_nix);
+ 	pci_dev = roc_nix->pci_dev;
+ 	dev = &nix->dev;
++	TAILQ_INSERT_TAIL(roc_idev_nix_list_get(), roc_nix, next);
+ 
+ 	if (nix->dev.drv_inited)
+ 		return 0;
+@@ -425,6 +426,10 @@ roc_nix_dev_init(struct roc_nix *roc_nix)
+ 		goto skip_dev_init;
+ 
+ 	memset(nix, 0, sizeof(*nix));
++
++	/* Since 0 is a valid BPID, use -1 to represent invalid value. */
++	memset(nix->bpid, -1, sizeof(nix->bpid));
++
+ 	/* Initialize device  */
+ 	rc = dev_init(dev, pci_dev);
+ 	if (rc) {
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 0ec98ad6303aa..6147e07d5cc3d 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -414,6 +414,8 @@ typedef void (*q_err_get_t)(struct roc_nix *roc_nix, void *data);
+ typedef void (*link_info_get_t)(struct roc_nix *roc_nix,
+ 				struct roc_nix_link_info *link);
+ 
++TAILQ_HEAD(roc_nix_list, roc_nix);
++
+ struct roc_nix {
+ 	/* Input parameters */
+ 	struct plt_pci_device *pci_dev;
+@@ -445,6 +447,7 @@ struct roc_nix {
+ 	uint32_t buf_sz;
+ 	uint64_t meta_aura_handle;
+ 	uintptr_t meta_mempool;
++	TAILQ_ENTRY(roc_nix) next;
+ 
+ #define ROC_NIX_MEM_SZ (6 * 1056)
+ 	uint8_t reserved[ROC_NIX_MEM_SZ] __plt_cache_aligned;
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index bc30df99f6e1e..60e765b61d3b0 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -417,17 +417,64 @@ roc_nix_fc_mode_set(struct roc_nix *roc_nix, enum roc_nix_fc_mode mode)
+ 	return rc;
+ }
+ 
++static int
++nix_rx_chan_multi_bpid_cfg(struct roc_nix *roc_nix, uint8_t chan, uint16_t bpid, uint16_t *bpid_new)
++{
++	struct roc_nix *roc_nix_tmp, *roc_nix_pre = NULL;
++	uint8_t chan_pre;
++
++	if (!roc_feature_nix_has_rxchan_multi_bpid())
++		return -ENOTSUP;
++
++	/* Find associated NIX RX channel if Aura BPID is of that of a NIX. */
++	TAILQ_FOREACH (roc_nix_tmp, roc_idev_nix_list_get(), next) {
++		struct nix *nix = roc_nix_to_nix_priv(roc_nix_tmp);
++		int i;
++
++		for (i = 0; i < NIX_MAX_CHAN; i++) {
++			if (nix->bpid[i] == bpid)
++				break;
++		}
++
++		if (i < NIX_MAX_CHAN) {
++			roc_nix_pre = roc_nix_tmp;
++			chan_pre = i;
++			break;
++		}
++	}
++
++	/* Alloc and configure a new BPID if Aura BPID is that of a NIX. */
++	if (roc_nix_pre) {
++		if (roc_nix_bpids_alloc(roc_nix, ROC_NIX_INTF_TYPE_SSO, 1, bpid_new) <= 0)
++			return -ENOSPC;
++
++		if (roc_nix_chan_bpid_set(roc_nix_pre, chan_pre, *bpid_new, 1, false) < 0)
++			return -ENOSPC;
++
++		if (roc_nix_chan_bpid_set(roc_nix, chan, *bpid_new, 1, false) < 0)
++			return -ENOSPC;
++
++		return 0;
++	} else {
++		return roc_nix_chan_bpid_set(roc_nix, chan, bpid, 1, false);
++	}
++
++	return 0;
++}
++
++#define NIX_BPID_INVALID 0xFFFF
++
+ void
+ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena,
+ 		      uint8_t force, uint8_t tc)
+ {
++	uint32_t aura_id = roc_npa_aura_handle_to_aura(pool_id);
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	struct npa_lf *lf = idev_npa_obj_get();
+ 	struct npa_aq_enq_req *req;
+ 	struct npa_aq_enq_rsp *rsp;
++	uint8_t bp_thresh, bp_intf;
+ 	struct mbox *mbox;
+-	uint32_t limit;
+-	uint64_t shift;
+ 	int rc;
+ 
+ 	if (roc_nix_is_sdp(roc_nix))
+@@ -435,93 +482,74 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena,
+ 
+ 	if (!lf)
+ 		return;
+-	mbox = mbox_get(lf->mbox);
+ 
+-	req = mbox_alloc_msg_npa_aq_enq(mbox);
+-	if (req == NULL)
+-		goto exit;
++	mbox = lf->mbox;
++	req = mbox_alloc_msg_npa_aq_enq(mbox_get(mbox));
++	if (req == NULL) {
++		mbox_put(mbox);
++		return;
++	}
+ 
+-	req->aura_id = roc_npa_aura_handle_to_aura(pool_id);
++	req->aura_id = aura_id;
+ 	req->ctype = NPA_AQ_CTYPE_AURA;
+ 	req->op = NPA_AQ_INSTOP_READ;
+ 
+ 	rc = mbox_process_msg(mbox, (void *)&rsp);
+-	if (rc)
+-		goto exit;
++	mbox_put(mbox);
++	if (rc) {
++		plt_nix_dbg("Failed to read context of aura 0x%" PRIx64, pool_id);
++		return;
++	}
+ 
+-	limit = rsp->aura.limit;
+-	shift = rsp->aura.shift;
++	bp_intf = 1 << nix->is_nix1;
++	bp_thresh = NIX_RQ_AURA_THRESH(rsp->aura.limit >> rsp->aura.shift);
+ 
+ 	/* BP is already enabled. */
+ 	if (rsp->aura.bp_ena && ena) {
+-		uint16_t bpid;
+-		bool nix1;
+-
+-		nix1 = !!(rsp->aura.bp_ena & 0x2);
+-		if (nix1)
+-			bpid = rsp->aura.nix1_bpid;
+-		else
+-			bpid = rsp->aura.nix0_bpid;
+-
+-		/* If BP ids don't match disable BP. */
+-		if (((nix1 != nix->is_nix1) || (bpid != nix->bpid[tc])) &&
+-		    !force) {
+-			req = mbox_alloc_msg_npa_aq_enq(mbox);
+-			if (req == NULL)
+-				goto exit;
+-
+-			plt_info("Disabling BP/FC on aura 0x%" PRIx64
+-				 " as it shared across ports or tc",
+-				 pool_id);
+-			req->aura_id = roc_npa_aura_handle_to_aura(pool_id);
+-			req->ctype = NPA_AQ_CTYPE_AURA;
+-			req->op = NPA_AQ_INSTOP_WRITE;
+-
+-			req->aura.bp_ena = 0;
+-			req->aura_mask.bp_ena = ~(req->aura_mask.bp_ena);
+-
+-			mbox_process(mbox);
++		uint16_t bpid =
++			(rsp->aura.bp_ena & 0x1) ? rsp->aura.nix0_bpid : rsp->aura.nix1_bpid;
++
++		/* Disable BP if BPIDs don't match and couldn't add new BPID. */
++		if (bpid != nix->bpid[tc]) {
++			uint16_t bpid_new = NIX_BPID_INVALID;
++
++			if ((nix_rx_chan_multi_bpid_cfg(roc_nix, tc, bpid, &bpid_new) < 0) &&
++			    !force) {
++				plt_info("Disabling BP/FC on aura 0x%" PRIx64
++					 " as it shared across ports or tc",
++					 pool_id);
++
++				if (roc_npa_aura_bp_configure(pool_id, 0, 0, 0, false))
++					plt_nix_dbg(
++						"Disabling backpressue failed on aura 0x%" PRIx64,
++						pool_id);
++			}
++
++			/* Configure Aura with new BPID if it is allocated. */
++			if (bpid_new != NIX_BPID_INVALID) {
++				if (roc_npa_aura_bp_configure(pool_id, bpid_new, bp_intf, bp_thresh,
++							      true))
++					plt_nix_dbg(
++						"Enabling backpressue failed on aura 0x%" PRIx64,
++						pool_id);
++			}
+ 		}
+ 
+-		if ((nix1 != nix->is_nix1) || (bpid != nix->bpid[tc]))
+-			plt_info("Ignoring aura 0x%" PRIx64 "->%u bpid mapping",
+-				 pool_id, nix->bpid[tc]);
+-		goto exit;
++		return;
+ 	}
+ 
+ 	/* BP was previously enabled but now disabled skip. */
+ 	if (rsp->aura.bp && ena)
+-		goto exit;
+-
+-	req = mbox_alloc_msg_npa_aq_enq(mbox);
+-	if (req == NULL)
+-		goto exit;
+-
+-	req->aura_id = roc_npa_aura_handle_to_aura(pool_id);
+-	req->ctype = NPA_AQ_CTYPE_AURA;
+-	req->op = NPA_AQ_INSTOP_WRITE;
++		return;
+ 
+ 	if (ena) {
+-		if (nix->is_nix1) {
+-			req->aura.nix1_bpid = nix->bpid[tc];
+-			req->aura_mask.nix1_bpid = ~(req->aura_mask.nix1_bpid);
+-		} else {
+-			req->aura.nix0_bpid = nix->bpid[tc];
+-			req->aura_mask.nix0_bpid = ~(req->aura_mask.nix0_bpid);
+-		}
+-		req->aura.bp = NIX_RQ_AURA_THRESH(limit >> shift);
+-		req->aura_mask.bp = ~(req->aura_mask.bp);
++		if (roc_npa_aura_bp_configure(pool_id, nix->bpid[tc], bp_intf, bp_thresh, true))
++			plt_nix_dbg("Enabling backpressue failed on aura 0x%" PRIx64, pool_id);
+ 	} else {
+-		req->aura.bp = 0;
+-		req->aura_mask.bp = ~(req->aura_mask.bp);
++		if (roc_npa_aura_bp_configure(pool_id, 0, 0, 0, false))
++			plt_nix_dbg("Disabling backpressue failed on aura 0x%" PRIx64, pool_id);
+ 	}
+ 
+-	req->aura.bp_ena = (!!ena << nix->is_nix1);
+-	req->aura_mask.bp_ena = ~(req->aura_mask.bp_ena);
+-
+-	mbox_process(mbox);
+-exit:
+-	mbox_put(mbox);
+ 	return;
+ }
+ 
+diff --git a/drivers/common/cnxk/roc_npa.c b/drivers/common/cnxk/roc_npa.c
+index 3b3532c1bf886..febafd21f6160 100644
+--- a/drivers/common/cnxk/roc_npa.c
++++ b/drivers/common/cnxk/roc_npa.c
+@@ -631,6 +631,54 @@ roc_npa_zero_aura_handle(void)
+ 	return 0;
+ }
+ 
++int
++roc_npa_aura_bp_configure(uint64_t aura_handle, uint16_t bpid, uint8_t bp_intf, uint8_t bp_thresh,
++			  bool enable)
++{
++	uint32_t aura_id = roc_npa_aura_handle_to_aura(aura_handle);
++	struct npa_lf *lf = idev_npa_obj_get();
++	struct npa_aq_enq_req *req;
++	struct mbox *mbox;
++	int rc = 0;
++
++	if (lf == NULL)
++		return NPA_ERR_PARAM;
++
++	mbox = mbox_get(lf->mbox);
++	req = mbox_alloc_msg_npa_aq_enq(mbox);
++	if (req == NULL) {
++		rc = -ENOMEM;
++		goto fail;
++	}
++
++	req->aura_id = aura_id;
++	req->ctype = NPA_AQ_CTYPE_AURA;
++	req->op = NPA_AQ_INSTOP_WRITE;
++
++	if (enable) {
++		if (bp_intf & 0x1) {
++			req->aura.nix0_bpid = bpid;
++			req->aura_mask.nix0_bpid = ~(req->aura_mask.nix0_bpid);
++		} else {
++			req->aura.nix1_bpid = bpid;
++			req->aura_mask.nix1_bpid = ~(req->aura_mask.nix1_bpid);
++		}
++		req->aura.bp = bp_thresh;
++		req->aura_mask.bp = ~(req->aura_mask.bp);
++	} else {
++		req->aura.bp = 0;
++		req->aura_mask.bp = ~(req->aura_mask.bp);
++	}
++
++	req->aura.bp_ena = bp_intf;
++	req->aura_mask.bp_ena = ~(req->aura_mask.bp_ena);
++
++	mbox_process(mbox);
++fail:
++	mbox_put(mbox);
++	return rc;
++}
++
+ static inline int
+ npa_attach(struct mbox *m_box)
+ {
+diff --git a/drivers/common/cnxk/roc_npa.h b/drivers/common/cnxk/roc_npa.h
+index 6b57b7fb884ce..b2c926d7b6f49 100644
+--- a/drivers/common/cnxk/roc_npa.h
++++ b/drivers/common/cnxk/roc_npa.h
+@@ -736,6 +736,8 @@ uint64_t __roc_api roc_npa_zero_aura_handle(void);
+ int __roc_api roc_npa_buf_type_update(uint64_t aura_handle, enum roc_npa_buf_type type, int cnt);
+ uint64_t __roc_api roc_npa_buf_type_mask(uint64_t aura_handle);
+ uint64_t __roc_api roc_npa_buf_type_limit_get(uint64_t type_mask);
++int __roc_api roc_npa_aura_bp_configure(uint64_t aura_id, uint16_t bpid, uint8_t bp_intf,
++					uint8_t bp_thresh, bool enable);
+ 
+ /* Init callbacks */
+ typedef int (*roc_npa_lf_init_cb_t)(struct plt_pci_device *pci_dev);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 4bc14901a7e2f..c426cd9f69471 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -98,6 +98,7 @@ INTERNAL {
+ 	roc_idev_npa_nix_get;
+ 	roc_idev_num_lmtlines_get;
+ 	roc_idev_nix_inl_meta_aura_get;
++	roc_idev_nix_list_get;
+ 	roc_model;
+ 	roc_se_auth_key_set;
+ 	roc_se_ciph_key_set;
+@@ -324,6 +325,7 @@ INTERNAL {
+ 	roc_npa_aura_drop_set;
+ 	roc_npa_aura_limit_modify;
+ 	roc_npa_aura_op_range_set;
++	roc_npa_aura_bp_configure;
+ 	roc_npa_ctx_dump;
+ 	roc_npa_dev_fini;
+ 	roc_npa_dev_init;
+-- 
+2.25.1
+

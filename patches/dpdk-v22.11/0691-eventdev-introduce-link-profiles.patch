@@ -1,0 +1,1606 @@
+From 9fdf328d65c97503c53e70290f8221c9c37df687 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 3 Oct 2023 15:17:19 +0530
+Subject: [PATCH 691/955] eventdev: introduce link profiles
+
+A collection of event queues linked to an event port can be
+associated with a unique identifier called as a link profile, multiple
+such profiles can be created based on the event device capability
+using the function `rte_event_port_profile_links_set` which takes
+arguments similar to `rte_event_port_link` in addition to the profile
+identifier.
+
+The maximum link profiles that are supported by an event device
+is advertised through the structure member
+`rte_event_dev_info::max_profiles_per_port`.
+By default, event ports are configured to use the link profile 0
+on initialization.
+
+Once multiple link profiles are set up and the event device is started,
+the application can use the function `rte_event_port_profile_switch`
+to change the currently active profile on an event port. This effects
+the next `rte_event_dequeue_burst` call, where the event queues
+associated with the newly active link profile will participate in
+scheduling.
+
+An unlink function `rte_event_port_profile_unlink` is provided
+to modify the links associated to a profile, and
+`rte_event_port_profile_links_get` can be used to retrieve the
+links associated with a profile.
+
+Using Link profiles can reduce the overhead of linking/unlinking and
+waiting for unlinks in progress in fast-path and gives applications
+the ability to switch between preset profiles on the fly.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Acked-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: Ic256dfaf2ed3341fd2c45dad7ea4ddaf3ecc120b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114011
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116830
+---
+ app/test/test_eventdev.c                   | 117 +++++++
+ config/rte_config.h                        |   1 +
+ doc/guides/eventdevs/features/default.ini  |   1 +
+ doc/guides/prog_guide/eventdev.rst         |  40 +++
+ doc/guides/rel_notes/release_23_11.rst     | 355 +++++++++++++++++++++
+ drivers/event/cnxk/cnxk_eventdev.c         |   2 +-
+ drivers/event/dlb2/dlb2.c                  |   1 +
+ drivers/event/dpaa/dpaa_eventdev.c         |   1 +
+ drivers/event/dpaa2/dpaa2_eventdev.c       |   2 +-
+ drivers/event/dsw/dsw_evdev.c              |   1 +
+ drivers/event/octeontx/ssovf_evdev.c       |   2 +-
+ drivers/event/opdl/opdl_evdev.c            |   1 +
+ drivers/event/skeleton/skeleton_eventdev.c |   1 +
+ drivers/event/sw/sw_evdev.c                |   1 +
+ lib/eventdev/eventdev_pmd.h                |  61 +++-
+ lib/eventdev/eventdev_private.c            |   9 +
+ lib/eventdev/eventdev_trace.h              |  32 ++
+ lib/eventdev/eventdev_trace_points.c       |  12 +
+ lib/eventdev/rte_eventdev.c                | 149 +++++++--
+ lib/eventdev/rte_eventdev.h                | 231 ++++++++++++++
+ lib/eventdev/rte_eventdev_core.h           |   7 +-
+ lib/eventdev/rte_eventdev_trace_fp.h       |   8 +
+ lib/eventdev/version.map                   |   6 +
+ 23 files changed, 1009 insertions(+), 32 deletions(-)
+ create mode 100644 doc/guides/rel_notes/release_23_11.rst
+
+diff --git a/app/test/test_eventdev.c b/app/test/test_eventdev.c
+index 336529038e1ec..e86890e9ec734 100644
+--- a/app/test/test_eventdev.c
++++ b/app/test/test_eventdev.c
+@@ -1129,6 +1129,121 @@ test_eventdev_link_get(void)
+ 	return TEST_SUCCESS;
+ }
+ 
++static int
++test_eventdev_profile_switch(void)
++{
++#define MAX_RETRIES   4
++	uint8_t priorities[RTE_EVENT_MAX_QUEUES_PER_DEV];
++	uint8_t queues[RTE_EVENT_MAX_QUEUES_PER_DEV];
++	struct rte_event_queue_conf qcfg;
++	struct rte_event_port_conf pcfg;
++	struct rte_event_dev_info info;
++	struct rte_event ev;
++	uint8_t q, re;
++	int rc;
++
++	rte_event_dev_info_get(TEST_DEV_ID, &info);
++
++	if (info.max_profiles_per_port <= 1)
++		return TEST_SKIPPED;
++
++	if (info.max_event_queues <= 1)
++		return TEST_SKIPPED;
++
++	rc = rte_event_port_default_conf_get(TEST_DEV_ID, 0, &pcfg);
++	TEST_ASSERT_SUCCESS(rc, "Failed to get port0 default config");
++	rc = rte_event_port_setup(TEST_DEV_ID, 0, &pcfg);
++	TEST_ASSERT_SUCCESS(rc, "Failed to setup port0");
++
++	rc = rte_event_queue_default_conf_get(TEST_DEV_ID, 0, &qcfg);
++	TEST_ASSERT_SUCCESS(rc, "Failed to get queue0 default config");
++	rc = rte_event_queue_setup(TEST_DEV_ID, 0, &qcfg);
++	TEST_ASSERT_SUCCESS(rc, "Failed to setup queue0");
++
++	q = 0;
++	rc = rte_event_port_profile_links_set(TEST_DEV_ID, 0, &q, NULL, 1, 0);
++	TEST_ASSERT(rc == 1, "Failed to link queue 0 to port 0 with profile 0");
++	q = 1;
++	rc = rte_event_port_profile_links_set(TEST_DEV_ID, 0, &q, NULL, 1, 1);
++	TEST_ASSERT(rc == 1, "Failed to link queue 1 to port 0 with profile 1");
++
++	rc = rte_event_port_profile_links_get(TEST_DEV_ID, 0, queues, priorities, 0);
++	TEST_ASSERT(rc == 1, "Failed to links");
++	TEST_ASSERT(queues[0] == 0, "Invalid queue found in link");
++
++	rc = rte_event_port_profile_links_get(TEST_DEV_ID, 0, queues, priorities, 1);
++	TEST_ASSERT(rc == 1, "Failed to links");
++	TEST_ASSERT(queues[0] == 1, "Invalid queue found in link");
++
++	rc = rte_event_dev_start(TEST_DEV_ID);
++	TEST_ASSERT_SUCCESS(rc, "Failed to start event device");
++
++	ev.event_type = RTE_EVENT_TYPE_CPU;
++	ev.queue_id = 0;
++	ev.op = RTE_EVENT_OP_NEW;
++	ev.flow_id = 0;
++	ev.u64 = 0xBADF00D0;
++	rc = rte_event_enqueue_burst(TEST_DEV_ID, 0, &ev, 1);
++	TEST_ASSERT(rc == 1, "Failed to enqueue event");
++	ev.queue_id = 1;
++	ev.flow_id = 1;
++	rc = rte_event_enqueue_burst(TEST_DEV_ID, 0, &ev, 1);
++	TEST_ASSERT(rc == 1, "Failed to enqueue event");
++
++	ev.event = 0;
++	ev.u64 = 0;
++
++	rc = rte_event_port_profile_switch(TEST_DEV_ID, 0, 1);
++	TEST_ASSERT_SUCCESS(rc, "Failed to change profile");
++
++	re = MAX_RETRIES;
++	while (re--) {
++		rc = rte_event_dequeue_burst(TEST_DEV_ID, 0, &ev, 1, 0);
++		printf("rc %d\n", rc);
++		if (rc)
++			break;
++	}
++
++	TEST_ASSERT(rc == 1, "Failed to dequeue event from profile 1");
++	TEST_ASSERT(ev.flow_id == 1, "Incorrect flow identifier from profile 1");
++	TEST_ASSERT(ev.queue_id == 1, "Incorrect queue identifier from profile 1");
++
++	re = MAX_RETRIES;
++	while (re--) {
++		rc = rte_event_dequeue_burst(TEST_DEV_ID, 0, &ev, 1, 0);
++		TEST_ASSERT(rc == 0, "Unexpected event dequeued from active profile");
++	}
++
++	rc = rte_event_port_profile_switch(TEST_DEV_ID, 0, 0);
++	TEST_ASSERT_SUCCESS(rc, "Failed to change profile");
++
++	re = MAX_RETRIES;
++	while (re--) {
++		rc = rte_event_dequeue_burst(TEST_DEV_ID, 0, &ev, 1, 0);
++		if (rc)
++			break;
++	}
++
++	TEST_ASSERT(rc == 1, "Failed to dequeue event from profile 1");
++	TEST_ASSERT(ev.flow_id == 0, "Incorrect flow identifier from profile 0");
++	TEST_ASSERT(ev.queue_id == 0, "Incorrect queue identifier from profile 0");
++
++	re = MAX_RETRIES;
++	while (re--) {
++		rc = rte_event_dequeue_burst(TEST_DEV_ID, 0, &ev, 1, 0);
++		TEST_ASSERT(rc == 0, "Unexpected event dequeued from active profile");
++	}
++
++	q = 0;
++	rc = rte_event_port_profile_unlink(TEST_DEV_ID, 0, &q, 1, 0);
++	TEST_ASSERT(rc == 1, "Failed to unlink queue 0 to port 0 with profile 0");
++	q = 1;
++	rc = rte_event_port_profile_unlink(TEST_DEV_ID, 0, &q, 1, 1);
++	TEST_ASSERT(rc == 1, "Failed to unlink queue 1 to port 0 with profile 1");
++
++	return TEST_SUCCESS;
++}
++
+ static int
+ test_eventdev_close(void)
+ {
+@@ -1187,6 +1302,8 @@ static struct unit_test_suite eventdev_common_testsuite  = {
+ 			test_eventdev_timeout_ticks),
+ 		TEST_CASE_ST(NULL, NULL,
+ 			test_eventdev_start_stop),
++		TEST_CASE_ST(eventdev_configure_setup, eventdev_stop_device,
++			test_eventdev_profile_switch),
+ 		TEST_CASE_ST(eventdev_setup_device, eventdev_stop_device,
+ 			test_eventdev_link),
+ 		TEST_CASE_ST(eventdev_setup_device, eventdev_stop_device,
+diff --git a/config/rte_config.h b/config/rte_config.h
+index 3c4876d434424..0c16def7b9d83 100644
+--- a/config/rte_config.h
++++ b/config/rte_config.h
+@@ -75,6 +75,7 @@
+ #define RTE_EVENT_MAX_DEVS 16
+ #define RTE_EVENT_MAX_PORTS_PER_DEV 255
+ #define RTE_EVENT_MAX_QUEUES_PER_DEV 255
++#define RTE_EVENT_MAX_PROFILES_PER_PORT 8
+ #define RTE_EVENT_TIMER_ADAPTER_NUM_MAX 32
+ #define RTE_EVENT_ETH_INTR_RING_SIZE 1024
+ #define RTE_EVENT_CRYPTO_ADAPTER_MAX_INSTANCE 32
+diff --git a/doc/guides/eventdevs/features/default.ini b/doc/guides/eventdevs/features/default.ini
+index 00360f60c6906..1c0082352b689 100644
+--- a/doc/guides/eventdevs/features/default.ini
++++ b/doc/guides/eventdevs/features/default.ini
+@@ -18,6 +18,7 @@ multiple_queue_port        =
+ carry_flow_id              =
+ maintenance_free           =
+ runtime_queue_attr         =
++profile_links              =
+ 
+ ;
+ ; Features of a default Ethernet Rx adapter.
+diff --git a/doc/guides/prog_guide/eventdev.rst b/doc/guides/prog_guide/eventdev.rst
+index 2c83176846676..684f6a91d22b2 100644
+--- a/doc/guides/prog_guide/eventdev.rst
++++ b/doc/guides/prog_guide/eventdev.rst
+@@ -317,6 +317,46 @@ can be achieved like this:
+         }
+         int links_made = rte_event_port_link(dev_id, tx_port_id, &single_link_q, &priority, 1);
+ 
++Linking Queues to Ports with link profiles
++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++
++An application can use link profiles if supported by the underlying event device to setup up
++multiple link profile per port and change them run time depending up on heuristic data.
++Using Link profiles can reduce the overhead of linking/unlinking and wait for unlinks in progress
++in fast-path and gives applications the ability to switch between preset profiles on the fly.
++
++An example use case could be as follows.
++
++Config path:
++
++.. code-block:: c
++
++   uint8_t lq[4] = {4, 5, 6, 7};
++   uint8_t hq[4] = {0, 1, 2, 3};
++
++   if (rte_event_dev_info.max_profiles_per_port < 2)
++       return -ENOTSUP;
++
++   rte_event_port_profile_links_set(0, 0, hq, NULL, 4, 0);
++   rte_event_port_profile_links_set(0, 0, lq, NULL, 4, 1);
++
++Worker path:
++
++.. code-block:: c
++
++   uint8_t profile_id_to_switch;
++
++   while (1) {
++       deq = rte_event_dequeue_burst(0, 0, &ev, 1, 0);
++       if (deq == 0) {
++           profile_id_to_switch = app_find_profile_id_to_switch();
++           rte_event_port_profile_switch(0, 0, profile_id_to_switch);
++           continue;
++       }
++
++       // Process the event received.
++   }
++
+ Starting the EventDev
+ ~~~~~~~~~~~~~~~~~~~~~
+ 
+diff --git a/doc/guides/rel_notes/release_23_11.rst b/doc/guides/rel_notes/release_23_11.rst
+new file mode 100644
+index 0000000000000..a4169029d4392
+--- /dev/null
++++ b/doc/guides/rel_notes/release_23_11.rst
+@@ -0,0 +1,355 @@
++.. SPDX-License-Identifier: BSD-3-Clause
++   Copyright 2023 The DPDK contributors
++
++.. include:: <isonum.txt>
++
++DPDK Release 23.11
++==================
++
++.. **Read this first.**
++
++   The text in the sections below explains how to update the release notes.
++
++   Use proper spelling, capitalization and punctuation in all sections.
++
++   Variable and config names should be quoted as fixed width text:
++   ``LIKE_THIS``.
++
++   Build the docs and view the output file to ensure the changes are correct::
++
++      ninja -C build doc
++      xdg-open build/doc/guides/html/rel_notes/release_23_11.html
++
++
++New Features
++------------
++
++   * **Added support for models with multiple I/O in mldev library.**
++
++     Added support in mldev library for models with multiple inputs and outputs.
++
++
++.. This section should contain new features added in this release.
++   Sample format:
++
++   * **Add a title in the past tense with a full stop.**
++
++     Add a short 1-2 sentence description in the past tense.
++     The description should be enough to allow someone scanning
++     the release notes to understand the new feature.
++
++     If the feature adds a lot of sub-features you can use a bullet list
++     like this:
++
++     * Added feature foo to do something.
++     * Enhanced feature bar to do something else.
++
++     Refer to the previous release notes for examples.
++
++     Suggested order in release notes items:
++     * Core libs (EAL, mempool, ring, mbuf, buses)
++     * Device abstraction libs and PMDs (ordered alphabetically by vendor name)
++       - ethdev (lib, PMDs)
++       - cryptodev (lib, PMDs)
++       - eventdev (lib, PMDs)
++       - etc
++     * Other libs
++     * Apps, Examples, Tools (if significant)
++
++     This section is a comment. Do not overwrite or remove it.
++     Also, make sure to start the actual text at the margin.
++     =======================================================
++
++* **Build requirements increased for C11.**
++
++  From DPDK 23.11 onwards,
++  building DPDK will require a C compiler which supports the C11 standard,
++  including support for C11 standard atomics.
++
++  More specifically, the requirements will be:
++
++  * Support for flag "-std=c11" (or similar)
++  * __STDC_NO_ATOMICS__ is *not defined* when using c11 flag
++
++  Please note:
++
++  * C11, including standard atomics, is supported from GCC version 5 onwards,
++    and is the default language version in that release
++    (Ref: https://gcc.gnu.org/gcc-5/changes.html)
++  * C11 is the default compilation mode in Clang from version 3.6,
++    which also added support for standard atomics
++    (Ref: https://releases.llvm.org/3.6.0/tools/clang/docs/ReleaseNotes.html)
++
++* **Added new build options.**
++
++  * Enabling deprecated libraries is now done using
++    the new ``enable_deprecated_libraries`` build option.
++  * Optional libraries can now be selected with the new ``enable_libs``
++    build option similarly to the existing ``enable_drivers`` build option.
++
++* **Introduced a new API for atomic operations.**
++
++  This new API serves as a wrapper for transitioning
++  to standard atomic operations as described in the C11 standard.
++  This API implementation points at the compiler intrinsics by default.
++  The implementation using C11 standard atomic operations is enabled
++  via the ``enable_stdatomic`` build option.
++
++* **Added support for power intrinsics with AMD processors.**
++
++* **Added mbuf recycling support.**
++
++  Added ``rte_eth_recycle_rx_queue_info_get`` and ``rte_eth_recycle_mbufs``
++  functions which allow the user to copy used mbufs from the Tx mbuf ring
++  into the Rx mbuf ring. This feature supports the case that the Rx Ethernet
++  device is different from the Tx Ethernet device with respective driver
++  callback functions in ``rte_eth_recycle_mbufs``.
++
++* **Added amd-pstate driver support to the power management library.**
++
++  Added support for amd-pstate driver which works on AMD EPYC processors.
++
++* **Added a flow action type for P4-defined actions.**
++
++  For P4-programmable devices, hardware pipeline can be configured through
++  a new "PROG" action type and its associated custom arguments.
++  Such P4 pipeline, not using the standard blocks of the flow API,
++  can be managed with ``RTE_FLOW_ITEM_TYPE_FLEX`` and ``RTE_FLOW_ACTION_TYPE_PROG``.
++
++* **Added flow group set miss actions.**
++
++  Introduced ``rte_flow_group_set_miss_actions()`` API to explicitly set
++  a group's miss actions, which are the actions to be performed on packets
++  that didn't match any of the flow rules in the group.
++
++* **Updated Solarflare net driver.**
++
++  * Added support for transfer flow action ``INDIRECT`` with subtype ``VXLAN_ENCAP``.
++  * Supported packet replay (multi-count / multi-delivery) in transfer flows.
++
++* **Updated Netronome/Corigine nfp driver.**
++
++  * Added inline IPsec offload based on the security framework.
++
++* **Updated Wangxun ngbe driver.**
++
++  * Added 100M and auto-neg support in YT PHY fiber mode.
++
++* **Added support for TLS and DTLS record processing.**
++
++  Added TLS and DTLS record transform for security session
++  and added enhancements to ``rte_crypto_op`` fields
++  to handle all datapath requirements of TLS and DTLS.
++  The support was added for TLS 1.2, TLS 1.3 and DTLS 1.2.
++
++* **Added out of place processing support for inline ingress security session.**
++
++  Similar to out of place processing support for lookaside security session,
++  added the same support for inline ingress security session.
++
++* **Added security Rx inject API.**
++
++  Added Rx inject API to allow applications to submit packets
++  for protocol offload and have them injected back to ethdev Rx
++  so that further ethdev Rx actions (IP reassembly, packet parsing and flow lookups)
++  can happen based on inner packet.
++
++  The API when implemented by an ethdev, application would be able to process
++  packets that are received without/failed inline offload processing
++  (such as fragmented ESP packets with inline IPsec offload).
++  The API when implemented by a cryptodev, can be used for injecting packets
++  to ethdev Rx after IPsec processing and take advantage of ethdev Rx actions
++  for the inner packet which cannot be accelerated in inline protocol offload mode.
++
++* **Updated cryptodev scheduler driver.**
++
++  * Added support for DOCSIS security protocol
++    through the ``rte_security`` API callbacks.
++
++* **Updated ipsec_mb crypto driver.**
++
++  * Added support for digest encrypted to AESNI_MB asynchronous crypto driver.
++
++* **Updated Intel QuickAssist Technology driver.**
++
++  * Enabled support for QAT 2.0c (4944) devices in QAT crypto driver.
++
++* **Updated Marvell cnxk crypto driver.**
++
++  * Added SM2 algorithm support in asymmetric crypto operations.
++
++* **Added new eventdev Ethernet Rx adapter create API.**
++
++  Added new function ``rte_event_eth_rx_adapter_create_ext_with_params()``
++  for creating Rx adapter instance for the applications desire to
++  control both the event port allocation and event buffer size.
++
++* **Added event DMA adapter library.**
++
++  * Added the Event DMA Adapter Library. This library extends the event-based
++    model by introducing APIs that allow applications to enqueue/dequeue DMA
++    operations to/from dmadev as events scheduled by an event device.
++
++* **Added eventdev support to link queues to port with link profile.**
++
++  Introduced event link profiles that can be used to associated links between
++  event queues and an event port with a unique identifier termed as link profile.
++  The profile can be used to switch between the associated links in fast-path
++  without the additional overhead of linking/unlinking and waiting for unlinking.
++
++  * Added ``rte_event_port_profile_links_set``, ``rte_event_port_profile_unlink``
++    ``rte_event_port_profile_links_get`` and ``rte_event_port_profile_switch``
++    functions to enable this feature.
++
++* **Updated Marvell cnxk eventdev driver.**
++
++  * Added support for ``remaining_ticks_get`` timer adapter PMD callback
++    to get the remaining ticks to expire for a given event timer.
++
++
++Removed Items
++-------------
++
++.. This section should contain removed items in this release. Sample format:
++
++   * Add a short 1-2 sentence description of the removed item
++     in the past tense.
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
++
++* eal: Removed deprecated ``RTE_FUNC_PTR_OR_*`` macros.
++
++* ethdev: Removed deprecated macro ``RTE_ETH_DEV_BONDED_SLAVE``.
++
++* flow_classify: Removed flow classification library and examples.
++
++* kni: Removed the Kernel Network Interface (KNI) library and driver.
++
++* cryptodev: Removed the arrays of algorithm strings ``rte_crypto_cipher_algorithm_strings``,
++  ``rte_crypto_auth_algorithm_strings``, ``rte_crypto_aead_algorithm_strings`` and
++  ``rte_crypto_asym_xform_strings``.
++
++* cryptodev: Removed explicit SM2 xform parameter in asymmetric xform.
++
++* security: Removed deprecated field ``reserved_opts``
++  from struct ``rte_security_ipsec_sa_options``.
++
++* mldev: Removed functions ``rte_ml_io_input_size_get`` and ``rte_ml_io_output_size_get``.
++
++
++API Changes
++-----------
++
++.. This section should contain API changes. Sample format:
++
++   * sample: Add a short 1-2 sentence description of the API change
++     which was announced in the previous releases and made in this release.
++     Start with a scope label like "ethdev:".
++     Use fixed width quotes for ``function_names`` or ``struct_names``.
++     Use the past tense.
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
++
++* eal: The thread API has changed.
++  The function ``rte_thread_create_control()`` does not take attributes anymore.
++  The whole thread API was promoted to stable level,
++  except ``rte_thread_setname()`` and ``rte_ctrl_thread_create()`` which are
++  replaced with ``rte_thread_set_name()`` and ``rte_thread_create_control()``.
++
++* eal: Removed ``RTE_CPUFLAG_NUMFLAGS`` to avoid misusage and theoretical ABI
++  compatibility issue when adding new cpuflags.
++
++* bonding: Replaced master/slave to main/member. The data structure
++  ``struct rte_eth_bond_8023ad_slave_info`` was renamed to
++  ``struct rte_eth_bond_8023ad_member_info`` in DPDK 23.11.
++  The following functions were removed in DPDK 23.11.
++  The old functions:
++  ``rte_eth_bond_8023ad_slave_info``,
++  ``rte_eth_bond_active_slaves_get``,
++  ``rte_eth_bond_slave_add``,
++  ``rte_eth_bond_slave_remove``, and
++  ``rte_eth_bond_slaves_get``
++  will be replaced by:
++  ``rte_eth_bond_8023ad_member_info``,
++  ``rte_eth_bond_active_members_get``,
++  ``rte_eth_bond_member_add``,
++  ``rte_eth_bond_member_remove``, and
++  ``rte_eth_bond_members_get``.
++
++* cryptodev: The elliptic curve asymmetric private and public keys can be maintained
++  per session. These keys are moved from per packet ``rte_crypto_ecdsa_op_param`` and
++  ``rte_crypto_sm2_op_param`` to generic EC xform ``rte_crypto_ec_xform``.
++
++* security: Structures ``rte_security_ops`` and ``rte_security_ctx`` were moved to
++  internal library headers not visible to application.
++
++* mldev: Updated the structure ``rte_ml_model_info`` to support input and output
++  with arbitrary shapes.
++  Updated ``rte_ml_op``, ``rte_ml_io_quantize`` and ``rte_ml_io_dequantize``
++  to support an array of ``rte_ml_buff_seg``.
++
++
++ABI Changes
++-----------
++
++.. This section should contain ABI changes. Sample format:
++
++   * sample: Add a short 1-2 sentence description of the ABI change
++     which was announced in the previous releases and made in this release.
++     Start with a scope label like "ethdev:".
++     Use fixed width quotes for ``function_names`` or ``struct_names``.
++     Use the past tense.
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
++
++* ethdev: Added ``recycle_tx_mbufs_reuse`` and ``recycle_rx_descriptors_refill``
++  fields to ``rte_eth_dev`` structure.
++
++* ethdev: Structure ``rte_eth_fp_ops`` was affected to add
++  ``recycle_tx_mbufs_reuse`` and ``recycle_rx_descriptors_refill``
++  fields, to move ``rxq`` and ``txq`` fields, to change the size of
++  ``reserved1`` and ``reserved2`` fields.
++
++* security: struct ``rte_security_ipsec_sa_options`` was updated
++  due to inline out-of-place feature addition.
++
++
++Known Issues
++------------
++
++.. This section should contain new known issues in this release. Sample format:
++
++   * **Add title in present tense with full stop.**
++
++     Add a short 1-2 sentence description of the known issue
++     in the present tense. Add information on any known workarounds.
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
++
++
++Tested Platforms
++----------------
++
++.. This section should contain a list of platforms that were tested
++   with this release.
++
++   The format is:
++
++   * <vendor> platform with <vendor> <type of devices> combinations
++
++     * List of CPU
++     * List of OS
++     * List of devices
++     * Other relevant details...
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index badff2739bcac..3d14e37ab7683 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -129,7 +129,7 @@ cnxk_sso_restore_links(const struct rte_eventdev *event_dev,
+ 	for (i = 0; i < dev->nb_event_ports; i++) {
+ 		uint16_t nb_hwgrp = 0;
+ 
+-		links_map = event_dev->data->links_map;
++		links_map = event_dev->data->links_map[0];
+ 		/* Point links_map to this port specific area */
+ 		links_map += (i * RTE_EVENT_MAX_QUEUES_PER_DEV);
+ 
+diff --git a/drivers/event/dlb2/dlb2.c b/drivers/event/dlb2/dlb2.c
+index 60c5cd48040eb..580057870f4f7 100644
+--- a/drivers/event/dlb2/dlb2.c
++++ b/drivers/event/dlb2/dlb2.c
+@@ -79,6 +79,7 @@ static struct rte_event_dev_info evdev_dlb2_default_info = {
+ 			  RTE_EVENT_DEV_CAP_RUNTIME_PORT_LINK |
+ 			  RTE_EVENT_DEV_CAP_MULTIPLE_QUEUE_PORT |
+ 			  RTE_EVENT_DEV_CAP_MAINTENANCE_FREE),
++	.max_profiles_per_port = 1,
+ };
+ 
+ struct process_local_port_data
+diff --git a/drivers/event/dpaa/dpaa_eventdev.c b/drivers/event/dpaa/dpaa_eventdev.c
+index 4b3d16735b9d6..f615da3813282 100644
+--- a/drivers/event/dpaa/dpaa_eventdev.c
++++ b/drivers/event/dpaa/dpaa_eventdev.c
+@@ -359,6 +359,7 @@ dpaa_event_dev_info_get(struct rte_eventdev *dev,
+ 		RTE_EVENT_DEV_CAP_NONSEQ_MODE |
+ 		RTE_EVENT_DEV_CAP_CARRY_FLOW_ID |
+ 		RTE_EVENT_DEV_CAP_MAINTENANCE_FREE;
++	dev_info->max_profiles_per_port = 1;
+ }
+ 
+ static int
+diff --git a/drivers/event/dpaa2/dpaa2_eventdev.c b/drivers/event/dpaa2/dpaa2_eventdev.c
+index fa1a1ade8054d..ffc5550f8504e 100644
+--- a/drivers/event/dpaa2/dpaa2_eventdev.c
++++ b/drivers/event/dpaa2/dpaa2_eventdev.c
+@@ -411,7 +411,7 @@ dpaa2_eventdev_info_get(struct rte_eventdev *dev,
+ 		RTE_EVENT_DEV_CAP_QUEUE_ALL_TYPES |
+ 		RTE_EVENT_DEV_CAP_CARRY_FLOW_ID |
+ 		RTE_EVENT_DEV_CAP_MAINTENANCE_FREE;
+-
++	dev_info->max_profiles_per_port = 1;
+ }
+ 
+ static int
+diff --git a/drivers/event/dsw/dsw_evdev.c b/drivers/event/dsw/dsw_evdev.c
+index ffabf0d23d3de..a6480e891cb33 100644
+--- a/drivers/event/dsw/dsw_evdev.c
++++ b/drivers/event/dsw/dsw_evdev.c
+@@ -218,6 +218,7 @@ dsw_info_get(struct rte_eventdev *dev __rte_unused,
+ 		.max_event_port_dequeue_depth = DSW_MAX_PORT_DEQUEUE_DEPTH,
+ 		.max_event_port_enqueue_depth = DSW_MAX_PORT_ENQUEUE_DEPTH,
+ 		.max_num_events = DSW_MAX_EVENTS,
++		.max_profiles_per_port = 1,
+ 		.event_dev_cap = RTE_EVENT_DEV_CAP_BURST_MODE|
+ 		RTE_EVENT_DEV_CAP_DISTRIBUTED_SCHED|
+ 		RTE_EVENT_DEV_CAP_NONSEQ_MODE|
+diff --git a/drivers/event/octeontx/ssovf_evdev.c b/drivers/event/octeontx/ssovf_evdev.c
+index 650266b9966f6..0eb9358981038 100644
+--- a/drivers/event/octeontx/ssovf_evdev.c
++++ b/drivers/event/octeontx/ssovf_evdev.c
+@@ -158,7 +158,7 @@ ssovf_info_get(struct rte_eventdev *dev, struct rte_event_dev_info *dev_info)
+ 					RTE_EVENT_DEV_CAP_NONSEQ_MODE |
+ 					RTE_EVENT_DEV_CAP_CARRY_FLOW_ID |
+ 					RTE_EVENT_DEV_CAP_MAINTENANCE_FREE;
+-
++	dev_info->max_profiles_per_port = 1;
+ }
+ 
+ static int
+diff --git a/drivers/event/opdl/opdl_evdev.c b/drivers/event/opdl/opdl_evdev.c
+index 9ce8b39b60982..dd2574965419b 100644
+--- a/drivers/event/opdl/opdl_evdev.c
++++ b/drivers/event/opdl/opdl_evdev.c
+@@ -378,6 +378,7 @@ opdl_info_get(struct rte_eventdev *dev, struct rte_event_dev_info *info)
+ 		.event_dev_cap = RTE_EVENT_DEV_CAP_BURST_MODE |
+ 				 RTE_EVENT_DEV_CAP_CARRY_FLOW_ID |
+ 				 RTE_EVENT_DEV_CAP_MAINTENANCE_FREE,
++		.max_profiles_per_port = 1,
+ 	};
+ 
+ 	*info = evdev_opdl_info;
+diff --git a/drivers/event/skeleton/skeleton_eventdev.c b/drivers/event/skeleton/skeleton_eventdev.c
+index 8513b9a013e15..dc9b13164198b 100644
+--- a/drivers/event/skeleton/skeleton_eventdev.c
++++ b/drivers/event/skeleton/skeleton_eventdev.c
+@@ -104,6 +104,7 @@ skeleton_eventdev_info_get(struct rte_eventdev *dev,
+ 					RTE_EVENT_DEV_CAP_EVENT_QOS |
+ 					RTE_EVENT_DEV_CAP_CARRY_FLOW_ID |
+ 					RTE_EVENT_DEV_CAP_MAINTENANCE_FREE;
++	dev_info->max_profiles_per_port = 1;
+ }
+ 
+ static int
+diff --git a/drivers/event/sw/sw_evdev.c b/drivers/event/sw/sw_evdev.c
+index 3531821dd43a0..16ee53758d96e 100644
+--- a/drivers/event/sw/sw_evdev.c
++++ b/drivers/event/sw/sw_evdev.c
+@@ -609,6 +609,7 @@ sw_info_get(struct rte_eventdev *dev, struct rte_event_dev_info *info)
+ 				RTE_EVENT_DEV_CAP_NONSEQ_MODE |
+ 				RTE_EVENT_DEV_CAP_CARRY_FLOW_ID |
+ 				RTE_EVENT_DEV_CAP_MAINTENANCE_FREE),
++			.max_profiles_per_port = 1,
+ 	};
+ 
+ 	*info = evdev_sw_info;
+diff --git a/lib/eventdev/eventdev_pmd.h b/lib/eventdev/eventdev_pmd.h
+index aebab2685284e..ef94bec54a26f 100644
+--- a/lib/eventdev/eventdev_pmd.h
++++ b/lib/eventdev/eventdev_pmd.h
+@@ -119,8 +119,8 @@ struct rte_eventdev_data {
+ 	/**< Array of port configuration structures. */
+ 	struct rte_event_queue_conf queues_cfg[RTE_EVENT_MAX_QUEUES_PER_DEV];
+ 	/**< Array of queue configuration structures. */
+-	uint16_t links_map[RTE_EVENT_MAX_PORTS_PER_DEV *
+-			   RTE_EVENT_MAX_QUEUES_PER_DEV];
++	uint16_t links_map[RTE_EVENT_MAX_PROFILES_PER_PORT]
++			  [RTE_EVENT_MAX_PORTS_PER_DEV * RTE_EVENT_MAX_QUEUES_PER_DEV];
+ 	/**< Memory to store queues to port connections. */
+ 	void *dev_private;
+ 	/**< PMD-specific private data */
+@@ -180,8 +180,11 @@ struct rte_eventdev {
+ 	event_tx_adapter_enqueue_t txa_enqueue;
+ 	/**< Pointer to PMD eth Tx adapter enqueue function. */
+ 	event_crypto_adapter_enqueue_t ca_enqueue;
++	/**< Pointer to PMD crypto adapter enqueue function. */
++	event_profile_switch_t profile_switch;
++	/**< Pointer to PMD Event switch profile function. */
+ 
+-	uint64_t reserved_64s[4]; /**< Reserved for future fields */
++	uint64_t reserved_64s[3]; /**< Reserved for future fields */
+ 	void *reserved_ptrs[3];	  /**< Reserved for future fields */
+ } __rte_cache_aligned;
+ 
+@@ -445,6 +448,32 @@ typedef int (*eventdev_port_link_t)(struct rte_eventdev *dev, void *port,
+ 		const uint8_t queues[], const uint8_t priorities[],
+ 		uint16_t nb_links);
+ 
++/**
++ * Link multiple source event queues associated with a link profile to a
++ * destination event port.
++ *
++ * @param dev
++ *   Event device pointer
++ * @param port
++ *   Event port pointer
++ * @param queues
++ *   Points to an array of *nb_links* event queues to be linked
++ *   to the event port.
++ * @param priorities
++ *   Points to an array of *nb_links* service priorities associated with each
++ *   event queue link to event port.
++ * @param nb_links
++ *   The number of links to establish.
++ * @param profile_id
++ *   The profile ID to associate the links.
++ *
++ * @return
++ *   Returns 0 on success.
++ */
++typedef int (*eventdev_port_link_profile_t)(struct rte_eventdev *dev, void *port,
++					    const uint8_t queues[], const uint8_t priorities[],
++					    uint16_t nb_links, uint8_t profile_id);
++
+ /**
+  * Unlink multiple source event queues from destination event port.
+  *
+@@ -464,6 +493,28 @@ typedef int (*eventdev_port_link_t)(struct rte_eventdev *dev, void *port,
+ typedef int (*eventdev_port_unlink_t)(struct rte_eventdev *dev, void *port,
+ 		uint8_t queues[], uint16_t nb_unlinks);
+ 
++/**
++ * Unlink multiple source event queues associated with a link profile from
++ * destination event port.
++ *
++ * @param dev
++ *   Event device pointer
++ * @param port
++ *   Event port pointer
++ * @param queues
++ *   An array of *nb_unlinks* event queues to be unlinked from the event port.
++ * @param nb_unlinks
++ *   The number of unlinks to establish
++ * @param profile_id
++ *   The profile ID of the associated links.
++ *
++ * @return
++ *   Returns 0 on success.
++ */
++typedef int (*eventdev_port_unlink_profile_t)(struct rte_eventdev *dev, void *port,
++					      uint8_t queues[], uint16_t nb_unlinks,
++					      uint8_t profile_id);
++
+ /**
+  * Unlinks in progress. Returns number of unlinks that the PMD is currently
+  * performing, but have not yet been completed.
+@@ -1367,8 +1418,12 @@ struct eventdev_ops {
+ 
+ 	eventdev_port_link_t port_link;
+ 	/**< Link event queues to an event port. */
++	eventdev_port_link_profile_t port_link_profile;
++	/**< Link event queues associated with a profile to an event port. */
+ 	eventdev_port_unlink_t port_unlink;
+ 	/**< Unlink event queues from an event port. */
++	eventdev_port_unlink_profile_t port_unlink_profile;
++	/**< Unlink event queues associated with a profile from an event port. */
+ 	eventdev_port_unlinks_in_progress_t port_unlinks_in_progress;
+ 	/**< Unlinks in progress on an event port. */
+ 	eventdev_dequeue_timeout_ticks_t timeout_ticks;
+diff --git a/lib/eventdev/eventdev_private.c b/lib/eventdev/eventdev_private.c
+index 1d3d9d357e60c..b90a3a383316d 100644
+--- a/lib/eventdev/eventdev_private.c
++++ b/lib/eventdev/eventdev_private.c
+@@ -81,6 +81,13 @@ dummy_event_crypto_adapter_enqueue(__rte_unused void *port,
+ 	return 0;
+ }
+ 
++static int
++dummy_event_port_profile_switch(__rte_unused void *port, __rte_unused uint8_t profile_id)
++{
++	RTE_EDEV_LOG_ERR("change profile requested for unconfigured event device");
++	return -EINVAL;
++}
++
+ void
+ event_dev_fp_ops_reset(struct rte_event_fp_ops *fp_op)
+ {
+@@ -97,6 +104,7 @@ event_dev_fp_ops_reset(struct rte_event_fp_ops *fp_op)
+ 		.txa_enqueue_same_dest =
+ 			dummy_event_tx_adapter_enqueue_same_dest,
+ 		.ca_enqueue = dummy_event_crypto_adapter_enqueue,
++		.profile_switch = dummy_event_port_profile_switch,
+ 		.data = dummy_data,
+ 	};
+ 
+@@ -117,5 +125,6 @@ event_dev_fp_ops_set(struct rte_event_fp_ops *fp_op,
+ 	fp_op->txa_enqueue = dev->txa_enqueue;
+ 	fp_op->txa_enqueue_same_dest = dev->txa_enqueue_same_dest;
+ 	fp_op->ca_enqueue = dev->ca_enqueue;
++	fp_op->profile_switch = dev->profile_switch;
+ 	fp_op->data = dev->data->ports;
+ }
+diff --git a/lib/eventdev/eventdev_trace.h b/lib/eventdev/eventdev_trace.h
+index f008ef0091320..9c2b261c06d85 100644
+--- a/lib/eventdev/eventdev_trace.h
++++ b/lib/eventdev/eventdev_trace.h
+@@ -76,6 +76,17 @@ RTE_TRACE_POINT(
+ 	rte_trace_point_emit_int(rc);
+ )
+ 
++RTE_TRACE_POINT(
++	rte_eventdev_trace_port_profile_links_set,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t port_id,
++		uint16_t nb_links, uint8_t profile_id, int rc),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u8(port_id);
++	rte_trace_point_emit_u16(nb_links);
++	rte_trace_point_emit_u8(profile_id);
++	rte_trace_point_emit_int(rc);
++)
++
+ RTE_TRACE_POINT(
+ 	rte_eventdev_trace_port_unlink,
+ 	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t port_id,
+@@ -86,6 +97,17 @@ RTE_TRACE_POINT(
+ 	rte_trace_point_emit_int(rc);
+ )
+ 
++RTE_TRACE_POINT(
++	rte_eventdev_trace_port_profile_unlink,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t port_id,
++		uint16_t nb_unlinks, uint8_t profile_id, int rc),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u8(port_id);
++	rte_trace_point_emit_u16(nb_unlinks);
++	rte_trace_point_emit_u8(profile_id);
++	rte_trace_point_emit_int(rc);
++)
++
+ RTE_TRACE_POINT(
+ 	rte_eventdev_trace_start,
+ 	RTE_TRACE_POINT_ARGS(uint8_t dev_id, int rc),
+@@ -487,6 +509,16 @@ RTE_TRACE_POINT(
+ 	rte_trace_point_emit_int(count);
+ )
+ 
++RTE_TRACE_POINT(
++	rte_eventdev_trace_port_profile_links_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t port_id, uint8_t profile_id,
++		int count),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u8(port_id);
++	rte_trace_point_emit_u8(profile_id);
++	rte_trace_point_emit_int(count);
++)
++
+ RTE_TRACE_POINT(
+ 	rte_eventdev_trace_port_unlinks_in_progress,
+ 	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t port_id),
+diff --git a/lib/eventdev/eventdev_trace_points.c b/lib/eventdev/eventdev_trace_points.c
+index 76144cfe75384..8024e0753196a 100644
+--- a/lib/eventdev/eventdev_trace_points.c
++++ b/lib/eventdev/eventdev_trace_points.c
+@@ -19,9 +19,15 @@ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_setup,
+ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_link,
+ 	lib.eventdev.port.link)
+ 
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_profile_links_set,
++	lib.eventdev.port.profile.links.set)
++
+ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_unlink,
+ 	lib.eventdev.port.unlink)
+ 
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_profile_unlink,
++	lib.eventdev.port.profile.unlink)
++
+ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_start,
+ 	lib.eventdev.start)
+ 
+@@ -40,6 +46,9 @@ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_deq_burst,
+ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_maintain,
+ 	lib.eventdev.maintain)
+ 
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_profile_switch,
++	lib.eventdev.port.profile.switch)
++
+ /* Eventdev Rx adapter trace points */
+ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_create,
+ 	lib.eventdev.rx.adapter.create)
+@@ -206,6 +215,9 @@ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_default_conf_get,
+ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_links_get,
+ 	lib.eventdev.port.links.get)
+ 
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_profile_links_get,
++	lib.eventdev.port.profile.links.get)
++
+ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_unlinks_in_progress,
+ 	lib.eventdev.port.unlinks.in.progress)
+ 
+diff --git a/lib/eventdev/rte_eventdev.c b/lib/eventdev/rte_eventdev.c
+index 245b1d2d4e84f..6cfd0db64f0ff 100644
+--- a/lib/eventdev/rte_eventdev.c
++++ b/lib/eventdev/rte_eventdev.c
+@@ -270,7 +270,7 @@ event_dev_port_config(struct rte_eventdev *dev, uint8_t nb_ports)
+ 	void **ports;
+ 	uint16_t *links_map;
+ 	struct rte_event_port_conf *ports_cfg;
+-	unsigned int i;
++	unsigned int i, j;
+ 
+ 	RTE_EDEV_LOG_DEBUG("Setup %d ports on device %u", nb_ports,
+ 			 dev->data->dev_id);
+@@ -281,7 +281,6 @@ event_dev_port_config(struct rte_eventdev *dev, uint8_t nb_ports)
+ 
+ 		ports = dev->data->ports;
+ 		ports_cfg = dev->data->ports_cfg;
+-		links_map = dev->data->links_map;
+ 
+ 		for (i = nb_ports; i < old_nb_ports; i++)
+ 			(*dev->dev_ops->port_release)(ports[i]);
+@@ -297,9 +296,11 @@ event_dev_port_config(struct rte_eventdev *dev, uint8_t nb_ports)
+ 				sizeof(ports[0]) * new_ps);
+ 			memset(ports_cfg + old_nb_ports, 0,
+ 				sizeof(ports_cfg[0]) * new_ps);
+-			for (i = old_links_map_end; i < links_map_end; i++)
+-				links_map[i] =
+-					EVENT_QUEUE_SERVICE_PRIORITY_INVALID;
++			for (i = 0; i < RTE_EVENT_MAX_PROFILES_PER_PORT; i++) {
++				links_map = dev->data->links_map[i];
++				for (j = old_links_map_end; j < links_map_end; j++)
++					links_map[j] = EVENT_QUEUE_SERVICE_PRIORITY_INVALID;
++			}
+ 		}
+ 	} else {
+ 		if (*dev->dev_ops->port_release == NULL)
+@@ -953,21 +954,45 @@ rte_event_port_link(uint8_t dev_id, uint8_t port_id,
+ 		    const uint8_t queues[], const uint8_t priorities[],
+ 		    uint16_t nb_links)
+ {
+-	struct rte_eventdev *dev;
+-	uint8_t queues_list[RTE_EVENT_MAX_QUEUES_PER_DEV];
++	return rte_event_port_profile_links_set(dev_id, port_id, queues, priorities, nb_links, 0);
++}
++
++int
++rte_event_port_profile_links_set(uint8_t dev_id, uint8_t port_id, const uint8_t queues[],
++				 const uint8_t priorities[], uint16_t nb_links, uint8_t profile_id)
++{
+ 	uint8_t priorities_list[RTE_EVENT_MAX_QUEUES_PER_DEV];
++	uint8_t queues_list[RTE_EVENT_MAX_QUEUES_PER_DEV];
++	struct rte_event_dev_info info;
++	struct rte_eventdev *dev;
+ 	uint16_t *links_map;
+ 	int i, diag;
+ 
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERRNO_RET(dev_id, EINVAL, 0);
+ 	dev = &rte_eventdevs[dev_id];
+ 
++	if (*dev->dev_ops->dev_infos_get == NULL)
++		return -ENOTSUP;
++
++	(*dev->dev_ops->dev_infos_get)(dev, &info);
++	if (profile_id >= RTE_EVENT_MAX_PROFILES_PER_PORT ||
++	    profile_id >= info.max_profiles_per_port) {
++		RTE_EDEV_LOG_ERR("Invalid profile_id=%" PRIu8, profile_id);
++		return -EINVAL;
++	}
++
+ 	if (*dev->dev_ops->port_link == NULL) {
+ 		RTE_EDEV_LOG_ERR("Function not supported\n");
+ 		rte_errno = ENOTSUP;
+ 		return 0;
+ 	}
+ 
++	if (profile_id && *dev->dev_ops->port_link_profile == NULL) {
++		RTE_EDEV_LOG_ERR("Function not supported\n");
++		rte_errno = ENOTSUP;
++		return 0;
++	}
++
+ 	if (!is_valid_port(dev, port_id)) {
+ 		RTE_EDEV_LOG_ERR("Invalid port_id=%" PRIu8, port_id);
+ 		rte_errno = EINVAL;
+@@ -995,18 +1020,22 @@ rte_event_port_link(uint8_t dev_id, uint8_t port_id,
+ 			return 0;
+ 		}
+ 
+-	diag = (*dev->dev_ops->port_link)(dev, dev->data->ports[port_id],
+-						queues, priorities, nb_links);
++	if (profile_id)
++		diag = (*dev->dev_ops->port_link_profile)(dev, dev->data->ports[port_id], queues,
++							  priorities, nb_links, profile_id);
++	else
++		diag = (*dev->dev_ops->port_link)(dev, dev->data->ports[port_id], queues,
++						  priorities, nb_links);
+ 	if (diag < 0)
+ 		return diag;
+ 
+-	links_map = dev->data->links_map;
++	links_map = dev->data->links_map[profile_id];
+ 	/* Point links_map to this port specific area */
+ 	links_map += (port_id * RTE_EVENT_MAX_QUEUES_PER_DEV);
+ 	for (i = 0; i < diag; i++)
+ 		links_map[queues[i]] = (uint8_t)priorities[i];
+ 
+-	rte_eventdev_trace_port_link(dev_id, port_id, nb_links, diag);
++	rte_eventdev_trace_port_profile_links_set(dev_id, port_id, nb_links, profile_id, diag);
+ 	return diag;
+ }
+ 
+@@ -1014,27 +1043,51 @@ int
+ rte_event_port_unlink(uint8_t dev_id, uint8_t port_id,
+ 		      uint8_t queues[], uint16_t nb_unlinks)
+ {
+-	struct rte_eventdev *dev;
++	return rte_event_port_profile_unlink(dev_id, port_id, queues, nb_unlinks, 0);
++}
++
++int
++rte_event_port_profile_unlink(uint8_t dev_id, uint8_t port_id, uint8_t queues[],
++			      uint16_t nb_unlinks, uint8_t profile_id)
++{
+ 	uint8_t all_queues[RTE_EVENT_MAX_QUEUES_PER_DEV];
+-	int i, diag, j;
++	struct rte_event_dev_info info;
++	struct rte_eventdev *dev;
+ 	uint16_t *links_map;
++	int i, diag, j;
+ 
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERRNO_RET(dev_id, EINVAL, 0);
+ 	dev = &rte_eventdevs[dev_id];
+ 
++	if (*dev->dev_ops->dev_infos_get == NULL)
++		return -ENOTSUP;
++
++	(*dev->dev_ops->dev_infos_get)(dev, &info);
++	if (profile_id >= RTE_EVENT_MAX_PROFILES_PER_PORT ||
++	    profile_id >= info.max_profiles_per_port) {
++		RTE_EDEV_LOG_ERR("Invalid profile_id=%" PRIu8, profile_id);
++		return -EINVAL;
++	}
++
+ 	if (*dev->dev_ops->port_unlink == NULL) {
+ 		RTE_EDEV_LOG_ERR("Function not supported");
+ 		rte_errno = ENOTSUP;
+ 		return 0;
+ 	}
+ 
++	if (profile_id && *dev->dev_ops->port_unlink_profile == NULL) {
++		RTE_EDEV_LOG_ERR("Function not supported");
++		rte_errno = ENOTSUP;
++		return 0;
++	}
++
+ 	if (!is_valid_port(dev, port_id)) {
+ 		RTE_EDEV_LOG_ERR("Invalid port_id=%" PRIu8, port_id);
+ 		rte_errno = EINVAL;
+ 		return 0;
+ 	}
+ 
+-	links_map = dev->data->links_map;
++	links_map = dev->data->links_map[profile_id];
+ 	/* Point links_map to this port specific area */
+ 	links_map += (port_id * RTE_EVENT_MAX_QUEUES_PER_DEV);
+ 
+@@ -1063,16 +1116,19 @@ rte_event_port_unlink(uint8_t dev_id, uint8_t port_id,
+ 			return 0;
+ 		}
+ 
+-	diag = (*dev->dev_ops->port_unlink)(dev, dev->data->ports[port_id],
+-					queues, nb_unlinks);
+-
++	if (profile_id)
++		diag = (*dev->dev_ops->port_unlink_profile)(dev, dev->data->ports[port_id], queues,
++							    nb_unlinks, profile_id);
++	else
++		diag = (*dev->dev_ops->port_unlink)(dev, dev->data->ports[port_id], queues,
++						    nb_unlinks);
+ 	if (diag < 0)
+ 		return diag;
+ 
+ 	for (i = 0; i < diag; i++)
+ 		links_map[queues[i]] = EVENT_QUEUE_SERVICE_PRIORITY_INVALID;
+ 
+-	rte_eventdev_trace_port_unlink(dev_id, port_id, nb_unlinks, diag);
++	rte_eventdev_trace_port_profile_unlink(dev_id, port_id, nb_unlinks, profile_id, diag);
+ 	return diag;
+ }
+ 
+@@ -1116,7 +1172,8 @@ rte_event_port_links_get(uint8_t dev_id, uint8_t port_id,
+ 		return -EINVAL;
+ 	}
+ 
+-	links_map = dev->data->links_map;
++	/* Use the default profile_id. */
++	links_map = dev->data->links_map[0];
+ 	/* Point links_map to this port specific area */
+ 	links_map += (port_id * RTE_EVENT_MAX_QUEUES_PER_DEV);
+ 	for (i = 0; i < dev->data->nb_queues; i++) {
+@@ -1132,6 +1189,49 @@ rte_event_port_links_get(uint8_t dev_id, uint8_t port_id,
+ 	return count;
+ }
+ 
++int
++rte_event_port_profile_links_get(uint8_t dev_id, uint8_t port_id, uint8_t queues[],
++				 uint8_t priorities[], uint8_t profile_id)
++{
++	struct rte_event_dev_info info;
++	struct rte_eventdev *dev;
++	uint16_t *links_map;
++	int i, count = 0;
++
++	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
++
++	dev = &rte_eventdevs[dev_id];
++	if (*dev->dev_ops->dev_infos_get == NULL)
++		return -ENOTSUP;
++
++	(*dev->dev_ops->dev_infos_get)(dev, &info);
++	if (profile_id >= RTE_EVENT_MAX_PROFILES_PER_PORT ||
++	    profile_id >= info.max_profiles_per_port) {
++		RTE_EDEV_LOG_ERR("Invalid profile_id=%" PRIu8, profile_id);
++		return -EINVAL;
++	}
++
++	if (!is_valid_port(dev, port_id)) {
++		RTE_EDEV_LOG_ERR("Invalid port_id=%" PRIu8, port_id);
++		return -EINVAL;
++	}
++
++	links_map = dev->data->links_map[profile_id];
++	/* Point links_map to this port specific area */
++	links_map += (port_id * RTE_EVENT_MAX_QUEUES_PER_DEV);
++	for (i = 0; i < dev->data->nb_queues; i++) {
++		if (links_map[i] != EVENT_QUEUE_SERVICE_PRIORITY_INVALID) {
++			queues[count] = i;
++			priorities[count] = (uint8_t)links_map[i];
++			++count;
++		}
++	}
++
++	rte_eventdev_trace_port_profile_links_get(dev_id, port_id, profile_id, count);
++
++	return count;
++}
++
+ int
+ rte_event_dequeue_timeout_ticks(uint8_t dev_id, uint64_t ns,
+ 				 uint64_t *timeout_ticks)
+@@ -1440,7 +1540,7 @@ eventdev_data_alloc(uint8_t dev_id, struct rte_eventdev_data **data,
+ {
+ 	char mz_name[RTE_EVENTDEV_NAME_MAX_LEN];
+ 	const struct rte_memzone *mz;
+-	int n;
++	int i, n;
+ 
+ 	/* Generate memzone name */
+ 	n = snprintf(mz_name, sizeof(mz_name), "rte_eventdev_data_%u", dev_id);
+@@ -1460,11 +1560,10 @@ eventdev_data_alloc(uint8_t dev_id, struct rte_eventdev_data **data,
+ 	*data = mz->addr;
+ 	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+ 		memset(*data, 0, sizeof(struct rte_eventdev_data));
+-		for (n = 0; n < RTE_EVENT_MAX_PORTS_PER_DEV *
+-					RTE_EVENT_MAX_QUEUES_PER_DEV;
+-		     n++)
+-			(*data)->links_map[n] =
+-				EVENT_QUEUE_SERVICE_PRIORITY_INVALID;
++		for (i = 0; i < RTE_EVENT_MAX_PROFILES_PER_PORT; i++)
++			for (n = 0; n < RTE_EVENT_MAX_PORTS_PER_DEV * RTE_EVENT_MAX_QUEUES_PER_DEV;
++			     n++)
++				(*data)->links_map[i][n] = EVENT_QUEUE_SERVICE_PRIORITY_INVALID;
+ 	}
+ 
+ 	return 0;
+diff --git a/lib/eventdev/rte_eventdev.h b/lib/eventdev/rte_eventdev.h
+index a90e23ac8bfd0..c5a283e2549a7 100644
+--- a/lib/eventdev/rte_eventdev.h
++++ b/lib/eventdev/rte_eventdev.h
+@@ -321,6 +321,12 @@ struct rte_event;
+  * rte_event_queue_setup().
+  */
+ 
++#define RTE_EVENT_DEV_CAP_PROFILE_LINK (1ULL << 12)
++/**< Event device is capable of supporting multiple link profiles per event port
++ * i.e., the value of `rte_event_dev_info::max_profiles_per_port` is greater
++ * than one.
++ */
++
+ /* Event device priority levels */
+ #define RTE_EVENT_DEV_PRIORITY_HIGHEST   0
+ /**< Highest priority expressed across eventdev subsystem
+@@ -447,6 +453,10 @@ struct rte_event_dev_info {
+ 	 * device. These ports and queues are not accounted for in
+ 	 * max_event_ports or max_event_queues.
+ 	 */
++	uint8_t max_profiles_per_port;
++	/**< Maximum number of event queue profiles per event port.
++	 * A device that doesn't support multiple profiles will set this as 1.
++	 */
+ };
+ 
+ /**
+@@ -1546,6 +1556,10 @@ rte_event_dequeue_timeout_ticks(uint8_t dev_id, uint64_t ns,
+  * latency of critical work by establishing the link with more event ports
+  * at runtime.
+  *
++ * When the value of ``rte_event_dev_info::max_profiles_per_port`` is greater
++ * than or equal to one, this function links the event queues to the default
++ * profile_id i.e. profile_id 0 of the event port.
++ *
+  * @param dev_id
+  *   The identifier of the device.
+  *
+@@ -1604,6 +1618,10 @@ rte_event_port_link(uint8_t dev_id, uint8_t port_id,
+  * Event queue(s) to event port unlink establishment can be changed at runtime
+  * without re-configuring the device.
+  *
++ * When the value of ``rte_event_dev_info::max_profiles_per_port`` is greater
++ * than or equal to one, this function unlinks the event queues from the default
++ * profile identifier i.e. profile 0 of the event port.
++ *
+  * @see rte_event_port_unlinks_in_progress() to poll for completed unlinks.
+  *
+  * @param dev_id
+@@ -1637,6 +1655,136 @@ int
+ rte_event_port_unlink(uint8_t dev_id, uint8_t port_id,
+ 		      uint8_t queues[], uint16_t nb_unlinks);
+ 
++/**
++ * Link multiple source event queues supplied in *queues* to the destination
++ * event port designated by its *port_id* with associated profile identifier
++ * supplied in *profile_id* with service priorities supplied in *priorities*
++ * on the event device designated by its *dev_id*.
++ *
++ * If *profile_id* is set to 0 then, the links created by the call `rte_event_port_link`
++ * will be overwritten.
++ *
++ * Event ports by default use profile_id 0 unless it is changed using the
++ * call ``rte_event_port_profile_switch()``.
++ *
++ * The link establishment shall enable the event port *port_id* from
++ * receiving events from the specified event queue(s) supplied in *queues*
++ *
++ * An event queue may link to one or more event ports.
++ * The number of links can be established from an event queue to event port is
++ * implementation defined.
++ *
++ * Event queue(s) to event port link establishment can be changed at runtime
++ * without re-configuring the device to support scaling and to reduce the
++ * latency of critical work by establishing the link with more event ports
++ * at runtime.
++ *
++ * @param dev_id
++ *   The identifier of the device.
++ *
++ * @param port_id
++ *   Event port identifier to select the destination port to link.
++ *
++ * @param queues
++ *   Points to an array of *nb_links* event queues to be linked
++ *   to the event port.
++ *   NULL value is allowed, in which case this function links all the configured
++ *   event queues *nb_event_queues* which previously supplied to
++ *   rte_event_dev_configure() to the event port *port_id*
++ *
++ * @param priorities
++ *   Points to an array of *nb_links* service priorities associated with each
++ *   event queue link to event port.
++ *   The priority defines the event port's servicing priority for
++ *   event queue, which may be ignored by an implementation.
++ *   The requested priority should in the range of
++ *   [RTE_EVENT_DEV_PRIORITY_HIGHEST, RTE_EVENT_DEV_PRIORITY_LOWEST].
++ *   The implementation shall normalize the requested priority to
++ *   implementation supported priority value.
++ *   NULL value is allowed, in which case this function links the event queues
++ *   with RTE_EVENT_DEV_PRIORITY_NORMAL servicing priority
++ *
++ * @param nb_links
++ *   The number of links to establish. This parameter is ignored if queues is
++ *   NULL.
++ *
++ * @param profile_id
++ *   The profile identifier associated with the links between event queues and
++ *   event port. Should be less than the max capability reported by
++ *   ``rte_event_dev_info::max_profiles_per_port``
++ *
++ * @return
++ * The number of links actually established. The return value can be less than
++ * the value of the *nb_links* parameter when the implementation has the
++ * limitation on specific queue to port link establishment or if invalid
++ * parameters are specified in *queues*
++ * If the return value is less than *nb_links*, the remaining links at the end
++ * of link[] are not established, and the caller has to take care of them.
++ * If return value is less than *nb_links* then implementation shall update the
++ * rte_errno accordingly, Possible rte_errno values are
++ * (EDQUOT) Quota exceeded(Application tried to link the queue configured with
++ *  RTE_EVENT_QUEUE_CFG_SINGLE_LINK to more than one event ports)
++ * (EINVAL) Invalid parameter
++ *
++ */
++__rte_experimental
++int
++rte_event_port_profile_links_set(uint8_t dev_id, uint8_t port_id, const uint8_t queues[],
++				 const uint8_t priorities[], uint16_t nb_links, uint8_t profile_id);
++
++/**
++ * Unlink multiple source event queues supplied in *queues* that belong to profile
++ * designated by *profile_id* from the destination event port designated by its
++ * *port_id* on the event device designated by its *dev_id*.
++ *
++ * If *profile_id* is set to 0 i.e., the default profile then, then this function
++ * will act as ``rte_event_port_unlink``.
++ *
++ * The unlink call issues an async request to disable the event port *port_id*
++ * from receiving events from the specified event queue *queue_id*.
++ * Event queue(s) to event port unlink establishment can be changed at runtime
++ * without re-configuring the device.
++ *
++ * @see rte_event_port_unlinks_in_progress() to poll for completed unlinks.
++ *
++ * @param dev_id
++ *   The identifier of the device.
++ *
++ * @param port_id
++ *   Event port identifier to select the destination port to unlink.
++ *
++ * @param queues
++ *   Points to an array of *nb_unlinks* event queues to be unlinked
++ *   from the event port.
++ *   NULL value is allowed, in which case this function unlinks all the
++ *   event queue(s) from the event port *port_id*.
++ *
++ * @param nb_unlinks
++ *   The number of unlinks to establish. This parameter is ignored if queues is
++ *   NULL.
++ *
++ * @param profile_id
++ *   The profile identifier associated with the links between event queues and
++ *   event port. Should be less than the max capability reported by
++ *   ``rte_event_dev_info::max_profiles_per_port``
++ *
++ * @return
++ * The number of unlinks successfully requested. The return value can be less
++ * than the value of the *nb_unlinks* parameter when the implementation has the
++ * limitation on specific queue to port unlink establishment or
++ * if invalid parameters are specified.
++ * If the return value is less than *nb_unlinks*, the remaining queues at the
++ * end of queues[] are not unlinked, and the caller has to take care of them.
++ * If return value is less than *nb_unlinks* then implementation shall update
++ * the rte_errno accordingly, Possible rte_errno values are
++ * (EINVAL) Invalid parameter
++ *
++ */
++__rte_experimental
++int
++rte_event_port_profile_unlink(uint8_t dev_id, uint8_t port_id, uint8_t queues[],
++			      uint16_t nb_unlinks, uint8_t profile_id);
++
+ /**
+  * Returns the number of unlinks in progress.
+  *
+@@ -1692,6 +1840,42 @@ int
+ rte_event_port_links_get(uint8_t dev_id, uint8_t port_id,
+ 			 uint8_t queues[], uint8_t priorities[]);
+ 
++/**
++ * Retrieve the list of source event queues and its service priority
++ * associated to a *profile_id* and linked to the destination event port
++ * designated by its *port_id* on the event device designated by its *dev_id*.
++ *
++ * @param dev_id
++ *   The identifier of the device.
++ *
++ * @param port_id
++ *   Event port identifier.
++ *
++ * @param[out] queues
++ *   Points to an array of *queues* for output.
++ *   The caller has to allocate *RTE_EVENT_MAX_QUEUES_PER_DEV* bytes to
++ *   store the event queue(s) linked with event port *port_id*
++ *
++ * @param[out] priorities
++ *   Points to an array of *priorities* for output.
++ *   The caller has to allocate *RTE_EVENT_MAX_QUEUES_PER_DEV* bytes to
++ *   store the service priority associated with each event queue linked
++ *
++ * @param profile_id
++ *   The profile identifier associated with the links between event queues and
++ *   event port. Should be less than the max capability reported by
++ *   ``rte_event_dev_info::max_profiles_per_port``
++ *
++ * @return
++ * The number of links established on the event port designated by its
++ *  *port_id*.
++ * - <0 on failure.
++ */
++__rte_experimental
++int
++rte_event_port_profile_links_get(uint8_t dev_id, uint8_t port_id, uint8_t queues[],
++				 uint8_t priorities[], uint8_t profile_id);
++
+ /**
+  * Retrieve the service ID of the event dev. If the adapter doesn't use
+  * a rte_service function, this function returns -ESRCH.
+@@ -2277,6 +2461,53 @@ rte_event_maintain(uint8_t dev_id, uint8_t port_id, int op)
+ 	return 0;
+ }
+ 
++/**
++ * Change the active profile on an event port.
++ *
++ * This function is used to change the current active profile on an event port
++ * when multiple link profiles are configured on an event port through the
++ * function call ``rte_event_port_profile_links_set``.
++ *
++ * On the subsequent ``rte_event_dequeue_burst`` call, only the event queues
++ * that were associated with the newly active profile will participate in
++ * scheduling.
++ *
++ * @param dev_id
++ *   The identifier of the device.
++ * @param port_id
++ *   The identifier of the event port.
++ * @param profile_id
++ *   The identifier of the profile.
++ * @return
++ *  - 0 on success.
++ *  - -EINVAL if *dev_id*,  *port_id*, or *profile_id* is invalid.
++ */
++__rte_experimental
++static inline uint8_t
++rte_event_port_profile_switch(uint8_t dev_id, uint8_t port_id, uint8_t profile_id)
++{
++	const struct rte_event_fp_ops *fp_ops;
++	void *port;
++
++	fp_ops = &rte_event_fp_ops[dev_id];
++	port = fp_ops->data[port_id];
++
++#ifdef RTE_LIBRTE_EVENTDEV_DEBUG
++	if (dev_id >= RTE_EVENT_MAX_DEVS ||
++	    port_id >= RTE_EVENT_MAX_PORTS_PER_DEV)
++		return -EINVAL;
++
++	if (port == NULL)
++		return -EINVAL;
++
++	if (profile_id >= RTE_EVENT_MAX_PROFILES_PER_PORT)
++		return -EINVAL;
++#endif
++	rte_eventdev_trace_port_profile_switch(dev_id, port_id, profile_id);
++
++	return fp_ops->profile_switch(port, profile_id);
++}
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/eventdev/rte_eventdev_core.h b/lib/eventdev/rte_eventdev_core.h
+index c328bdbc828f7..03887d4f91edd 100644
+--- a/lib/eventdev/rte_eventdev_core.h
++++ b/lib/eventdev/rte_eventdev_core.h
+@@ -42,6 +42,9 @@ typedef uint16_t (*event_crypto_adapter_enqueue_t)(void *port,
+ 						   uint16_t nb_events);
+ /**< @internal Enqueue burst of events on crypto adapter */
+ 
++typedef int (*event_profile_switch_t)(void *port, uint8_t profile);
++/**< @internal Switch active link profile on the event port. */
++
+ struct rte_event_fp_ops {
+ 	void **data;
+ 	/**< points to array of internal port data pointers */
+@@ -65,7 +68,9 @@ struct rte_event_fp_ops {
+ 	/**< PMD Tx adapter enqueue same destination function. */
+ 	event_crypto_adapter_enqueue_t ca_enqueue;
+ 	/**< PMD Crypto adapter enqueue function. */
+-	uintptr_t reserved[6];
++	event_profile_switch_t profile_switch;
++	/**< PMD Event switch profile function. */
++	uintptr_t reserved[4];
+ } __rte_cache_aligned;
+ 
+ extern struct rte_event_fp_ops rte_event_fp_ops[RTE_EVENT_MAX_DEVS];
+diff --git a/lib/eventdev/rte_eventdev_trace_fp.h b/lib/eventdev/rte_eventdev_trace_fp.h
+index af2172d2a5809..04d510ad00797 100644
+--- a/lib/eventdev/rte_eventdev_trace_fp.h
++++ b/lib/eventdev/rte_eventdev_trace_fp.h
+@@ -46,6 +46,14 @@ RTE_TRACE_POINT_FP(
+ 	rte_trace_point_emit_int(op);
+ )
+ 
++RTE_TRACE_POINT_FP(
++	rte_eventdev_trace_port_profile_switch,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t port_id, uint8_t profile),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u8(port_id);
++	rte_trace_point_emit_u8(profile);
++)
++
+ RTE_TRACE_POINT_FP(
+ 	rte_eventdev_trace_eth_tx_adapter_enqueue,
+ 	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t port_id, void *ev_table,
+diff --git a/lib/eventdev/version.map b/lib/eventdev/version.map
+index 7e1cfc773b539..c837c5670c7ca 100644
+--- a/lib/eventdev/version.map
++++ b/lib/eventdev/version.map
+@@ -122,6 +122,12 @@ EXPERIMENTAL {
+ 
+ 	# added in 23.03
+ 	rte_event_timer_remaining_ticks_get;
++
++	# added in 23.11
++	rte_event_port_profile_links_set;
++	rte_event_port_profile_unlink;
++	rte_event_port_profile_links_get;
++	__rte_eventdev_trace_port_profile_switch;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

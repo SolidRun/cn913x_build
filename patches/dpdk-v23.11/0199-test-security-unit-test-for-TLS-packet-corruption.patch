@@ -1,0 +1,105 @@
+From 38d7b6f0e2d5f445124f02a77872228a839814d2 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Tue, 23 Jan 2024 22:59:50 -0800
+Subject: [PATCH 199/513] test/security: unit test for TLS packet corruption
+
+Add test to verify the corrupted TLS packet header
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I42750019cecad4454bccd65eecd57aed199e18fc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119950
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 881392ce27a5239348b257e3f9314ca7aabd0f85)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121230
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c                     | 27 +++++++++++++++++--
+ app/test/test_cryptodev_security_tls_record.c |  4 +++
+ app/test/test_cryptodev_security_tls_record.h |  1 +
+ 3 files changed, 30 insertions(+), 2 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 08fec9f752714..3516c641e693f 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12048,8 +12048,13 @@ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ 		if (ret == TEST_SKIPPED)
+ 			continue;
+ 
+-		if (ret == TEST_FAILED)
+-			return TEST_FAILED;
++		if (flags->pkt_corruption) {
++			if (ret == TEST_SUCCESS)
++				return TEST_FAILED;
++		} else {
++			if (ret == TEST_FAILED)
++				return TEST_FAILED;
++		}
+ 
+ 		if (flags->data_walkthrough && (++payload_len <= max_payload_len))
+ 			goto again;
+@@ -12111,6 +12116,20 @@ test_tls_1_2_record_proto_sgl(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_tls_record_proto_corrupt_pkt(void)
++{
++	struct tls_record_test_flags flags = {
++		.pkt_corruption = 1
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
+ static int
+ test_dtls_1_2_record_proto_data_walkthrough(void)
+ {
+@@ -17225,6 +17244,10 @@ static struct unit_test_suite tls12_record_proto_testsuite  = {
+ 			"Multi-segmented mode data walkthrough",
+ 			ut_setup_security, ut_teardown,
+ 			test_tls_1_2_record_proto_sgl_data_walkthrough),
++		TEST_CASE_NAMED_ST(
++			"TLS packet header corruption",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_corrupt_pkt),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev_security_tls_record.c b/app/test/test_cryptodev_security_tls_record.c
+index 92bcbff8429bf..93ff7f36fab58 100644
+--- a/app/test/test_cryptodev_security_tls_record.c
++++ b/app/test/test_cryptodev_security_tls_record.c
+@@ -185,6 +185,10 @@ test_tls_record_td_update(struct tls_record_test_data td_inb[],
+ 		       td_outb[i].input_text.len);
+ 		td_inb[i].output_text.len = td_outb->input_text.len;
+ 
++		/* Corrupt the content type in the TLS header of encrypted packet */
++		if (flags->pkt_corruption)
++			td_inb[i].input_text.data[0] = ~td_inb[i].input_text.data[0];
++
+ 		/* Clear outbound specific flags */
+ 		td_inb[i].tls_record_xform.options.iv_gen_disable = 0;
+ 	}
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+index 34758fb0e1757..5faa277740d75 100644
+--- a/app/test/test_cryptodev_security_tls_record.h
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -88,6 +88,7 @@ struct tls_record_test_flags {
+ 	uint8_t nb_segs_in_mbuf;
+ 	bool data_walkthrough;
+ 	enum rte_security_tls_version tls_version;
++	bool pkt_corruption;
+ };
+ 
+ extern struct tls_record_test_data tls_test_data_aes_128_gcm_v1;
+-- 
+2.25.1
+

@@ -1,0 +1,112 @@
+From b96d2037c18865e7fc79627baf053d332184ec17 Mon Sep 17 00:00:00 2001
+From: Kommula Shiva Shankar <kshankar@marvell.com>
+Date: Thu, 24 Aug 2023 12:59:14 +0530
+Subject: [PATCH 616/955] common/cnxk: fix ROC files naming convention
+
+This patch fixes ROC file naming convention
+
+Fixes: c88d3638c7f ("common/cnxk: support REE")
+
+Signed-off-by: Kommula Shiva Shankar <kshankar@marvell.com>
+Change-Id: I49de01731c143f3da089c1d1d7c66f358c253fda
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110443
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_ree.c | 24 ++++++++++--------------
+ drivers/common/cnxk/roc_ree.h |  2 +-
+ 2 files changed, 11 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_ree.c b/drivers/common/cnxk/roc_ree.c
+index 1eb2ae727248e..d7376fcde7ab9 100644
+--- a/drivers/common/cnxk/roc_ree.c
++++ b/drivers/common/cnxk/roc_ree.c
+@@ -191,8 +191,7 @@ roc_ree_af_reg_read(struct roc_ree_vf *vf, uint64_t reg, uint64_t *val)
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	off = mbox->rx_start +
+-	      RTE_ALIGN(sizeof(struct mbox_hdr), MBOX_MSG_ALIGN);
++	off = mbox->rx_start + PLT_ALIGN(sizeof(struct mbox_hdr), MBOX_MSG_ALIGN);
+ 	msg = (struct ree_rd_wr_reg_msg *)((uintptr_t)mdev->mbase + off);
+ 
+ 	*val = msg->val;
+@@ -438,16 +437,15 @@ roc_ree_lf_err_intr_handler(void *param)
+ }
+ 
+ static void
+-roc_ree_lf_err_intr_unregister(struct roc_ree_vf *vf, uint16_t msix_off,
+-			       uintptr_t base)
++roc_ree_lf_err_intr_unregister(struct roc_ree_vf *vf, uint16_t msix_off, uintptr_t base)
+ {
+-	struct rte_pci_device *pci_dev = vf->pci_dev;
++	struct plt_pci_device *pci_dev = vf->pci_dev;
+ 
+ 	/* Disable error interrupts */
+ 	plt_write64(~0ull, base + REE_LF_MISC_INT_ENA_W1C);
+ 
+-	dev_irq_unregister(pci_dev->intr_handle,
+-			   roc_ree_lf_err_intr_handler, (void *)base, msix_off);
++	dev_irq_unregister(pci_dev->intr_handle, roc_ree_lf_err_intr_handler, (void *)base,
++			   msix_off);
+ }
+ 
+ void
+@@ -465,18 +463,16 @@ roc_ree_err_intr_unregister(struct roc_ree_vf *vf)
+ }
+ 
+ static int
+-roc_ree_lf_err_intr_register(struct roc_ree_vf *vf, uint16_t msix_off,
+-			     uintptr_t base)
++roc_ree_lf_err_intr_register(struct roc_ree_vf *vf, uint16_t msix_off, uintptr_t base)
+ {
+-	struct rte_pci_device *pci_dev = vf->pci_dev;
++	struct plt_pci_device *pci_dev = vf->pci_dev;
+ 	int ret;
+ 
+ 	/* Disable error interrupts */
+ 	plt_write64(~0ull, base + REE_LF_MISC_INT_ENA_W1C);
+ 
+ 	/* Register error interrupt handler */
+-	ret = dev_irq_register(pci_dev->intr_handle,
+-			       roc_ree_lf_err_intr_handler, (void *)base,
++	ret = dev_irq_register(pci_dev->intr_handle, roc_ree_lf_err_intr_handler, (void *)base,
+ 			       msix_off);
+ 	if (ret)
+ 		return ret;
+@@ -603,7 +599,7 @@ roc_ree_dev_init(struct roc_ree_vf *vf)
+ 	}
+ 
+ 	/* Don't exceed the limits set per VF */
+-	nb_queues = RTE_MIN(nb_queues, REE_MAX_QUEUES_PER_VF);
++	nb_queues = PLT_MIN(nb_queues, REE_MAX_QUEUES_PER_VF);
+ 
+ 	if (nb_queues == 0) {
+ 		plt_err("No free queues available on the device");
+@@ -621,7 +617,7 @@ roc_ree_dev_init(struct roc_ree_vf *vf)
+ 		goto fail;
+ 	}
+ 	/* Don't exceed the limits set per VF */
+-	max_matches = RTE_MIN(max_matches, REE_MAX_MATCHES_PER_VF);
++	max_matches = PLT_MIN(max_matches, REE_MAX_MATCHES_PER_VF);
+ 	if (max_matches == 0) {
+ 		plt_err("Could not determine the maximum matches supported");
+ 		goto fail;
+diff --git a/drivers/common/cnxk/roc_ree.h b/drivers/common/cnxk/roc_ree.h
+index e138e4de66b16..bf994e71245db 100644
+--- a/drivers/common/cnxk/roc_ree.h
++++ b/drivers/common/cnxk/roc_ree.h
+@@ -68,7 +68,7 @@ struct roc_ree_qp {
+ 	/**< Base address where BAR is mapped */
+ 	struct roc_ree_pending_queue pend_q;
+ 	/**< Pending queue */
+-	rte_iova_t iq_dma_addr;
++	plt_iova_t iq_dma_addr;
+ 	/**< Instruction queue address */
+ 	uint32_t roc_regexdev_jobid;
+ 	/**< Job ID */
+-- 
+2.25.1
+

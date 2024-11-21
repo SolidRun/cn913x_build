@@ -1,0 +1,65 @@
+From 05e614f7171ce7a8b2c11288d76feff6f95b14bb Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Fri, 9 Dec 2022 19:58:12 +0530
+Subject: [PATCH 070/955] ci/hotplug_test: resolve ci hotplug test
+
+htoplug test was failing on 22.11 this patch
+resolves the same
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I4ab3c8c85acc0706215f300382445ed345f66116
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92220
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../cnxk-tests/hotplug_test/cnxk_hotplug_test.sh   | 14 ++++++--------
+ 1 file changed, 6 insertions(+), 8 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/hotplug_test/cnxk_hotplug_test.sh b/marvell-ci/test/cnxk-tests/hotplug_test/cnxk_hotplug_test.sh
+index 3ec7c7c3d310e..a468c39728560 100755
+--- a/marvell-ci/test/cnxk-tests/hotplug_test/cnxk_hotplug_test.sh
++++ b/marvell-ci/test/cnxk-tests/hotplug_test/cnxk_hotplug_test.sh
+@@ -127,21 +127,20 @@ trap "sig_handler QUIT" QUIT
+ trap "sig_handler EXIT" EXIT
+ 
+ echo "dpdk-hotplug_mp running with no ports"
+-$VFIO_DEVBIND -u $PORT0 $PORT3 $PORT2 $PORT4
+ sleep 1
+-hotplug_launch "--proc-type=auto" "primary"
++hotplug_launch "-a 0002:11:22.1 --proc-type=auto" "primary"
+ sleep 2
+-hotplug_launch "--proc-type=auto" "secondary"
++hotplug_launch "-a 0002:11:22.1 --proc-type=auto" "secondary"
+ 
+ sleep 1
+-$VFIO_DEVBIND -b vfio-pci $PORT0
++$VFIO_DEVBIND -b vfio-pci $PORT2
+ sleep 2
+ # Start capturing
+-hotplug_cmd $CAP_PRFX "attach $PORT0"
++hotplug_cmd $CAP_PRFX "attach $PORT2"
+ sleep 3
+ hotplug_cmd $CAP_PRFX "list"
+ sleep 2
+-hotplug_cmd $CAP_PRFX "detach $PORT0"
++hotplug_cmd $CAP_PRFX "detach $PORT2"
+ sleep 3
+ hotplug_cmd $CAP_PRFX "list"
+ sleep 2
+@@ -152,7 +151,7 @@ sleep 1
+ 
+ port_id_prim=`sed -n '/attach/,/detach/p' $out_prim | \
+ 	grep -A 1 "list all etherdev" | tail -n1 | awk '{print $2}'`
+-port_id_sec=`cat $out_sec | grep "Probe PCI driver:" | tail -n 1 | awk '{print $9}'`
++port_id_sec=`cat $out_sec | grep "Probe PCI driver:" | tail -n 1 | awk '{print $8}'`
+ 
+ if [ "$port_id_prim" = "$port_id_sec" ]; then
+ 	echo "Hotplug attach sccuess"
+@@ -172,4 +171,3 @@ else
+ 	echo "Hotplug detach failure"
+ 	exit 1;
+ fi
+-$VFIO_DEVBIND -b vfio-pci $PORT0 $PORT3 $PORT2 $PORT4
+-- 
+2.25.1
+

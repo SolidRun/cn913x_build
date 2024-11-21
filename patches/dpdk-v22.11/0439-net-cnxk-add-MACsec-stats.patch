@@ -1,0 +1,145 @@
+From c2a84426032b5200b6bf753c735d7b23bb0dd58d Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 19 May 2023 02:30:09 +0530
+Subject: [PATCH 439/955] net/cnxk: add MACsec stats
+
+Added support for MACsec SC/flow/session stats.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I598e958686fa303bb3f9feb873de1949f25a485e
+---
+ drivers/net/cnxk/cn10k_ethdev_sec.c | 11 +++--
+ drivers/net/cnxk/cnxk_ethdev_mcs.c  | 64 +++++++++++++++++++++++++++++
+ drivers/net/cnxk/cnxk_ethdev_mcs.h  |  9 ++++
+ 3 files changed, 81 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index 14afef70f5f01..63aa7ffde2d31 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -1101,12 +1101,17 @@ cn10k_eth_sec_session_stats_get(void *device, struct rte_security_session *sess,
+ {
+ 	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct cnxk_macsec_sess *macsec_sess;
+ 	struct cnxk_eth_sec_sess *eth_sec;
+ 	int rc;
+ 
+ 	eth_sec = cnxk_eth_sec_sess_get_by_sess(dev, sess);
+-	if (eth_sec == NULL)
++	if (eth_sec == NULL) {
++		macsec_sess = cnxk_eth_macsec_sess_get_by_sess(dev, sess);
++		if (macsec_sess)
++			return cnxk_eth_macsec_session_stats_get(dev, macsec_sess, stats);
+ 		return -EINVAL;
++	}
+ 
+ 	rc = roc_nix_inl_sa_sync(&dev->nix, eth_sec->sa, eth_sec->inb,
+ 			    ROC_NIX_INL_SA_OP_FLUSH);
+@@ -1150,6 +1155,6 @@ cn10k_eth_sec_ops_override(void)
+ 	cnxk_eth_sec_ops.capabilities_get = cn10k_eth_sec_capabilities_get;
+ 	cnxk_eth_sec_ops.session_update = cn10k_eth_sec_session_update;
+ 	cnxk_eth_sec_ops.session_stats_get = cn10k_eth_sec_session_stats_get;
+-	cnxk_eth_sec_ops.macsec_sc_stats_get = NULL;
+-	cnxk_eth_sec_ops.macsec_sa_stats_get = NULL;
++	cnxk_eth_sec_ops.macsec_sc_stats_get = cnxk_eth_macsec_sc_stats_get;
++	cnxk_eth_sec_ops.macsec_sa_stats_get = cnxk_eth_macsec_sa_stats_get;
+ }
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mcs.c b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+index c5ac5bafbb200..e79b8279a7ae3 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_mcs.c
++++ b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+@@ -517,6 +517,70 @@ cnxk_mcs_flow_destroy(struct cnxk_eth_dev *dev, void *flow)
+ 	return (ret == 0) ? 1 : ret;
+ }
+ 
++int
++cnxk_eth_macsec_sa_stats_get(void *device, uint16_t sa_id, enum rte_security_macsec_direction dir,
++			     struct rte_security_macsec_sa_stats *stats)
++{
++	RTE_SET_USED(device);
++	RTE_SET_USED(sa_id);
++	RTE_SET_USED(dir);
++	RTE_SET_USED(stats);
++
++	return 0;
++}
++
++int
++cnxk_eth_macsec_sc_stats_get(void *device, uint16_t sc_id, enum rte_security_macsec_direction dir,
++			     struct rte_security_macsec_sc_stats *stats)
++{
++	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct cnxk_mcs_dev *mcs_dev = dev->mcs_dev;
++	struct roc_mcs_stats_req req = {0};
++
++	if (!roc_feature_nix_has_macsec())
++		return -ENOTSUP;
++
++	req.id = sc_id;
++	req.dir = (dir == RTE_SECURITY_MACSEC_DIR_RX) ? MCS_RX : MCS_TX;
++
++	return roc_mcs_sc_stats_get(mcs_dev->mdev, &req, (struct roc_mcs_sc_stats *)stats);
++}
++
++int
++cnxk_eth_macsec_session_stats_get(struct cnxk_eth_dev *dev, struct cnxk_macsec_sess *sess,
++				  struct rte_security_stats *stats)
++{
++	struct cnxk_mcs_dev *mcs_dev = dev->mcs_dev;
++	struct roc_mcs_flowid_stats flow_stats = {0};
++	struct roc_mcs_port_stats port_stats = {0};
++	struct roc_mcs_stats_req req = {0};
++
++	if (!roc_feature_nix_has_macsec())
++		return -ENOTSUP;
++
++	req.id = sess->flow_id;
++	req.dir = sess->dir;
++	roc_mcs_flowid_stats_get(mcs_dev->mdev, &req, &flow_stats);
++	plt_nix_dbg("\n******* FLOW_ID IDX[%u] STATS dir: %u********\n", sess->flow_id, sess->dir);
++	plt_nix_dbg("TX: tcam_hit_cnt: 0x%lx\n", flow_stats.tcam_hit_cnt);
++
++	req.id = mcs_dev->port_id;
++	req.dir = sess->dir;
++	roc_mcs_port_stats_get(mcs_dev->mdev, &req, &port_stats);
++	plt_nix_dbg("\n********** PORT[0] STATS ****************\n");
++	plt_nix_dbg("RX tcam_miss_cnt: 0x%lx\n", port_stats.tcam_miss_cnt);
++	plt_nix_dbg("RX parser_err_cnt: 0x%lx\n", port_stats.parser_err_cnt);
++	plt_nix_dbg("RX preempt_err_cnt: 0x%lx\n", port_stats.preempt_err_cnt);
++	plt_nix_dbg("RX sectag_insert_err_cnt: 0x%lx\n", port_stats.sectag_insert_err_cnt);
++
++	req.id = sess->secy_id;
++	req.dir = sess->dir;
++
++	return roc_mcs_secy_stats_get(mcs_dev->mdev, &req,
++				      (struct roc_mcs_secy_stats *)(&stats->macsec));
++}
++
+ static int
+ cnxk_mcs_event_cb(void *userdata, struct roc_mcs_event_desc *desc, void *cb_arg)
+ {
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mcs.h b/drivers/net/cnxk/cnxk_ethdev_mcs.h
+index 2b1a6f2c90ec0..4a59dd3df9d5e 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_mcs.h
++++ b/drivers/net/cnxk/cnxk_ethdev_mcs.h
+@@ -97,6 +97,15 @@ int cnxk_eth_macsec_sa_destroy(void *device, uint16_t sa_id,
+ int cnxk_eth_macsec_sc_destroy(void *device, uint16_t sc_id,
+ 			       enum rte_security_macsec_direction dir);
+ 
++int cnxk_eth_macsec_sa_stats_get(void *device, uint16_t sa_id,
++				 enum rte_security_macsec_direction dir,
++				 struct rte_security_macsec_sa_stats *stats);
++int cnxk_eth_macsec_sc_stats_get(void *device, uint16_t sa_id,
++				 enum rte_security_macsec_direction dir,
++				 struct rte_security_macsec_sc_stats *stats);
++int cnxk_eth_macsec_session_stats_get(struct cnxk_eth_dev *dev, struct cnxk_macsec_sess *sess,
++				      struct rte_security_stats *stats);
++
+ int cnxk_eth_macsec_session_create(struct cnxk_eth_dev *dev, struct rte_security_session_conf *conf,
+ 				   struct rte_security_session *sess);
+ int cnxk_eth_macsec_session_destroy(struct cnxk_eth_dev *dev, struct rte_security_session *sess);
+-- 
+2.25.1
+

@@ -1,0 +1,90 @@
+From 1098ee6e57e9d41d0cb304a86392f333bb790bfd Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 8 Jun 2023 19:58:54 +0530
+Subject: [PATCH 484/955] ci: add flags to continue testing on failure
+
+Add flag to continue testing on failure.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Ibec9e8155a443de5d4c4b0913e97c26df9084a1f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105162
+Reviewed-by: Ashwin Sekhar T K
+Tested-by: Ashwin Sekhar T K
+---
+ marvell-ci/test/board/board_test_run.sh | 2 +-
+ marvell-ci/test/env/cn106-perf.env      | 3 +++
+ marvell-ci/test/env/cn10k.env           | 3 +++
+ marvell-ci/test/env/cn96-perf.env       | 3 +++
+ marvell-ci/test/env/cn9k.env            | 3 +++
+ 5 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/board/board_test_run.sh b/marvell-ci/test/board/board_test_run.sh
+index 4881cc8ecf724..25f9cb180b45b 100755
+--- a/marvell-ci/test/board/board_test_run.sh
++++ b/marvell-ci/test/board/board_test_run.sh
+@@ -150,7 +150,7 @@ function run_all_tests()
+ 		run_test $tst
+ 		res=$?
+ 		if [[ $res -ne 0 ]] && [[ $res -ne 77 ]] ; then
+-			if [[ -n $PERF_STAGE ]]; then
++			if [[ -n $CONTINUE_ON_FAILURE ]]; then
+ 				echo "FAILURE: Test $tst failed"
+ 				failed_tests="$failed_tests $tst"
+ 			else
+diff --git a/marvell-ci/test/env/cn106-perf.env b/marvell-ci/test/env/cn106-perf.env
+index 38d161298ebd0..9bd4fc6648a23 100644
+--- a/marvell-ci/test/env/cn106-perf.env
++++ b/marvell-ci/test/env/cn106-perf.env
+@@ -23,5 +23,8 @@ CMD_TIMEOUTS="cnxk_event_perf=60m cnxk_ipsec_la_perf=70m cnxk_ipsec_inline_perf=
+ # Perf stage flag
+ PERF_STAGE=1
+ 
++# Continue testing regardless of failure
++CONTINUE_ON_FAILURE=1
++
+ # Export the path to this conf so that other scripts can source this conf.
+ export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn106-perf.env
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index fb6b9c83e4c93..ba5f8476d3543 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -65,6 +65,9 @@ RUN_TESTS=${RUN_TESTS:-}
+ # Flag to enable target setup needed for perf stage.
+ PERF_STAGE=${PERF_STAGE:-}
+ 
++# Continue testing regardless of failure
++CONTINUE_ON_FAILURE=${CONTINUE_ON_FAILURE:-}
++
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-}
+ 
+diff --git a/marvell-ci/test/env/cn96-perf.env b/marvell-ci/test/env/cn96-perf.env
+index 38c3976f14864..7fc2fbd24d9a7 100644
+--- a/marvell-ci/test/env/cn96-perf.env
++++ b/marvell-ci/test/env/cn96-perf.env
+@@ -23,5 +23,8 @@ CMD_TIMEOUTS="cnxk_ipsec_la_perf=60m cnxk_event_perf=60m $CMD_TIMEOUTS"
+ # Perf stage flag
+ PERF_STAGE=1
+ 
++# Continue testing regardless of failure
++CONTINUE_ON_FAILURE=1
++
+ # Export the path to this conf so that other scripts can source this conf.
+ export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn96-perf.env
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index efa54d1039a6f..d3c9328cac3ef 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -64,6 +64,9 @@ RUN_TESTS=${RUN_TESTS:-}
+ # Flag to enable target setup needed for perf stage.
+ PERF_STAGE=${PERF_STAGE:-}
+ 
++# Continue testing regardless of failure
++CONTINUE_ON_FAILURE=${CONTINUE_ON_FAILURE:-}
++
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-1}
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,68 @@
+From 06251a32ecf3644a2aa840829190798b0f1babfc Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 13 Nov 2023 12:30:08 +0530
+Subject: [PATCH 682/955] net/cnxk: add transport mode to security capability
+ on cn9k
+
+Add transport mode to security capabilities since it
+is supported by UCODE.
+
+Change-Id: I76415a7a10afc8769e50ea3496f84336fad1a737
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115768
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn9k_ethdev_sec.c | 33 ++++++++++++++++++++++++++++++
+ 1 file changed, 33 insertions(+)
+
+diff --git a/drivers/net/cnxk/cn9k_ethdev_sec.c b/drivers/net/cnxk/cn9k_ethdev_sec.c
+index 688b13ae1e2ba..a0e0a73639b37 100644
+--- a/drivers/net/cnxk/cn9k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn9k_ethdev_sec.c
+@@ -351,6 +351,39 @@ static const struct rte_security_capability cn9k_eth_sec_capabilities[] = {
+ 		.crypto_capabilities = cn9k_eth_sec_crypto_caps,
+ 		.ol_flags = RTE_SECURITY_TX_OLOAD_NEED_MDATA
+ 	},
++	{	/* IPsec Inline Protocol ESP Transport Ingress */
++		.action = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL,
++		.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
++		.ipsec = {
++			.proto = RTE_SECURITY_IPSEC_SA_PROTO_ESP,
++			.mode = RTE_SECURITY_IPSEC_SA_MODE_TRANSPORT,
++			.direction = RTE_SECURITY_IPSEC_SA_DIR_INGRESS,
++			.replay_win_sz_max = CNXK_ON_AR_WIN_SIZE_MAX,
++			.options = {
++				.udp_encap = 1,
++				.esn = 1,
++			},
++		},
++		.crypto_capabilities = cn9k_eth_sec_crypto_caps,
++		.ol_flags = RTE_SECURITY_TX_OLOAD_NEED_MDATA
++	},
++	{	/* IPsec Inline Protocol ESP Transport Egress */
++		.action = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL,
++		.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
++		.ipsec = {
++			.proto = RTE_SECURITY_IPSEC_SA_PROTO_ESP,
++			.mode = RTE_SECURITY_IPSEC_SA_MODE_TRANSPORT,
++			.direction = RTE_SECURITY_IPSEC_SA_DIR_EGRESS,
++			.replay_win_sz_max = CNXK_ON_AR_WIN_SIZE_MAX,
++			.options = {
++				.iv_gen_disable = 1,
++				.udp_encap = 1,
++				.esn = 1,
++			},
++		},
++		.crypto_capabilities = cn9k_eth_sec_crypto_caps,
++		.ol_flags = RTE_SECURITY_TX_OLOAD_NEED_MDATA
++	},
+ 	{
+ 		.action = RTE_SECURITY_ACTION_TYPE_NONE
+ 	}
+-- 
+2.25.1
+

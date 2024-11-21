@@ -1,0 +1,43 @@
+From 9096ecf8abcc71f6bba28d8c3aeeca8349a3dad8 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 18 Apr 2024 16:12:55 +0530
+Subject: [PATCH 857/955] net/cnxk: fix issue with outbound security higher pkt
+ burst
+
+Fix issue with outbound security path while handling mixed traffic i.e
+both plain and inline outbound pkts being present as part of burst
+and burst size is > 32. The loop needs to be broken when
+we don't have space for 4 pkts in LMT lines for CPT considering
+both the full lmt lines and partial lmt lines used.
+
+Fixes: 55bfac717c72 ("net/cnxk: support Tx security offload on cn10k")
+Cc: stable@dpdk.org
+
+Change-Id: Ib1caa2f0eae995a903a15b7b81f31152d83d4318
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125672
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+---
+ drivers/net/cnxk/cn10k_tx.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index 1e753abb506c1..b0f9ddd53b99e 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -2268,7 +2268,8 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 	}
+ 
+ 	for (i = 0; i < burst; i += NIX_DESCS_PER_LOOP) {
+-		if (flags & NIX_TX_OFFLOAD_SECURITY_F && c_lnum + 2 > 16) {
++		if (flags & NIX_TX_OFFLOAD_SECURITY_F &&
++		    (((int)((16 - c_lnum) << 1) - c_loff) < 4)) {
+ 			burst = i;
+ 			break;
+ 		}
+-- 
+2.25.1
+

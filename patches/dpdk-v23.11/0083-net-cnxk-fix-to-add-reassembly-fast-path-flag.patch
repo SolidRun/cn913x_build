@@ -1,0 +1,35 @@
+From 632c9f983ff0015f8f23c8f620faa7be8bfa4ccb Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 23 Nov 2023 12:51:49 +0530
+Subject: [PATCH 083/513] net/cnxk: fix to add reassembly fast path flag
+
+For IPsec decrypted packets, full packet format condition check
+is enabled for both reassembly and non-reassembly path as part
+of OOP handling. Instead, it should be only in reassembly path.
+To fix this, NIX_RX_REAS_F flag condition is added to avoid
+packet format check in non-reassembly fast path.
+
+Fixes: 5e9e008d0127 ("net/cnxk: support inline ingress out-of-place session")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ibcfbb97379907c86151fa80dbdb1746b2b3e376d
+---
+ drivers/net/cnxk/cn10k_rx.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cn10k_rx.h b/drivers/net/cnxk/cn10k_rx.h
+index c4ad1b64feb86..89621af3fb524 100644
+--- a/drivers/net/cnxk/cn10k_rx.h
++++ b/drivers/net/cnxk/cn10k_rx.h
+@@ -734,7 +734,7 @@ nix_cqe_xtract_mseg(const union nix_rx_parse_u *rx, struct rte_mbuf *mbuf,
+ 		else
+ 			wqe = (const uint64_t *)(mbuf + 1);
+ 
+-		if (hdr->w0.pkt_fmt != ROC_IE_OT_SA_PKT_FMT_FULL)
++		if (!(flags & NIX_RX_REAS_F) || hdr->w0.pkt_fmt != ROC_IE_OT_SA_PKT_FMT_FULL)
+ 			rx = (const union nix_rx_parse_u *)(wqe + 1);
+ 	}
+ 
+-- 
+2.25.1
+

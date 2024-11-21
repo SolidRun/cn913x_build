@@ -1,0 +1,323 @@
+From 5f0eae4e82e854b04ea4ddfdee8ad751c283a77b Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Wed, 10 Jan 2024 23:06:50 +0530
+Subject: [PATCH 774/955] l3fwd_non_eal: add support for non eal threads
+
+l3fwd application can be run on non eal threads
+using linux pthread API for transmission and reception
+of packets. NON-EAL cpu configuration for launching
+threads is taken from config option
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Ibebfe1c48b30a637622ce27b18df3035ed13f2a2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120009
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/l3fwd_non_eal/l3fwd.h     | 11 ++-
+ .../test/cnxk-tests/l3fwd_non_eal/l3fwd_lpm.c | 20 ++++-
+ .../test/cnxk-tests/l3fwd_non_eal/main.c      | 83 +++++++++++++++----
+ 3 files changed, 96 insertions(+), 18 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/l3fwd_non_eal/l3fwd.h b/marvell-ci/test/cnxk-tests/l3fwd_non_eal/l3fwd.h
+index e7ae0e58340d9..7489a42acd2ca 100644
+--- a/marvell-ci/test/cnxk-tests/l3fwd_non_eal/l3fwd.h
++++ b/marvell-ci/test/cnxk-tests/l3fwd_non_eal/l3fwd.h
+@@ -56,6 +56,13 @@
+ #define L3FWD_HASH_ENTRIES		(1024*1024*1)
+ #endif
+ 
++struct thread_context {
++	pthread_t id;
++};
++
++int
++check_lcore(unsigned int lcore_id);
++
+ struct parm_cfg {
+ 	const char *rule_ipv4_name;
+ 	const char *rule_ipv6_name;
+@@ -251,8 +258,8 @@ acl_main_loop(__rte_unused void *dummy);
+ int
+ em_main_loop(__rte_unused void *dummy);
+ 
+-int
+-lpm_main_loop(__rte_unused void *dummy);
++void *
++lpm_main_loop(void *dummy);
+ 
+ int
+ fib_main_loop(__rte_unused void *dummy);
+diff --git a/marvell-ci/test/cnxk-tests/l3fwd_non_eal/l3fwd_lpm.c b/marvell-ci/test/cnxk-tests/l3fwd_non_eal/l3fwd_lpm.c
+index a484a33089d8d..f1d516e2b5ef2 100644
+--- a/marvell-ci/test/cnxk-tests/l3fwd_non_eal/l3fwd_lpm.c
++++ b/marvell-ci/test/cnxk-tests/l3fwd_non_eal/l3fwd_lpm.c
+@@ -26,6 +26,7 @@
+ #include <rte_udp.h>
+ #include <rte_lpm.h>
+ #include <rte_lpm6.h>
++#include <pthread.h>
+ 
+ #include "l3fwd.h"
+ #include "l3fwd_common.h"
+@@ -141,8 +142,8 @@ lpm_get_dst_port_with_ipv4(const struct lcore_conf *qconf, struct rte_mbuf *pkt,
+ #endif
+ 
+ /* main processing loop */
+-int
+-lpm_main_loop(__rte_unused void *dummy)
++void *
++lpm_main_loop(void *dummy)
+ {
+ 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+ 	unsigned lcore_id;
+@@ -153,10 +154,24 @@ lpm_main_loop(__rte_unused void *dummy)
+ 	struct lcore_conf *qconf;
+ 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) /
+ 		US_PER_S * BURST_TX_DRAIN_US;
++	pthread_t thread;
++	cpu_set_t cpuset;
++
++
++	RTE_SET_USED(dummy);
++	rte_thread_register();
++
++	if (!check_lcore(rte_lcore_id()))
++		return 0;
+ 
+ 	lcore_id = rte_lcore_id();
+ 	qconf = &lcore_conf[lcore_id];
+ 
++	CPU_ZERO(&cpuset);
++	CPU_SET(lcore_id, &cpuset);
++	thread = pthread_self();
++	pthread_setaffinity_np(thread, sizeof(cpuset), &cpuset);
++
+ 	const uint16_t n_rx_q = qconf->n_rx_queue;
+ 	const uint16_t n_tx_p = qconf->n_tx_port;
+ 	if (n_rx_q == 0) {
+@@ -223,6 +238,7 @@ lpm_main_loop(__rte_unused void *dummy)
+ 		cur_tsc = rte_rdtsc();
+ 	}
+ 
++	rte_thread_unregister();
+ 	return 0;
+ }
+ 
+diff --git a/marvell-ci/test/cnxk-tests/l3fwd_non_eal/main.c b/marvell-ci/test/cnxk-tests/l3fwd_non_eal/main.c
+index 3bf28aec0ccef..cc3b5663baeff 100644
+--- a/marvell-ci/test/cnxk-tests/l3fwd_non_eal/main.c
++++ b/marvell-ci/test/cnxk-tests/l3fwd_non_eal/main.c
+@@ -14,6 +14,7 @@
+ #include <getopt.h>
+ #include <signal.h>
+ #include <stdbool.h>
++#include <pthread.h>
+ 
+ #include <rte_common.h>
+ #include <rte_vect.h>
+@@ -102,6 +103,8 @@ struct lcore_params {
+ 	uint8_t lcore_id;
+ } __rte_cache_aligned;
+ 
++#define TEST_FAILED -1
++
+ static struct lcore_params lcore_params_array[MAX_LCORE_PARAMS];
+ static struct lcore_params lcore_params_array_default[] = {
+ 	{0, 0, 2},
+@@ -172,7 +175,7 @@ static struct l3fwd_lkp_mode l3fwd_lpm_lkp = {
+ 	.setup                  = setup_lpm,
+ 	.check_ptype		= lpm_check_ptype,
+ 	.cb_parse_ptype		= lpm_cb_parse_ptype,
+-	.main_loop              = lpm_main_loop,
++	.main_loop              = NULL,
+ 	.get_ipv4_lookup_struct = lpm_get_ipv4_l3fwd_lookup_struct,
+ 	.get_ipv6_lookup_struct = lpm_get_ipv6_l3fwd_lookup_struct,
+ 	.free_routes			= lpm_free_routes,
+@@ -303,7 +306,7 @@ check_lcore_params(void)
+ 			return -1;
+ 		}
+ 		lcore = lcore_params[i].lcore_id;
+-		if (!rte_lcore_is_enabled(lcore)) {
++		if (!check_lcore(lcore)) {
+ 			printf("error: lcore %hhu is not enabled in lcore mask\n", lcore);
+ 			return -1;
+ 		}
+@@ -997,6 +1000,18 @@ print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr)
+ 	printf("%s%s", name, buf);
+ }
+ 
++int
++check_lcore(unsigned int lcore_id)
++{
++	int i;
++
++	for (i = 0; i < nb_lcore_params; ++i) {
++		if (lcore_id == lcore_params[i].lcore_id)
++			return 1;
++	}
++	return 0;
++}
++
+ int
+ init_mem(uint16_t portid, unsigned int nb_mbuf)
+ {
+@@ -1009,9 +1024,11 @@ init_mem(uint16_t portid, unsigned int nb_mbuf)
+ 	char s[64];
+ 
+ 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+-		if (rte_lcore_is_enabled(lcore_id) == 0)
++		if (check_lcore(lcore_id))
++			goto found;
++		else
+ 			continue;
+-
++found:
+ 		if (numa_on)
+ 			socketid = rte_lcore_to_socket_id(lcore_id);
+ 		else
+@@ -1218,7 +1235,8 @@ l3fwd_poll_resource_setup(void)
+ 	struct lcore_conf *qconf;
+ 	uint16_t queueid, portid;
+ 	unsigned int nb_ports;
+-	unsigned int lcore_id;
++	unsigned int lcore_id, i;
++	int tx_cores = 0;
+ 	int ret;
+ 
+ 	if (check_lcore_params() < 0)
+@@ -1234,6 +1252,11 @@ l3fwd_poll_resource_setup(void)
+ 		rte_exit(EXIT_FAILURE, "check_port_config failed\n");
+ 
+ 	nb_lcores = rte_lcore_count();
++	for (i = 0; i < RTE_MAX_LCORE; i++) {
++		if (check_lcore(i))
++			tx_cores++;
++	}
++	nb_lcores = tx_cores;
+ 
+ 	/* initialize all ports */
+ 	RTE_ETH_FOREACH_DEV(portid) {
+@@ -1246,7 +1269,7 @@ l3fwd_poll_resource_setup(void)
+ 		}
+ 
+ 		/* init port */
+-		printf("Initializing port %d ... ", portid );
++		printf("Initializing port %d ...\n", portid);
+ 		fflush(stdout);
+ 
+ 		nb_rx_queue = get_port_n_rx_queues(portid);
+@@ -1349,9 +1372,11 @@ l3fwd_poll_resource_setup(void)
+ 		/* init one TX queue per couple (lcore,port) */
+ 		queueid = 0;
+ 		for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+-			if (rte_lcore_is_enabled(lcore_id) == 0)
++			if (check_lcore(lcore_id))
++				goto found;
++			else
+ 				continue;
+-
++found:
+ 			if (numa_on)
+ 				socketid =
+ 				(uint8_t)rte_lcore_to_socket_id(lcore_id);
+@@ -1381,8 +1406,11 @@ l3fwd_poll_resource_setup(void)
+ 	}
+ 
+ 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+-		if (rte_lcore_is_enabled(lcore_id) == 0)
++		if (check_lcore(lcore_id))
++			goto found2;
++		else
+ 			continue;
++found2:
+ 		qconf = &lcore_conf[lcore_id];
+ 		printf("\nInitializing rx queues on lcore %u ... ", lcore_id );
+ 		fflush(stdout);
+@@ -1523,11 +1551,15 @@ main(int argc, char **argv)
+ {
+ #ifdef RTE_LIB_EVENTDEV
+ 	struct l3fwd_event_resources *evt_rsrc;
+-	int i;
+ #endif
++	struct thread_context thread_contexts[RTE_MAX_LCORE];
++	unsigned int non_eal_threads_count = 0;
++	unsigned int eal_threads_count = 0;
++	struct thread_context *t;
+ 	struct lcore_conf *qconf;
+ 	uint16_t queueid, portid;
+-	unsigned int lcore_id;
++	unsigned int lcore_id, i;
++	unsigned int tid = 0;
+ 	uint8_t queue;
+ 	int ret;
+ 
+@@ -1538,6 +1570,15 @@ main(int argc, char **argv)
+ 	argc -= ret;
+ 	argv += ret;
+ 
++	for (i = 0; i < RTE_MAX_LCORE; i++) {
++		if (!rte_lcore_has_role(i, ROLE_OFF))
++			eal_threads_count++;
++	}
++	if (eal_threads_count == 0) {
++		printf("Error: something is broken, no EAL thread detected.\n");
++		return TEST_FAILED;
++	}
++
+ 	force_quit = false;
+ 	signal(SIGINT, signal_handler);
+ 	signal(SIGTERM, signal_handler);
+@@ -1557,6 +1598,7 @@ main(int argc, char **argv)
+ 	if (ret < 0)
+ 		rte_exit(EXIT_FAILURE, "Invalid L3FWD parameters\n");
+ 
++
+ 	/* Setup function pointers for lookup method. */
+ 	setup_l3fwd_lookup_tables();
+ 
+@@ -1612,8 +1654,11 @@ main(int argc, char **argv)
+ 	printf("\n");
+ 
+ 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+-		if (rte_lcore_is_enabled(lcore_id) == 0)
++		if (check_lcore(lcore_id))
++			goto found;
++		else
+ 			continue;
++found:
+ 		qconf = &lcore_conf[lcore_id];
+ 		for (queue = 0; queue < qconf->n_rx_queue; ++queue) {
+ 			portid = qconf->rx_queue_list[queue].port_id;
+@@ -1627,7 +1672,14 @@ main(int argc, char **argv)
+ 
+ 	ret = 0;
+ 	/* launch per-lcore init on every lcore */
+-	rte_eal_mp_remote_launch(l3fwd_lkp.main_loop, NULL, CALL_MAIN);
++	non_eal_threads_count = RTE_MAX_LCORE - eal_threads_count;
++	for (i = 0; i < non_eal_threads_count; i++) {
++		t = &thread_contexts[tid];
++		ret = pthread_create(&t->id, NULL, lpm_main_loop, t);
++		if (ret != 0)
++			printf("Cannot start send pkts thread: %d\n", ret);
++		tid++;
++	}
+ 
+ #ifdef RTE_LIB_EVENTDEV
+ 	if (evt_rsrc->enabled) {
+@@ -1660,7 +1712,10 @@ main(int argc, char **argv)
+ 	} else
+ #endif
+ 	{
+-		rte_eal_mp_wait_lcore();
++		for (i = 0 ; i < tid ; i++) {
++			t = &thread_contexts[i];
++			pthread_join(t->id, NULL);
++		}
+ 
+ 		RTE_ETH_FOREACH_DEV(portid) {
+ 			if ((enabled_port_mask & (1 << portid)) == 0)
+-- 
+2.25.1
+

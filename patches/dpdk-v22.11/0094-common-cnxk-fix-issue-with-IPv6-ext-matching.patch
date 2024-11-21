@@ -1,0 +1,52 @@
+From e2991d139aaab5cf82186de5158b5876b12a39c8 Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Fri, 16 Dec 2022 11:42:27 +0530
+Subject: [PATCH 094/955] common/cnxk: fix issue with IPv6 ext matching
+
+While configuring ipv6 flow, ipv6 ext ltype should be
+matched along with ipv6. Adding changes to fix this issue.
+
+Fixes: 474e275b1bc6 ("common/cnxk: support extensions attributes in IPv6 item")
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Change-Id: I410f8d5897ee991ede931908e765b257fcf63db5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92834
+Reviewed-by: Satheesh Paul Antonysamy <psatheesh@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_npc_mcam.c | 19 ++++++++++---------
+ 1 file changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index 37e756661a163..094342b20853c 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -761,15 +761,16 @@ npc_set_ipv6ext_ltype_mask(struct npc_parse_state *pst)
+ 	 * because for AH and ESP, LC LFLAG is zero and we don't want to match
+ 	 * zero in LFLAG.
+ 	 */
+-	lcflag_offset =
+-		__builtin_popcount(pst->npc->keyx_supp_nmask[pst->nix_intf] &
+-				   ((1ULL << NPC_LFLAG_LC_OFFSET) - 1));
+-	lcflag_offset *= 4;
+-
+-	mask = (0xfULL << lcflag_offset);
+-	val = pst->flow->mcam_data[0] & mask;
+-	if (val)
+-		pst->flow->mcam_mask[0] |= mask;
++	if (pst->npc->keyx_supp_nmask[pst->nix_intf] & (1ULL << NPC_LFLAG_LC_OFFSET)) {
++		lcflag_offset = __builtin_popcount(pst->npc->keyx_supp_nmask[pst->nix_intf] &
++						   ((1ULL << NPC_LFLAG_LC_OFFSET) - 1));
++		lcflag_offset *= 4;
++
++		mask = (0xfULL << lcflag_offset);
++		val = pst->flow->mcam_data[0] & mask;
++		if (val)
++			pst->flow->mcam_mask[0] |= mask;
++	}
+ }
+ 
+ int
+-- 
+2.25.1
+

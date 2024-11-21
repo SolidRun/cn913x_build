@@ -1,0 +1,162 @@
+From e71ac03ebdb30dadf8eefbbd322f30b979766229 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 17 Jul 2024 06:28:19 +0000
+Subject: [PATCH 461/513] crypto/cnxk: add PMD API for getting CPTR
+
+CPTR address is the context address used by hardware. Add PMD API to
+retrieve the hardware address from rte_cryptodev/rte_security session.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I53a9461001a78446cdf46526ead6fc053dd27d78
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131437
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-by: Aakash Sasidharan <Aakash.Sasidharan@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134276
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  | 49 +++++++++++++++++++++++
+ drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h | 42 +++++++++++++++++++
+ drivers/crypto/cnxk/version.map           |  3 ++
+ 3 files changed, 94 insertions(+)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 1089dbdb00ac7..82f929706e1cf 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -25,7 +25,9 @@
+ #include "cnxk_se.h"
+ 
+ #include "cn10k_cryptodev_ops.h"
++#include "cn10k_cryptodev_sec.h"
+ #include "cn9k_cryptodev_ops.h"
++#include "cn9k_ipsec.h"
+ 
+ #include "rte_pmd_cnxk_crypto.h"
+ 
+@@ -1038,3 +1040,50 @@ rte_pmd_cnxk_crypto_submit(struct rte_pmd_cnxk_crypto_qptr *qptr, void *inst, ui
+ 
+ 	plt_err("Invalid cnxk model");
+ }
++
++struct rte_pmd_cnxk_crypto_cptr *
++rte_pmd_cnxk_crypto_cptr_get(struct rte_pmd_cnxk_crypto_sess *rte_sess)
++{
++	if (rte_sess == NULL) {
++		plt_err("Invalid session pointer");
++		return NULL;
++	}
++
++	if (rte_sess->sec_sess == NULL) {
++		plt_err("Invalid RTE session pointer");
++		return NULL;
++	}
++
++	if (rte_sess->op_type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC) {
++		struct cnxk_ae_sess *ae_sess = PLT_PTR_CAST(rte_sess->crypto_asym_sess);
++		return PLT_PTR_CAST(&ae_sess->hw_ctx);
++	}
++
++	if (rte_sess->op_type != RTE_CRYPTO_OP_TYPE_SYMMETRIC) {
++		plt_err("Invalid crypto operation type");
++		return NULL;
++	}
++
++	if (rte_sess->sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
++		struct cnxk_se_sess *se_sess = PLT_PTR_CAST(rte_sess->crypto_sym_sess);
++		return PLT_PTR_CAST(&se_sess->roc_se_ctx.se_ctx);
++	}
++
++	if (rte_sess->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
++		if (roc_model_is_cn10k()) {
++			struct cn10k_sec_session *sec_sess = PLT_PTR_CAST(rte_sess->sec_sess);
++			return PLT_PTR_CAST(&sec_sess->sa);
++		}
++
++		if (roc_model_is_cn9k()) {
++			struct cn9k_sec_session *sec_sess = PLT_PTR_CAST(rte_sess->sec_sess);
++			return PLT_PTR_CAST(&sec_sess->sa);
++		}
++
++		plt_err("Invalid cnxk model");
++		return NULL;
++	}
++
++	plt_err("Invalid session type");
++	return NULL;
++}
+diff --git a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+index 7af28480cd9b3..ca5f1f964ed60 100644
+--- a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
++++ b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+@@ -23,6 +23,35 @@
+  */
+ struct rte_pmd_cnxk_crypto_qptr;
+ 
++/**
++ * @brief Crypto CNXK PMD CPTR opaque pointer.
++ *
++ * This structure represents the context pointer that would be used to store the hardware context.
++ */
++struct rte_pmd_cnxk_crypto_cptr;
++
++/**
++ * @brief Crypto CNXK PMD session structure.
++ *
++ * This structure represents the session structure that would be used to store the session
++ * information.
++ */
++struct rte_pmd_cnxk_crypto_sess {
++	/** Crypto type (symmetric or asymmetric). */
++	enum rte_crypto_op_type op_type;
++	/** Session type (Crypto or security). */
++	enum rte_crypto_op_sess_type sess_type;
++	/** Session pointer. */
++	union {
++		/** Security session pointer. */
++		struct rte_security_session *sec_sess;
++		/** Crypto symmetric session pointer. */
++		struct rte_cryptodev_sym_session *crypto_sym_sess;
++		/** Crypto asymmetric session pointer */
++		struct rte_cryptodev_asym_session *crypto_asym_sess;
++	};
++};
++
+ /**
+  * Get queue pointer of a specific queue in a cryptodev.
+  *
+@@ -57,4 +86,17 @@ __rte_experimental
+ void rte_pmd_cnxk_crypto_submit(struct rte_pmd_cnxk_crypto_qptr *qptr, void *inst,
+ 				uint16_t nb_inst);
+ 
++/**
++ * Get the HW CPTR pointer from the rte_crypto/rte_security session.
++ *
++ * @param rte_sess
++ *   Pointer to the structure holding rte_cryptodev or rte_security session.
++ * @return
++ *   - On success, pointer to the HW CPTR.
++ *   - NULL on error.
++ */
++__rte_experimental
++struct rte_pmd_cnxk_crypto_cptr *rte_pmd_cnxk_crypto_cptr_get(
++	struct rte_pmd_cnxk_crypto_sess *rte_sess);
++
+ #endif /* _PMD_CNXK_CRYPTO_H_ */
+diff --git a/drivers/crypto/cnxk/version.map b/drivers/crypto/cnxk/version.map
+index 7a776077748d0..b510ec48479e1 100644
+--- a/drivers/crypto/cnxk/version.map
++++ b/drivers/crypto/cnxk/version.map
+@@ -4,6 +4,9 @@ EXPERIMENTAL {
+ 	# added in 24.03
+ 	rte_pmd_cnxk_crypto_submit;
+ 	rte_pmd_cnxk_crypto_qptr_get;
++
++	# added in 24.07
++	rte_pmd_cnxk_crypto_cptr_get;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

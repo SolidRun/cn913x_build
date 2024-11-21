@@ -1,0 +1,58 @@
+From 43c26ef4db52c8fde72d1b61aac2a20dd3df231b Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Fri, 8 Sep 2023 12:54:34 +0530
+Subject: [PATCH 638/955] eventdev/eth_rx: fix timestamp field register in mbuf
+
+For eventdev internal port, timestamp dynamic field registration
+in mbuf is not required as that will be done from net device.
+For SW eventdev, Rx timestamp field registration will be
+done during Rxa service initialization.
+
+Fixes: 83ab470d1259 ("eventdev/eth_rx: use timestamp as dynamic mbuf field")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I97e010b758a4044496a6003f47f3a43d76b49dc7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/112679
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ lib/eventdev/rte_event_eth_rx_adapter.c | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/lib/eventdev/rte_event_eth_rx_adapter.c b/lib/eventdev/rte_event_eth_rx_adapter.c
+index 0e39b580dd75e..4eb0d6afd3d92 100644
+--- a/lib/eventdev/rte_event_eth_rx_adapter.c
++++ b/lib/eventdev/rte_event_eth_rx_adapter.c
+@@ -1906,6 +1906,13 @@ rxa_init_service(struct event_eth_rx_adapter *rx_adapter, uint8_t id)
+ 	if (rx_adapter->service_inited)
+ 		return 0;
+ 
++	if (rte_mbuf_dyn_rx_timestamp_register(
++			&event_eth_rx_timestamp_dynfield_offset,
++			&event_eth_rx_timestamp_dynflag) != 0) {
++		RTE_EDEV_LOG_ERR("Error registering timestamp field in mbuf\n");
++		return -rte_errno;
++	}
++
+ 	memset(&service, 0, sizeof(service));
+ 	snprintf(service.name, ETH_RX_ADAPTER_SERVICE_NAME_LEN,
+ 		"rte_event_eth_rx_adapter_%d", id);
+@@ -2468,13 +2475,6 @@ rxa_create(uint8_t id, uint8_t dev_id,
+ 	if (conf_cb == rxa_default_conf_cb)
+ 		rx_adapter->default_cb_arg = 1;
+ 
+-	if (rte_mbuf_dyn_rx_timestamp_register(
+-			&event_eth_rx_timestamp_dynfield_offset,
+-			&event_eth_rx_timestamp_dynflag) != 0) {
+-		RTE_EDEV_LOG_ERR("Error registering timestamp field in mbuf\n");
+-		return -rte_errno;
+-	}
+-
+ 	rte_eventdev_trace_eth_rx_adapter_create(id, dev_id, conf_cb,
+ 		conf_arg);
+ 	return 0;
+-- 
+2.25.1
+

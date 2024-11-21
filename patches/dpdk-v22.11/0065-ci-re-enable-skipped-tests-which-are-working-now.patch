@@ -1,0 +1,54 @@
+From f7fbdbb7767c0b7bccdf87e16a0342b931dc84b5 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 8 Dec 2022 20:38:25 +0530
+Subject: [PATCH 065/955] ci: re-enable skipped tests which are working now
+
+Re-enable skipped tests which are working now.
+
+Change-Id: I6d70c8e15d839b00dd89a9461416d2ad141ed0f4
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92149
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ marvell-ci/test/env/cn10k.env | 3 ---
+ marvell-ci/test/env/cn9k.env  | 6 ------
+ 2 files changed, 9 deletions(-)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 07717a452d6c0..bd714b2f9ca71 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -69,10 +69,7 @@ PERF_STAGE=${PERF_STAGE:-}
+ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
+-	cnxk_txrx_stats
+ 	cnxk_dpdk_event_tests
+-	cpt_2nd_pass_flow
+-	cnxk_q_intr_test
+ 	cnxk_hotplug_test
+ "
+ 
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index 08d1c60f5c894..6f7b4900c406f 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -68,14 +68,8 @@ PERF_STAGE=${PERF_STAGE:-}
+ TM_SETUP=${TM_SETUP:-1}
+ 
+ FIXME_SKIP_TESTS="
+-	cnxk_txrx_stats
+ 	cnxk_dpdk_event_tests
+-	cnxk_tm_test
+-	cnxk_extbuf_tests
+-	cnxk_q_intr_test
+ 	cnxk_hotplug_test
+-	cnxk_tx_vlan
+-	cnxk_lso_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+-- 
+2.25.1
+

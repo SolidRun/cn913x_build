@@ -1,0 +1,45 @@
+From cdc2795d7864a0322f8c18d52916e5f8f3c749d0 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Fri, 26 Apr 2024 00:25:15 -0700
+Subject: [PATCH 317/513] marvell-ci: reduce the ipsec perf numbers for 106
+
+Update the perf numbers for 106 ipsec
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Iad173d552d98b4ae041245aeebf9b29270f0047f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126145
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit ba798ccf6a91a2d2c2e18dead82c7bc716be4dbe)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126269
+---
+ .../ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb | 2 +-
+ .../ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb
+index 55b42657e3158..a4c952e3df1d9 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb
+@@ -1,6 +1,6 @@
+ aes-cbc_sha1-hmac
+ 64: 5507987
+-380: 6071796
++380: 5843815
+ 1410: 4154324
+ <end>
+ aes-gcm
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb
+index 0ae84729e8e68..aaa01315f1e1f 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb
+@@ -1,5 +1,5 @@
+ aes-cbc_sha1-hmac
+-64: 8704792
++64: 8429556
+ 380: 8300400
+ 1410: 4154536
+ <end>
+-- 
+2.25.1
+

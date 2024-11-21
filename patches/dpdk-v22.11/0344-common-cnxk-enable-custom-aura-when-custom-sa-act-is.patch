@@ -1,0 +1,30 @@
+From 0a32207842a2e9bf77cbf5ce48f3d06e5885b571 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 30 Mar 2023 20:08:36 +0530
+Subject: [PATCH 344/955] common/cnxk: enable custom aura when custom sa act is
+ true
+
+Change-Id: Ide9513eec1ae9b04a91bc499f3b1738fc0f0acbd
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index b855cd78ba6d2..69f658ba875d1 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -867,7 +867,9 @@ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ 		return rc;
+ 
+ 	inl_dev = idev->nix_inl_dev;
+-	roc_nix->custom_meta_aura_ena = roc_nix->local_meta_aura_ena && inl_dev->is_multi_channel;
++
++	roc_nix->custom_meta_aura_ena = (roc_nix->local_meta_aura_ena &&
++					 (inl_dev->is_multi_channel || roc_nix->custom_sa_action));
+ 	if (!roc_model_is_cn9k() && !roc_errata_nix_no_meta_aura()) {
+ 		nix->need_meta_aura = true;
+ 		if (!roc_nix->local_meta_aura_ena || roc_nix->custom_meta_aura_ena)
+-- 
+2.25.1
+

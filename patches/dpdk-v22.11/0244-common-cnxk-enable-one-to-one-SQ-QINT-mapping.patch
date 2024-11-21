@@ -1,0 +1,84 @@
+From b18625341982d0e3e4dcb941a8a8381de55a10ff Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Mon, 27 Feb 2023 11:38:00 +0530
+Subject: [PATCH 244/955] common/cnxk: enable one to one SQ QINT mapping
+
+Enabling one to one mapping between SQ to 64 QINTs per LF. So in case of
+SQ interrupt event NIX can deliver associated QINT MSI-X interrupt to
+software and increment respective QINT count CSR.
+
+While for some cn10k chip models keeping the workaround (i.e. all SQs
+assigned to same QINT index), for errata where NIX may use an incorrect
+QINT_IDX for SQ interrupts.
+
+Change-Id: Icd4f6e0315605605b3e220b76ce15630b0041156
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97982
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_errata.h    |  8 ++++++++
+ drivers/common/cnxk/roc_nix_queue.c | 21 +++++++++++----------
+ 2 files changed, 19 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_errata.h b/drivers/common/cnxk/roc_errata.h
+index 837f4ac6ffd00..1333bde62934c 100644
+--- a/drivers/common/cnxk/roc_errata.h
++++ b/drivers/common/cnxk/roc_errata.h
+@@ -108,4 +108,12 @@ roc_errata_cpt_hang_on_mixed_ctx_val(void)
+ 	return roc_model_is_cn10ka_a0() || roc_model_is_cn10ka_a1();
+ }
+ 
++/* Errata IPBUNIXTX-39300 */
++static inline bool
++roc_errata_nix_assign_incorrect_qint(void)
++{
++	return (roc_model_is_cn10ka_a0() || roc_model_is_cnf10ka_a0() ||
++		roc_model_is_cnf10kb_a0() || roc_model_is_cn10ka_a1());
++}
++
+ #endif /* _ROC_ERRATA_H_ */
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 04a186f68d200..8260ad5ff8e11 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -1103,11 +1103,8 @@ sq_cn9k_init(struct nix *nix, struct roc_nix_sq *sq, uint32_t rr_quantum,
+ 	aq->sq.sq_int_ena |= BIT(NIX_SQINT_MNQ_ERR);
+ 
+ 	/* Many to one reduction */
+-	/* Assigning QINT 0 to all the SQs, an errata exists where NIXTX can
+-	 * send incorrect QINT_IDX when reporting queue interrupt (QINT). This
+-	 * might result in software missing the interrupt.
+-	 */
+-	aq->sq.qint_idx = 0;
++	aq->sq.qint_idx = sq->qid % nix->qints;
++
+ 	return 0;
+ }
+ 
+@@ -1239,11 +1236,15 @@ sq_init(struct nix *nix, struct roc_nix_sq *sq, uint32_t rr_quantum,
+ 	aq->sq.sq_int_ena |= BIT(NIX_SQINT_SEND_ERR);
+ 	aq->sq.sq_int_ena |= BIT(NIX_SQINT_MNQ_ERR);
+ 
+-	/* Assigning QINT 0 to all the SQs, an errata exists where NIXTX can
+-	 * send incorrect QINT_IDX when reporting queue interrupt (QINT). This
+-	 * might result in software missing the interrupt.
+-	 */
+-	aq->sq.qint_idx = 0;
++	/* Many to one reduction */
++	aq->sq.qint_idx = sq->qid % nix->qints;
++	if (roc_errata_nix_assign_incorrect_qint()) {
++		/* Assigning QINT 0 to all the SQs, an errata exists where NIXTX can
++		 * send incorrect QINT_IDX when reporting queue interrupt (QINT). This
++		 * might result in software missing the interrupt.
++		 */
++		aq->sq.qint_idx = 0;
++	}
+ 	return 0;
+ }
+ 
+-- 
+2.25.1
+

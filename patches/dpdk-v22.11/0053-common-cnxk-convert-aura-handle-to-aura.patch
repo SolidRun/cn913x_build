@@ -1,0 +1,32 @@
+From bb386bacff47b674a8ec3a825795a3552fc49d8c Mon Sep 17 00:00:00 2001
+From: Kommula Shiva Shankar <kshankar@marvell.com>
+Date: Mon, 28 Nov 2022 15:24:40 +0530
+Subject: [PATCH 053/955] common/cnxk: convert aura handle to aura
+
+This patch converts aura handle to aura id
+while initialising inline dev sso xaq aura
+
+ci: skip_checkformat
+
+Change-Id: I6c2d3afaebdec995f1dfc3ada4293e6479a153e4
+Signed-off-by: Kommula Shiva Shankar <kshankar@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl_dev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index 35a289329f4da..0578afc3b7977 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -265,7 +265,7 @@ nix_inl_sso_setup(struct nix_inl_dev *inl_dev)
+ 	}
+ 
+ 	/* Setup xaq for hwgrps */
+-	rc = sso_hwgrp_alloc_xaq(dev, inl_dev->xaq.aura_handle, 1);
++	rc = sso_hwgrp_alloc_xaq(dev, roc_npa_aura_handle_to_aura(inl_dev->xaq.aura_handle), 1);
+ 	if (rc) {
+ 		plt_err("Failed to setup hwgrp xaq aura, rc=%d", rc);
+ 		goto destroy_pool;
+-- 
+2.25.1
+

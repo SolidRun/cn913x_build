@@ -1,0 +1,162 @@
+From 0f3743f8d0d92374e83ed51442e185811ac62c04 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 9 May 2023 20:50:20 +0530
+Subject: [PATCH 405/955] common/cnxk: avoid inline dev CPT lf detach multiple
+ times
+
+CPT LF detach is done along with all other LF's of inline
+device. Hence remove it from nix_inl_cpt_release().
+Also provide ROC API for setup and release of CPT LF
+separately.
+
+Change-Id: I93ab14769956af1762fb9f74bd5525a4fc77528c
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103278
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.h     |  2 +
+ drivers/common/cnxk/roc_nix_inl_dev.c | 59 ++++++++++++++++++++-------
+ drivers/common/cnxk/version.map       |  2 +
+ 3 files changed, 48 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index 885d95335e92d..ab1e9c0f98fd4 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -158,6 +158,8 @@ void __roc_api roc_nix_inl_dev_unlock(void);
+ int __roc_api roc_nix_inl_dev_xaq_realloc(uint64_t aura_handle);
+ int __roc_api roc_nix_inl_dev_stats_get(struct roc_nix_stats *stats);
+ uint16_t __roc_api roc_nix_inl_dev_pffunc_get(void);
++int __roc_api roc_nix_inl_dev_cpt_setup(bool use_inl_dev_sso);
++int __roc_api roc_nix_inl_dev_cpt_release(void);
+ 
+ /* NIX Inline Inbound API */
+ int __roc_api roc_nix_inl_inb_init(struct roc_nix *roc_nix);
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index b6abafd5c4aa5..c929ab6b465ed 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -172,7 +172,7 @@ nix_inl_nix_ipsec_cfg(struct nix_inl_dev *inl_dev, bool ena)
+ }
+ 
+ static int
+-nix_inl_cpt_setup(struct nix_inl_dev *inl_dev)
++nix_inl_cpt_setup(struct nix_inl_dev *inl_dev, bool inl_dev_sso)
+ {
+ 	struct roc_cpt_lf *lf = &inl_dev->cpt_lf;
+ 	struct dev *dev = &inl_dev->dev;
+@@ -186,7 +186,7 @@ nix_inl_cpt_setup(struct nix_inl_dev *inl_dev)
+ 	eng_grpmask = (1ULL << ROC_CPT_DFLT_ENG_GRP_SE |
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_SE_IE |
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_AE);
+-	rc = cpt_lfs_alloc(dev, eng_grpmask, RVU_BLOCK_ADDR_CPT0, false);
++	rc = cpt_lfs_alloc(dev, eng_grpmask, RVU_BLOCK_ADDR_CPT0, inl_dev_sso);
+ 	if (rc) {
+ 		plt_err("Failed to alloc CPT LF resources, rc=%d", rc);
+ 		return rc;
+@@ -218,7 +218,7 @@ nix_inl_cpt_release(struct nix_inl_dev *inl_dev)
+ {
+ 	struct roc_cpt_lf *lf = &inl_dev->cpt_lf;
+ 	struct dev *dev = &inl_dev->dev;
+-	int rc, ret = 0;
++	int rc;
+ 
+ 	if (!inl_dev->attach_cptlf)
+ 		return 0;
+@@ -228,17 +228,11 @@ nix_inl_cpt_release(struct nix_inl_dev *inl_dev)
+ 
+ 	/* Free LF resources */
+ 	rc = cpt_lfs_free(dev);
+-	if (rc)
++	if (!rc)
++		lf->dev = NULL;
++	else
+ 		plt_err("Failed to free CPT LF resources, rc=%d", rc);
+-	ret |= rc;
+-
+-	/* Detach LF */
+-	rc = cpt_lfs_detach(dev);
+-	if (rc)
+-		plt_err("Failed to detach CPT LF, rc=%d", rc);
+-	ret |= rc;
+-
+-	return ret;
++	return rc;
+ }
+ 
+ static int
+@@ -940,7 +934,7 @@ roc_nix_inl_dev_init(struct roc_nix_inl_dev *roc_inl_dev)
+ 		goto nix_release;
+ 
+ 	/* Setup CPT LF */
+-	rc = nix_inl_cpt_setup(inl_dev);
++	rc = nix_inl_cpt_setup(inl_dev, false);
+ 	if (rc)
+ 		goto sso_release;
+ 
+@@ -1035,8 +1029,11 @@ roc_nix_inl_dev_fini(struct roc_nix_inl_dev *roc_inl_dev)
+ 	/* Flush Inbound CTX cache entries */
+ 	nix_inl_cpt_ctx_cache_sync(inl_dev);
+ 
++	/* Release CPT */
++	rc = nix_inl_cpt_release(inl_dev);
++
+ 	/* Release SSO */
+-	rc = nix_inl_sso_release(inl_dev);
++	rc |= nix_inl_sso_release(inl_dev);
+ 
+ 	/* Release NIX */
+ 	rc |= nix_inl_nix_release(inl_dev);
+@@ -1052,3 +1049,35 @@ roc_nix_inl_dev_fini(struct roc_nix_inl_dev *roc_inl_dev)
+ 	idev->nix_inl_dev = NULL;
+ 	return 0;
+ }
++
++int
++roc_nix_inl_dev_cpt_setup(bool use_inl_dev_sso)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++	struct nix_inl_dev *inl_dev = NULL;
++
++	if (!idev || !idev->nix_inl_dev)
++		return -ENOENT;
++	inl_dev = idev->nix_inl_dev;
++
++	if (inl_dev->cpt_lf.dev != NULL)
++		return -EBUSY;
++
++	return nix_inl_cpt_setup(inl_dev, use_inl_dev_sso);
++}
++
++int
++roc_nix_inl_dev_cpt_release(void)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++	struct nix_inl_dev *inl_dev = NULL;
++
++	if (!idev || !idev->nix_inl_dev)
++		return -ENOENT;
++	inl_dev = idev->nix_inl_dev;
++
++	if (inl_dev->cpt_lf.dev == NULL)
++		return 0;
++
++	return nix_inl_cpt_release(inl_dev);
++}
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 2a31aa31cf14d..73151ebb89152 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -145,6 +145,8 @@ INTERNAL {
+ 	roc_nix_inl_cb_register;
+ 	roc_nix_inl_cb_unregister;
+ 	roc_nix_inl_ctx_write;
++	roc_nix_inl_dev_cpt_setup;
++	roc_nix_inl_dev_cpt_release;
+ 	roc_nix_inl_dev_dump;
+ 	roc_nix_inl_dev_fini;
+ 	roc_nix_inl_dev_init;
+-- 
+2.25.1
+

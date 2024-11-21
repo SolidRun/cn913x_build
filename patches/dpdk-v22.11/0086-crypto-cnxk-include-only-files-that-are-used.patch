@@ -1,0 +1,568 @@
+From 334ea3e9e99264c99c79e75187b7e538a3ba4392 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 15 Dec 2022 12:24:48 +0530
+Subject: [PATCH 086/955] crypto/cnxk: include only files that are used
+
+Inclusion of roc_api.h in all files would mean any change in RoC API
+would result in recompilation of all cnxk drivers. Address this issue in
+crypto_cnxk drivers by including only the headers that are required.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I38ae701abf2ef1134599456efcae3e62689bce5f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92082
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92040
+---
+ drivers/common/cnxk/cnxk_security.h       |  3 +-
+ drivers/common/cnxk/hw/cpt.h              | 30 +++++++++++++++++++
+ drivers/common/cnxk/roc_ae_fpm_tables.h   |  2 +-
+ drivers/common/cnxk/roc_cpt.h             |  6 +++-
+ drivers/common/cnxk/roc_ie_ot.h           |  2 ++
+ drivers/common/cnxk/roc_io_generic.h      |  2 ++
+ drivers/common/cnxk/roc_mbox.h            | 35 ++---------------------
+ drivers/common/cnxk/roc_model.h           |  2 ++
+ drivers/common/cnxk/roc_npa.c             |  2 +-
+ drivers/common/cnxk/roc_npa.h             | 13 +++++++++
+ drivers/common/cnxk/roc_platform.h        |  7 +++++
+ drivers/common/cnxk/roc_sso.h             |  2 ++
+ drivers/common/cnxk/roc_tim.h             |  2 ++
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 11 +++++--
+ drivers/crypto/cnxk/cn10k_ipsec.h         |  3 +-
+ drivers/crypto/cnxk/cn9k_cryptodev_ops.c  |  9 ++++++
+ drivers/crypto/cnxk/cn9k_ipsec_la_ops.h   |  2 ++
+ drivers/crypto/cnxk/cnxk_ae.h             |  3 +-
+ drivers/crypto/cnxk/cnxk_cryptodev.c      |  1 +
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  |  2 ++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.h  |  7 ++++-
+ drivers/crypto/cnxk/cnxk_ipsec.h          |  4 ++-
+ drivers/crypto/cnxk/cnxk_sg.h             |  2 ++
+ drivers/event/cnxk/cnxk_eventdev.c        |  2 ++
+ drivers/event/cnxk/cnxk_eventdev.h        |  5 +++-
+ drivers/event/cnxk/cnxk_tim_evdev.c       |  2 ++
+ drivers/event/cnxk/cnxk_tim_evdev.h       |  5 +++-
+ drivers/event/cnxk/cnxk_worker.h          |  6 ++++
+ drivers/net/octeon_ep/meson.build         |  2 ++
+ 29 files changed, 130 insertions(+), 44 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security.h b/drivers/common/cnxk/cnxk_security.h
+index 4e477ec53ff20..2277ce9144f54 100644
+--- a/drivers/common/cnxk/cnxk_security.h
++++ b/drivers/common/cnxk/cnxk_security.h
+@@ -7,7 +7,8 @@
+ #include <rte_crypto.h>
+ #include <rte_security.h>
+ 
+-#include "roc_api.h"
++#include "roc_ie_on.h"
++#include "roc_ie_ot.h"
+ 
+ /* Response length calculation data */
+ struct cnxk_ipsec_outb_rlens {
+diff --git a/drivers/common/cnxk/hw/cpt.h b/drivers/common/cnxk/hw/cpt.h
+index 30f2af3cd956d..d378a4eaddabc 100644
+--- a/drivers/common/cnxk/hw/cpt.h
++++ b/drivers/common/cnxk/hw/cpt.h
+@@ -5,6 +5,8 @@
+ #ifndef __CPT_HW_H__
+ #define __CPT_HW_H__
+ 
++#include "roc_platform.h"
++
+ /* Register offsets */
+ 
+ #define CPT_COMP_NOT_DONE (0x0ull)
+@@ -47,8 +49,36 @@
+ #define CPT_AF_LFX_CTL(a)  (0x27000ull | (uint64_t)(a) << 3)
+ #define CPT_AF_LFX_CTL2(a) (0x29000ull | (uint64_t)(a) << 3)
+ 
++enum cpt_eng_type {
++	CPT_ENG_TYPE_AE = 1,
++	CPT_ENG_TYPE_SE = 2,
++	CPT_ENG_TYPE_IE = 3,
++	CPT_MAX_ENG_TYPES,
++};
++
+ /* Structures definitions */
+ 
++/* CPT HW capabilities */
++union cpt_eng_caps {
++	uint64_t __io u;
++	struct {
++		uint64_t __io reserved_0_4 : 5;
++		uint64_t __io mul : 1;
++		uint64_t __io sha1_sha2 : 1;
++		uint64_t __io chacha20 : 1;
++		uint64_t __io zuc_snow3g : 1;
++		uint64_t __io sha3 : 1;
++		uint64_t __io aes : 1;
++		uint64_t __io kasumi : 1;
++		uint64_t __io des : 1;
++		uint64_t __io crc : 1;
++		uint64_t __io mmul : 1;
++		uint64_t __io reserved_15_33 : 19;
++		uint64_t __io pdcp_chain : 1;
++		uint64_t __io reserved_35_63 : 29;
++	};
++};
++
+ union cpt_lf_ctl {
+ 	uint64_t u;
+ 	struct cpt_lf_ctl_s {
+diff --git a/drivers/common/cnxk/roc_ae_fpm_tables.h b/drivers/common/cnxk/roc_ae_fpm_tables.h
+index 1cc5b023f237e..98b00bcf147b9 100644
+--- a/drivers/common/cnxk/roc_ae_fpm_tables.h
++++ b/drivers/common/cnxk/roc_ae_fpm_tables.h
+@@ -5,7 +5,7 @@
+ #ifndef _ROC_AE_FPM_TABLES_H_
+ #define _ROC_AE_FPM_TABLES_H_
+ 
+-#include "roc_api.h"
++#include "roc_platform.h"
+ 
+ int __roc_api roc_ae_fpm_get(uint64_t *tbl);
+ void __roc_api roc_ae_fpm_put(void);
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index bc9cc19eddbdb..f243254fc5159 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -5,7 +5,11 @@
+ #ifndef _ROC_CPT_H_
+ #define _ROC_CPT_H_
+ 
+-#include "roc_api.h"
++#include "hw/cpt.h"
++
++#include "roc_platform.h"
++
++struct nix_inline_ipsec_cfg;
+ 
+ #define ROC_AE_CPT_BLOCK_TYPE1 0
+ #define ROC_AE_CPT_BLOCK_TYPE2 1
+diff --git a/drivers/common/cnxk/roc_ie_ot.h b/drivers/common/cnxk/roc_ie_ot.h
+index e53ee28affff3..b7fcdf9ba7c69 100644
+--- a/drivers/common/cnxk/roc_ie_ot.h
++++ b/drivers/common/cnxk/roc_ie_ot.h
+@@ -5,6 +5,8 @@
+ #ifndef __ROC_IE_OT_H__
+ #define __ROC_IE_OT_H__
+ 
++#include "roc_platform.h"
++
+ /* CN10K IPSEC opcodes */
+ #define ROC_IE_OT_MAJOR_OP_PROCESS_OUTBOUND_IPSEC 0x28UL
+ #define ROC_IE_OT_MAJOR_OP_PROCESS_INBOUND_IPSEC  0x29UL
+diff --git a/drivers/common/cnxk/roc_io_generic.h b/drivers/common/cnxk/roc_io_generic.h
+index 42764455cc984..843c18c48cca9 100644
+--- a/drivers/common/cnxk/roc_io_generic.h
++++ b/drivers/common/cnxk/roc_io_generic.h
+@@ -5,6 +5,8 @@
+ #ifndef _ROC_IO_GENERIC_H_
+ #define _ROC_IO_GENERIC_H_
+ 
++#include "roc_platform.h"
++
+ #define ROC_LMT_BASE_ID_GET(lmt_addr, lmt_id)	  (lmt_id = 0)
+ #define ROC_LMT_CPT_BASE_ID_GET(lmt_addr, lmt_id) (lmt_id = 0)
+ 
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 3540b26acc296..8657e14f31d17 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -9,10 +9,9 @@
+ #include <stdbool.h>
+ #include <stdint.h>
+ 
+-/* Device memory does not support unaligned access, instruct compiler to
+- * not optimize the memory access when working with mailbox memory.
+- */
+-#define __io volatile
++#include "hw/cpt.h"
++
++#include "roc_platform.h"
+ 
+ /* Header which precedes all mbox messages */
+ struct mbox_hdr {
+@@ -1516,34 +1515,6 @@ struct cpt_rx_inline_lf_cfg_msg {
+ 	uint32_t __io reserved;
+ };
+ 
+-enum cpt_eng_type {
+-	CPT_ENG_TYPE_AE = 1,
+-	CPT_ENG_TYPE_SE = 2,
+-	CPT_ENG_TYPE_IE = 3,
+-	CPT_MAX_ENG_TYPES,
+-};
+-
+-/* CPT HW capabilities */
+-union cpt_eng_caps {
+-	uint64_t __io u;
+-	struct {
+-		uint64_t __io reserved_0_4 : 5;
+-		uint64_t __io mul : 1;
+-		uint64_t __io sha1_sha2 : 1;
+-		uint64_t __io chacha20 : 1;
+-		uint64_t __io zuc_snow3g : 1;
+-		uint64_t __io sha3 : 1;
+-		uint64_t __io aes : 1;
+-		uint64_t __io kasumi : 1;
+-		uint64_t __io des : 1;
+-		uint64_t __io crc : 1;
+-		uint64_t __io mmul : 1;
+-		uint64_t __io reserved_15_33 : 19;
+-		uint64_t __io pdcp_chain : 1;
+-		uint64_t __io reserved_35_63 : 29;
+-	};
+-};
+-
+ struct cpt_caps_rsp_msg {
+ 	struct mbox_msghdr hdr;
+ 	uint16_t __io cpt_pf_drv_version;
+diff --git a/drivers/common/cnxk/roc_model.h b/drivers/common/cnxk/roc_model.h
+index 46a5cca407611..ba0fe577c0738 100644
+--- a/drivers/common/cnxk/roc_model.h
++++ b/drivers/common/cnxk/roc_model.h
+@@ -7,6 +7,8 @@
+ 
+ #include <stdbool.h>
+ 
++#include "roc_bits.h"
++
+ extern struct roc_model *roc_model;
+ 
+ struct roc_model {
+diff --git a/drivers/common/cnxk/roc_npa.c b/drivers/common/cnxk/roc_npa.c
+index cf143a28b0842..3b3532c1bf886 100644
+--- a/drivers/common/cnxk/roc_npa.c
++++ b/drivers/common/cnxk/roc_npa.c
+@@ -874,8 +874,8 @@ npa_dev_fini(struct npa_lf *lf)
+ int
+ npa_lf_init(struct dev *dev, struct plt_pci_device *pci_dev)
+ {
++	uint16_t npa_msixoff = 0;
+ 	struct idev_cfg *idev;
+-	uint16_t npa_msixoff;
+ 	struct npa_lf *lf;
+ 	int rc;
+ 
+diff --git a/drivers/common/cnxk/roc_npa.h b/drivers/common/cnxk/roc_npa.h
+index 73470cb13e5c0..6b57b7fb884ce 100644
+--- a/drivers/common/cnxk/roc_npa.h
++++ b/drivers/common/cnxk/roc_npa.h
+@@ -5,6 +5,19 @@
+ #ifndef _ROC_NPA_H_
+ #define _ROC_NPA_H_
+ 
++#include <stdint.h>
++
++#include "hw/npa.h"
++
++#include "roc_bits.h"
++#include "roc_constants.h"
++#if defined(__aarch64__)
++#include "roc_io.h"
++#else
++#include "roc_io_generic.h"
++#endif
++#include "roc_npa_dp.h"
++
+ #define ROC_AURA_OP_LIMIT_MASK (BIT_ULL(36) - 1)
+ 
+ #define ROC_NPA_MAX_BLOCK_SZ		   (128 * 1024)
+diff --git a/drivers/common/cnxk/roc_platform.h b/drivers/common/cnxk/roc_platform.h
+index 1a48ff3db495a..563a0f7d44751 100644
+--- a/drivers/common/cnxk/roc_platform.h
++++ b/drivers/common/cnxk/roc_platform.h
+@@ -292,6 +292,13 @@ extern int cnxk_logtype_ree;
+ }
+ #endif
+ 
++/* Device memory does not support unaligned access, instruct compiler to
++ * not optimize the memory access when working with mailbox memory.
++ */
++#ifndef __io
++#define __io volatile
++#endif
++
+ __rte_internal
+ int roc_plt_init(void);
+ 
+diff --git a/drivers/common/cnxk/roc_sso.h b/drivers/common/cnxk/roc_sso.h
+index 1ec45cabb011e..e67797b046ff6 100644
+--- a/drivers/common/cnxk/roc_sso.h
++++ b/drivers/common/cnxk/roc_sso.h
+@@ -5,6 +5,8 @@
+ #ifndef _ROC_SSO_H_
+ #define _ROC_SSO_H_
+ 
++#include "hw/ssow.h"
++
+ struct roc_sso_hwgrp_qos {
+ 	uint16_t hwgrp;
+ 	uint8_t xaq_prcnt;
+diff --git a/drivers/common/cnxk/roc_tim.h b/drivers/common/cnxk/roc_tim.h
+index 392732eae2ea2..7dc9ae0a61111 100644
+--- a/drivers/common/cnxk/roc_tim.h
++++ b/drivers/common/cnxk/roc_tim.h
+@@ -5,6 +5,8 @@
+ #ifndef _ROC_TIM_H_
+ #define _ROC_TIM_H_
+ 
++#include "roc_platform.h"
++
+ enum roc_tim_clk_src {
+ 	ROC_TIM_CLK_SRC_10NS = 0,
+ 	ROC_TIM_CLK_SRC_GPIO,
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 98c206872c3c7..0b600c6b250cc 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -7,6 +7,15 @@
+ #include <rte_event_crypto_adapter.h>
+ #include <rte_ip.h>
+ 
++#include "roc_cpt.h"
++#if defined(__aarch64__)
++#include "roc_io.h"
++#else
++#include "roc_io_generic.h"
++#endif
++#include "roc_sso.h"
++#include "roc_sso_dp.h"
++
+ #include "cn10k_cryptodev.h"
+ #include "cn10k_cryptodev_ops.h"
+ #include "cn10k_ipsec.h"
+@@ -17,8 +26,6 @@
+ #include "cnxk_eventdev.h"
+ #include "cnxk_se.h"
+ 
+-#include "roc_api.h"
+-
+ #define PKTS_PER_LOOP	32
+ #define PKTS_PER_STEORL 16
+ 
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.h b/drivers/crypto/cnxk/cn10k_ipsec.h
+index 23d7a4fac42d7..8a93d7406204e 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.h
++++ b/drivers/crypto/cnxk/cn10k_ipsec.h
+@@ -8,7 +8,8 @@
+ #include <rte_security.h>
+ #include <rte_security_driver.h>
+ 
+-#include "roc_api.h"
++#include "roc_constants.h"
++#include "roc_ie_ot.h"
+ 
+ #include "cnxk_ipsec.h"
+ 
+diff --git a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+index cfe1e08dffe1b..1b66cbe781d17 100644
+--- a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+@@ -8,6 +8,15 @@
+ #include <rte_ip.h>
+ #include <rte_vect.h>
+ 
++#include "roc_cpt.h"
++#if defined(__aarch64__)
++#include "roc_io.h"
++#else
++#include "roc_io_generic.h"
++#endif
++#include "roc_sso.h"
++#include "roc_sso_dp.h"
++
+ #include "cn9k_cryptodev.h"
+ #include "cn9k_cryptodev_ops.h"
+ #include "cn9k_ipsec.h"
+diff --git a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+index 3d9c851f100c9..bb22b895d14bc 100644
+--- a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
++++ b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+@@ -9,6 +9,8 @@
+ #include <rte_esp.h>
+ #include <rte_security.h>
+ 
++#include "roc_ie.h"
++
+ #include "cn9k_ipsec.h"
+ #include "cnxk_cryptodev_ops.h"
+ #include "cnxk_security_ar.h"
+diff --git a/drivers/crypto/cnxk/cnxk_ae.h b/drivers/crypto/cnxk/cnxk_ae.h
+index adf719da7333b..698c10129ea72 100644
+--- a/drivers/crypto/cnxk/cnxk_ae.h
++++ b/drivers/crypto/cnxk/cnxk_ae.h
+@@ -9,7 +9,8 @@
+ #include <rte_crypto_asym.h>
+ #include <rte_malloc.h>
+ 
+-#include "roc_api.h"
++#include "roc_ae.h"
++
+ #include "cnxk_cryptodev_ops.h"
+ 
+ struct cnxk_ae_sess {
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.c b/drivers/crypto/cnxk/cnxk_cryptodev.c
+index 35635f7831ef3..a86b1cb60fd50 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.c
+@@ -5,6 +5,7 @@
+ #include <rte_cryptodev.h>
+ 
+ #include "roc_cpt.h"
++#include "roc_model.h"
+ 
+ #include "cnxk_cryptodev.h"
+ 
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 92e8755671683..1bbfbec75969c 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -6,7 +6,9 @@
+ #include <cryptodev_pmd.h>
+ #include <rte_errno.h>
+ 
++#include "roc_ae_fpm_tables.h"
+ #include "roc_cpt.h"
++#include "roc_ie_on.h"
+ 
+ #include "cnxk_ae.h"
+ #include "cnxk_cryptodev.h"
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+index 5153d334bae8f..dd102356df082 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+@@ -8,7 +8,12 @@
+ #include <cryptodev_pmd.h>
+ #include <rte_event_crypto_adapter.h>
+ 
+-#include "roc_api.h"
++#include "hw/cpt.h"
++
++#include "roc_constants.h"
++#include "roc_cpt.h"
++#include "roc_cpt_sg.h"
++#include "roc_se.h"
+ 
+ #define CNXK_CPT_MIN_HEADROOM_REQ	 32
+ #define CNXK_CPT_MIN_TAILROOM_REQ	 102
+diff --git a/drivers/crypto/cnxk/cnxk_ipsec.h b/drivers/crypto/cnxk/cnxk_ipsec.h
+index 0c471b2cfed53..4d3ee23f61895 100644
+--- a/drivers/crypto/cnxk/cnxk_ipsec.h
++++ b/drivers/crypto/cnxk/cnxk_ipsec.h
+@@ -7,7 +7,9 @@
+ #include <rte_security.h>
+ #include <rte_security_driver.h>
+ 
+-#include "roc_api.h"
++#include "roc_cpt.h"
++#include "roc_ie_on.h"
++#include "roc_ie_ot.h"
+ 
+ extern struct rte_security_ops cnxk_sec_ops;
+ 
+diff --git a/drivers/crypto/cnxk/cnxk_sg.h b/drivers/crypto/cnxk/cnxk_sg.h
+index 1dfca261cf1bb..ead2886e99810 100644
+--- a/drivers/crypto/cnxk/cnxk_sg.h
++++ b/drivers/crypto/cnxk/cnxk_sg.h
+@@ -5,6 +5,8 @@
+ #ifndef _CNXK_SG_H_
+ #define _CNXK_SG_H_
+ 
++#include "roc_cpt_sg.h"
++
+ static __rte_always_inline uint32_t
+ fill_sg_comp(struct roc_sglist_comp *list, uint32_t i, phys_addr_t dma_addr, uint32_t size)
+ {
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index ab1c482d01837..5d123f0016867 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -2,6 +2,8 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
++#include "roc_npa.h"
++
+ #include "cnxk_eventdev.h"
+ 
+ void
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index b41bbf4a95e37..022cedfacb3a0 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -19,7 +19,10 @@
+ 
+ #include <eventdev_pmd_pci.h>
+ 
+-#include "roc_api.h"
++#include "hw/sso.h"
++
++#include "roc_platform.h"
++#include "roc_sso.h"
+ 
+ #include "cnxk_tim_evdev.h"
+ 
+diff --git a/drivers/event/cnxk/cnxk_tim_evdev.c b/drivers/event/cnxk/cnxk_tim_evdev.c
+index 6ff3ca72f779c..2a2ca30eaee21 100644
+--- a/drivers/event/cnxk/cnxk_tim_evdev.c
++++ b/drivers/event/cnxk/cnxk_tim_evdev.c
+@@ -4,6 +4,8 @@
+ 
+ #include <math.h>
+ 
++#include "roc_npa.h"
++
+ #include "cnxk_eventdev.h"
+ #include "cnxk_tim_evdev.h"
+ 
+diff --git a/drivers/event/cnxk/cnxk_tim_evdev.h b/drivers/event/cnxk/cnxk_tim_evdev.h
+index 8c69d15c80bb8..7253a37d3dbb2 100644
+--- a/drivers/event/cnxk/cnxk_tim_evdev.h
++++ b/drivers/event/cnxk/cnxk_tim_evdev.h
+@@ -16,7 +16,10 @@
+ #include <rte_memzone.h>
+ #include <rte_reciprocal.h>
+ 
+-#include "roc_api.h"
++#include "hw/tim.h"
++
++#include "roc_model.h"
++#include "roc_tim.h"
+ 
+ #define NSECPERSEC		 1E9
+ #define USECPERSEC		 1E6
+diff --git a/drivers/event/cnxk/cnxk_worker.h b/drivers/event/cnxk/cnxk_worker.h
+index 5e5e96b1ec301..0756e223f779f 100644
+--- a/drivers/event/cnxk/cnxk_worker.h
++++ b/drivers/event/cnxk/cnxk_worker.h
+@@ -5,6 +5,12 @@
+ #ifndef __CNXK_WORKER_H__
+ #define __CNXK_WORKER_H__
+ 
++#if defined(__aarch64__)
++#include "roc_io.h"
++#else
++#include "roc_io_generic.h"
++#endif
++
+ #include "cnxk_eventdev.h"
+ 
+ /* SSO Operations */
+diff --git a/drivers/net/octeon_ep/meson.build b/drivers/net/octeon_ep/meson.build
+index a267b602906b2..a3bfed09ee1b1 100644
+--- a/drivers/net/octeon_ep/meson.build
++++ b/drivers/net/octeon_ep/meson.build
+@@ -2,6 +2,8 @@
+ # Copyright(C) 2021 Marvell.
+ #
+ 
++deps += ['common_cnxk']
++
+ sources = files(
+         'otx_ep_ethdev.c',
+         'otx_ep_rxtx.c',
+-- 
+2.25.1
+

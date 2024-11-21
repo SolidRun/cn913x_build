@@ -1,0 +1,42 @@
+From ddbbdaaadf8d5c8eeb3f9c6833755f82902747d8 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 16 May 2023 13:12:32 +0530
+Subject: [PATCH 413/955] ci: skip MAC test until fixed
+
+Change-Id: I8e6442d5e78b17a1fcdb34b020959aadb01702ca
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103531
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn10k.env | 1 +
+ marvell-ci/test/env/cn9k.env  | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index d4239bc2bda4a..16ab8399bc097 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -71,6 +71,7 @@ TM_SETUP=${TM_SETUP:-}
+ FIXME_SKIP_TESTS="
+ 	cnxk_mtr_test_config
+ 	cnxk_fc_test_config
++	cnxk_mac_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index c8916a111cc36..b866c5e0397f5 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -69,6 +69,7 @@ TM_SETUP=${TM_SETUP:-1}
+ 
+ FIXME_SKIP_TESTS="
+         cnxk_fc_test_config
++        cnxk_mac_test
+ "
+ 
+ 
+-- 
+2.25.1
+

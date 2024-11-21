@@ -1,0 +1,102 @@
+From aa363ad4053fd0a8e04ed450e71578f7cc4d70c9 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Mon, 7 Nov 2022 15:10:17 +0530
+Subject: [PATCH 020/955] common/cnxk: update IPsec completion codes
+
+Update the IPsec completion codes as per UCODE version
+OCPT-04-IE-IPSEC-MC-30-01-28-00
+
+ci: skip_checkformat
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: If8e95dfe891ad8573612362bce80a1a15dff3811
+---
+ drivers/common/cnxk/hw/cpt.h              |  2 ++
+ drivers/common/cnxk/roc_cpt.c             |  2 +-
+ drivers/common/cnxk/roc_ie_ot.h           | 21 +++++++++++++++------
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c |  2 --
+ 4 files changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/cpt.h b/drivers/common/cnxk/hw/cpt.h
+index ff5aa46f64609..30f2af3cd956d 100644
+--- a/drivers/common/cnxk/hw/cpt.h
++++ b/drivers/common/cnxk/hw/cpt.h
+@@ -15,6 +15,8 @@
+ #define CPT_COMP_INSTERR  (0x5ull)
+ #define CPT_COMP_WARN	  (0x6ull) /* [CN10K, .) */
+ 
++#define CPT_COMP_HWGOOD_MASK ((1U << CPT_COMP_WARN) | (1U << CPT_COMP_GOOD))
++
+ #define CPT_LF_INT_VEC_MISC	(0x0ull)
+ #define CPT_LF_INT_VEC_DONE	(0x1ull)
+ #define CPT_LF_CTL		(0x10ull)
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index bf216b55453e9..f9b03afc402e5 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -1075,7 +1075,7 @@ roc_cpt_ctx_write(struct roc_cpt_lf *lf, void *sa_dptr, void *sa_cptr,
+ 	plt_free(dptr);
+ 	plt_free(hw_res);
+ 
+-	if (res.cn10k.compcode != CPT_COMP_WARN) {
++	if (res.cn10k.compcode != CPT_COMP_GOOD || res.cn10k.uc_compcode) {
+ 		plt_err("Write SA operation timed out");
+ 		return -ETIMEDOUT;
+ 	}
+diff --git a/drivers/common/cnxk/roc_ie_ot.h b/drivers/common/cnxk/roc_ie_ot.h
+index 722fbc1ddce73..e53ee28affff3 100644
+--- a/drivers/common/cnxk/roc_ie_ot.h
++++ b/drivers/common/cnxk/roc_ie_ot.h
+@@ -48,14 +48,14 @@ enum roc_ie_ot_ucc_ipsec {
+ 	ROC_IE_OT_UCC_ERR_SA_BAD_IP = 0xc7,
+ 	ROC_IE_OT_UCC_ERR_PKT_IP_FRAG = 0xc8,
+ 	ROC_IE_OT_UCC_ERR_PKT_REPLAY_WINDOW = 0xc9,
++	ROC_IE_OT_UCC_SUCCESS_PKT_IP_BADCSUM = 0xed,
++	ROC_IE_OT_UCC_SUCCESS_PKT_L4_GOODCSUM = 0xee,
++	ROC_IE_OT_UCC_SUCCESS_PKT_L4_BADCSUM = 0xef,
+ 	ROC_IE_OT_UCC_SUCCESS_SA_SOFTEXP_FIRST = 0xf0,
+-	ROC_IE_OT_UCC_SUCCESS_PKT_IP_BADCSUM = 0xf1,
++	ROC_IE_OT_UCC_SUCCESS_PKT_UDPESP_NZCSUM = 0xf1,
+ 	ROC_IE_OT_UCC_SUCCESS_SA_SOFTEXP_AGAIN = 0xf2,
+-	ROC_IE_OT_UCC_SUCCESS_PKT_L4_GOODCSUM = 0xf3,
+-	ROC_IE_OT_UCC_SUCCESS_PKT_L4_BADCSUM = 0xf4,
+-	ROC_IE_OT_UCC_SUCCESS_PKT_UDPESP_NZCSUM = 0xf5,
+-	ROC_IE_OT_UCC_SUCCESS_PKT_UDP_ZEROCSUM = 0xf6,
+-	ROC_IE_OT_UCC_SUCCESS_PKT_IP_GOODCSUM = 0xf7,
++	ROC_IE_OT_UCC_SUCCESS_PKT_UDP_ZEROCSUM = 0xf3,
++	ROC_IE_OT_UCC_SUCCESS_PKT_IP_GOODCSUM = 0x0,
+ };
+ 
+ enum {
+@@ -163,6 +163,15 @@ enum {
+ 	ROC_IE_OT_ERR_CTL_MODE_RING = 2,
+ };
+ 
++static __plt_always_inline bool
++roc_ie_ot_ucc_is_success(uint8_t ucc)
++{
++	uint8_t uc_base = (uint8_t)ROC_IE_OT_UCC_SUCCESS_PKT_IP_BADCSUM - 1u;
++
++	ucc--;
++	return (ucc >= uc_base);
++}
++
+ /* Context units in bytes */
+ #define ROC_CTX_UNIT_8B		  8
+ #define ROC_CTX_UNIT_128B	  128
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 1caa321112f8e..ab50b63bddf69 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -805,8 +805,6 @@ cn10k_cpt_sec_post_process(struct rte_crypto_op *cop, struct cpt_cn10k_res_s *re
+ 	mbuf->pkt_len = m_len;
+ 
+ 	switch (res->uc_compcode) {
+-	case ROC_IE_OT_UCC_SUCCESS:
+-		break;
+ 	case ROC_IE_OT_UCC_SUCCESS_PKT_IP_BADCSUM:
+ 		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_BAD;
+ 		break;
+-- 
+2.25.1
+

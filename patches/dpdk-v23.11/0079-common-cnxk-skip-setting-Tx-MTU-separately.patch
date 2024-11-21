@@ -1,0 +1,71 @@
+From bde82df23b2e291b0c0e051d1d26832ea02b918b Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 20 Nov 2023 18:29:25 +0530
+Subject: [PATCH 079/513] common/cnxk: skip setting Tx MTU separately
+
+Skip setting Tx MTU separately as now the Tx credit configuration
+is based on max MTU possible for that link.
+Also init MTU with max value for that port.
+
+Change-Id: Ib9579c026273340cabe7706ea8bece043c4191ba
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.c      |  2 +-
+ drivers/common/cnxk/roc_nix.h      |  2 --
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 12 +-----------
+ 3 files changed, 2 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.c b/drivers/common/cnxk/roc_nix.c
+index 97c0ae3e253c3..90ccb260fb9d7 100644
+--- a/drivers/common/cnxk/roc_nix.c
++++ b/drivers/common/cnxk/roc_nix.c
+@@ -484,7 +484,7 @@ roc_nix_dev_init(struct roc_nix *roc_nix)
+ 	sdp_lbk_id_update(pci_dev, nix);
+ 	nix->pci_dev = pci_dev;
+ 	nix->reta_sz = reta_sz;
+-	nix->mtu = ROC_NIX_DEFAULT_HW_FRS;
++	nix->mtu = roc_nix_max_pkt_len(roc_nix);
+ 	nix->dmac_flt_idx = -1;
+ 
+ 	/* Register error and ras interrupts */
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 2a198de458ea6..4db71544f0499 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -267,8 +267,6 @@ struct roc_nix_eeprom_info {
+ #define ROC_NIX_RSS_KEY_LEN	     48 /* 352 Bits */
+ #define ROC_NIX_RSS_MCAM_IDX_DEFAULT (-1)
+ 
+-#define ROC_NIX_DEFAULT_HW_FRS 1514
+-
+ #define ROC_NIX_VWQE_MAX_SIZE_LOG2 11
+ #define ROC_NIX_VWQE_MIN_SIZE_LOG2 2
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index e9ab8da7812a8..c4c3962820c1c 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -591,19 +591,9 @@ cnxk_nix_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ 
+ 	frame_size -= RTE_ETHER_CRC_LEN;
+ 
+-	/* Update mtu on Tx */
+-	rc = roc_nix_mac_mtu_set(nix, frame_size);
+-	if (rc) {
+-		plt_err("Failed to set MTU, rc=%d", rc);
+-		goto exit;
+-	}
+-
+-	/* Sync same frame size on Rx */
++	/* Set frame size on Rx */
+ 	rc = roc_nix_mac_max_rx_len_set(nix, frame_size);
+ 	if (rc) {
+-		/* Rollback to older mtu */
+-		roc_nix_mac_mtu_set(nix,
+-				    old_frame_size - RTE_ETHER_CRC_LEN);
+ 		plt_err("Failed to max Rx frame length, rc=%d", rc);
+ 		goto exit;
+ 	}
+-- 
+2.25.1
+

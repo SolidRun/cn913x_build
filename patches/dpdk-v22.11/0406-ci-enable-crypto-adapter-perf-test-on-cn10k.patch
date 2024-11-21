@@ -1,0 +1,132 @@
+From 6adc28a0e6b1e2e52a3274f4dada7a2ef089bb4d Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Thu, 27 Apr 2023 09:16:57 +0530
+Subject: [PATCH 406/955] ci: enable crypto adapter perf test on cn10k
+
+Re-enabled crypto adapter perf test on cn10k.
+
+To ensure an even distribution of cores among producers and workers and
+avoid the risk of metabuf exhaustion, the maximum number of producer
+cores are decreased from 17 to 13. This change will prevent producers
+from overwhelming workers and ensure that resources are distributed more
+evenly between the two.
+
+Made changes to run all event perf tests even if one test fails.
+
+The reference numbers consist of the lowest values from different
+branches (v21.11, v22.11, and v23.3) combined together.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: Ieaba6865d2ec8b40983e9ff7b033b5e6f20a0660
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102435
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../cnxk-tests/event_perf/cnxk_event_perf.sh  | 26 ++++++++++++-------
+ .../ref_numbers/cn106xx_rclk2500_sclk1100.csv |  6 ++---
+ .../ref_numbers/cn96xx_rclk2200_sclk1100.csv  |  6 ++---
+ 3 files changed, 22 insertions(+), 16 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+index cce466c8bb92b..958ee270786e3 100755
+--- a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
++++ b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+@@ -12,7 +12,7 @@ IF1=${IF1:-0002:01:00.1}
+ IF2=${IF2:-0002:01:00.2}
+ SSO_DEV=${SSO_DEV:-$(lspci -d :a0f9 | tail -1 | awk -e '{ print $1 }')}
+ TOLERANCE=${TOLERANCE:-5}
+-MAX_RETRY_COUNT=${MAX_RETRY_COUNT:-10}
++MAX_RETRY_COUNT=${MAX_RETRY_COUNT:-3}
+ GENERATOR_SCRIPT=${GENERATOR_SCRIPT:-cnxk_event_perf_gen.sh}
+ TARGET_SSH_CMD=${TARGET_SSH_CMD:-"ssh -o LogLevel=ERROR -o ServerAliveInterval=30 \
+ 	-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"}
+@@ -89,7 +89,12 @@ get_test_args()
+ 		CRYPTO_ADAPTER_FWD)
+ 			local req_cores=$((num_cores * 2))
+ 			local max_cores=$(($(grep -c ^processor /proc/cpuinfo) - 1))
+-			((req_cores = req_cores>max_cores?max_cores:req_cores))
++
++			if ((num_cores * 2 > max_cores)); then
++				num_cores=$(( (max_cores + 1) / 2 ))
++				req_cores=$max_cores
++			fi
++
+ 			echo "-l 0-$req_cores -n 4 -a $CPT_DEV -a $SSO_DEV --" \
+ 				"--prod_type_cryptodev --crypto_adptr_mode 1 --nb_flows=100" \
+ 				"--nb_pkts=0 --test=perf_atq --stlist=${sched_mode:0:1}" \
+@@ -300,17 +305,15 @@ run_event_perf_test()
+ 
+ run_event_perf_regression()
+ {
++	local return_code=0
+ 	# Test info in <test_name>\t<test_bin>\t<test_pattern> format
+ 	local test_info="
+ 	L2FWD_EVENT		dpdk-l2fwd-event	=*
+ 	L3FWD_EVENT		dpdk-l3fwd		L3FWD: entering lpm_event_loop_single on lcore [0-9]*
+ 	PERF_ATQ		dpdk-test-eventdev	0.000 mpps avg 0.000 mpps
+-	PIPELINE_ATQ_TX_FIRST	dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps"
+-	#FIXME: crypto adapter tests are not finishing on cn10k + dpdk-22.11-devel branch
+-	if [[ $PLAT == cn9k ]]; then
+-		test_info+="
+-		CRYPTO_ADAPTER_FWD	dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps"
+-	fi
++	PIPELINE_ATQ_TX_FIRST	dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps
++	CRYPTO_ADAPTER_FWD	dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps"
++
+ 	if [[ $PLAT == cn10k ]]; then
+ 		test_info+="
+ 		GW_MODE_NO_PREF		dpdk-test-eventdev	[0-9]*\.[0-9]* mpps avg [0-9]*\.[0-9]* mpps
+@@ -333,11 +336,14 @@ run_event_perf_regression()
+ 			if [[ retry_count -gt 0 ]]; then
+ 				printf "Retry checking ${info[0]} numbers\n"
+ 			else
+-				printf "${info[0]} regression check failed\n"
+-				exit 1
++				printf "${info[0]} regression check failed\n\n"
++				return_code=1
++				break
+ 			fi
+ 		done
+ 	done <<< "$test_info"
++
++	return $return_code
+ }
+ 
+ run_event_perf_regression
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
+index 013a2180444e2..9ef51d1782ce6 100644
+--- a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
++++ b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
+@@ -56,8 +56,8 @@ cores, RESULT
+ ------------------------------------------------------------------------
+ CRYPTO_ADAPTER_FWD (parallel queue) output in packets per second
+ cores, RESULT
+-1, 7.148
+-8, 41.241
+-16, 36.201
++1, 7.447
++8, 41.331
++12, 41.331
+ 
+ ------------------------------------------------------------------------
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn96xx_rclk2200_sclk1100.csv b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn96xx_rclk2200_sclk1100.csv
+index 1cc7225dcb279..d39ad49fd5889 100644
+--- a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn96xx_rclk2200_sclk1100.csv
++++ b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn96xx_rclk2200_sclk1100.csv
+@@ -28,8 +28,8 @@ cores, RESULT
+ ------------------------------------------------------------------------
+ CRYPTO_ADAPTER_FWD (parallel queue) output in packets per second
+ cores, RESULT
+-1, 3.976
+-8, 24.913
+-16, 25.833
++1, 3.941
++8, 16.427
++12, 22.550
+ 
+ ------------------------------------------------------------------------
+-- 
+2.25.1
+

@@ -1,0 +1,120 @@
+From 273071cf2dc252122da8b8b44ea8d5b0987c11db Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Wed, 21 Dec 2022 17:12:48 +0530
+Subject: [PATCH 107/955] common/cnxk: add CPT HW error callback register
+ functions
+
+Adds functions to register callback API to report CPT_MISC_INT
+to the driver.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Ic947cb96279b1476ff899ed4444d4d23c78e1e38
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93221
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c   | 31 +++++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_cpt.h   |  8 +++++++-
+ drivers/common/cnxk/version.map |  2 ++
+ 3 files changed, 40 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index 168b6bb946a8e..ca7a2010de1ec 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -25,6 +25,11 @@
+ #define CPT_LF_DEFAULT_NB_DESC	1024
+ #define CPT_LF_FC_MIN_THRESHOLD 32
+ 
++static struct cpt_int_cb {
++	roc_cpt_int_misc_cb_t cb;
++	void *cb_args;
++} int_cb;
++
+ static void
+ cpt_lf_misc_intr_enb_dis(struct roc_cpt_lf *lf, bool enb)
+ {
+@@ -57,6 +62,9 @@ cpt_lf_misc_irq(void *param)
+ 
+ 	/* Clear interrupt */
+ 	plt_write64(intr, lf->rbase + CPT_LF_MISC_INT);
++
++	if (int_cb.cb != NULL)
++		int_cb.cb(lf, int_cb.cb_args);
+ }
+ 
+ static int
+@@ -1178,3 +1186,26 @@ roc_cpt_ctx_write(struct roc_cpt_lf *lf, void *sa_dptr, void *sa_cptr,
+ 
+ 	return 0;
+ }
++
++void
++roc_cpt_int_misc_cb_register(roc_cpt_int_misc_cb_t cb, void *args)
++{
++	if (int_cb.cb != NULL)
++		return;
++
++	int_cb.cb = cb;
++	int_cb.cb_args = args;
++}
++
++int
++roc_cpt_int_misc_cb_unregister(roc_cpt_int_misc_cb_t cb, void *args)
++{
++	if (int_cb.cb == NULL)
++		return 0;
++	if (int_cb.cb != cb || int_cb.cb_args != args)
++		return -EINVAL;
++
++	int_cb.cb = NULL;
++	int_cb.cb_args = NULL;
++	return 0;
++}
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index 352f3287b20d5..5fecde9aa7114 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -133,7 +133,7 @@ struct roc_cpt {
+ 	union cpt_eng_caps hw_caps[CPT_MAX_ENG_TYPES];
+ 	uint8_t eng_grp[CPT_MAX_ENG_TYPES];
+ 	uint8_t cpt_revision;
+-
++	void *opaque;
+ #define ROC_CPT_MEM_SZ (6 * 1024)
+ 	uint8_t reserved[ROC_CPT_MEM_SZ] __plt_cache_aligned;
+ } __plt_cache_aligned;
+@@ -156,6 +156,9 @@ struct roc_cpt_inline_ipsec_inb_cfg {
+ 	uint8_t egrp;
+ };
+ 
++/* CPT MISC interrupt callback */
++typedef void (*roc_cpt_int_misc_cb_t)(struct roc_cpt_lf *lf, void *args);
++
+ int __roc_api roc_cpt_rxc_time_cfg(struct roc_cpt *roc_cpt,
+ 				   struct roc_cpt_rxc_time_cfg *cfg);
+ int __roc_api roc_cpt_dev_init(struct roc_cpt *roc_cpt);
+@@ -186,4 +189,7 @@ int __roc_api roc_cpt_lmtline_init(struct roc_cpt *roc_cpt,
+ void __roc_api roc_cpt_parse_hdr_dump(const struct cpt_parse_hdr_s *cpth);
+ int __roc_api roc_cpt_ctx_write(struct roc_cpt_lf *lf, void *sa_dptr,
+ 				void *sa_cptr, uint16_t sa_len);
++
++void __roc_api roc_cpt_int_misc_cb_register(roc_cpt_int_misc_cb_t cb, void *args);
++int __roc_api roc_cpt_int_misc_cb_unregister(roc_cpt_int_misc_cb_t cb, void *args);
+ #endif /* _ROC_CPT_H_ */
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 733ff961d8197..381bbb0b6c5d2 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -78,6 +78,8 @@ INTERNAL {
+ 	roc_cpt_parse_hdr_dump;
+ 	roc_cpt_rxc_time_cfg;
+ 	roc_cpt_ctx_write;
++	roc_cpt_int_misc_cb_register;
++	roc_cpt_int_misc_cb_unregister;
+ 	roc_dpi_configure;
+ 	roc_dpi_dev_fini;
+ 	roc_dpi_dev_init;
+-- 
+2.25.1
+

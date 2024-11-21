@@ -1,0 +1,73 @@
+From a793b9ee22b306036f774ccd5b72d2a12df8536a Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Thu, 10 Aug 2023 01:47:56 -0700
+Subject: [PATCH 606/955] crypto/cnxk: minor shuffling in the sess structure
+
+Shuffle the fields in the session structure to make the fields byte
+aligned
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I90fad6a69671edf549dea57ec3c2c298dbf76e4e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109545
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_se.h | 32 ++++++++++++++++----------------
+ 1 file changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index 213af41c19749..c8ee4c8543cd7 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -31,30 +31,30 @@ enum cpt_dp_thread_type {
+ 
+ struct cnxk_se_sess {
+ 	struct rte_cryptodev_sym_session rte_sess;
+-	uint16_t cpt_op : 4;
+-	uint16_t zsk_flag : 4;
+-	uint16_t aes_gcm : 1;
+-	uint16_t aes_ccm : 1;
+-	uint16_t aes_ctr : 1;
+-	uint16_t chacha_poly : 1;
+-	uint16_t is_null : 1;
+-	uint16_t is_gmac : 1;
+-	uint16_t chained_op : 1;
+-	uint16_t auth_first : 1;
+-	uint16_t aes_ctr_eea2 : 1;
+-	uint16_t zs_cipher : 4;
+-	uint16_t zs_auth : 4;
+-	uint16_t dp_thr_type : 8;
+-	uint16_t aad_length;
++	uint8_t aes_gcm : 1;
++	uint8_t aes_ccm : 1;
++	uint8_t aes_ctr : 1;
++	uint8_t chacha_poly : 1;
++	uint8_t is_null : 1;
++	uint8_t is_gmac : 1;
++	uint8_t chained_op : 1;
++	uint8_t auth_first : 1;
++	uint8_t aes_ctr_eea2 : 1;
+ 	uint8_t is_sha3 : 1;
+ 	uint8_t short_iv : 1;
+ 	uint8_t is_sm3 : 1;
+ 	uint8_t passthrough : 1;
+ 	uint8_t is_sm4 : 1;
+-	uint8_t rsvd : 3;
++	uint8_t rsvd : 2;
++	uint8_t cpt_op : 4;
++	uint8_t zsk_flag : 4;
++	uint8_t zs_cipher : 4;
++	uint8_t zs_auth : 4;
++	uint8_t dp_thr_type;
+ 	uint8_t mac_len;
+ 	uint8_t iv_length;
+ 	uint8_t auth_iv_length;
++	uint16_t aad_length;
+ 	uint16_t iv_offset;
+ 	uint16_t auth_iv_offset;
+ 	uint32_t salt;
+-- 
+2.25.1
+

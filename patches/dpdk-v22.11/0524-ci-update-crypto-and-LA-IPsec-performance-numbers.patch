@@ -1,0 +1,50 @@
+From 2aa7fab7b76615c37635ab3c1070e1de2de5b8f7 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Mon, 3 Jul 2023 11:32:22 +0530
+Subject: [PATCH 524/955] ci: update crypto and LA IPsec performance numbers
+
+Reduce modex crypto and 380B IPsec performance numbers.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Ia3865795059b8c92a879223054b62e0bc4e2fcf5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106831
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx   | 6 +++---
+ .../cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.inb           | 2 +-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+index 3fe743e55b8de..5b3538914edae 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+@@ -34,8 +34,8 @@ zuc-eea3
+ 1504: 12.041 12.06 12.068
+ <end>
+ modex
+-64: 1.255 1.259 1.259
+-384: 1.255 1.259 1.259
+-1504: 1.255 1.259 1.259
++64: 1.225 1.229 1.229
++384: 1.225 1.229 1.229
++1504: 1.225 1.229 1.229
+ <end>
+ 
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.inb
+index 4be5959315a74..49eb83bc9676a 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.inb
+@@ -1,6 +1,6 @@
+ aes-cbc_sha1-hmac
+ 64: 2557886
+-380: 2657402
++380: 2402342
+ 1410: 2715639
+ <end>
+ aes-gcm
+-- 
+2.25.1
+

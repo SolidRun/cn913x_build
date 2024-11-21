@@ -1,0 +1,351 @@
+From 5979b4f444f61bb5630ef0e75e797bfb75585c84 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 12 Apr 2024 13:56:08 +0530
+Subject: [PATCH 856/955] common/cnxk: sync from DPDK 23.11
+
+Change-Id: Ifc309a1b7eef8c43cb34e207361552fb30fee0e5
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/cnxk_security.c        | 20 -------------------
+ drivers/common/cnxk/roc_cpt_debug.c        | 23 ++++++++++++----------
+ drivers/net/cnxk/cn10k_ethdev.c            |  6 +++---
+ drivers/net/cnxk/cn10k_rx_select.c         |  4 +++-
+ drivers/net/cnxk/cn10k_tx_select.c         |  6 ++++--
+ drivers/net/cnxk/cn9k_ethdev.c             |  6 +++---
+ drivers/net/cnxk/cn9k_rx_select.c          |  6 +++---
+ drivers/net/cnxk/cn9k_tx_select.c          |  4 +++-
+ drivers/net/cnxk/rx/cn10k/rx_all_offload.c |  6 ++----
+ drivers/net/cnxk/rx/cn9k/rx_all_offload.c  |  6 ++----
+ drivers/net/cnxk/tx/cn10k/tx_all_offload.c |  6 ++----
+ drivers/net/cnxk/tx/cn9k/tx_all_offload.c  |  3 +--
+ 12 files changed, 39 insertions(+), 57 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index dd9f58288d4ef..15b0bedf43e23 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -588,26 +588,6 @@ cnxk_ot_ipsec_outb_sa_valid(struct roc_ot_ipsec_outb_sa *sa)
+ 	return !!sa->w2.s.valid;
+ }
+ 
+-static inline int
+-ipsec_xfrm_verify(struct rte_security_ipsec_xform *ipsec_xfrm,
+-		  struct rte_crypto_sym_xform *crypto_xfrm)
+-{
+-	if (crypto_xfrm->next == NULL)
+-		return -EINVAL;
+-
+-	if (ipsec_xfrm->direction == RTE_SECURITY_IPSEC_SA_DIR_INGRESS) {
+-		if (crypto_xfrm->type != RTE_CRYPTO_SYM_XFORM_AUTH ||
+-		    crypto_xfrm->next->type != RTE_CRYPTO_SYM_XFORM_CIPHER)
+-			return -EINVAL;
+-	} else {
+-		if (crypto_xfrm->type != RTE_CRYPTO_SYM_XFORM_CIPHER ||
+-		    crypto_xfrm->next->type != RTE_CRYPTO_SYM_XFORM_AUTH)
+-			return -EINVAL;
+-	}
+-
+-	return 0;
+-}
+-
+ uint8_t
+ cnxk_ipsec_ivlen_get(enum rte_crypto_cipher_algorithm c_algo,
+ 		     enum rte_crypto_auth_algorithm a_algo,
+diff --git a/drivers/common/cnxk/roc_cpt_debug.c b/drivers/common/cnxk/roc_cpt_debug.c
+index 111234391309a..8e69b0a0e5214 100644
+--- a/drivers/common/cnxk/roc_cpt_debug.c
++++ b/drivers/common/cnxk/roc_cpt_debug.c
+@@ -23,30 +23,31 @@ roc_cpt_parse_hdr_dump(FILE *file, const struct cpt_parse_hdr_s *cpth)
+ 
+ 	/* W0 */
+ 	cpt_dump(file, "W0: cookie \t0x%x\t\tmatch_id \t0x%04x \t",
+-		 cpth->w0.cookie, cpth->w0.match_id);
++		  cpth->w0.cookie, cpth->w0.match_id);
+ 	cpt_dump(file, "W0: err_sum \t%u \t", cpth->w0.err_sum);
+ 	cpt_dump(file, "W0: reas_sts \t0x%x\t\tet_owr \t%u\t\tpkt_fmt \t%u \t",
+-		 cpth->w0.reas_sts, cpth->w0.et_owr, cpth->w0.pkt_fmt);
++		  cpth->w0.reas_sts, cpth->w0.et_owr, cpth->w0.pkt_fmt);
+ 	cpt_dump(file, "W0: pad_len \t%u\t\tnum_frags \t%u\t\tpkt_out \t%u \t",
+-		 cpth->w0.pad_len, cpth->w0.num_frags, cpth->w0.pkt_out);
++		  cpth->w0.pad_len, cpth->w0.num_frags, cpth->w0.pkt_out);
+ 
+ 	/* W1 */
+-	cpt_dump(file, "W1: wqe_ptr \t0x%016lx\t", plt_be_to_cpu_64(cpth->wqe_ptr));
++	cpt_dump(file, "W1: wqe_ptr \t0x%016lx\t",
++			plt_be_to_cpu_64(cpth->wqe_ptr));
+ 
+ 	/* W2 */
+ 	cpt_dump(file, "W2: frag_age \t0x%x\t\torig_pf_func \t0x%04x",
+-		 cpth->w2.frag_age, cpth->w2.orig_pf_func);
++		  cpth->w2.frag_age, cpth->w2.orig_pf_func);
+ 	cpt_dump(file, "W2: il3_off \t0x%x\t\tfi_pad \t0x%x \t",
+-		 cpth->w2.il3_off, cpth->w2.fi_pad);
++		  cpth->w2.il3_off, cpth->w2.fi_pad);
+ 	cpt_dump(file, "W2: fi_offset \t0x%x \t", cpth->w2.fi_offset);
+ 
+ 	/* W3 */
+ 	cpt_dump(file, "W3: hw_ccode \t0x%x\t\tuc_ccode \t0x%x\t\tspi \t0x%08x",
+-		 cpth->w3.hw_ccode, cpth->w3.uc_ccode, cpth->w3.spi);
++		  cpth->w3.hw_ccode, cpth->w3.uc_ccode, cpth->w3.spi);
+ 
+ 	/* W4 */
+ 	cpt_dump(file, "W4: esn \t%" PRIx64 " \t OR frag1_wqe_ptr \t0x%" PRIx64,
+-		 cpth->esn, plt_be_to_cpu_64(cpth->frag1_wqe_ptr));
++		  cpth->esn, plt_be_to_cpu_64(cpth->frag1_wqe_ptr));
+ 
+ 	/* offset of 0 implies 256B, otherwise it implies offset*8B */
+ 	offset = cpth->w2.fi_offset;
+@@ -68,8 +69,10 @@ roc_cpt_parse_hdr_dump(FILE *file, const struct cpt_parse_hdr_s *cpth)
+ 	cpt_dump(file, "W1: frag_size3 \t0x%x", frag_info->w1.frag_size3);
+ 
+ 	slot = (uint64_t *)(frag_info + 1);
+-	cpt_dump(file, "Frag Slot2:  WQE ptr \t%p", (void *)plt_be_to_cpu_64(slot[0]));
+-	cpt_dump(file, "Frag Slot3:  WQE ptr \t%p", (void *)plt_be_to_cpu_64(slot[1]));
++	cpt_dump(file, "Frag Slot2:  WQE ptr \t%p",
++		  (void *)plt_be_to_cpu_64(slot[0]));
++	cpt_dump(file, "Frag Slot3:  WQE ptr \t%p",
++		  (void *)plt_be_to_cpu_64(slot[1]));
+ }
+ 
+ static int
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index c385f76d465a5..6fbd6daa4f478 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -701,12 +701,12 @@ cn10k_rx_descriptor_dump(const struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	uint32_t head = rxq->head;
+ 	struct nix_cqe_hdr_s *cq;
+ 	uint16_t count = 0;
+-	int availble_pkts;
++	int available_pkts;
+ 	uint64_t cq_w1;
+ 
+-	availble_pkts = cn10k_nix_rx_avail_get(rxq);
++	available_pkts = cn10k_nix_rx_avail_get(rxq);
+ 
+-	if ((offset + num - 1) >= availble_pkts) {
++	if ((offset + num - 1) >= available_pkts) {
+ 		plt_err("Invalid BD num=%u\n", num);
+ 		return -EINVAL;
+ 	}
+diff --git a/drivers/net/cnxk/cn10k_rx_select.c b/drivers/net/cnxk/cn10k_rx_select.c
+index dca0043e4bc10..2b8b5821c71f6 100644
+--- a/drivers/net/cnxk/cn10k_rx_select.c
++++ b/drivers/net/cnxk/cn10k_rx_select.c
+@@ -29,10 +29,11 @@ cn10k_nix_flush_rx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
+ 	return cn10k_nix_flush_recv_pkts(rx_queue, rx_pkts, pkts, flags);
+ }
+ 
++#if defined(RTE_ARCH_ARM64)
+ static void
+ cn10k_eth_set_rx_tmplt_func(struct rte_eth_dev *eth_dev)
+ {
+-#if defined(RTE_ARCH_ARM64) && !defined(CNXK_DIS_TMPLT_FUNC)
++#if !defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 
+ 	const eth_rx_burst_t nix_eth_rx_burst[NIX_RX_OFFLOAD_MAX] = {
+@@ -149,6 +150,7 @@ cn10k_eth_set_rx_blk_func(struct rte_eth_dev *eth_dev)
+ 	RTE_SET_USED(eth_dev);
+ #endif
+ }
++#endif
+ 
+ void
+ cn10k_eth_set_rx_function(struct rte_eth_dev *eth_dev)
+diff --git a/drivers/net/cnxk/cn10k_tx_select.c b/drivers/net/cnxk/cn10k_tx_select.c
+index 074a880e0046c..01729e6cb32e9 100644
+--- a/drivers/net/cnxk/cn10k_tx_select.c
++++ b/drivers/net/cnxk/cn10k_tx_select.c
+@@ -20,10 +20,11 @@ pick_tx_func(struct rte_eth_dev *eth_dev,
+ 			eth_dev->tx_pkt_burst;
+ }
+ 
++#if defined(RTE_ARCH_ARM64)
+ static void
+ cn10k_eth_set_tx_tmplt_func(struct rte_eth_dev *eth_dev)
+ {
+-#if defined(RTE_ARCH_ARM64) && !defined(CNXK_DIS_TMPLT_FUNC)
++#if !defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 
+ 	const eth_tx_burst_t nix_eth_tx_burst[NIX_TX_OFFLOAD_MAX] = {
+@@ -71,7 +72,7 @@ cn10k_eth_set_tx_tmplt_func(struct rte_eth_dev *eth_dev)
+ static void
+ cn10k_eth_set_tx_blk_func(struct rte_eth_dev *eth_dev)
+ {
+-#if defined(RTE_ARCH_ARM64) && defined(CNXK_DIS_TMPLT_FUNC)
++#if defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 
+ 	if (dev->scalar_ena || dev->tx_mark)
+@@ -85,6 +86,7 @@ cn10k_eth_set_tx_blk_func(struct rte_eth_dev *eth_dev)
+ 	RTE_SET_USED(eth_dev);
+ #endif
+ }
++#endif
+ 
+ void
+ cn10k_eth_set_tx_function(struct rte_eth_dev *eth_dev)
+diff --git a/drivers/net/cnxk/cn9k_ethdev.c b/drivers/net/cnxk/cn9k_ethdev.c
+index 9801daeb002c8..4647ee39b4577 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.c
++++ b/drivers/net/cnxk/cn9k_ethdev.c
+@@ -703,11 +703,11 @@ cn9k_rx_descriptor_dump(const struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	uint32_t head = rxq->head;
+ 	struct nix_cqe_hdr_s *cq;
+ 	uint16_t count = 0;
+-	int availble_pkts;
++	int available_pkts;
+ 
+-	availble_pkts = cn9k_nix_rx_avail_get(rxq);
++	available_pkts = cn9k_nix_rx_avail_get(rxq);
+ 
+-	if ((offset + num - 1) >= availble_pkts) {
++	if ((offset + num - 1) >= available_pkts) {
+ 		plt_err("Invalid BD num=%u\n", num);
+ 		return -EINVAL;
+ 	}
+diff --git a/drivers/net/cnxk/cn9k_rx_select.c b/drivers/net/cnxk/cn9k_rx_select.c
+index 074e0f16c4ce1..6f127fb5052e5 100644
+--- a/drivers/net/cnxk/cn9k_rx_select.c
++++ b/drivers/net/cnxk/cn9k_rx_select.c
+@@ -18,14 +18,13 @@ pick_rx_func(struct rte_eth_dev *eth_dev,
+ 	if (eth_dev->data->dev_started)
+ 		rte_eth_fp_ops[eth_dev->data->port_id].rx_pkt_burst =
+ 			eth_dev->rx_pkt_burst;
+-
+-	rte_atomic_thread_fence(__ATOMIC_RELEASE);
+ }
+ 
++#if defined(RTE_ARCH_ARM64)
+ static void
+ cn9k_eth_set_rx_tmplt_func(struct rte_eth_dev *eth_dev)
+ {
+-#if defined(RTE_ARCH_ARM64) && !defined(CNXK_DIS_TMPLT_FUNC)
++#if !defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 
+ 	const eth_rx_burst_t nix_eth_rx_burst[NIX_RX_OFFLOAD_MAX] = {
+@@ -100,6 +99,7 @@ cn9k_eth_set_rx_blk_func(struct rte_eth_dev *eth_dev)
+ 	RTE_SET_USED(eth_dev);
+ #endif
+ }
++#endif
+ 
+ void
+ cn9k_eth_set_rx_function(struct rte_eth_dev *eth_dev)
+diff --git a/drivers/net/cnxk/cn9k_tx_select.c b/drivers/net/cnxk/cn9k_tx_select.c
+index ffe6cc87b1f47..ba64abc843de9 100644
+--- a/drivers/net/cnxk/cn9k_tx_select.c
++++ b/drivers/net/cnxk/cn9k_tx_select.c
+@@ -20,10 +20,11 @@ pick_tx_func(struct rte_eth_dev *eth_dev,
+ 			eth_dev->tx_pkt_burst;
+ }
+ 
++#if defined(RTE_ARCH_ARM64)
+ static void
+ cn9k_eth_set_tx_tmplt_func(struct rte_eth_dev *eth_dev)
+ {
+-#if defined(RTE_ARCH_ARM64) && !defined(CNXK_DIS_TMPLT_FUNC)
++#if !defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 
+ 	const eth_tx_burst_t nix_eth_tx_burst[NIX_TX_OFFLOAD_MAX] = {
+@@ -81,6 +82,7 @@ cn9k_eth_set_tx_blk_func(struct rte_eth_dev *eth_dev)
+ 	RTE_SET_USED(eth_dev);
+ #endif
+ }
++#endif
+ 
+ void
+ cn9k_eth_set_tx_function(struct rte_eth_dev *eth_dev)
+diff --git a/drivers/net/cnxk/rx/cn10k/rx_all_offload.c b/drivers/net/cnxk/rx/cn10k/rx_all_offload.c
+index fb0de4bb17f15..13819173401be 100644
+--- a/drivers/net/cnxk/rx/cn10k/rx_all_offload.c
++++ b/drivers/net/cnxk/rx/cn10k/rx_all_offload.c
+@@ -24,8 +24,7 @@ cn10k_nix_recv_pkts_all_offload(void *rx_queue, struct rte_mbuf **rx_pkts, uint1
+ uint16_t __rte_noinline __rte_hot
+ cn10k_nix_recv_pkts_vec_all_offload(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
+ {
+-	return cn10k_nix_recv_pkts_vector(
+-		rx_queue, rx_pkts, pkts,
++	return cn10k_nix_recv_pkts_vector(rx_queue, rx_pkts, pkts,
+ 		NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F | NIX_RX_OFFLOAD_CHECKSUM_F |
+ 			NIX_RX_OFFLOAD_MARK_UPDATE_F | NIX_RX_OFFLOAD_TSTAMP_F |
+ 			NIX_RX_OFFLOAD_VLAN_STRIP_F | NIX_RX_OFFLOAD_SECURITY_F |
+@@ -47,8 +46,7 @@ cn10k_nix_recv_pkts_all_offload_tst(void *rx_queue, struct rte_mbuf **rx_pkts, u
+ uint16_t __rte_noinline __rte_hot
+ cn10k_nix_recv_pkts_vec_all_offload_tst(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
+ {
+-	return cn10k_nix_recv_pkts_vector(
+-		rx_queue, rx_pkts, pkts,
++	return cn10k_nix_recv_pkts_vector(rx_queue, rx_pkts, pkts,
+ 		NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F | NIX_RX_OFFLOAD_CHECKSUM_F |
+ 			NIX_RX_OFFLOAD_MARK_UPDATE_F |
+ 			NIX_RX_OFFLOAD_VLAN_STRIP_F | NIX_RX_OFFLOAD_SECURITY_F |
+diff --git a/drivers/net/cnxk/rx/cn9k/rx_all_offload.c b/drivers/net/cnxk/rx/cn9k/rx_all_offload.c
+index 75490e6d13339..9e8e3e0d2be2b 100644
+--- a/drivers/net/cnxk/rx/cn9k/rx_all_offload.c
++++ b/drivers/net/cnxk/rx/cn9k/rx_all_offload.c
+@@ -20,8 +20,7 @@ cn9k_nix_recv_pkts_all_offload(void *rx_queue, struct rte_mbuf **rx_pkts, uint16
+ uint16_t __rte_noinline __rte_hot
+ cn9k_nix_recv_pkts_vec_all_offload(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
+ {
+-	return cn9k_nix_recv_pkts_vector(
+-		rx_queue, rx_pkts, pkts,
++	return cn9k_nix_recv_pkts_vector(rx_queue, rx_pkts, pkts,
+ 		NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F | NIX_RX_OFFLOAD_CHECKSUM_F |
+ 			NIX_RX_OFFLOAD_MARK_UPDATE_F |
+ 			NIX_RX_OFFLOAD_VLAN_STRIP_F | NIX_RX_OFFLOAD_SECURITY_F |
+@@ -41,8 +40,7 @@ cn9k_nix_recv_pkts_all_offload_tst(void *rx_queue, struct rte_mbuf **rx_pkts, ui
+ uint16_t __rte_noinline __rte_hot
+ cn9k_nix_recv_pkts_vec_all_offload_tst(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts)
+ {
+-	return cn9k_nix_recv_pkts_vector(
+-		rx_queue, rx_pkts, pkts,
++	return cn9k_nix_recv_pkts_vector(rx_queue, rx_pkts, pkts,
+ 		NIX_RX_OFFLOAD_RSS_F | NIX_RX_OFFLOAD_PTYPE_F | NIX_RX_OFFLOAD_CHECKSUM_F |
+ 			NIX_RX_OFFLOAD_MARK_UPDATE_F | NIX_RX_OFFLOAD_TSTAMP_F |
+ 			NIX_RX_OFFLOAD_VLAN_STRIP_F | NIX_RX_OFFLOAD_SECURITY_F |
+diff --git a/drivers/net/cnxk/tx/cn10k/tx_all_offload.c b/drivers/net/cnxk/tx/cn10k/tx_all_offload.c
+index b60913f90566a..b929fb636dad8 100644
+--- a/drivers/net/cnxk/tx/cn10k/tx_all_offload.c
++++ b/drivers/net/cnxk/tx/cn10k/tx_all_offload.c
+@@ -15,8 +15,7 @@ cn10k_nix_xmit_pkts_all_offload(void *tx_queue, struct rte_mbuf **tx_pkts, uint1
+ {
+ 	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
+ 
+-	return cn10k_nix_xmit_pkts_mseg(
+-		tx_queue, NULL, tx_pkts, pkts, cmd,
++	return cn10k_nix_xmit_pkts_mseg(tx_queue, NULL, tx_pkts, pkts, cmd,
+ 		NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+ 			NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
+ 			NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F |
+@@ -28,8 +27,7 @@ cn10k_nix_xmit_pkts_vec_all_offload(void *tx_queue, struct rte_mbuf **tx_pkts, u
+ {
+ 	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
+ 
+-	return cn10k_nix_xmit_pkts_vector(
+-		tx_queue, NULL, tx_pkts, pkts, cmd,
++	return cn10k_nix_xmit_pkts_vector(tx_queue, NULL, tx_pkts, pkts, cmd,
+ 		NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+ 			NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
+ 			NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F |
+diff --git a/drivers/net/cnxk/tx/cn9k/tx_all_offload.c b/drivers/net/cnxk/tx/cn9k/tx_all_offload.c
+index ae6618c5e3078..f76365a7175ef 100644
+--- a/drivers/net/cnxk/tx/cn9k/tx_all_offload.c
++++ b/drivers/net/cnxk/tx/cn9k/tx_all_offload.c
+@@ -25,8 +25,7 @@ cn9k_nix_xmit_pkts_vec_all_offload(void *tx_queue, struct rte_mbuf **tx_pkts, ui
+ {
+ 	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
+ 
+-	return cn9k_nix_xmit_pkts_vector(
+-		tx_queue, tx_pkts, pkts, cmd,
++	return cn9k_nix_xmit_pkts_vector(tx_queue, tx_pkts, pkts, cmd,
+ 		NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
+ 			NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
+ 			NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F |
+-- 
+2.25.1
+

@@ -1,0 +1,79 @@
+From d17c0b2a94954cf05d0a557f3aea0bed754381f5 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 15 Dec 2023 09:07:06 +0000
+Subject: [PATCH 127/513] examples/ipsec-secgw: fix width of variables
+
+'rte_eth_rx_burst' returns uint16_t. The same value need to be passed
+to 'process_packets' functions which performs further processing. Having
+this function use 'uint8_t' can result in issues when MAX_PKT_BURST is
+larger.
+
+The route functions (route4_pkts & route6_pkts) take uint8_t as the
+argument. The caller can pass larger values as the field that is passed
+is of type uint32_t. And the function can work with uint32_t as it loops
+through the packets and sends it out. Using uint8_t can result in silent
+packet drops.
+
+Fixes: 4fbfa6c7c921 ("examples/ipsec-secgw: update eth header during route lookup")
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I720df2b394ac58bd1b594e20d836b0c515e8aa42
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118315
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ examples/ipsec-secgw/ipsec-secgw.c  | 5 ++---
+ examples/ipsec-secgw/ipsec_worker.h | 4 ++--
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/examples/ipsec-secgw/ipsec-secgw.c b/examples/ipsec-secgw/ipsec-secgw.c
+index bf98d2618b595..a61bea400adf4 100644
+--- a/examples/ipsec-secgw/ipsec-secgw.c
++++ b/examples/ipsec-secgw/ipsec-secgw.c
+@@ -568,7 +568,7 @@ process_pkts_outbound_nosp(struct ipsec_ctx *ipsec_ctx,
+ 
+ static inline void
+ process_pkts(struct lcore_conf *qconf, struct rte_mbuf **pkts,
+-	     uint8_t nb_pkts, uint16_t portid, void *ctx)
++	     uint16_t nb_pkts, uint16_t portid, void *ctx)
+ {
+ 	struct ipsec_traffic traffic;
+ 
+@@ -695,8 +695,7 @@ ipsec_poll_mode_worker(void)
+ 	struct rte_mbuf *pkts[MAX_PKT_BURST];
+ 	uint32_t lcore_id;
+ 	uint64_t prev_tsc, diff_tsc, cur_tsc;
+-	int32_t i, nb_rx;
+-	uint16_t portid;
++	uint16_t i, nb_rx, portid;
+ 	uint8_t queueid;
+ 	struct lcore_conf *qconf;
+ 	int32_t rc, socket_id;
+diff --git a/examples/ipsec-secgw/ipsec_worker.h b/examples/ipsec-secgw/ipsec_worker.h
+index ac980b8bcf8d2..8e937fda3e845 100644
+--- a/examples/ipsec-secgw/ipsec_worker.h
++++ b/examples/ipsec-secgw/ipsec_worker.h
+@@ -469,7 +469,7 @@ get_hop_for_offload_pkt(struct rte_mbuf *pkt, int is_ipv6)
+ 
+ static __rte_always_inline void
+ route4_pkts(struct rt_ctx *rt_ctx, struct rte_mbuf *pkts[],
+-	    uint8_t nb_pkts, uint64_t tx_offloads, bool ip_cksum)
++	    uint32_t nb_pkts, uint64_t tx_offloads, bool ip_cksum)
+ {
+ 	uint32_t hop[MAX_PKT_BURST * 2];
+ 	uint32_t dst_ip[MAX_PKT_BURST * 2];
+@@ -557,7 +557,7 @@ route4_pkts(struct rt_ctx *rt_ctx, struct rte_mbuf *pkts[],
+ }
+ 
+ static __rte_always_inline void
+-route6_pkts(struct rt_ctx *rt_ctx, struct rte_mbuf *pkts[], uint8_t nb_pkts)
++route6_pkts(struct rt_ctx *rt_ctx, struct rte_mbuf *pkts[], uint32_t nb_pkts)
+ {
+ 	int32_t hop[MAX_PKT_BURST * 2];
+ 	uint8_t dst_ip[MAX_PKT_BURST * 2][16];
+-- 
+2.25.1
+

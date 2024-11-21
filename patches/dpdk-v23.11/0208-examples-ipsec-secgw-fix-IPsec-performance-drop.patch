@@ -1,0 +1,47 @@
+From 0b8e27c0b05d457b77b080458509aad530868d0d Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Mon, 5 Feb 2024 12:38:13 +0530
+Subject: [PATCH 208/513] examples/ipsec-secgw: fix IPsec performance drop
+
+Single packet free using rte_pktmbuf_free_bulk() is dropping the
+performance. On cn10k, maximum of ~4% drop observed for IPsec
+event mode single SA outbound case.
+
+To fix this issue, single packet free will use rte_pktmbuf_free
+API.
+
+Fixes: e024cb109859 ("examples/ipsec-secgw: use bulk free")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I429f92c742d07f82c8a179d3c9f3f32916281355
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121182
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ examples/ipsec-secgw/ipsec-secgw.h | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/examples/ipsec-secgw/ipsec-secgw.h b/examples/ipsec-secgw/ipsec-secgw.h
+index 8baab44ee7693..ec33a982df554 100644
+--- a/examples/ipsec-secgw/ipsec-secgw.h
++++ b/examples/ipsec-secgw/ipsec-secgw.h
+@@ -229,11 +229,10 @@ free_reassembly_fail_pkt(struct rte_mbuf *mb)
+ }
+ 
+ /* helper routine to free bulk of packets */
+-static inline void
+-free_pkts(struct rte_mbuf *mb[], uint32_t n)
++static __rte_always_inline void
++free_pkts(struct rte_mbuf *mb[], const uint32_t n)
+ {
+-	rte_pktmbuf_free_bulk(mb, n);
+-
++	n == 1 ? rte_pktmbuf_free(mb[0]) : rte_pktmbuf_free_bulk(mb, n);
+ 	core_stats_update_drop(n);
+ }
+ 
+-- 
+2.25.1
+

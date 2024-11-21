@@ -1,0 +1,84 @@
+From 966b12ade29e712d143cdb951bb3827e33d1a794 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 29 Nov 2022 15:50:07 +0530
+Subject: [PATCH 111/955] common/cnxk: dump inline device RQ context
+
+Dump inline device RQ context along with ethdev's RQ context.
+
+Change-Id: I6ffa8fb1a3c8a0a7bbab0d1bf3dea42c9abecde8
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92595
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .mailmap                            |  1 +
+ drivers/common/cnxk/roc_nix_debug.c | 20 ++++++++++++++++++++
+ drivers/common/cnxk/roc_nix_inl.c   |  2 ++
+ 3 files changed, 23 insertions(+)
+
+diff --git a/.mailmap b/.mailmap
+index 464164765fcb4..b37258473b81e 100644
+--- a/.mailmap
++++ b/.mailmap
+@@ -967,6 +967,7 @@ Nipun Gupta <nipun.gupta@nxp.com>
+ Nir Efrati <nir.efrati@intel.com>
+ Nirmoy Das <ndas@suse.de>
+ Nithin Dabilpuram <ndabilpuram@marvell.com> <nithin.dabilpuram@caviumnetworks.com>
++Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+ Nitin Saxena <nitin.saxena@caviumnetworks.com>
+ Nitzan Weller <nitzanwe@mellanox.com>
+ Noa Ezra <noae@mellanox.com>
+diff --git a/drivers/common/cnxk/roc_nix_debug.c b/drivers/common/cnxk/roc_nix_debug.c
+index 775325115b184..2f8c595bd9969 100644
+--- a/drivers/common/cnxk/roc_nix_debug.c
++++ b/drivers/common/cnxk/roc_nix_debug.c
+@@ -693,6 +693,7 @@ roc_nix_queues_ctx_dump(struct roc_nix *roc_nix, FILE *file)
+ 	struct npa_aq_enq_req *npa_aq;
+ 	struct dev *dev = &nix->dev;
+ 	int sq = nix->nb_tx_queues;
++	struct roc_nix_rq *inl_rq;
+ 	struct npa_lf *npa_lf;
+ 	volatile void *ctx;
+ 	uint32_t sqb_aura;
+@@ -726,6 +727,25 @@ roc_nix_queues_ctx_dump(struct roc_nix *roc_nix, FILE *file)
+ 			nix_lf_rq_dump(ctx, file);
+ 	}
+ 
++	/* Dump inline dev RQ for this port */
++	inl_rq = roc_nix_inl_dev_rq(roc_nix);
++	if (inl_rq) {
++		struct idev_cfg *idev = idev_get_cfg();
++		struct nix_inl_dev *inl_dev = idev->nix_inl_dev;
++
++		rc = nix_q_ctx_get(&inl_dev->dev, NIX_AQ_CTYPE_RQ, inl_rq->qid, &ctx);
++		if (rc) {
++			plt_err("Failed to get rq context");
++			goto fail;
++		}
++		nix_dump(file, "============== port=%d inl_rq=%d ===============", roc_nix->port_id,
++			 inl_rq->qid);
++		if (roc_model_is_cn9k())
++			nix_cn9k_lf_rq_dump(ctx, file);
++		else
++			nix_lf_rq_dump(ctx, file);
++	}
++
+ 	for (q = 0; q < sq; q++) {
+ 		rc = nix_q_ctx_get(dev, NIX_AQ_CTYPE_SQ, q, &ctx);
+ 		if (rc) {
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 032aaa3a0fbe3..70b4ae9277a74 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -399,6 +399,8 @@ roc_nix_reassembly_configure(uint32_t max_wait_time, uint16_t max_frags)
+ 		return -EFAULT;
+ 
+ 	PLT_SET_USED(max_frags);
++	if (idev == NULL)
++		return -ENOTSUP;
+ 	roc_cpt = idev->cpt;
+ 	if (!roc_cpt) {
+ 		plt_err("Cannot support inline inbound, cryptodev not probed");
+-- 
+2.25.1
+

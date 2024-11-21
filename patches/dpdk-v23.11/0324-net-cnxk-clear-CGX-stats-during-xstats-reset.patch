@@ -1,0 +1,35 @@
+From 94a25ef890ec9bccaaaad061ce1d47edaa641dd2 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Tue, 7 May 2024 14:23:57 +0530
+Subject: [PATCH 324/513] net/cnxk: clear CGX stats during xstats reset
+
+Currently only NIX stats are cleared during xstats
+reset and CGX stats are left as it is.
+
+Clearing CGX stats too during xstats reset.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I9960b3c017621f9feefc8dd65fa354ee6c13c4ac
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/127563
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_stats.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_stats.c b/drivers/net/cnxk/cnxk_stats.c
+index f2f2222c8966a..469faff405326 100644
+--- a/drivers/net/cnxk/cnxk_stats.c
++++ b/drivers/net/cnxk/cnxk_stats.c
+@@ -316,6 +316,8 @@ cnxk_nix_xstats_reset(struct rte_eth_dev *eth_dev)
+ 			goto exit;
+ 	}
+ 
++	/* Reset MAC stats */
++	rc = roc_nix_mac_stats_reset(nix);
+ exit:
+ 	return rc;
+ }
+-- 
+2.25.1
+

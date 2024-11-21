@@ -1,0 +1,69 @@
+From 031167fb6d44058635189f77641a29d008efe15f Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Wed, 8 May 2024 13:41:37 +0530
+Subject: [PATCH 323/513] common/cnxk: fix flow aging cleanup
+
+The aged flows poll thread is not stopped before NPC cleanup
+resulting in a segmentation fault. Fixing this by stopping
+aged flows poll thread before proceeding with NPC cleanup.
+
+Fixes: 357f5ebc8a24 ("common/cnxk: support flow aging")
+Cc: stable@dpdk.org
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I4429434a49fadea1dd3a2a36ef22368ae90d7e65
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126875
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c       | 5 +++--
+ drivers/common/cnxk/roc_npc_aging.c | 8 +++++---
+ 2 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index d6ad3756bb486..37e1a6a7ef18e 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -389,6 +389,8 @@ roc_npc_fini(struct roc_npc *roc_npc)
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	int rc;
+ 
++	npc_aging_ctrl_thread_destroy(roc_npc);
++
+ 	rc = npc_flow_free_all_resources(npc);
+ 	if (rc) {
+ 		plt_err("Error when deleting NPC MCAM entries, counters");
+@@ -1810,8 +1812,7 @@ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 	if (flow->has_age_action)
+ 		npc_age_flow_list_entry_delete(roc_npc, flow);
+ 
+-	if (roc_npc->flow_age.age_flow_refcnt == 0 &&
+-		plt_thread_is_valid(roc_npc->flow_age.aged_flows_poll_thread))
++	if (roc_npc->flow_age.age_flow_refcnt == 0)
+ 		npc_aging_ctrl_thread_destroy(roc_npc);
+ 
+ done:
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+index 491ac3aaa43cd..ebceac47c649b 100644
+--- a/drivers/common/cnxk/roc_npc_aging.c
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -309,9 +309,11 @@ npc_aging_ctrl_thread_destroy(struct roc_npc *roc_npc)
+ 	struct roc_npc_flow_age *flow_age;
+ 
+ 	flow_age = &roc_npc->flow_age;
+-	flow_age->aged_flows_get_thread_exit = true;
+-	plt_thread_join(flow_age->aged_flows_poll_thread, NULL);
+-	npc_aged_flows_bitmap_free(roc_npc);
++	if (plt_thread_is_valid(flow_age->aged_flows_poll_thread)) {
++		flow_age->aged_flows_get_thread_exit = true;
++		plt_thread_join(flow_age->aged_flows_poll_thread, NULL);
++		npc_aged_flows_bitmap_free(roc_npc);
++	}
+ }
+ 
+ void *
+-- 
+2.25.1
+

@@ -1,0 +1,88 @@
+From 8e6eb48f8fd0d3d0f48eec7ff1577333d87437a3 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 20 Jun 2024 13:44:03 +0530
+Subject: [PATCH 383/513] net/cnxk: update Rx offloads to handle timestamp
+
+RX offloads flags are updated to handle timestamp
+in VF when ptp is enabled in respective PF in kernle
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I3e1e757afa05f5edfffc06316cdc877ec57e4246
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129865
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev.c | 6 +++++-
+ drivers/net/cnxk/cn9k_ethdev.c  | 5 ++++-
+ drivers/net/cnxk/cnxk_ethdev.h  | 7 +++++++
+ 3 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index 099890e959b90..d335f3971b2d9 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -30,7 +30,7 @@ nix_rx_offload_flags(struct rte_eth_dev *eth_dev)
+ 	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)
+ 		flags |= NIX_RX_MULTI_SEG_F;
+ 
+-	if ((dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP))
++	if ((dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP) || dev->ptp_en)
+ 		flags |= NIX_RX_OFFLOAD_TSTAMP_F;
+ 
+ 	if (!dev->ptype_disable)
+@@ -508,6 +508,10 @@ cn10k_nix_ptp_info_update_cb(struct roc_nix *nix, bool ptp_en)
+ 		eth_dev->rx_pkt_burst = nix_ptp_vf_burst;
+ 		rte_eth_fp_ops[eth_dev->data->port_id].rx_pkt_burst = eth_dev->rx_pkt_burst;
+ 		rte_mb();
++		if (dev->cnxk_sso_ptp_tstamp_cb)
++			dev->cnxk_sso_ptp_tstamp_cb(eth_dev->data->port_id,
++						    NIX_RX_OFFLOAD_TSTAMP_F, dev->ptp_en);
++
+ 	}
+ 
+ 	return 0;
+diff --git a/drivers/net/cnxk/cn9k_ethdev.c b/drivers/net/cnxk/cn9k_ethdev.c
+index 4851e60f161da..d1810e8f4dcce 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.c
++++ b/drivers/net/cnxk/cn9k_ethdev.c
+@@ -30,7 +30,7 @@ nix_rx_offload_flags(struct rte_eth_dev *eth_dev)
+ 	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SCATTER)
+ 		flags |= NIX_RX_MULTI_SEG_F;
+ 
+-	if ((dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP))
++	if ((dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP) || dev->ptp_en)
+ 		flags |= NIX_RX_OFFLOAD_TSTAMP_F;
+ 
+ 	if (!dev->ptype_disable)
+@@ -467,6 +467,9 @@ cn9k_nix_ptp_info_update_cb(struct roc_nix *nix, bool ptp_en)
+ 		eth_dev->rx_pkt_burst = nix_ptp_vf_burst;
+ 		rte_eth_fp_ops[eth_dev->data->port_id].rx_pkt_burst = eth_dev->rx_pkt_burst;
+ 		rte_mb();
++		if (dev->cnxk_sso_ptp_tstamp_cb)
++			dev->cnxk_sso_ptp_tstamp_cb(eth_dev->data->port_id,
++						    NIX_RX_OFFLOAD_TSTAMP_F, dev->ptp_en);
+ 	}
+ 
+ 	return 0;
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 95104ab2a81ec..91a3ce0530718 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -433,6 +433,13 @@ struct cnxk_eth_dev {
+ 
+ 	/* Eswitch domain ID */
+ 	uint16_t switch_domain_id;
++
++	/* SSO event dev */
++	void *evdev_priv;
++
++	/* SSO event dev ptp  */
++	void (*cnxk_sso_ptp_tstamp_cb)
++	     (uint16_t port_id, uint16_t flags, bool ptp_en);
+ };
+ 
+ struct cnxk_eth_rxq_sp {
+-- 
+2.25.1
+

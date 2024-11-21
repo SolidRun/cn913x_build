@@ -1,0 +1,329 @@
+From 0e6c164157516019282e098e6b4deb55f522524f Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Mon, 23 Sep 2024 19:13:14 +0530
+Subject: [PATCH 506/513] common/cnxk: update representee RSS rule via PF
+
+Adding support to update representee's RSS rule via PF ports.
+Before updating the rule strict validation to check if requested
+representee is part of PF port.
+
+Change-Id: I02fc8c10f6527b195490a641a04dea7e69bd27b8
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/136103
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_eswitch.c  | 11 ++++++++
+ drivers/common/cnxk/roc_eswitch.h  |  3 ++
+ drivers/common/cnxk/roc_nix_priv.h |  8 ++++++
+ drivers/common/cnxk/roc_nix_rss.c  | 45 ++++++++++++++++++++++--------
+ drivers/common/cnxk/roc_npc.c      | 23 ++++++++-------
+ drivers/common/cnxk/roc_npc.h      |  1 +
+ drivers/common/cnxk/roc_npc_priv.h |  3 +-
+ drivers/common/cnxk/version.map    |  1 +
+ 8 files changed, 72 insertions(+), 23 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_eswitch.c b/drivers/common/cnxk/roc_eswitch.c
+index c67b4090a5d57..6cae459065700 100644
+--- a/drivers/common/cnxk/roc_eswitch.c
++++ b/drivers/common/cnxk/roc_eswitch.c
+@@ -387,3 +387,14 @@ roc_eswitch_nix_repte_stats(struct roc_nix *roc_nix, uint16_t pf_func, struct ro
+ 	mbox_put(mbox);
+ 	return rc;
+ }
++
++int
++roc_eswitch_is_repte_pfs_vf(uint16_t rep_pffunc, uint16_t pf_pffunc)
++{
++	uint16_t rep_pf = dev_get_pf(rep_pffunc);
++
++	if (roc_model_is_cn20k())
++		return ((rep_pf << RVU_PFVF_PF_SHIFT_CN20K) == pf_pffunc);
++	else
++		return ((rep_pf << RVU_PFVF_PF_SHIFT) == pf_pffunc);
++}
+diff --git a/drivers/common/cnxk/roc_eswitch.h b/drivers/common/cnxk/roc_eswitch.h
+index 45400ae77ab1b..5e4ba5d72affa 100644
+--- a/drivers/common/cnxk/roc_eswitch.h
++++ b/drivers/common/cnxk/roc_eswitch.h
+@@ -43,6 +43,9 @@ struct roc_eswitch_repte_notify_msg {
+ typedef int (*process_repte_notify_t)(void *roc_nix,
+ 				      struct roc_eswitch_repte_notify_msg *notify_msg);
+ 
++/* Generic */
++int __roc_api roc_eswitch_is_repte_pfs_vf(uint16_t rep_pffunc, uint16_t pf_pffunc);
++
+ /* NPC */
+ int __roc_api roc_eswitch_npc_mcam_rx_rule(struct roc_npc *roc_npc, struct roc_npc_flow *flow,
+ 					   uint16_t pcifunc, uint16_t vlan_tci,
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 3fd6fcbe9f9bf..eb646088850e8 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -488,4 +488,12 @@ int nix_tel_node_add_rq(struct roc_nix_rq *rq);
+ int nix_tel_node_add_cq(struct roc_nix_cq *cq);
+ int nix_tel_node_add_sq(struct roc_nix_sq *sq);
+ 
++/*
++ * RSS
++ */
++int nix_rss_reta_pffunc_set(struct roc_nix *roc_nix, uint8_t group,
++			    uint16_t reta[ROC_NIX_RSS_RETA_MAX], uint16_t pf_func);
++int nix_rss_flowkey_pffunc_set(struct roc_nix *roc_nix, uint8_t *alg_idx, uint32_t flowkey,
++			       uint8_t group, int mcam_index, uint16_t pf_func);
++
+ #endif /* _ROC_NIX_PRIV_H_ */
+diff --git a/drivers/common/cnxk/roc_nix_rss.c b/drivers/common/cnxk/roc_nix_rss.c
+index fd1472e9b9e5b..ac5df654ff3cc 100644
+--- a/drivers/common/cnxk/roc_nix_rss.c
++++ b/drivers/common/cnxk/roc_nix_rss.c
+@@ -116,7 +116,7 @@ nix_cn9k_rss_reta_set(struct nix *nix, uint8_t group,
+ 
+ static int
+ nix_cn10k_rss_reta_set(struct nix *nix, uint8_t group, uint16_t reta[ROC_NIX_RSS_RETA_MAX],
+-		       uint8_t lock_rx_ctx)
++		       uint8_t lock_rx_ctx, uint16_t pf_func)
+ {
+ 	struct mbox *mbox = mbox_get((&nix->dev)->mbox);
+ 	struct nix_cn10k_aq_enq_req *req;
+@@ -138,6 +138,9 @@ nix_cn10k_rss_reta_set(struct nix *nix, uint8_t group, uint16_t reta[ROC_NIX_RSS
+ 				goto exit;
+ 			}
+ 		}
++		if (pf_func)
++			req->hdr.pcifunc = pf_func;
++
+ 		req->rss.rq = reta[idx];
+ 		/* Fill AQ info */
+ 		req->qidx = (group * nix->reta_sz) + idx;
+@@ -161,6 +164,8 @@ nix_cn10k_rss_reta_set(struct nix *nix, uint8_t group, uint16_t reta[ROC_NIX_RSS
+ 				goto exit;
+ 			}
+ 		}
++		if (pf_func)
++			req->hdr.pcifunc = pf_func;
+ 		req->rss.rq = reta[idx];
+ 		/* Fill AQ info */
+ 		req->qidx = (group * nix->reta_sz) + idx;
+@@ -180,7 +185,7 @@ nix_cn10k_rss_reta_set(struct nix *nix, uint8_t group, uint16_t reta[ROC_NIX_RSS
+ 
+ static int
+ nix_rss_reta_set(struct nix *nix, uint8_t group, uint16_t reta[ROC_NIX_RSS_RETA_MAX],
+-		 uint8_t lock_rx_ctx)
++		 uint8_t lock_rx_ctx, uint16_t pf_func)
+ {
+ 	struct mbox *mbox = mbox_get((&nix->dev)->mbox);
+ 	struct nix_cn20k_aq_enq_req *req;
+@@ -225,6 +230,8 @@ nix_rss_reta_set(struct nix *nix, uint8_t group, uint16_t reta[ROC_NIX_RSS_RETA_
+ 				goto exit;
+ 			}
+ 		}
++		if (pf_func)
++			req->hdr.pcifunc = pf_func;
+ 		req->rss.rq = reta[idx];
+ 		/* Fill AQ info */
+ 		req->qidx = (group * nix->reta_sz) + idx;
+@@ -243,8 +250,8 @@ nix_rss_reta_set(struct nix *nix, uint8_t group, uint16_t reta[ROC_NIX_RSS_RETA_
+ }
+ 
+ int
+-roc_nix_rss_reta_set(struct roc_nix *roc_nix, uint8_t group,
+-		     uint16_t reta[ROC_NIX_RSS_RETA_MAX])
++nix_rss_reta_pffunc_set(struct roc_nix *roc_nix, uint8_t group, uint16_t reta[ROC_NIX_RSS_RETA_MAX],
++			uint16_t pf_func)
+ {
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	int rc;
+@@ -253,12 +260,11 @@ roc_nix_rss_reta_set(struct roc_nix *roc_nix, uint8_t group,
+ 		return NIX_ERR_PARAM;
+ 
+ 	if (roc_model_is_cn9k())
+-		rc = nix_cn9k_rss_reta_set(nix, group, reta,
+-					   roc_nix->lock_rx_ctx);
++		rc = nix_cn9k_rss_reta_set(nix, group, reta, roc_nix->lock_rx_ctx);
+ 	else if (roc_model_is_cn10k())
+-		rc = nix_cn10k_rss_reta_set(nix, group, reta, roc_nix->lock_rx_ctx);
++		rc = nix_cn10k_rss_reta_set(nix, group, reta, roc_nix->lock_rx_ctx, pf_func);
+ 	else
+-		rc = nix_rss_reta_set(nix, group, reta, roc_nix->lock_rx_ctx);
++		rc = nix_rss_reta_set(nix, group, reta, roc_nix->lock_rx_ctx, pf_func);
+ 	if (rc)
+ 		return rc;
+ 
+@@ -267,8 +273,13 @@ roc_nix_rss_reta_set(struct roc_nix *roc_nix, uint8_t group,
+ }
+ 
+ int
+-roc_nix_rss_reta_get(struct roc_nix *roc_nix, uint8_t group,
+-		     uint16_t reta[ROC_NIX_RSS_RETA_MAX])
++roc_nix_rss_reta_set(struct roc_nix *roc_nix, uint8_t group, uint16_t reta[ROC_NIX_RSS_RETA_MAX])
++{
++	return nix_rss_reta_pffunc_set(roc_nix, group, reta, 0);
++}
++
++int
++roc_nix_rss_reta_get(struct roc_nix *roc_nix, uint8_t group, uint16_t reta[ROC_NIX_RSS_RETA_MAX])
+ {
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 
+@@ -280,8 +291,8 @@ roc_nix_rss_reta_get(struct roc_nix *roc_nix, uint8_t group,
+ }
+ 
+ int
+-roc_nix_rss_flowkey_set(struct roc_nix *roc_nix, uint8_t *alg_idx,
+-			uint32_t flowkey, uint8_t group, int mcam_index)
++nix_rss_flowkey_pffunc_set(struct roc_nix *roc_nix, uint8_t *alg_idx, uint32_t flowkey,
++			   uint8_t group, int mcam_index, uint16_t pf_func)
+ {
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	struct nix_rss_flowkey_cfg_rsp *rss_rsp;
+@@ -297,6 +308,9 @@ roc_nix_rss_flowkey_set(struct roc_nix *roc_nix, uint8_t *alg_idx,
+ 	cfg = mbox_alloc_msg_nix_rss_flowkey_cfg(mbox);
+ 	if (cfg == NULL)
+ 		goto exit;
++	if (pf_func)
++		cfg->hdr.pcifunc = pf_func;
++
+ 	cfg->flowkey_cfg = flowkey;
+ 	cfg->mcam_index = mcam_index; /* -1 indicates default group */
+ 	cfg->group = group;	      /* 0 is default group */
+@@ -311,6 +325,13 @@ roc_nix_rss_flowkey_set(struct roc_nix *roc_nix, uint8_t *alg_idx,
+ 	return rc;
+ }
+ 
++int
++roc_nix_rss_flowkey_set(struct roc_nix *roc_nix, uint8_t *alg_idx, uint32_t flowkey, uint8_t group,
++			int mcam_index)
++{
++	return nix_rss_flowkey_pffunc_set(roc_nix, alg_idx, flowkey, group, mcam_index, 0);
++}
++
+ int
+ roc_nix_rss_default_setup(struct roc_nix *roc_nix, uint32_t flowkey)
+ {
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 2b3c90683c0db..53f278c7646c4 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -1053,9 +1053,9 @@ npc_rss_free_grp_get(struct npc *npc, uint32_t *pos)
+ }
+ 
+ int
+-npc_rss_action_configure(struct roc_npc *roc_npc,
+-			 const struct roc_npc_action_rss *rss, uint8_t *alg_idx,
+-			 uint32_t *rss_grp, uint32_t mcam_id)
++npc_rss_action_configure(struct roc_npc *roc_npc, const struct roc_npc_action_rss *rss,
++			 uint8_t *alg_idx, uint32_t *rss_grp, uint32_t mcam_id,
++			 uint16_t rss_repte_pf_func)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	struct roc_nix *roc_nix = roc_npc->roc_nix;
+@@ -1098,7 +1098,7 @@ npc_rss_action_configure(struct roc_npc *roc_npc,
+ 	if (rc < 0 || rss_grp_idx == 0)
+ 		return -ENOSPC;
+ 
+-	for (i = 0; i < rss->queue_num; i++) {
++	for (i = 0; (i < rss->queue_num) && !rss_repte_pf_func; i++) {
+ 		if (rss->queue[i] >= nix->nb_rx_queues) {
+ 			plt_err("queue id > max number of queues");
+ 			return -EINVAL;
+@@ -1126,10 +1126,9 @@ npc_rss_action_configure(struct roc_npc *roc_npc,
+ 
+ 	rem = nix->reta_sz % rss->queue_num;
+ 	if (rem)
+-		memcpy(&reta[i * rss->queue_num], rss->queue,
+-		       rem * sizeof(uint16_t));
++		memcpy(&reta[i * rss->queue_num], rss->queue, rem * sizeof(uint16_t));
+ 
+-	rc = roc_nix_rss_reta_set(roc_nix, *rss_grp, reta);
++	rc = nix_rss_reta_pffunc_set(roc_nix, *rss_grp, reta, rss_repte_pf_func);
+ 	if (rc) {
+ 		plt_err("Failed to init rss table rc = %d", rc);
+ 		return rc;
+@@ -1137,8 +1136,8 @@ npc_rss_action_configure(struct roc_npc *roc_npc,
+ 
+ 	flowkey_cfg = roc_npc->flowkey_cfg_state;
+ 
+-	rc = roc_nix_rss_flowkey_set(roc_nix, &flowkey_algx, flowkey_cfg,
+-				     *rss_grp, mcam_id);
++	rc = nix_rss_flowkey_pffunc_set(roc_nix, &flowkey_algx, flowkey_cfg, *rss_grp, mcam_id,
++					rss_repte_pf_func);
+ 	if (rc) {
+ 		plt_err("Failed to set rss hash function rc = %d", rc);
+ 		return rc;
+@@ -1170,7 +1169,8 @@ npc_rss_action_program(struct roc_npc *roc_npc,
+ 	for (; actions->type != ROC_NPC_ACTION_TYPE_END; actions++) {
+ 		if (actions->type == ROC_NPC_ACTION_TYPE_RSS) {
+ 			rss = (const struct roc_npc_action_rss *)actions->conf;
+-			rc = npc_rss_action_configure(npc, rss, &alg_idx, &rss_grp, flow->mcam_id);
++			rc = npc_rss_action_configure(npc, rss, &alg_idx, &rss_grp, flow->mcam_id,
++						      actions->rss_repte_pf_func);
+ 			if (rc)
+ 				return rc;
+ 
+@@ -1678,6 +1678,7 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		goto set_rss_failed;
+ 	}
+ 	roc_npc->rep_npc = NULL;
++	roc_npc->rep_act_pf_func = 0;
+ 
+ 	if (flow->has_age_action)
+ 		npc_age_flow_list_entry_add(roc_npc, flow);
+@@ -1700,6 +1701,7 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 
+ set_rss_failed:
+ 	roc_npc->rep_npc = NULL;
++	roc_npc->rep_act_pf_func = 0;
+ 	if (flow->use_pre_alloc == 0) {
+ 		rc = roc_npc_mcam_free_entry(roc_npc, flow->mcam_id);
+ 		if (rc != 0) {
+@@ -1712,6 +1714,7 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	}
+ err_exit:
+ 	roc_npc->rep_npc = NULL;
++	roc_npc->rep_act_pf_func = 0;
+ 	plt_free(flow);
+ 	return NULL;
+ }
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 462795152edee..1c7c20a8114ea 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -203,6 +203,7 @@ enum roc_npc_action_type {
+ struct roc_npc_action {
+ 	enum roc_npc_action_type type; /**< Action type. */
+ 	const void *conf;	       /**< Pointer to action configuration object. */
++	uint16_t rss_repte_pf_func;    /**< Per flow tmp var for rss representee pffunc */
+ };
+ 
+ struct roc_npc_action_sample {
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 069c625911afe..e08a34d14663c 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -484,7 +484,8 @@ int npc_process_ipv6_field_hash(const struct roc_npc_flow_item_ipv6 *ipv6_spec,
+ 				const struct roc_npc_flow_item_ipv6 *ipv6_mask,
+ 				struct npc_parse_state *pst, uint8_t type);
+ int npc_rss_action_configure(struct roc_npc *roc_npc, const struct roc_npc_action_rss *rss,
+-			     uint8_t *alg_idx, uint32_t *rss_grp, uint32_t mcam_id);
++			     uint8_t *alg_idx, uint32_t *rss_grp, uint32_t mcam_id,
++			     uint16_t rss_repte_pf_func);
+ int npc_rss_action_program(struct roc_npc *roc_npc, const struct roc_npc_action actions[],
+ 			   struct roc_npc_flow *flow);
+ int npc_rss_group_free(struct npc *npc, struct roc_npc_flow *flow);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 7d2b0ee8bf622..f1511a81ce9a9 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -91,6 +91,7 @@ INTERNAL {
+ 	roc_dpi_enable;
+ 	roc_dpi_wait_queue_idle;
+ 	roc_error_msg_get;
++	roc_eswitch_is_repte_pfs_vf;
+ 	roc_eswitch_nix_process_repte_notify_cb_register;
+ 	roc_eswitch_nix_process_repte_notify_cb_unregister;
+ 	roc_eswitch_nix_repte_stats;
+-- 
+2.25.1
+

@@ -1,0 +1,126 @@
+From 20d0b4b844caf882ee9d258d8c8fcd71a204535e Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Mon, 19 Dec 2022 12:07:04 +0530
+Subject: [PATCH 109/955] cryptodev: introduce query API for error interrupt
+ event
+
+An event RTE_CRYPTODEV_EVENT_ERROR gets fired when crypto PMD receives
+an error interrupt. This patch adds query function for the application,
+to get more info about the event.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Ifd0308f3e50a2dbd4ec66a0889be6b2e50d62ad2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93223
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ lib/cryptodev/cryptodev_pmd.h |  9 +++++++++
+ lib/cryptodev/rte_cryptodev.c | 19 +++++++++++++++++++
+ lib/cryptodev/rte_cryptodev.h | 19 +++++++++++++++++++
+ lib/cryptodev/version.map     |  3 +++
+ 4 files changed, 50 insertions(+)
+
+diff --git a/lib/cryptodev/cryptodev_pmd.h b/lib/cryptodev/cryptodev_pmd.h
+index 0020102eb7db2..0dfad9e24fef0 100644
+--- a/lib/cryptodev/cryptodev_pmd.h
++++ b/lib/cryptodev/cryptodev_pmd.h
+@@ -451,6 +451,13 @@ typedef int (*cryptodev_session_event_mdata_set_t)(
+ 	enum rte_crypto_op_sess_type sess_type,
+ 	void *ev_mdata);
+ 
++/**
++ * @internal Query queue pair error interrupt event.
++ * @see rte_cryptodev_queue_pair_event_error_query()
++ */
++typedef int (*cryptodev_queue_pair_event_error_query_t)(struct rte_cryptodev *dev,
++					uint16_t qp_id);
++
+ /** Crypto device operations function pointer table */
+ struct rte_cryptodev_ops {
+ 	cryptodev_configure_t dev_configure;	/**< Configure device. */
+@@ -497,6 +504,8 @@ struct rte_cryptodev_ops {
+ 	};
+ 	cryptodev_session_event_mdata_set_t session_ev_mdata_set;
+ 	/**< Set a Crypto or Security session even meta data. */
++	cryptodev_queue_pair_event_error_query_t queue_pair_event_error_query;
++	/**< Query queue error interrupt event */
+ };
+ 
+ 
+diff --git a/lib/cryptodev/rte_cryptodev.c b/lib/cryptodev/rte_cryptodev.c
+index 942b10f624233..67c1b2d32d538 100644
+--- a/lib/cryptodev/rte_cryptodev.c
++++ b/lib/cryptodev/rte_cryptodev.c
+@@ -1867,6 +1867,25 @@ rte_cryptodev_pmd_callback_process(struct rte_cryptodev *dev,
+ 	rte_spinlock_unlock(&rte_cryptodev_cb_lock);
+ }
+ 
++int
++rte_cryptodev_queue_pair_event_error_query(uint8_t dev_id, uint16_t qp_id)
++{
++	struct rte_cryptodev *dev;
++
++	if (!rte_cryptodev_is_valid_dev(dev_id)) {
++		CDEV_LOG_ERR("Invalid dev_id=%" PRIu8, dev_id);
++		return -EINVAL;
++	}
++	dev = &rte_crypto_devices[dev_id];
++
++	if (qp_id >= dev->data->nb_queue_pairs)
++		return -EINVAL;
++	if (*dev->dev_ops->queue_pair_event_error_query == NULL)
++		return -ENOTSUP;
++
++	return dev->dev_ops->queue_pair_event_error_query(dev, qp_id);
++}
++
+ struct rte_mempool *
+ rte_cryptodev_sym_session_pool_create(const char *name, uint32_t nb_elts,
+ 	uint32_t elt_size, uint32_t cache_size, uint16_t user_data_size,
+diff --git a/lib/cryptodev/rte_cryptodev.h b/lib/cryptodev/rte_cryptodev.h
+index 86d792e2e7853..5f11a538fbe61 100644
+--- a/lib/cryptodev/rte_cryptodev.h
++++ b/lib/cryptodev/rte_cryptodev.h
+@@ -871,6 +871,25 @@ rte_cryptodev_callback_unregister(uint8_t dev_id,
+ 		enum rte_cryptodev_event_type event,
+ 		rte_cryptodev_cb_fn cb_fn, void *cb_arg);
+ 
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change without prior notice.
++ *
++ * Query a cryptodev queue pair if there are pending RTE_CRYPTODEV_EVENT_ERROR
++ * events.
++ *
++ * @param          dev_id	The device identifier.
++ * @param          qp_id	Queue pair index to be queried.
++ *
++ * @return
++ *   - 1 if requested queue has a pending event.
++ *   - 0 if no pending event is found.
++ *   - a negative value on failure
++ */
++__rte_experimental
++int
++rte_cryptodev_queue_pair_event_error_query(uint8_t dev_id, uint16_t qp_id);
++
+ struct rte_cryptodev_callback;
+ 
+ /** Structure to keep track of registered callbacks */
+diff --git a/lib/cryptodev/version.map b/lib/cryptodev/version.map
+index 00c99fb45ca51..214c91a06fcd7 100644
+--- a/lib/cryptodev/version.map
++++ b/lib/cryptodev/version.map
+@@ -150,6 +150,9 @@ EXPERIMENTAL {
+ 	__rte_cryptodev_trace_sym_session_get_user_data;
+ 	__rte_cryptodev_trace_sym_session_set_user_data;
+ 	__rte_cryptodev_trace_count;
++
++	# added in 23.03
++	rte_cryptodev_queue_pair_event_error_query;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

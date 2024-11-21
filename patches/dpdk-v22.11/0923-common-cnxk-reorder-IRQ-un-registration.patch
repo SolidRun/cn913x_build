@@ -1,0 +1,46 @@
+From 6cadbc4f8556afd1e7c0681213ee65f5265a13b6 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Thu, 19 Sep 2024 23:21:41 +0530
+Subject: [PATCH 923/955] common/cnxk: reorder IRQ un-registration
+
+Reorder IRQ un-registration, unregister NPA IRQs
+before device IRQs.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I8cb8f981339725baf766813d0c5fbab77a500436
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/135930
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_sso.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index 4da58f9ee1511..d3971a849a0d8 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -842,15 +842,15 @@ sso_update_msix_vec_count(struct roc_sso *roc_sso, uint16_t sso_vec_cnt)
+ 		return dev_irq_reconfigure(pci_dev->intr_handle, mbox_vec_cnt + npa_vec_cnt);
+ 	}
+ 
++	npa_vec_cnt = (dev->npa.pci_dev == pci_dev) ? NPA_LF_INT_VEC_POISON + 1 : 0;
++	if (npa_vec_cnt)
++		npa_unregister_irqs(&dev->npa);
++
+ 	/* Before re-configuring unregister irqs */
+ 	dev_mbox_unregister_irq(pci_dev, dev);
+ 	if (!dev_is_vf(dev))
+ 		dev_vf_flr_unregister_irqs(pci_dev, dev);
+ 
+-	npa_vec_cnt = (dev->npa.pci_dev == pci_dev) ? NPA_LF_INT_VEC_POISON + 1 : 0;
+-	if (npa_vec_cnt)
+-		npa_unregister_irqs(&dev->npa);
+-
+ 	/* Re-configure to include SSO vectors */
+ 	rc = dev_irq_reconfigure(pci_dev->intr_handle, mbox_vec_cnt + npa_vec_cnt + sso_vec_cnt);
+ 	if (rc)
+-- 
+2.25.1
+

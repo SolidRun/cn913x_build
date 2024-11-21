@@ -1,0 +1,68 @@
+From 9cbe6af4983f6338ec98c099aa1643b64325354b Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Tue, 1 Oct 2024 12:44:45 +0530
+Subject: [PATCH 511/513] net/virtio: add set config callback
+
+This patch enables the set config callback handler.
+
+Change-Id: I687d4aa693d88bda05db87519ac6157f0526dc49
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/136467
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/virtio/virtio_user/vhost.h      |  1 +
+ drivers/net/virtio/virtio_user/vhost_vdpa.c | 10 ++++++++++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/drivers/net/virtio/virtio_user/vhost.h b/drivers/net/virtio/virtio_user/vhost.h
+index 1bce00c7acf55..33a114bb5acec 100644
+--- a/drivers/net/virtio/virtio_user/vhost.h
++++ b/drivers/net/virtio/virtio_user/vhost.h
+@@ -91,6 +91,7 @@ struct virtio_user_backend_ops {
+ 	int (*server_reconnect)(struct virtio_user_dev *dev);
+ 	int (*get_intr_fd)(struct virtio_user_dev *dev);
+ 	int (*map_notification_area)(struct virtio_user_dev *dev, bool map);
++	int (*set_config_call)(struct virtio_user_dev *dev, int fd);
+ };
+ 
+ extern struct virtio_user_backend_ops virtio_ops_user;
+diff --git a/drivers/net/virtio/virtio_user/vhost_vdpa.c b/drivers/net/virtio/virtio_user/vhost_vdpa.c
+index 1eb0f9ec48722..ab3d908bc84f1 100644
+--- a/drivers/net/virtio/virtio_user/vhost_vdpa.c
++++ b/drivers/net/virtio/virtio_user/vhost_vdpa.c
+@@ -48,6 +48,7 @@ struct vhost_vdpa_data {
+ #define VHOST_VDPA_SET_VRING_ENABLE _IOW(VHOST_VIRTIO, 0x75, struct vhost_vring_state)
+ #define VHOST_SET_BACKEND_FEATURES _IOW(VHOST_VIRTIO, 0x25, __u64)
+ #define VHOST_GET_BACKEND_FEATURES _IOR(VHOST_VIRTIO, 0x26, __u64)
++#define VHOST_SET_CONFIG_CALL      _IOW(VHOST_VIRTIO, 0x77, int)
+ 
+ /* no alignment requirement */
+ struct vhost_iotlb_msg {
+@@ -509,6 +510,14 @@ vhost_vdpa_set_config(struct virtio_user_dev *dev, const uint8_t *data, uint32_t
+ 	return ret;
+ }
+ 
++static int
++vhost_vdpa_set_config_call(struct virtio_user_dev *dev, int fd)
++{
++	struct vhost_vdpa_data *data = dev->backend_data;
++
++	return vhost_vdpa_ioctl(data->vhostfd, VHOST_SET_CONFIG_CALL, &fd);
++}
++
+ /**
+  * Set up environment to talk with a vhost vdpa backend.
+  *
+@@ -695,6 +704,7 @@ struct virtio_user_backend_ops virtio_ops_vdpa = {
+ 	.set_status = vhost_vdpa_set_status,
+ 	.get_config = vhost_vdpa_get_config,
+ 	.set_config = vhost_vdpa_set_config,
++	.set_config_call = vhost_vdpa_set_config_call,
+ 	.cvq_enable = vhost_vdpa_cvq_enable,
+ 	.enable_qp = vhost_vdpa_enable_queue_pair,
+ 	.dma_map = vhost_vdpa_dma_map_batch,
+-- 
+2.25.1
+

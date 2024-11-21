@@ -1,0 +1,35 @@
+From b5a908a4129c8a9c91c5aaeb11d6a5a56fcde619 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 12 Apr 2024 17:38:01 +0530
+Subject: [PATCH 302/513] crypto/cnxk: fix clang build
+
+Fixed typecasting for argument of rte_atomic_load_explicit().
+
+Fixes: 2dae07ec4709 ("crypto/cnxk: support queue pair depth API")
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ie71a8c786db5f2326ea8e8e648531f546e01de28
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125273
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index bcbb0827f42e8..4828cd9e0ad9b 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -505,7 +505,8 @@ cnxk_cpt_qp_depth_used(void *qptr)
+ 
+ 	pend_q = &qp->pend_q;
+ 
+-	fc.u64[0] = rte_atomic_load_explicit(qp->lmtline.fc_addr, rte_memory_order_relaxed);
++	fc.u64[0] = rte_atomic_load_explicit((RTE_ATOMIC(uint64_t)*)(qp->lmtline.fc_addr),
++					     rte_memory_order_relaxed);
+ 
+ 	return RTE_MAX(pending_queue_infl_cnt(pend_q->head, pend_q->tail, pend_q->pq_mask),
+ 		       fc.s.qsize);
+-- 
+2.25.1
+

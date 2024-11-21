@@ -1,0 +1,85 @@
+From 9ef6b026762661e2e3e963066befa7c90c25ea3e Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Fri, 1 Sep 2023 01:13:12 +0530
+Subject: [PATCH 623/955] ci/l2fwd_tmc: update from l2fwd-event
+
+Updates from examples/l2fwd-event
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Iffe1f3f25d5468a15db31149a37765ed0a295589
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110976
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c |  5 +++--
+ marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_event.c  | 12 +++++-------
+ 2 files changed, 8 insertions(+), 9 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c b/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c
+index 162f880224a43..f0d704450f24e 100644
+--- a/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c
++++ b/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c
+@@ -118,8 +118,9 @@ l2fwd_event_vector_array_free(struct rte_event events[], uint16_t num)
+ 	uint16_t i;
+ 
+ 	for (i = 0; i < num; i++) {
+-		rte_pktmbuf_free_bulk(events[i].vec->mbufs,
+-				      events[i].vec->nb_elem);
++		rte_pktmbuf_free_bulk(
++			&events[i].vec->mbufs[events[i].vec->elem_offset],
++			events[i].vec->nb_elem);
+ 		rte_mempool_put(rte_mempool_from_obj(events[i].vec),
+ 				events[i].vec);
+ 	}
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_event.c b/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_event.c
+index fcbb12c054c39..dc8314e448627 100644
+--- a/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_event.c
++++ b/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_event.c
+@@ -246,10 +246,9 @@ l2fwd_event_loop_burst(struct l2fwd_resources *rsrc, const uint32_t flags)
+ 	if (port_id < 0)
+ 		return;
+ 
+-	printf("%s(): entering eventdev main loop on lcore %u\n", __func__,
+-	       rte_lcore_id());
+-
+ 	l2fwd_init_thread_tmc();
++	tmc_printf("%s(): entering eventdev main loop on lcore %u\n", __func__, rte_lcore_id());
++
+ 	while (tmc_isol_thr_pass() &&
+ 	       !__atomic_load_n(&rsrc->force_quit, __ATOMIC_RELAXED)) {
+ 		/* Read packet from eventdev. 8< */
+@@ -285,7 +284,7 @@ l2fwd_event_loop_burst(struct l2fwd_resources *rsrc, const uint32_t flags)
+ 		}
+ 	}
+ 
+-	l2fwd_event_worker_cleanup(event_d_id, port_id, ev, nb_rx, nb_tx, 0);
++	l2fwd_event_worker_cleanup(event_d_id, port_id, ev, nb_tx, nb_rx, 0);
+ }
+ 
+ static __rte_always_inline void
+@@ -428,10 +427,9 @@ l2fwd_event_loop_vector(struct l2fwd_resources *rsrc, const uint32_t flags)
+ 	if (port_id < 0)
+ 		return;
+ 
+-	printf("%s(): entering eventdev main loop on lcore %u\n", __func__,
+-	       rte_lcore_id());
+ 
+ 	l2fwd_init_thread_tmc();
++	tmc_printf("%s(): entering eventdev main loop on lcore %u\n", __func__, rte_lcore_id());
+ 	while (tmc_isol_thr_pass() &&
+ 	       !__atomic_load_n(&rsrc->force_quit, __ATOMIC_RELAXED)) {
+ 		nb_rx = rte_event_dequeue_burst(event_d_id, port_id, ev,
+@@ -468,7 +466,7 @@ l2fwd_event_loop_vector(struct l2fwd_resources *rsrc, const uint32_t flags)
+ 		}
+ 	}
+ 
+-	l2fwd_event_worker_cleanup(event_d_id, port_id, ev, nb_rx, nb_tx, 1);
++	l2fwd_event_worker_cleanup(event_d_id, port_id, ev, nb_tx, nb_rx, 1);
+ }
+ 
+ static void __rte_noinline
+-- 
+2.25.1
+

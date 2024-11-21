@@ -1,0 +1,233 @@
+From b69feaaace822a2b722315f820bbb1c4f12771d8 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Thu, 5 Jan 2023 20:23:18 +0530
+Subject: [PATCH 162/955] crypto/cnxk: set ctx for AE
+
+Set ctx_val to 1 for asymmetric ops.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Ief614b4158c5abfa90bd3a68b911b2f333438141
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93917
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 18 ++++---------
+ drivers/crypto/cnxk/cn9k_cryptodev_ops.c  | 16 +++--------
+ drivers/crypto/cnxk/cnxk_ae.h             | 19 +++++++++++++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  | 33 ++++++++++++++++-------
+ 4 files changed, 51 insertions(+), 35 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 92f7002db9ee6..d1a43eaf13d99 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -158,10 +158,8 @@ cn10k_cpt_fill_inst(struct cnxk_cpt_qp *qp, struct rte_crypto_op *ops[], struct
+ 
+ 		if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
+ 			asym_op = op->asym;
+-			ae_sess = (struct cnxk_ae_sess *)
+-					asym_op->session->sess_private_data;
+-			ret = cnxk_ae_enqueue(qp, op, infl_req, &inst[0],
+-					      ae_sess);
++			ae_sess = (struct cnxk_ae_sess *)asym_op->session;
++			ret = cnxk_ae_enqueue(qp, op, infl_req, &inst[0], ae_sess);
+ 			if (unlikely(ret))
+ 				return 0;
+ 			w7 = ae_sess->cpt_inst_w7;
+@@ -330,10 +328,9 @@ cn10k_cpt_crypto_adapter_ev_mdata_set(struct rte_cryptodev *dev __rte_unused, vo
+ 			return -EINVAL;
+ 	} else if (op_type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC) {
+ 		if (sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
+-			struct rte_cryptodev_asym_session *asym_sess = sess;
+ 			struct cnxk_ae_sess *priv;
+ 
+-			priv = (struct cnxk_ae_sess *)asym_sess->sess_private_data;
++			priv = (struct cnxk_ae_sess *)sess;
+ 			priv->qp = qp;
+ 			priv->cpt_inst_w2 = w2;
+ 		} else
+@@ -381,11 +378,9 @@ cn10k_ca_meta_info_extract(struct rte_crypto_op *op, struct cnxk_cpt_qp **qp, ui
+ 		}
+ 	} else if (op->type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC) {
+ 		if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
+-			struct rte_cryptodev_asym_session *asym_sess;
+ 			struct cnxk_ae_sess *priv;
+ 
+-			asym_sess = op->asym->session;
+-			priv = (struct cnxk_ae_sess *)asym_sess->sess_private_data;
++			priv = (struct cnxk_ae_sess *)op->asym->session;
+ 			*qp = priv->qp;
+ 			*w2 = priv->cpt_inst_w2;
+ 		} else
+@@ -890,10 +885,7 @@ cn10k_cpt_dequeue_post_process(struct cnxk_cpt_qp *qp,
+ 		} else if (cop->type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC) {
+ 			struct rte_crypto_asym_op *op = cop->asym;
+ 			uintptr_t *mdata = infl_req->mdata;
+-			struct cnxk_ae_sess *sess;
+-
+-			sess = (struct cnxk_ae_sess *)
+-					op->session->sess_private_data;
++			struct cnxk_ae_sess *sess = (struct cnxk_ae_sess *)op->session;
+ 
+ 			cnxk_ae_post_process(cop, sess, (uint8_t *)mdata[0]);
+ 		}
+diff --git a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+index 11541b6ab9908..34d40b07d4c69 100644
+--- a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+@@ -105,13 +105,10 @@ cn9k_cpt_inst_prep(struct cnxk_cpt_qp *qp, struct rte_crypto_op *op,
+ 			inst->w7.u64 = sess->cpt_inst_w7;
+ 		}
+ 	} else if (op->type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC) {
+-		struct rte_crypto_asym_op *asym_op;
+ 		struct cnxk_ae_sess *sess;
+ 
+ 		if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
+-			asym_op = op->asym;
+-			sess = (struct cnxk_ae_sess *)
+-					asym_op->session->sess_private_data;
++			sess = (struct cnxk_ae_sess *)op->asym->session;
+ 			ret = cnxk_ae_enqueue(qp, op, infl_req, inst, sess);
+ 			inst->w7.u64 = sess->cpt_inst_w7;
+ 		} else {
+@@ -345,7 +342,7 @@ cn9k_cpt_crypto_adapter_ev_mdata_set(struct rte_cryptodev *dev __rte_unused,
+ 			struct rte_cryptodev_asym_session *asym_sess = sess;
+ 			struct cnxk_ae_sess *priv;
+ 
+-			priv = (struct cnxk_ae_sess *)asym_sess->sess_private_data;
++			priv = (struct cnxk_ae_sess *)asym_sess;
+ 			priv->qp = qp;
+ 			priv->cpt_inst_w2 = w2;
+ 		} else
+@@ -393,11 +390,9 @@ cn9k_ca_meta_info_extract(struct rte_crypto_op *op,
+ 		}
+ 	} else if (op->type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC) {
+ 		if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
+-			struct rte_cryptodev_asym_session *asym_sess;
+ 			struct cnxk_ae_sess *priv;
+ 
+-			asym_sess = op->asym->session;
+-			priv = (struct cnxk_ae_sess *)asym_sess->sess_private_data;
++			priv = (struct cnxk_ae_sess *)op->asym->session;
+ 			*qp = priv->qp;
+ 			inst->w2.u64 = priv->cpt_inst_w2;
+ 		} else
+@@ -609,10 +604,7 @@ cn9k_cpt_dequeue_post_process(struct cnxk_cpt_qp *qp, struct rte_crypto_op *cop,
+ 		} else if (cop->type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC) {
+ 			struct rte_crypto_asym_op *op = cop->asym;
+ 			uintptr_t *mdata = infl_req->mdata;
+-			struct cnxk_ae_sess *sess;
+-
+-			sess = (struct cnxk_ae_sess *)
+-					op->session->sess_private_data;
++			struct cnxk_ae_sess *sess = (struct cnxk_ae_sess *)op->session;
+ 
+ 			cnxk_ae_post_process(cop, sess, (uint8_t *)mdata[0]);
+ 		}
+diff --git a/drivers/crypto/cnxk/cnxk_ae.h b/drivers/crypto/cnxk/cnxk_ae.h
+index 698c10129ea72..7523aebe67005 100644
+--- a/drivers/crypto/cnxk/cnxk_ae.h
++++ b/drivers/crypto/cnxk/cnxk_ae.h
+@@ -14,6 +14,7 @@
+ #include "cnxk_cryptodev_ops.h"
+ 
+ struct cnxk_ae_sess {
++	struct rte_cryptodev_asym_session rte_sess;
+ 	enum rte_crypto_asym_xform_type xfrm_type;
+ 	union {
+ 		struct rte_crypto_rsa_xform rsa_ctx;
+@@ -25,6 +26,24 @@ struct cnxk_ae_sess {
+ 	uint64_t cpt_inst_w7;
+ 	uint64_t cpt_inst_w2;
+ 	struct cnxk_cpt_qp *qp;
++	struct roc_cpt_lf *lf;
++	struct hw_ctx_s {
++		union {
++			struct {
++				uint64_t rsvd : 48;
++
++				uint64_t ctx_push_size : 7;
++				uint64_t rsvd1 : 1;
++
++				uint64_t ctx_hdr_size : 2;
++				uint64_t aop_valid : 1;
++				uint64_t rsvd2 : 1;
++				uint64_t ctx_size : 4;
++			} s;
++			uint64_t u64;
++		} w0;
++		uint8_t rsvd[256];
++	} hw_ctx __plt_aligned(ROC_ALIGN);
+ };
+ 
+ static __rte_always_inline void
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 1f7b546eea7a4..e21d37c0adb16 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -758,14 +758,14 @@ cnxk_ae_session_size_get(struct rte_cryptodev *dev __rte_unused)
+ }
+ 
+ void
+-cnxk_ae_session_clear(struct rte_cryptodev *dev,
+-		      struct rte_cryptodev_asym_session *sess)
++cnxk_ae_session_clear(struct rte_cryptodev *dev, struct rte_cryptodev_asym_session *sess)
+ {
+-	struct cnxk_ae_sess *priv;
++	struct cnxk_ae_sess *priv = (struct cnxk_ae_sess *)sess;
+ 
+-	priv = (struct cnxk_ae_sess *) sess->sess_private_data;
+-	if (priv == NULL)
+-		return;
++	/* Trigger CTX flush + invalidate to remove from CTX_CACHE */
++	roc_cpt_lf_ctx_flush(priv->lf, &priv->hw_ctx, true);
++
++	plt_delay_ms(1);
+ 
+ 	/* Free resources allocated in session_cfg */
+ 	cnxk_ae_free_session_parameters(priv);
+@@ -775,23 +775,36 @@ cnxk_ae_session_clear(struct rte_cryptodev *dev,
+ }
+ 
+ int
+-cnxk_ae_session_cfg(struct rte_cryptodev *dev,
+-		    struct rte_crypto_asym_xform *xform,
++cnxk_ae_session_cfg(struct rte_cryptodev *dev, struct rte_crypto_asym_xform *xform,
+ 		    struct rte_cryptodev_asym_session *sess)
+ {
+-	struct cnxk_ae_sess *priv =
+-			(struct cnxk_ae_sess *) sess->sess_private_data;
++	struct cnxk_ae_sess *priv = (struct cnxk_ae_sess *)sess;
+ 	struct cnxk_cpt_vf *vf = dev->data->dev_private;
+ 	struct roc_cpt *roc_cpt = &vf->cpt;
+ 	union cpt_inst_w7 w7;
++	struct hw_ctx_s *hwc;
+ 	int ret;
+ 
+ 	ret = cnxk_ae_fill_session_parameters(priv, xform);
+ 	if (ret)
+ 		return ret;
+ 
++	priv->lf = roc_cpt->lf[0];
++
+ 	w7.u64 = 0;
+ 	w7.s.egrp = roc_cpt->eng_grp[CPT_ENG_TYPE_AE];
++
++	if (vf->cpt.cpt_revision == ROC_CPT_REVISION_ID_106XX) {
++		hwc = &priv->hw_ctx;
++		hwc->w0.s.aop_valid = 1;
++		hwc->w0.s.ctx_hdr_size = 0;
++		hwc->w0.s.ctx_size = 1;
++		hwc->w0.s.ctx_push_size = 1;
++
++		w7.s.cptr = (uint64_t)hwc;
++		w7.s.ctx_val = 1;
++	}
++
+ 	priv->cpt_inst_w7 = w7.u64;
+ 	priv->cnxk_fpm_iova = vf->cnxk_fpm_iova;
+ 	priv->ec_grp = vf->ec_grp;
+-- 
+2.25.1
+

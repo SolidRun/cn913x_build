@@ -1,0 +1,156 @@
+From 0266a5b953ad90f80daa83d37962f69058c6c13b Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 14 Mar 2023 14:19:20 +0530
+Subject: [PATCH 264/955] common/cnxk: add more comments to mbox code
+
+Adding more comments to the mbox routines to understand the flow
+well.
+
+Change-Id: Ia13db3a2928cc7b20d670f6db6ae17cd32ceea46
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99323
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Devapraba Muthumani <dmuthumani@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c  | 20 +++++++++++++++++---
+ drivers/common/cnxk/roc_mbox.c |  5 +++++
+ 2 files changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 4bae638563ec3..3f186eda0c22b 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -98,6 +98,9 @@ pf_af_sync_msg(struct dev *dev, struct mbox_msghdr **rsp)
+ 	return rc;
+ }
+ 
++/* PF will send the messages to AF and wait for responses and forward the
++ * responses to VF.
++ */
+ static int
+ af_pf_wait_msg(struct dev *dev, uint16_t vf, int num_msg)
+ {
+@@ -115,9 +118,10 @@ af_pf_wait_msg(struct dev *dev, uint16_t vf, int num_msg)
+ 	/* We need to disable PF interrupts. We are in timer interrupt */
+ 	plt_write64(~0ull, dev->bar2 + RVU_PF_INT_ENA_W1C);
+ 
+-	/* Send message */
++	/* Send message to AF */
+ 	mbox_msg_send(mbox, 0);
+ 
++	/* Wait for AF response */
+ 	do {
+ 		plt_delay_ms(sleep);
+ 		timeout++;
+@@ -206,6 +210,7 @@ af_pf_wait_msg(struct dev *dev, uint16_t vf, int num_msg)
+ 	return req_hdr->num_msgs;
+ }
+ 
++/* PF receives mbox DOWN messages from VF and forwards to AF */
+ static int
+ vf_pf_process_msgs(struct dev *dev, uint16_t vf)
+ {
+@@ -274,6 +279,7 @@ vf_pf_process_msgs(struct dev *dev, uint16_t vf)
+ 	if (routed > 0) {
+ 		plt_base_dbg("pf:%d routed %d messages from vf:%d to AF",
+ 			     dev->pf, routed, vf);
++		/* PF will send the messages to AF and wait for responses */
+ 		af_pf_wait_msg(dev, vf, routed);
+ 		mbox_reset(dev->mbox, 0);
+ 	}
+@@ -289,6 +295,7 @@ vf_pf_process_msgs(struct dev *dev, uint16_t vf)
+ 	return i;
+ }
+ 
++/* VF sends Ack to PF's UP messages */
+ static int
+ vf_pf_process_up_msgs(struct dev *dev, uint16_t vf)
+ {
+@@ -339,6 +346,7 @@ vf_pf_process_up_msgs(struct dev *dev, uint16_t vf)
+ 	return i;
+ }
+ 
++/* PF handling messages from VF */
+ static void
+ roc_vf_pf_mbox_handle_msg(void *param)
+ {
+@@ -352,8 +360,9 @@ roc_vf_pf_mbox_handle_msg(void *param)
+ 		if (dev->intr.bits[vf / max_bits] & BIT_ULL(vf % max_bits)) {
+ 			plt_base_dbg("Process vf:%d request (pf:%d, vf:%d)", vf,
+ 				     dev->pf, dev->vf);
++			/* VF initiated down messages */
+ 			vf_pf_process_msgs(dev, vf);
+-			/* UP messages */
++			/* VF replies to PF's UP messages */
+ 			vf_pf_process_up_msgs(dev, vf);
+ 			dev->intr.bits[vf / max_bits] &=
+ 				~(BIT_ULL(vf % max_bits));
+@@ -362,6 +371,7 @@ roc_vf_pf_mbox_handle_msg(void *param)
+ 	dev->timer_set = 0;
+ }
+ 
++/* IRQ to PF from VF - PF context (interrupt thread) */
+ static void
+ roc_vf_pf_mbox_irq(void *param)
+ {
+@@ -392,6 +402,7 @@ roc_vf_pf_mbox_irq(void *param)
+ 	}
+ }
+ 
++/* Received response from AF (PF context) / PF (VF context) */
+ static void
+ process_msgs(struct dev *dev, struct mbox *mbox)
+ {
+@@ -450,7 +461,7 @@ process_msgs(struct dev *dev, struct mbox *mbox)
+ 	}
+ 
+ 	mbox_reset(mbox, 0);
+-	/* Update acked if someone is waiting a message */
++	/* Update acked if someone is waiting a message - mbox_wait is waiting */
+ 	mdev->msgs_acked = msgs_acked;
+ 	plt_wmb();
+ }
+@@ -596,6 +607,7 @@ mbox_process_msgs_up(struct dev *dev, struct mbox_msghdr *req)
+ 	return -ENODEV;
+ }
+ 
++/* Received up messages from AF (PF context) / PF (in context) */
+ static void
+ process_msgs_up(struct dev *dev, struct mbox *mbox)
+ {
+@@ -628,6 +640,7 @@ process_msgs_up(struct dev *dev, struct mbox *mbox)
+ 	}
+ }
+ 
++/* IRQ to VF from PF - VF context (interrupt thread) */
+ static void
+ roc_pf_vf_mbox_irq(void *param)
+ {
+@@ -656,6 +669,7 @@ roc_pf_vf_mbox_irq(void *param)
+ 	process_msgs_up(dev, &dev->mbox_up);
+ }
+ 
++/* IRQ to PF from AF - PF context (interrupt thread) */
+ static void
+ roc_af_pf_mbox_irq(void *param)
+ {
+diff --git a/drivers/common/cnxk/roc_mbox.c b/drivers/common/cnxk/roc_mbox.c
+index 5338a960d95f3..c91fa63e83757 100644
+--- a/drivers/common/cnxk/roc_mbox.c
++++ b/drivers/common/cnxk/roc_mbox.c
+@@ -350,6 +350,11 @@ mbox_wait(struct mbox *mbox, int devid, uint32_t rst_timo)
+ 	uint32_t timeout = 0, sleep = 1;
+ 
+ 	rst_timo = rst_timo * 1000; /* Milli seconds to micro seconds */
++
++	/* Waiting for mdev->msgs_acked tp become equal to mdev->num_msgs,
++	 * mdev->msgs_acked are incremented at process_msgs() in interrupt
++	 * thread context.
++	 */
+ 	while (mdev->num_msgs > mdev->msgs_acked) {
+ 		plt_delay_us(sleep);
+ 		timeout += sleep;
+-- 
+2.25.1
+

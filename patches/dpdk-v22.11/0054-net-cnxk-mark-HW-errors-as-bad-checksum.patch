@@ -1,0 +1,35 @@
+From 881cc88dfc44fa1b3051e84ba209a8d3863f2194 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 28 Nov 2022 15:24:41 +0530
+Subject: [PATCH 054/955] net/cnxk: mark HW errors as bad checksum
+
+Mark NIX packet parsing errors due to NPC/NPA errors as bad
+packets by setting L3/L4 checksum as BAD in olflags.
+Application can decide the fate of these packets.
+
+ci: skip_checkformat
+
+Change-Id: I8321cdf2031826e27c1c934b4545ade79ec84d43
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+---
+ drivers/net/cnxk/cnxk_lookup.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_lookup.c b/drivers/net/cnxk/cnxk_lookup.c
+index 5acf73fe17662..6d561f194f116 100644
+--- a/drivers/net/cnxk/cnxk_lookup.c
++++ b/drivers/net/cnxk/cnxk_lookup.c
+@@ -294,8 +294,8 @@ nix_create_rx_ol_flags_array(void *mem)
+ 				   errcode == NIX_RX_PERRCODE_OL3_LEN) {
+ 				val |= RTE_MBUF_F_RX_IP_CKSUM_BAD;
+ 			} else {
+-				val |= RTE_MBUF_F_RX_IP_CKSUM_GOOD;
+-				val |= RTE_MBUF_F_RX_L4_CKSUM_GOOD;
++				val |= RTE_MBUF_F_RX_IP_CKSUM_BAD;
++				val |= RTE_MBUF_F_RX_L4_CKSUM_BAD;
+ 			}
+ 			break;
+ 		}
+-- 
+2.25.1
+

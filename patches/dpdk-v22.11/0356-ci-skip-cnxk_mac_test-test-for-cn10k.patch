@@ -1,0 +1,31 @@
+From 2ad2351eff87d94ea43b1acbff6044bf102ab684 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Wed, 5 Apr 2023 12:18:30 +0530
+Subject: [PATCH 356/955] ci: skip cnxk_mac_test test for cn10k
+
+Skip cnxk_mac_test for cn10k until its fixed.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Ie4d2de94457ffcdb73363602b21f4eb5ddb35b12
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100630
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn10k.env | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 90616302c0336..b64c143f98654 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -70,6 +70,7 @@ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
+ 	cnxk_mtr_test_config
++	cnxk_mac_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+-- 
+2.25.1
+

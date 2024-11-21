@@ -1,0 +1,424 @@
+From 492526fc40ba7d1f8a74a45ebf4277533d3548e4 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 1 Mar 2023 05:05:46 +0000
+Subject: [PATCH 289/513] dma/odm: add remaining ops
+
+Add all remaining ops such as fill, burst_capacity etc. Also update the
+documentation.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I2cea3e4bb64606ab16ab6407bd71b2329b7a79fa
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122374
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ MAINTAINERS                  |   1 +
+ doc/guides/dmadevs/index.rst |   1 +
+ doc/guides/dmadevs/odm.rst   |  92 +++++++++++++
+ drivers/dma/odm/odm.h        |   2 +
+ drivers/dma/odm/odm_dmadev.c | 246 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 342 insertions(+)
+ create mode 100644 doc/guides/dmadevs/odm.rst
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index c80471cbaf4b3..2e5367aa758c2 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -1266,6 +1266,7 @@ M: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+ M: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+ T: git://dpdk.org/next/dpdk-next-net-mrvl
+ F: drivers/dma/odm/
++F: doc/guides/dmadevs/odm.rst
+ 
+ NXP DPAA DMA
+ M: Gagandeep Singh <g.singh@nxp.com>
+diff --git a/doc/guides/dmadevs/index.rst b/doc/guides/dmadevs/index.rst
+index 5bd25b32b9814..ce9f6eb2602de 100644
+--- a/doc/guides/dmadevs/index.rst
++++ b/doc/guides/dmadevs/index.rst
+@@ -17,3 +17,4 @@ an application through DMA API.
+    hisilicon
+    idxd
+    ioat
++   odm
+diff --git a/doc/guides/dmadevs/odm.rst b/doc/guides/dmadevs/odm.rst
+new file mode 100644
+index 0000000000000..a2eaab59a078a
+--- /dev/null
++++ b/doc/guides/dmadevs/odm.rst
+@@ -0,0 +1,92 @@
++.. SPDX-License-Identifier: BSD-3-Clause
++   Copyright(c) 2024 Marvell.
++
++Odyssey ODM DMA Device Driver
++=============================
++
++The ``odm`` DMA device driver provides a poll-mode driver (PMD) for Marvell Odyssey
++DMA Hardware Accelerator block found in Odyssey SoC. The block supports only mem
++to mem DMA transfers.
++
++ODM DMA device can support up to 32 queues and 16 VFs.
++
++Prerequisites and Compilation procedure
++---------------------------------------
++
++Device Setup
++-------------
++
++ODM DMA device is initialized by kernel PF driver. The PF kernel driver is part
++of Marvell software packages for Odyssey.
++
++Kernel module can be inserted as in below example::
++
++    $ sudo insmod odyssey_odm.ko
++
++ODM DMA device can support up to 16 VFs::
++
++    $ sudo echo 16 > /sys/bus/pci/devices/0000\:08\:00.0/sriov_numvfs
++
++Above command creates 16 VFs with 2 queues each.
++
++The ``dpdk-devbind.py`` script, included with DPDK, can be used to show the
++presence of supported hardware. Running ``dpdk-devbind.py --status-dev dma``
++will show all the Odyssey ODM DMA devices.
++
++Devices using VFIO drivers
++~~~~~~~~~~~~~~~~~~~~~~~~~~
++
++The HW devices to be used will need to be bound to a user-space IO driver.
++The ``dpdk-devbind.py`` script can be used to view the state of the devices
++and to bind them to a suitable DPDK-supported driver, such as ``vfio-pci``.
++For example::
++
++     $ dpdk-devbind.py -b vfio-pci 0000:08:00.1
++
++Device Probing and Initialization
++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++
++To use the devices from an application, the dmadev API can be used.
++
++Once configured, the device can then be made ready for use
++by calling the ``rte_dma_start()`` API.
++
++Performing Data Copies
++~~~~~~~~~~~~~~~~~~~~~~
++
++Refer to the :ref:`Enqueue / Dequeue APIs <dmadev_enqueue_dequeue>` section
++of the dmadev library documentation for details on operation enqueue and
++submission API usage.
++
++Performance Tuning Parameters
++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++
++To achieve higher performance, DMA device needs to be tuned using PF kernel
++driver module parameters.
++
++Following options are exposed by kernel PF driver via devlink interface for
++tuning performance.
++
++``eng_sel``
++
++  ODM DMA device has 2 engines internally. Engine to queue mapping is decided
++  by a hardware register which can be configured as below::
++
++    $ /sbin/devlink dev param set pci/0000:08:00.0 name eng_sel value 3435973836 cmode runtime
++
++  Each bit in the register corresponds to one queue. Each queue would be
++  associated with one engine. If the value of the bit corresponding to the queue
++  is 0, then engine 0 would be picked. If it is 1, then engine 1 would be
++  picked.
++
++  In the above command, the register value is set as
++  ``1100 1100 1100 1100 1100 1100 1100 1100`` which allows for alternate engines
++  to be used with alternate VFs (assuming the system has 16 VFs with 2 queues
++  each).
++
++``max_load_request``
++
++  Specifies maximum outstanding load requests on internal bus. Values can range
++  from 1 to 512. Set to 512 for maximum requests in flight.::
++
++    $ /sbin/devlink dev param set pci/0000:08:00.0 name max_load_request value 512 cmode runtime
+diff --git a/drivers/dma/odm/odm.h b/drivers/dma/odm/odm.h
+index 40435242c864f..0bdcc2485fea7 100644
+--- a/drivers/dma/odm/odm.h
++++ b/drivers/dma/odm/odm.h
+@@ -71,6 +71,8 @@ extern int odm_logtype;
+ 	rte_log(RTE_LOG_ERR, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
+ #define odm_info(fmt, args...)                                                                     \
+ 	rte_log(RTE_LOG_INFO, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
++#define odm_debug(fmt, args...)                                                                    \
++	rte_log(RTE_LOG_DEBUG, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
+ 
+ #define ODM_MEMZONE_FLAGS                                                                          \
+ 	(RTE_MEMZONE_1GB | RTE_MEMZONE_16MB | RTE_MEMZONE_16GB | RTE_MEMZONE_256MB |               \
+diff --git a/drivers/dma/odm/odm_dmadev.c b/drivers/dma/odm/odm_dmadev.c
+index 327692426f9cf..04286e3bf7dd0 100644
+--- a/drivers/dma/odm/odm_dmadev.c
++++ b/drivers/dma/odm/odm_dmadev.c
+@@ -317,6 +317,247 @@ odm_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge *
+ 	return vq->desc_idx++;
+ }
+ 
++static int
++odm_dmadev_fill(void *dev_private, uint16_t vchan, uint64_t pattern, rte_iova_t dst,
++		uint32_t length, uint64_t flags)
++{
++	uint16_t pending_submit_len, pending_submit_cnt, iring_sz_available, iring_head;
++	const int num_words = ODM_IRING_ENTRY_SIZE_MIN;
++	struct odm_dev *odm = dev_private;
++	uint64_t *iring_head_ptr;
++	struct odm_queue *vq;
++	uint64_t h;
++
++	vq = &odm->vq[vchan];
++
++	union odm_instr_hdr_s hdr = {
++		.s.ct = ODM_HDR_CT_CW_NC,
++		.s.nfst = 0,
++		.s.nlst = 1,
++	};
++
++	h = (uint64_t)length;
++
++	switch (pattern) {
++	case 0:
++		hdr.s.xtype = ODM_XTYPE_FILL0;
++		break;
++	case 0xffffffffffffffff:
++		hdr.s.xtype = ODM_XTYPE_FILL1;
++		break;
++	default:
++		return -ENOTSUP;
++	}
++
++	const uint16_t max_iring_words = vq->iring_max_words;
++
++	iring_sz_available = vq->iring_sz_available;
++	pending_submit_len = vq->pending_submit_len;
++	pending_submit_cnt = vq->pending_submit_cnt;
++	iring_head_ptr = vq->iring_mz->addr;
++	iring_head = vq->iring_head;
++
++	if (iring_sz_available < num_words)
++		return -ENOSPC;
++
++	if ((iring_head + num_words) >= max_iring_words) {
++
++		iring_head_ptr[iring_head] = hdr.u;
++		iring_head = (iring_head + 1) % max_iring_words;
++
++		iring_head_ptr[iring_head] = h;
++		iring_head = (iring_head + 1) % max_iring_words;
++
++		iring_head_ptr[iring_head] = dst;
++		iring_head = (iring_head + 1) % max_iring_words;
++
++		iring_head_ptr[iring_head] = 0;
++		iring_head = (iring_head + 1) % max_iring_words;
++	} else {
++		iring_head_ptr[iring_head] = hdr.u;
++		iring_head_ptr[iring_head + 1] = h;
++		iring_head_ptr[iring_head + 2] = dst;
++		iring_head_ptr[iring_head + 3] = 0;
++		iring_head += num_words;
++	}
++
++	pending_submit_len += num_words;
++
++	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
++		rte_wmb();
++		odm_write64(pending_submit_len, odm->rbase + ODM_VDMA_DBELL(vchan));
++		vq->stats.submitted += pending_submit_cnt + 1;
++		vq->pending_submit_len = 0;
++		vq->pending_submit_cnt = 0;
++	} else {
++		vq->pending_submit_len = pending_submit_len;
++		vq->pending_submit_cnt++;
++	}
++
++	vq->iring_head = iring_head;
++	vq->iring_sz_available = iring_sz_available - num_words;
++
++	/* No extra space to save. Skip entry in extra space ring. */
++	vq->ins_ring_head = (vq->ins_ring_head + 1) % vq->cring_max_entry;
++
++	vq->iring_sz_available = iring_sz_available - num_words;
++
++	return vq->desc_idx++;
++}
++
++static uint16_t
++odm_dmadev_completed(void *dev_private, uint16_t vchan, const uint16_t nb_cpls, uint16_t *last_idx,
++		     bool *has_error)
++{
++	const union odm_cmpl_ent_s cmpl_zero = {0};
++	uint16_t cring_head, iring_sz_available;
++	struct odm_dev *odm = dev_private;
++	union odm_cmpl_ent_s cmpl;
++	struct odm_queue *vq;
++	uint64_t nb_err = 0;
++	uint32_t *cmpl_ptr;
++	int cnt;
++
++	vq = &odm->vq[vchan];
++	const uint32_t *base_addr = vq->cring_mz->addr;
++	const uint16_t cring_max_entry = vq->cring_max_entry;
++
++	cring_head = vq->cring_head;
++	iring_sz_available = vq->iring_sz_available;
++
++	if (unlikely(vq->stats.submitted == vq->stats.completed)) {
++		*last_idx = (vq->stats.completed_offset + vq->stats.completed - 1) & 0xFFFF;
++		return 0;
++	}
++
++	for (cnt = 0; cnt < nb_cpls; cnt++) {
++		cmpl_ptr = RTE_PTR_ADD(base_addr, cring_head * sizeof(cmpl));
++		cmpl.u = rte_atomic_load_explicit(cmpl_ptr, rte_memory_order_relaxed);
++		if (!cmpl.s.valid)
++			break;
++
++		if (cmpl.s.cmp_code)
++			nb_err++;
++
++		/* Free space for enqueue */
++		iring_sz_available += 4 + vq->extra_ins_sz[cring_head];
++
++		/* Clear instruction extra space */
++		vq->extra_ins_sz[cring_head] = 0;
++
++		rte_atomic_store_explicit(cmpl_ptr, cmpl_zero.u, rte_memory_order_relaxed);
++		cring_head = (cring_head + 1) % cring_max_entry;
++	}
++
++	vq->stats.errors += nb_err;
++
++	if (unlikely(has_error != NULL && nb_err))
++		*has_error = true;
++
++	vq->cring_head = cring_head;
++	vq->iring_sz_available = iring_sz_available;
++
++	vq->stats.completed += cnt;
++
++	*last_idx = (vq->stats.completed_offset + vq->stats.completed - 1) & 0xFFFF;
++
++	return cnt;
++}
++
++static uint16_t
++odm_dmadev_completed_status(void *dev_private, uint16_t vchan, const uint16_t nb_cpls,
++			    uint16_t *last_idx, enum rte_dma_status_code *status)
++{
++	const union odm_cmpl_ent_s cmpl_zero = {0};
++	uint16_t cring_head, iring_sz_available;
++	struct odm_dev *odm = dev_private;
++	union odm_cmpl_ent_s cmpl;
++	struct odm_queue *vq;
++	uint32_t *cmpl_ptr;
++	int cnt;
++
++	vq = &odm->vq[vchan];
++	const uint32_t *base_addr = vq->cring_mz->addr;
++	const uint16_t cring_max_entry = vq->cring_max_entry;
++
++	cring_head = vq->cring_head;
++	iring_sz_available = vq->iring_sz_available;
++
++	if (vq->stats.submitted == vq->stats.completed) {
++		*last_idx = (vq->stats.completed_offset + vq->stats.completed - 1) & 0xFFFF;
++		return 0;
++	}
++
++#ifdef ODM_DEBUG
++	odm_debug("cring_head: 0x%" PRIx16, cring_head);
++	odm_debug("Submitted: 0x%" PRIx64, vq->stats.submitted);
++	odm_debug("Completed: 0x%" PRIx64, vq->stats.completed);
++	odm_debug("Hardware count: 0x%" PRIx64, odm_read64(odm->rbase + ODM_VDMA_CNT(vchan)));
++#endif
++
++	for (cnt = 0; cnt < nb_cpls; cnt++) {
++		cmpl_ptr = RTE_PTR_ADD(base_addr, cring_head * sizeof(cmpl));
++		cmpl.u = rte_atomic_load_explicit(cmpl_ptr, rte_memory_order_relaxed);
++		if (!cmpl.s.valid)
++			break;
++
++		status[cnt] = cmpl.s.cmp_code;
++
++		if (cmpl.s.cmp_code)
++			vq->stats.errors++;
++
++		/* Free space for enqueue */
++		iring_sz_available += 4 + vq->extra_ins_sz[cring_head];
++
++		/* Clear instruction extra space */
++		vq->extra_ins_sz[cring_head] = 0;
++
++		rte_atomic_store_explicit(cmpl_ptr, cmpl_zero.u, rte_memory_order_relaxed);
++		cring_head = (cring_head + 1) % cring_max_entry;
++	}
++
++	vq->cring_head = cring_head;
++	vq->iring_sz_available = iring_sz_available;
++
++	vq->stats.completed += cnt;
++
++	*last_idx = (vq->stats.completed_offset + vq->stats.completed - 1) & 0xFFFF;
++
++	return cnt;
++}
++
++static int
++odm_dmadev_submit(void *dev_private, uint16_t vchan)
++{
++	struct odm_dev *odm = dev_private;
++	uint16_t pending_submit_len;
++	struct odm_queue *vq;
++
++	vq = &odm->vq[vchan];
++	pending_submit_len = vq->pending_submit_len;
++
++	if (pending_submit_len == 0)
++		return 0;
++
++	rte_wmb();
++	odm_write64(pending_submit_len, odm->rbase + ODM_VDMA_DBELL(vchan));
++	vq->pending_submit_len = 0;
++	vq->stats.submitted += vq->pending_submit_cnt;
++	vq->pending_submit_cnt = 0;
++
++	return 0;
++}
++
++static uint16_t
++odm_dmadev_burst_capacity(const void *dev_private, uint16_t vchan __rte_unused)
++{
++	const struct odm_dev *odm = dev_private;
++	const struct odm_queue *vq;
++
++	vq = &odm->vq[vchan];
++	return (vq->iring_sz_available / ODM_IRING_ENTRY_SIZE_MIN);
++}
++
+ static int
+ odm_stats_get(const struct rte_dma_dev *dev, uint16_t vchan, struct rte_dma_stats *rte_stats,
+ 	      uint32_t size)
+@@ -416,6 +657,11 @@ odm_dmadev_probe(struct rte_pci_driver *pci_drv __rte_unused, struct rte_pci_dev
+ 
+ 	dmadev->fp_obj->copy = odm_dmadev_copy;
+ 	dmadev->fp_obj->copy_sg = odm_dmadev_copy_sg;
++	dmadev->fp_obj->fill = odm_dmadev_fill;
++	dmadev->fp_obj->submit = odm_dmadev_submit;
++	dmadev->fp_obj->completed = odm_dmadev_completed;
++	dmadev->fp_obj->completed_status = odm_dmadev_completed_status;
++	dmadev->fp_obj->burst_capacity = odm_dmadev_burst_capacity;
+ 
+ 	odm->pci_dev = pci_dev;
+ 
+-- 
+2.25.1
+

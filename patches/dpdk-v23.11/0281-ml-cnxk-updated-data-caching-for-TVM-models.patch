@@ -1,0 +1,41 @@
+From 3a6c372f45ee1b639cf5b651b5501be94f1f1576 Mon Sep 17 00:00:00 2001
+From: Anup Prabhu <aprabhu@marvell.com>
+Date: Tue, 19 Mar 2024 22:40:44 -0700
+Subject: [PATCH 281/513] ml/cnxk: updated data caching for TVM models
+
+Enabled data caching for all MRVL layer.
+
+Signed-off-by: Anup Prabhu <aprabhu@marvell.com>
+Change-Id: I1ce67c0d769732e8391a61302c1fa1ca5a33f7a6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/124155
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Srikanth Yalavarthi <syalavarthi@marvell.com>
+---
+ drivers/ml/cnxk/cn10k_ml_ops.c | 9 ++-------
+ 1 file changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/ml/cnxk/cn10k_ml_ops.c b/drivers/ml/cnxk/cn10k_ml_ops.c
+index 834e55e88e9bd..f6b2baa0df072 100644
+--- a/drivers/ml/cnxk/cn10k_ml_ops.c
++++ b/drivers/ml/cnxk/cn10k_ml_ops.c
+@@ -996,13 +996,8 @@ cn10k_ml_layer_start(void *device, uint16_t model_id, const char *layer_name)
+ 	if (ret < 0) {
+ 		cn10k_ml_layer_stop(device, model_id, layer_name);
+ 	} else {
+-		if (cn10k_mldev->cache_model_data) {
+-			if ((model->type == ML_CNXK_MODEL_TYPE_GLOW &&
+-			     model->subtype == ML_CNXK_MODEL_SUBTYPE_GLOW_MRVL) ||
+-			    (model->type == ML_CNXK_MODEL_TYPE_TVM &&
+-			     model->subtype == ML_CNXK_MODEL_SUBTYPE_TVM_MRVL))
+-				ret = cn10k_ml_cache_model_data(cnxk_mldev, layer);
+-		}
++		if (cn10k_mldev->cache_model_data)
++			ret = cn10k_ml_cache_model_data(cnxk_mldev, layer);
+ 	}
+ 
+ 	return ret;
+-- 
+2.25.1
+

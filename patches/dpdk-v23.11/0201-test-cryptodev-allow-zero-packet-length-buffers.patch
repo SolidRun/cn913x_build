@@ -1,0 +1,79 @@
+From c1460bb35f6ad28e10fa7ab5cf04ae1a3c0aff54 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 2 Feb 2024 15:34:31 +0000
+Subject: [PATCH 201/513] test/cryptodev: allow zero packet length buffers
+
+The function 'create_segmented_mbuf' is updated to support zero packet
+length mbufs. This allows testing of zero packet length payload with TLS
+record processing.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ie06c931f1cc4b545e95785850687699d2eddb650
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121065
+Reviewed-by: Aakash Sasidharan <Aakash.Sasidharan@marvell.com>
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 03b7e31419ea8a7e77e705be3eaad4e54b20a78a)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121232
+---
+ app/test/test_cryptodev.h | 20 +++++++-------------
+ 1 file changed, 7 insertions(+), 13 deletions(-)
+
+diff --git a/app/test/test_cryptodev.h b/app/test/test_cryptodev.h
+index e4e99d00c1f52..7d877ddfe58b7 100644
+--- a/app/test/test_cryptodev.h
++++ b/app/test/test_cryptodev.h
+@@ -192,15 +192,8 @@ create_segmented_mbuf(struct rte_mempool *mbuf_pool, int pkt_len,
+ 		int nb_segs, uint8_t pattern) {
+ 
+ 	struct rte_mbuf *m = NULL, *mbuf = NULL;
++	int size, t_len, data_len = 0;
+ 	uint8_t *dst;
+-	int data_len = 0;
+-	int i, size;
+-	int t_len;
+-
+-	if (pkt_len < 1) {
+-		printf("Packet size must be 1 or more (is %d)\n", pkt_len);
+-		return NULL;
+-	}
+ 
+ 	if (nb_segs < 1) {
+ 		printf("Number of segments must be 1 or more (is %d)\n",
+@@ -212,17 +205,17 @@ create_segmented_mbuf(struct rte_mempool *mbuf_pool, int pkt_len,
+ 	size = pkt_len;
+ 
+ 	/* Create chained mbuf_src and fill it generated data */
+-	for (i = 0; size > 0; i++) {
++	do {
+ 
+ 		m = rte_pktmbuf_alloc(mbuf_pool);
+-		if (i == 0)
+-			mbuf = m;
+-
+ 		if (m == NULL) {
+ 			printf("Cannot create segment for source mbuf");
+ 			goto fail;
+ 		}
+ 
++		if (mbuf == NULL)
++			mbuf = m;
++
+ 		/* Make sure if tailroom is zeroed */
+ 		memset(m->buf_addr, pattern, m->buf_len);
+ 
+@@ -239,7 +232,8 @@ create_segmented_mbuf(struct rte_mempool *mbuf_pool, int pkt_len,
+ 
+ 		size -= data_len;
+ 
+-	}
++	} while (size > 0);
++
+ 	return mbuf;
+ 
+ fail:
+-- 
+2.25.1
+

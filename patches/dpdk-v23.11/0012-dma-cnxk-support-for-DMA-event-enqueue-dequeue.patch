@@ -1,0 +1,400 @@
+From 405d9552ab35e69b249f86688bc423cc73eaddb1 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Thu, 30 Nov 2023 16:07:32 +0530
+Subject: [PATCH 012/513] dma/cnxk: support for DMA event enqueue dequeue
+
+Added cnxk driver support for dma event enqueue and dequeue.
+Also added changes for work queue entry completion status.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I4d3d7b77a6df904d97b3d4c704431ec375ac2efd
+---
+ doc/guides/eventdevs/cnxk.rst        |   5 +
+ drivers/dma/cnxk/cnxk_dma_event_dp.h |  24 +++
+ drivers/dma/cnxk/cnxk_dmadev.c       |   2 +-
+ drivers/dma/cnxk/cnxk_dmadev.h       |  18 ++-
+ drivers/dma/cnxk/cnxk_dmadev_fp.c    | 212 +++++++++++++++++++++++++++
+ drivers/dma/cnxk/meson.build         |   9 +-
+ drivers/dma/cnxk/version.map         |  10 ++
+ 7 files changed, 277 insertions(+), 3 deletions(-)
+ create mode 100644 drivers/dma/cnxk/cnxk_dma_event_dp.h
+ create mode 100644 drivers/dma/cnxk/version.map
+
+diff --git a/doc/guides/eventdevs/cnxk.rst b/doc/guides/eventdevs/cnxk.rst
+index cccb8a03044f0..9ff1052c53b14 100644
+--- a/doc/guides/eventdevs/cnxk.rst
++++ b/doc/guides/eventdevs/cnxk.rst
+@@ -227,3 +227,8 @@ ethernet devices connected to event device to override this applications can
+ use `force_rx_bp=1` device arguments.
+ Using unique mempool per each ethernet device is recommended when they are
+ connected to event device.
++
++DMA adapter new mode support
++~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++
++DMA driver does not support DMA adapter configured in new mode.
+diff --git a/drivers/dma/cnxk/cnxk_dma_event_dp.h b/drivers/dma/cnxk/cnxk_dma_event_dp.h
+new file mode 100644
+index 0000000000000..6fa2ebb20e12f
+--- /dev/null
++++ b/drivers/dma/cnxk/cnxk_dma_event_dp.h
+@@ -0,0 +1,24 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#ifndef _CNXK_DMA_EVENT_DP_H_
++#define _CNXK_DMA_EVENT_DP_H_
++
++#include <stdint.h>
++
++#include <rte_common.h>
++#include <rte_eventdev.h>
++
++__rte_internal
++uint16_t cn10k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events);
++
++__rte_internal
++uint16_t cn9k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events);
++
++__rte_internal
++uintptr_t cnxk_dma_adapter_dequeue(uintptr_t get_work1);
++
++__rte_internal
++struct cnxk_dpi_vf_s *cnxk_dev_id_2_dpivf_get(int16_t dev_id);
++#endif /* _CNXK_DMA_EVENT_DP_H_ */
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index 1e7f49792cfa9..a748331da163d 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -592,7 +592,7 @@ cnxk_dmadev_probe(struct rte_pci_driver *pci_drv __rte_unused, struct rte_pci_de
+ 	rdpi = &dpivf->rdpi;
+ 
+ 	rdpi->pci_dev = pci_dev;
+-	rc = roc_dpi_dev_init(rdpi);
++	rc = roc_dpi_dev_init(rdpi, offsetof(struct cnxk_dpi_compl_s, wqecs));
+ 	if (rc < 0)
+ 		goto err_out_free;
+ 
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.h b/drivers/dma/cnxk/cnxk_dmadev.h
+index 350ae73b5cdd0..332325d6b6d3b 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.h
++++ b/drivers/dma/cnxk/cnxk_dmadev.h
+@@ -19,6 +19,8 @@
+ 
+ #include <roc_api.h>
+ 
++#include "cnxk_dma_event_dp.h"
++
+ #define CNXK_DPI_MAX_POINTER		    15
+ #define CNXK_DPI_STRM_INC(s, var)	    ((s).var = ((s).var + 1) & (s).max_cnt)
+ #define CNXK_DPI_STRM_DEC(s, var)	    ((s).var = ((s).var - 1) == -1 ? (s).max_cnt :	\
+@@ -40,6 +42,11 @@
+  */
+ #define CNXK_DPI_REQ_CDATA 0xFF
+ 
++/* Set Completion data to 0xDEADBEEF when request submitted for SSO.
++ * This helps differentiate if the dequeue is called after cnxk enueue.
++ */
++#define CNXK_DPI_REQ_SSO_CDATA    0xDEADBEEF
++
+ union cnxk_dpi_instr_cmd {
+ 	uint64_t u;
+ 	struct cn9k_dpi_instr_cmd {
+@@ -85,7 +92,10 @@ union cnxk_dpi_instr_cmd {
+ 
+ struct cnxk_dpi_compl_s {
+ 	uint64_t cdata;
+-	void *cb_data;
++	void *op;
++	uint16_t dev_id;
++	uint16_t vchan;
++	uint32_t wqecs;
+ };
+ 
+ struct cnxk_dpi_cdesc_data_s {
+@@ -95,6 +105,11 @@ struct cnxk_dpi_cdesc_data_s {
+ 	uint16_t tail;
+ };
+ 
++struct cnxk_dma_adapter_info {
++	bool enabled;               /* Set if vchan queue is added to dma adapter. */
++	struct rte_mempool *req_mp; /* DMA inflight request mempool. */
++};
++
+ struct cnxk_dpi_conf {
+ 	union cnxk_dpi_instr_cmd cmd;
+ 	struct cnxk_dpi_cdesc_data_s c_desc;
+@@ -103,6 +118,7 @@ struct cnxk_dpi_conf {
+ 	uint16_t desc_idx;
+ 	struct rte_dma_stats stats;
+ 	uint64_t completed_offset;
++	struct cnxk_dma_adapter_info adapter_info;
+ };
+ 
+ struct cnxk_dpi_vf_s {
+diff --git a/drivers/dma/cnxk/cnxk_dmadev_fp.c b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+index 95df19a2db4ac..85a8e1310e796 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev_fp.c
++++ b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+@@ -5,6 +5,13 @@
+ #include <rte_vect.h>
+ 
+ #include "cnxk_dmadev.h"
++#include <rte_event_dma_adapter.h>
++
++#include <cn10k_eventdev.h>
++#include <cnxk_eventdev.h>
++#include <rte_mcslock.h>
++
++rte_mcslock_t *dpi_ml;
+ 
+ static __plt_always_inline void
+ __dpi_cpy_scalar(uint64_t *src, uint64_t *dst, uint8_t n)
+@@ -434,3 +441,208 @@ cn10k_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge
+ 
+ 	return dpi_conf->desc_idx++;
+ }
++
++static inline uint64_t
++cnxk_dma_adapter_format_event(uint64_t event)
++{
++	uint64_t w0;
++	w0 = (event & 0xFFC000000000) >> 6 |
++	     (event & 0xFFFFFFF) | RTE_EVENT_TYPE_DMADEV << 28;
++
++	return w0;
++}
++
++uint16_t
++cn10k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
++{
++	const struct rte_dma_sge *src, *dst;
++	struct rte_event_dma_adapter_op *op;
++	struct cnxk_dpi_compl_s *comp_ptr;
++	struct cnxk_dpi_conf *dpi_conf;
++	struct cnxk_dpi_vf_s *dpivf;
++	struct rte_event *rsp_info;
++	struct cn10k_sso_hws *work;
++	uint16_t nb_src, nb_dst;
++	rte_mcslock_t ml_me;
++	uint64_t hdr[4];
++	uint16_t count;
++	int rc;
++
++	work = (struct cn10k_sso_hws *)ws;
++
++	for (count = 0; count < nb_events; count++) {
++		op = ev[count].event_ptr;
++		rsp_info = (struct rte_event *)((uint8_t *)op +
++			     sizeof(struct rte_event_dma_adapter_op));
++		dpivf =	rte_dma_fp_objs[op->dma_dev_id].dev_private;
++		dpi_conf = &dpivf->conf[op->vchan];
++
++		if (unlikely(rte_mempool_get(dpi_conf->adapter_info.req_mp, (void **)&comp_ptr)))
++			return count;
++
++		comp_ptr->op = op;
++		comp_ptr->dev_id = op->dma_dev_id;
++		comp_ptr->vchan = op->vchan;
++		comp_ptr->cdata = CNXK_DPI_REQ_SSO_CDATA;
++
++		nb_src = op->nb_src & CNXK_DPI_MAX_POINTER;
++		nb_dst = op->nb_dst & CNXK_DPI_MAX_POINTER;
++
++		hdr[0] = dpi_conf->cmd.u | ((uint64_t)DPI_HDR_PT_WQP << 54);
++		hdr[0] |= (nb_dst << 6) | nb_src;
++		hdr[1] = ((uint64_t)comp_ptr);
++		hdr[2] = cnxk_dma_adapter_format_event(rsp_info->event);
++
++		src = &op->src_seg[0];
++		dst = &op->dst_seg[0];
++
++		if (CNXK_TAG_IS_HEAD(work->gw_rdata) ||
++		    ((CNXK_TT_FROM_TAG(work->gw_rdata) == SSO_TT_ORDERED) &&
++		    (rsp_info->sched_type & DPI_HDR_TT_MASK) ==
++			    RTE_SCHED_TYPE_ORDERED))
++			roc_sso_hws_head_wait(work->base);
++
++		rte_mcslock_lock(&dpi_ml, &ml_me);
++		rc = __dpi_queue_write_sg(dpivf, hdr, src, dst, nb_src, nb_dst);
++		if (unlikely(rc)) {
++			rte_mcslock_unlock(&dpi_ml, &ml_me);
++			return rc;
++		}
++
++		if (op->flags & RTE_DMA_OP_FLAG_SUBMIT) {
++			rte_wmb();
++			plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++				    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
++			dpi_conf->stats.submitted += dpi_conf->pending + 1;
++			dpi_conf->pnum_words = 0;
++			dpi_conf->pending = 0;
++		} else {
++			dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++			dpi_conf->pending++;
++		}
++		rte_mcslock_unlock(&dpi_ml, &ml_me);
++	}
++
++	return count;
++}
++
++uint16_t
++cn9k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
++{
++	const struct rte_dma_sge *fptr, *lptr;
++	struct rte_event_dma_adapter_op *op;
++	struct cnxk_dpi_compl_s *comp_ptr;
++	struct cnxk_dpi_conf *dpi_conf;
++	struct cnxk_dpi_vf_s *dpivf;
++	struct rte_event *rsp_info;
++	struct cn9k_sso_hws *work;
++	uint16_t nb_src, nb_dst;
++	rte_mcslock_t ml_me;
++	uint64_t hdr[4];
++	uint16_t count;
++	int rc;
++
++	work = (struct cn9k_sso_hws *)ws;
++
++	for (count = 0; count < nb_events; count++) {
++		op = ev[count].event_ptr;
++		rsp_info = (struct rte_event *)((uint8_t *)op +
++			    sizeof(struct rte_event_dma_adapter_op));
++		dpivf =	rte_dma_fp_objs[op->dma_dev_id].dev_private;
++		dpi_conf = &dpivf->conf[op->vchan];
++
++		if (unlikely(rte_mempool_get(dpi_conf->adapter_info.req_mp, (void **)&comp_ptr)))
++			return count;
++
++		comp_ptr->op = op;
++		comp_ptr->dev_id = op->dma_dev_id;
++		comp_ptr->vchan = op->vchan;
++		comp_ptr->cdata = CNXK_DPI_REQ_SSO_CDATA;
++
++		hdr[1] = dpi_conf->cmd.u | ((uint64_t)DPI_HDR_PT_WQP << 36);
++		hdr[2] = (uint64_t)comp_ptr;
++
++		nb_src = op->nb_src & CNXK_DPI_MAX_POINTER;
++		nb_dst = op->nb_dst & CNXK_DPI_MAX_POINTER;
++		/*
++		 * For inbound case, src pointers are last pointers.
++		 * For all other cases, src pointers are first pointers.
++		 */
++		if (((dpi_conf->cmd.u >> 48) & DPI_HDR_XTYPE_MASK) == DPI_XTYPE_INBOUND) {
++			fptr = &op->dst_seg[0];
++			lptr = &op->src_seg[0];
++			RTE_SWAP(nb_src, nb_dst);
++		} else {
++			fptr = &op->src_seg[0];
++			lptr = &op->dst_seg[0];
++		}
++
++		hdr[0] = ((uint64_t)nb_dst << 54) | (uint64_t)nb_src << 48;
++		hdr[0] |= cnxk_dma_adapter_format_event(rsp_info->event);
++
++		if ((rsp_info->sched_type & DPI_HDR_TT_MASK) == RTE_SCHED_TYPE_ORDERED)
++			roc_sso_hws_head_wait(work->base);
++
++		rte_mcslock_lock(&dpi_ml, &ml_me);
++		rc = __dpi_queue_write_sg(dpivf, hdr, fptr, lptr, nb_src, nb_dst);
++		if (unlikely(rc)) {
++			rte_mcslock_unlock(&dpi_ml, &ml_me);
++			return rc;
++		}
++
++		if (op->flags & RTE_DMA_OP_FLAG_SUBMIT) {
++			rte_wmb();
++			plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++				    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
++			dpi_conf->stats.submitted += dpi_conf->pending + 1;
++			dpi_conf->pnum_words = 0;
++			dpi_conf->pending = 0;
++		} else {
++			dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++			dpi_conf->pending++;
++		}
++		rte_mcslock_unlock(&dpi_ml, &ml_me);
++	}
++
++	return count;
++}
++
++uintptr_t
++cnxk_dma_adapter_dequeue(uintptr_t get_work1)
++{
++	struct rte_event_dma_adapter_op *op;
++	struct cnxk_dpi_compl_s *comp_ptr;
++	struct cnxk_dpi_conf *dpi_conf;
++	struct cnxk_dpi_vf_s *dpivf;
++	rte_mcslock_t ml_me;
++	uint8_t *wqecs;
++
++	comp_ptr = (struct cnxk_dpi_compl_s *)get_work1;
++
++	/* Dequeue can be called without calling cnx_enqueue in case of
++	 * dma_adapter. When its called from adapter, dma op will not be
++	 * embedded in completion pointer. In those cases return op.
++	 */
++	if (comp_ptr->cdata != CNXK_DPI_REQ_SSO_CDATA)
++		return (uintptr_t)comp_ptr;
++
++	dpivf =	rte_dma_fp_objs[comp_ptr->dev_id].dev_private;
++	dpi_conf = &dpivf->conf[comp_ptr->vchan];
++
++	rte_mcslock_lock(&dpi_ml, &ml_me);
++	wqecs = (uint8_t *)&comp_ptr->wqecs;
++	if (__atomic_load_n(wqecs, __ATOMIC_RELAXED) != 0)
++		dpi_conf->stats.errors++;
++
++	/* Take into account errors also. This is similar to
++	 * cnxk_dmadev_completed_status().
++	 */
++	dpi_conf->stats.completed++;
++	rte_mcslock_unlock(&dpi_ml, &ml_me);
++
++	op = (struct rte_event_dma_adapter_op *)comp_ptr->op;
++
++	rte_mempool_put(dpi_conf->adapter_info.req_mp, comp_ptr);
++
++	return (uintptr_t)op;
++}
+diff --git a/drivers/dma/cnxk/meson.build b/drivers/dma/cnxk/meson.build
+index e557349368d3c..8ccc1c2cb742d 100644
+--- a/drivers/dma/cnxk/meson.build
++++ b/drivers/dma/cnxk/meson.build
+@@ -8,6 +8,13 @@ foreach flag: error_cflags
+     endif
+ endforeach
+ 
+-deps += ['bus_pci', 'common_cnxk', 'dmadev']
++driver_sdk_headers = files(
++        'cnxk_dma_event_dp.h',
++)
++
++deps += ['bus_pci', 'common_cnxk', 'dmadev', 'eventdev']
++
++includes += include_directories('../../event/cnxk')
++
+ sources = files('cnxk_dmadev.c', 'cnxk_dmadev_fp.c')
+ require_iova_in_mbuf = false
+diff --git a/drivers/dma/cnxk/version.map b/drivers/dma/cnxk/version.map
+new file mode 100644
+index 0000000000000..4932988c3c1c4
+--- /dev/null
++++ b/drivers/dma/cnxk/version.map
+@@ -0,0 +1,10 @@
++INTERNAL {
++	global:
++
++	cn10k_dma_adapter_enqueue;
++	cn9k_dma_adapter_enqueue;
++	cnxk_dma_adapter_dequeue;
++	cnxk_dev_id_2_dpivf_get;
++
++	local: *;
++};
+-- 
+2.25.1
+

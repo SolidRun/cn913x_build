@@ -1,0 +1,58 @@
+From 7a545a4bee34b7715b403423b8af719260574ff9 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 10 Jan 2023 11:11:01 +0530
+Subject: [PATCH 157/955] crypto/cnxk: use version field directly
+
+As version field is available in rte_ip_hdr, use it directly instead of
+masking version_ihl.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ie7f391403f10f453eeed56e94d457f11fb481276
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94174
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+---
+ drivers/crypto/cnxk/cn9k_cryptodev_ops.c | 4 ++--
+ drivers/crypto/cnxk/cn9k_ipsec_la_ops.h  | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+index 3a07842e4b6a1..11541b6ab9908 100644
+--- a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+@@ -546,10 +546,10 @@ cn9k_cpt_sec_post_process(struct rte_crypto_op *cop,
+ 			}
+ 		}
+ 
+-		if (((ip->version_ihl & 0xf0) >> RTE_IPV4_IHL_MULTIPLIER) == IPVERSION) {
++		if (ip->version == IPVERSION) {
+ 			m_len = rte_be_to_cpu_16(ip->total_length);
+ 		} else {
+-			PLT_ASSERT(((ip->version_ihl & 0xf0) >> RTE_IPV4_IHL_MULTIPLIER) == 6);
++			PLT_ASSERT((ip->version == 6));
+ 			ip6 = (struct rte_ipv6_hdr *)ip;
+ 			m_len = rte_be_to_cpu_16(ip6->payload_len) + sizeof(struct rte_ipv6_hdr);
+ 		}
+diff --git a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+index bb22b895d14bc..5cea712e44ea6 100644
+--- a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
++++ b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+@@ -28,13 +28,13 @@ ipsec_po_out_rlen_get(struct cn9k_sec_session *sess, uint32_t plen, struct rte_m
+ 		uintptr_t data = (uintptr_t)m_src->buf_addr + m_src->data_off;
+ 		struct rte_ipv4_hdr *ip = (struct rte_ipv4_hdr *)data;
+ 
+-		if (unlikely(((ip->version_ihl & 0xf0) >> RTE_IPV4_IHL_MULTIPLIER) != IPVERSION)) {
++		if (unlikely(ip->version != IPVERSION)) {
+ 			struct rte_ipv6_hdr *ip6 = (struct rte_ipv6_hdr *)ip;
+ 			uint8_t *nxt_hdr = (uint8_t *)ip6;
+ 			uint8_t dest_op_cnt = 0;
+ 			int nh = ip6->proto;
+ 
+-			PLT_ASSERT(((ip->version_ihl & 0xf0) >> RTE_IPV4_IHL_MULTIPLIER) == 6);
++			PLT_ASSERT(ip->version == 6);
+ 
+ 			adj_len = ROC_CPT_TUNNEL_IPV6_HDR_LEN;
+ 			nxt_hdr += ROC_CPT_TUNNEL_IPV6_HDR_LEN;
+-- 
+2.25.1
+

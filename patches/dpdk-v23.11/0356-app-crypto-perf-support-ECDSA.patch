@@ -1,0 +1,376 @@
+From 21cac430cfdf39fc8291d984c5a48f08cd40360f Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Wed, 15 May 2024 16:50:42 +0530
+Subject: [PATCH 356/513] app/crypto-perf: support ECDSA
+
+Added support for ECDSA SECP256R1 curve SIGN and VERIFY operations.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Ibe9bae09df46af323f804094c3ff4f28fe79a911
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128055
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test-crypto-perf/cperf_ops.c             | 57 ++++++++++++++
+ app/test-crypto-perf/cperf_options.h         |  2 +
+ app/test-crypto-perf/cperf_options_parsing.c | 10 ++-
+ app/test-crypto-perf/cperf_test_common.c     |  1 +
+ app/test-crypto-perf/cperf_test_vectors.c    | 83 ++++++++++++++++++++
+ app/test-crypto-perf/cperf_test_vectors.h    | 12 +++
+ app/test-crypto-perf/main.c                  | 18 +++++
+ doc/guides/tools/cryptoperf.rst              |  1 +
+ 8 files changed, 182 insertions(+), 2 deletions(-)
+
+diff --git a/app/test-crypto-perf/cperf_ops.c b/app/test-crypto-perf/cperf_ops.c
+index f0860a46c0bf2..62b165124fc4b 100644
+--- a/app/test-crypto-perf/cperf_ops.c
++++ b/app/test-crypto-perf/cperf_ops.c
+@@ -34,6 +34,39 @@ cperf_set_ops_asym_modex(struct rte_crypto_op **ops,
+ 	}
+ }
+ 
++static void
++cperf_set_ops_asym_ecdsa(struct rte_crypto_op **ops,
++		   uint32_t src_buf_offset __rte_unused,
++		   uint32_t dst_buf_offset __rte_unused, uint16_t nb_ops,
++		   void *sess,
++		   const struct cperf_options *options,
++		   const struct cperf_test_vector *test_vector __rte_unused,
++		   uint16_t iv_offset __rte_unused,
++		   uint32_t *imix_idx __rte_unused,
++		   uint64_t *tsc_start __rte_unused)
++{
++	uint16_t i;
++
++	for (i = 0; i < nb_ops; i++) {
++		struct rte_crypto_asym_op *asym_op = ops[i]->asym;
++
++		ops[i]->status = RTE_CRYPTO_OP_STATUS_NOT_PROCESSED;
++		rte_crypto_op_attach_asym_session(ops[i], sess);
++
++		asym_op->ecdsa.op_type = options->asym_op_type;
++		asym_op->ecdsa.message.data = options->secp256r1_data->message.data;
++		asym_op->ecdsa.message.length = options->secp256r1_data->message.length;
++
++		asym_op->ecdsa.k.data = options->secp256r1_data->k.data;
++		asym_op->ecdsa.k.length = options->secp256r1_data->k.length;
++
++		asym_op->ecdsa.r.data = options->secp256r1_data->sign_r.data;
++		asym_op->ecdsa.r.length = options->secp256r1_data->sign_r.length;
++		asym_op->ecdsa.s.data = options->secp256r1_data->sign_s.data;
++		asym_op->ecdsa.s.length = options->secp256r1_data->sign_s.length;
++	}
++}
++
+ static void
+ cperf_set_ops_asym_sm2(struct rte_crypto_op **ops,
+ 		   uint32_t src_buf_offset __rte_unused,
+@@ -974,6 +1007,27 @@ cperf_create_session(struct rte_mempool *sess_mp,
+ 		return asym_sess;
+ 	}
+ 
++	if (options->op_type == CPERF_ASYM_SECP256R1) {
++		xform.next = NULL;
++		xform.xform_type = RTE_CRYPTO_ASYM_XFORM_ECDSA;
++		xform.ec.curve_id = options->secp256r1_data->curve;
++		xform.ec.pkey.data = options->secp256r1_data->pkey.data;
++		xform.ec.pkey.length = options->secp256r1_data->pkey.length;
++		xform.ec.q.x.data = options->secp256r1_data->pubkey_qx.data;
++		xform.ec.q.x.length = options->secp256r1_data->pubkey_qx.length;
++		xform.ec.q.y.data = options->secp256r1_data->pubkey_qy.data;
++		xform.ec.q.y.length = options->secp256r1_data->pubkey_qy.length;
++
++		ret = rte_cryptodev_asym_session_create(dev_id, &xform,
++				sess_mp, &asym_sess);
++		if (ret < 0) {
++			RTE_LOG(ERR, USER1, "ECDSA Asym session create failed\n");
++			return NULL;
++		}
++
++		return asym_sess;
++	}
++
+ 	if (options->op_type == CPERF_ASYM_SM2) {
+ 		xform.next = NULL;
+ 		xform.xform_type = RTE_CRYPTO_ASYM_XFORM_SM2;
+@@ -1294,6 +1348,9 @@ cperf_get_op_functions(const struct cperf_options *options,
+ 	case CPERF_ASYM_MODEX:
+ 		op_fns->populate_ops = cperf_set_ops_asym_modex;
+ 		break;
++	case CPERF_ASYM_SECP256R1:
++		op_fns->populate_ops = cperf_set_ops_asym_ecdsa;
++		break;
+ 	case CPERF_ASYM_SM2:
+ 		op_fns->populate_ops = cperf_set_ops_asym_sm2;
+ 		break;
+diff --git a/app/test-crypto-perf/cperf_options.h b/app/test-crypto-perf/cperf_options.h
+index d730ae18d08d0..9364c030c042b 100644
+--- a/app/test-crypto-perf/cperf_options.h
++++ b/app/test-crypto-perf/cperf_options.h
+@@ -87,6 +87,7 @@ enum cperf_op_type {
+ 	CPERF_DOCSIS,
+ 	CPERF_IPSEC,
+ 	CPERF_ASYM_MODEX,
++	CPERF_ASYM_SECP256R1,
+ 	CPERF_ASYM_SM2,
+ 	CPERF_TLS,
+ };
+@@ -165,6 +166,7 @@ struct cperf_options {
+ 	uint8_t imix_distribution_count;
+ 	struct cperf_modex_test_data *modex_data;
+ 	uint16_t modex_len;
++	struct cperf_ecdsa_test_data *secp256r1_data;
+ 	struct cperf_sm2_test_data *sm2_data;
+ 	enum rte_crypto_asym_op_type asym_op_type;
+ 	enum rte_crypto_auth_algorithm asym_hash_alg;
+diff --git a/app/test-crypto-perf/cperf_options_parsing.c b/app/test-crypto-perf/cperf_options_parsing.c
+index 13d0a17a59c03..bc96bab6a3762 100644
+--- a/app/test-crypto-perf/cperf_options_parsing.c
++++ b/app/test-crypto-perf/cperf_options_parsing.c
+@@ -11,6 +11,7 @@
+ #include <rte_ether.h>
+ 
+ #include "cperf_options.h"
++#include "cperf_test_common.h"
+ #include "cperf_test_vectors.h"
+ 
+ #define AES_BLOCK_SIZE 16
+@@ -37,7 +38,7 @@ usage(char *progname)
+ 		" --desc-nb N: set number of descriptors for each crypto device\n"
+ 		" --devtype TYPE: set crypto device type to use\n"
+ 		" --optype cipher-only / auth-only / cipher-then-auth / auth-then-cipher /\n"
+-		"        aead / pdcp / docsis / ipsec / modex / sm2 / tls-record : set operation type\n"
++		"        aead / pdcp / docsis / ipsec / modex / secp256r1 / sm2 / tls-record : set operation type\n"
+ 		" --sessionless: enable session-less crypto operations\n"
+ 		" --out-of-place: enable out-of-place crypto operations\n"
+ 		" --test-file NAME: set the test vector file path\n"
+@@ -483,6 +484,10 @@ parse_op_type(struct cperf_options *opts, const char *arg)
+ 			cperf_op_type_strs[CPERF_ASYM_MODEX],
+ 			CPERF_ASYM_MODEX
+ 		},
++		{
++			cperf_op_type_strs[CPERF_ASYM_SECP256R1],
++			CPERF_ASYM_SECP256R1
++		},
+ 		{
+ 			cperf_op_type_strs[CPERF_ASYM_SM2],
+ 			CPERF_ASYM_SM2
+@@ -1060,6 +1065,7 @@ cperf_options_default(struct cperf_options *opts)
+ #endif
+ 	opts->modex_data = (struct cperf_modex_test_data *)&modex_perf_data[0];
+ 
++	opts->secp256r1_data = &secp256r1_perf_data;
+ 	opts->sm2_data = &sm2_perf_data;
+ 	opts->asym_op_type = RTE_CRYPTO_ASYM_OP_SIGN;
+ }
+@@ -1484,7 +1490,7 @@ cperf_options_dump(struct cperf_options *opts)
+ 	printf("#\n");
+ 	printf("# number of queue pairs per device: %u\n", opts->nb_qps);
+ 	printf("# crypto operation: %s\n", cperf_op_type_strs[opts->op_type]);
+-	if (opts->op_type == CPERF_ASYM_SM2)
++	if (cperf_is_asym_test(opts))
+ 		printf("# asym operation type: %s\n",
+ 				rte_crypto_asym_op_strings[opts->asym_op_type]);
+ 	printf("# sessionless: %s\n", opts->sessionless ? "yes" : "no");
+diff --git a/app/test-crypto-perf/cperf_test_common.c b/app/test-crypto-perf/cperf_test_common.c
+index 831c8d7e2a833..8d7e2eecfb57e 100644
+--- a/app/test-crypto-perf/cperf_test_common.c
++++ b/app/test-crypto-perf/cperf_test_common.c
+@@ -306,6 +306,7 @@ bool
+ cperf_is_asym_test(const struct cperf_options *options)
+ {
+ 	if (options->op_type == CPERF_ASYM_MODEX ||
++	    options->op_type == CPERF_ASYM_SECP256R1 ||
+ 	    options->op_type == CPERF_ASYM_SM2)
+ 		return true;
+ 
+diff --git a/app/test-crypto-perf/cperf_test_vectors.c b/app/test-crypto-perf/cperf_test_vectors.c
+index 5ea533302987b..19c56b46bdef6 100644
+--- a/app/test-crypto-perf/cperf_test_vectors.c
++++ b/app/test-crypto-perf/cperf_test_vectors.c
+@@ -804,6 +804,55 @@ cperf_modex_test_data modex_perf_data[10] = {
+ 	}
+ };
+ 
++static uint8_t secp256r1_pkey[] = {
++	0x51, 0x9b, 0x42, 0x3d, 0x71, 0x5f, 0x8b, 0x58,
++	0x1f, 0x4f, 0xa8, 0xee, 0x59, 0xf4, 0x77, 0x1a,
++	0x5b, 0x44, 0xc8, 0x13, 0x0b, 0x4e, 0x3e, 0xac,
++	0xca, 0x54, 0xa5, 0x6d, 0xda, 0x72, 0xb4, 0x64
++};
++
++static uint8_t secp256r1_qx[] = {
++	0x1c, 0xcb, 0xe9, 0x1c, 0x07, 0x5f, 0xc7, 0xf4,
++	0xf0, 0x33, 0xbf, 0xa2, 0x48, 0xdb, 0x8f, 0xcc,
++	0xd3, 0x56, 0x5d, 0xe9, 0x4b, 0xbf, 0xb1, 0x2f,
++	0x3c, 0x59, 0xff, 0x46, 0xc2, 0x71, 0xbf, 0x83
++};
++
++static uint8_t secp256r1_qy[] = {
++	0xce, 0x40, 0x14, 0xc6, 0x88, 0x11, 0xf9, 0xa2,
++	0x1a, 0x1f, 0xdb, 0x2c, 0x0e, 0x61, 0x13, 0xe0,
++	0x6d, 0xb7, 0xca, 0x93, 0xb7, 0x40, 0x4e, 0x78,
++	0xdc, 0x7c, 0xcd, 0x5c, 0xa8, 0x9a, 0x4c, 0xa9
++};
++
++static uint8_t secp256r1_k[] = {
++	0x94, 0xa1, 0xbb, 0xb1, 0x4b, 0x90, 0x6a, 0x61,
++	0xa2, 0x80, 0xf2, 0x45, 0xf9, 0xe9, 0x3c, 0x7f,
++	0x3b, 0x4a, 0x62, 0x47, 0x82, 0x4f, 0x5d, 0x33,
++	0xb9, 0x67, 0x07, 0x87, 0x64, 0x2a, 0x68, 0xde
++};
++
++static uint8_t secp256r1_sign_r[] = {
++	0xf3, 0xac, 0x80, 0x61, 0xb5, 0x14, 0x79, 0x5b,
++	0x88, 0x43, 0xe3, 0xd6, 0x62, 0x95, 0x27, 0xed,
++	0x2a, 0xfd, 0x6b, 0x1f, 0x6a, 0x55, 0x5a, 0x7a,
++	0xca, 0xbb, 0x5e, 0x6f, 0x79, 0xc8, 0xc2, 0xac
++};
++
++static uint8_t secp256r1_sign_s[] = {
++	0x8b, 0xf7, 0x78, 0x19, 0xca, 0x05, 0xa6, 0xb2,
++	0x78, 0x6c, 0x76, 0x26, 0x2b, 0xf7, 0x37, 0x1c,
++	0xef, 0x97, 0xb2, 0x18, 0xe9, 0x6f, 0x17, 0x5a,
++	0x3c, 0xcd, 0xda, 0x2a, 0xcc, 0x05, 0x89, 0x03
++};
++
++static uint8_t secp256r1_message[] = {
++	0x44, 0xac, 0xf6, 0xb7, 0xe3, 0x6c, 0x13, 0x42,
++	0xc2, 0xc5, 0x89, 0x72, 0x04, 0xfe, 0x09, 0x50,
++	0x4e, 0x1e, 0x2e, 0xfb, 0x1a, 0x90, 0x03, 0x77,
++	0xdb, 0xc4, 0xe7, 0xa6, 0xa1, 0x33, 0xec, 0x56
++};
++
+ static uint8_t fp256_pkey[] = {
+ 	0x77, 0x84, 0x35, 0x65, 0x4c, 0x7a, 0x6d, 0xb1,
+ 	0x1e, 0x63, 0x0b, 0x41, 0x97, 0x36, 0x04, 0xf4,
+@@ -1282,6 +1331,40 @@ uint8_t ipsec_plaintext[2048] = {
+ 		0x75, 0x67, 0x00, 0x01
+ };
+ 
++/** ECDSA secp256r1 elliptic curve test params */
++struct
++cperf_ecdsa_test_data secp256r1_perf_data = {
++	.pubkey_qx = {
++		.data = secp256r1_qx,
++		.length = sizeof(secp256r1_qx),
++	},
++	.pubkey_qy = {
++		.data = secp256r1_qy,
++		.length = sizeof(secp256r1_qy),
++	},
++	.k = {
++		.data = secp256r1_k,
++		.length = sizeof(secp256r1_k),
++	},
++	.sign_r = {
++		.data = secp256r1_sign_r,
++		.length = sizeof(secp256r1_sign_r),
++	},
++	.sign_s = {
++		.data = secp256r1_sign_s,
++		.length = sizeof(secp256r1_sign_s),
++	},
++	.pkey = {
++		.data = secp256r1_pkey,
++		.length = sizeof(secp256r1_pkey),
++	},
++	.message = {
++		.data = secp256r1_message,
++		.length = sizeof(secp256r1_message),
++	},
++	.curve = RTE_CRYPTO_EC_GROUP_SECP256R1
++};
++
+ /** SM2 Fp256 elliptic curve test params */
+ struct
+ cperf_sm2_test_data sm2_perf_data = {
+diff --git a/app/test-crypto-perf/cperf_test_vectors.h b/app/test-crypto-perf/cperf_test_vectors.h
+index a218081d6e7a9..d46cbbc2c82f2 100644
+--- a/app/test-crypto-perf/cperf_test_vectors.h
++++ b/app/test-crypto-perf/cperf_test_vectors.h
+@@ -107,6 +107,17 @@ struct cperf_modex_test_data {
+ 	} result;
+ };
+ 
++struct cperf_ecdsa_test_data {
++	rte_crypto_param pubkey_qx;
++	rte_crypto_param pubkey_qy;
++	rte_crypto_param pkey;
++	rte_crypto_param k;
++	rte_crypto_param sign_r;
++	rte_crypto_param sign_s;
++	rte_crypto_param message;
++	int curve;
++};
++
+ struct cperf_sm2_test_data {
+ 	rte_crypto_param pubkey_qx;
+ 	rte_crypto_param pubkey_qy;
+@@ -135,6 +146,7 @@ extern uint8_t aad[];
+ extern uint8_t digest[2048];
+ 
+ extern struct cperf_modex_test_data modex_perf_data[10];
++extern struct cperf_ecdsa_test_data secp256r1_perf_data;
+ extern struct cperf_sm2_test_data sm2_perf_data;
+ 
+ #endif
+diff --git a/app/test-crypto-perf/main.c b/app/test-crypto-perf/main.c
+index 2f39edbe6a5e1..989ff456bb203 100644
+--- a/app/test-crypto-perf/main.c
++++ b/app/test-crypto-perf/main.c
+@@ -45,6 +45,7 @@ const char *cperf_op_type_strs[] = {
+ 	[CPERF_DOCSIS] = "docsis",
+ 	[CPERF_IPSEC] = "ipsec",
+ 	[CPERF_ASYM_MODEX] = "modex",
++	[CPERF_ASYM_SECP256R1] = "ecdsa_p256r1",
+ 	[CPERF_ASYM_SM2] = "sm2",
+ 	[CPERF_TLS] = "tls-record"
+ };
+@@ -225,6 +226,7 @@ cperf_initialize_cryptodev(struct cperf_options *opts, uint8_t *enabled_cdevs)
+ 		};
+ 
+ 		switch (opts->op_type) {
++		case CPERF_ASYM_SECP256R1:
+ 		case CPERF_ASYM_SM2:
+ 		case CPERF_ASYM_MODEX:
+ 			conf.ff_disable |= (RTE_CRYPTODEV_FF_SECURITY |
+@@ -364,6 +366,22 @@ cperf_verify_devices_capabilities(struct cperf_options *opts,
+ 
+ 		}
+ 
++		if (opts->op_type == CPERF_ASYM_SECP256R1) {
++			asym_cap_idx.type = RTE_CRYPTO_ASYM_XFORM_ECDSA;
++			asym_capability = rte_cryptodev_asym_capability_get(cdev_id, &asym_cap_idx);
++			if (asym_capability == NULL)
++				return -1;
++
++			if (!rte_cryptodev_asym_xform_capability_check_optype(asym_capability,
++						opts->asym_op_type))
++				return -1;
++
++			if (asym_capability->internal_rng != 0) {
++				opts->secp256r1_data->k.data = NULL;
++				opts->secp256r1_data->k.length = 0;
++			}
++		}
++
+ 		if (opts->op_type == CPERF_ASYM_SM2) {
+ 			asym_cap_idx.type = RTE_CRYPTO_ASYM_XFORM_SM2;
+ 			asym_capability = rte_cryptodev_asym_capability_get(cdev_id, &asym_cap_idx);
+diff --git a/doc/guides/tools/cryptoperf.rst b/doc/guides/tools/cryptoperf.rst
+index 8cfb194f105ce..6d1d50f237001 100644
+--- a/doc/guides/tools/cryptoperf.rst
++++ b/doc/guides/tools/cryptoperf.rst
+@@ -175,6 +175,7 @@ The following are the application command-line options:
+            pdcp
+            docsis
+            modex
++           ecdsa_p256r1
+            sm2
+            ipsec
+            tls-record
+-- 
+2.25.1
+

@@ -1,0 +1,110 @@
+From 43a705ea7a1d10371c94df5ca31e177e43c1e9fd Mon Sep 17 00:00:00 2001
+From: Stephen Hemminger <stephen@networkplumber.org>
+Date: Tue, 3 Jan 2023 19:38:15 -0800
+Subject: [PATCH 582/955] app/dumpcap: support interface name and description
+
+Support setting --ifname and --ifdescr options to record information
+in the start of the pcapng interface description block.
+Also, records filter (if any) used in the file.
+
+This also makes sure only the interfaces being recorded in
+the capture file are in the interface block.
+
+Signed-off-by: Stephen Hemminger <stephen@networkplumber.org>
+Change-Id: I206a382658c7fc220df62a0267cfbdab54c1a31b
+---
+ app/dumpcap/main.c | 36 +++++++++++++++++++++++++++++++-----
+ 1 file changed, 31 insertions(+), 5 deletions(-)
+
+diff --git a/app/dumpcap/main.c b/app/dumpcap/main.c
+index 5dd8ac8c030d7..f7a13660f6157 100644
+--- a/app/dumpcap/main.c
++++ b/app/dumpcap/main.c
+@@ -93,6 +93,8 @@ struct interface {
+ 	char name[RTE_ETH_NAME_MAX_LEN];
+ 
+ 	struct rte_rxtx_callback *rx_cb[RTE_MAX_QUEUES_PER_PORT];
++	const char *ifname;
++	const char *ifdescr;
+ };
+ 
+ TAILQ_HEAD(interface_list, interface);
+@@ -110,6 +112,9 @@ static void usage(void)
+ 	printf("Capture Interface:\n"
+ 	       "  -i <interface>           name or port index of interface\n"
+ 	       "  -f <capture filter>      packet filter in libpcap filter syntax\n");
++	printf("  --ifname <name>          name to use in the capture file\n");
++	printf("  --ifdescr <description>\n");
++	printf("                           description to use in the capture file\n");
+ 	printf("  -s <snaplen>, --snapshot-length <snaplen>\n"
+ 	       "                           packet snapshot length (def: %u)\n",
+ 	       RTE_MBUF_DEFAULT_BUF_SIZE);
+@@ -330,6 +335,8 @@ static void parse_opts(int argc, char **argv)
+ 		{ "capture-comment", required_argument, NULL, 0 },
+ 		{ "file-prefix",     required_argument, NULL, 0 },
+ 		{ "help",            no_argument,       NULL, 'h' },
++		{ "ifdescr",	     required_argument, NULL, 0 },
++		{ "ifname",	     required_argument, NULL, 0 },
+ 		{ "interface",       required_argument, NULL, 'i' },
+ 		{ "list-interfaces", no_argument,       NULL, 'D' },
+ 		{ "no-promiscuous-mode", no_argument,   NULL, 'p' },
+@@ -350,18 +357,30 @@ static void parse_opts(int argc, char **argv)
+ 			break;
+ 
+ 		switch (c) {
+-		case 0:
+-			if (!strcmp(long_options[option_index].name,
+-				    "capture-comment")) {
++		case 0: {
++			const char *longopt
++				= long_options[option_index].name;
++
++			if (!strcmp(longopt, "capture-comment")) {
+ 				capture_comment = optarg;
+-			} else if (!strcmp(long_options[option_index].name,
+-					   "file-prefix")) {
++			} else if (!strcmp(longopt, "file-prefix")) {
+ 				file_prefix = optarg;
++			} else if (!strcmp(longopt, "ifdescr")) {
++				if (last_intf == NULL)
++					rte_exit(EXIT_FAILURE,
++						 "--ifdescr must be specified after a -i option\n");
++				last_intf->ifdescr = optarg;
++			} else if (!strcmp(longopt, "ifname")) {
++				if (last_intf == NULL)
++					rte_exit(EXIT_FAILURE,
++						 "--ifname must be specified after a -i option\n");
++				last_intf->ifname = optarg;
+ 			} else {
+ 				usage();
+ 				exit(1);
+ 			}
+ 			break;
++		}
+ 		case 'a':
+ 			auto_stop(optarg);
+ 			break;
+@@ -700,6 +719,7 @@ static dumpcap_out_t create_output(void)
+ 	}
+ 
+ 	if (use_pcapng) {
++		struct interface *intf;
+ 		char *os = get_os_info();
+ 
+ 		ret.pcapng = rte_pcapng_fdopen(fd, os, NULL,
+@@ -708,6 +728,12 @@ static dumpcap_out_t create_output(void)
+ 			rte_exit(EXIT_FAILURE, "pcapng_fdopen failed: %s\n",
+ 				 strerror(rte_errno));
+ 		free(os);
++
++		TAILQ_FOREACH(intf, &interfaces, next) {
++			rte_pcapng_add_interface(ret.pcapng, intf->port,
++						 intf->ifname, intf->ifdescr,
++						 intf->opts.filter);
++		}
+ 	} else {
+ 		pcap_t *pcap;
+ 
+-- 
+2.25.1
+

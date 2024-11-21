@@ -1,0 +1,37 @@
+From 2f4465901811be73902e14d7e1da790aa1194403 Mon Sep 17 00:00:00 2001
+From: Veerasenareddy Burru <vburru@marvell.com>
+Date: Wed, 22 Feb 2023 04:47:59 -0800
+Subject: [PATCH 248/955] common/cnxk: enable SDP channel backpressure to TL4
+
+Configure TL4 to respond to SDP channel backpressure.
+
+Signed-off-by: Veerasenareddy Burru <vburru@marvell.com>
+Change-Id: Ie98ee4452fb13153f2ed278a52ac10c2ccf48352
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97979
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_tm_utils.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix_tm_utils.c b/drivers/common/cnxk/roc_nix_tm_utils.c
+index a7ba2bf02745f..58648331093ee 100644
+--- a/drivers/common/cnxk/roc_nix_tm_utils.c
++++ b/drivers/common/cnxk/roc_nix_tm_utils.c
+@@ -582,8 +582,12 @@ nix_tm_topology_reg_prep(struct nix *nix, struct nix_tm_node *node,
+ 
+ 		/* Configure TL4 to send to SDP channel instead of CGX/LBK */
+ 		if (nix->sdp_link) {
++			plt_tm_dbg("relchan=%u schq=%u tx_chan_cnt=%u\n", relchan, schq,
++				   nix->tx_chan_cnt);
+ 			reg[k] = NIX_AF_TL4X_SDP_LINK_CFG(schq);
+ 			regval[k] = BIT_ULL(12);
++			regval[k] |= BIT_ULL(13);
++			regval[k] |= relchan;
+ 			k++;
+ 		}
+ 		break;
+-- 
+2.25.1
+

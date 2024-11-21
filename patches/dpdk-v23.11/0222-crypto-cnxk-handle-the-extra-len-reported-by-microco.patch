@@ -1,0 +1,107 @@
+From 355921673ca35b0d9093a105b91f87ce7dbcef67 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Fri, 16 Feb 2024 02:56:49 -0800
+Subject: [PATCH 222/513] crypto/cnxk: handle the extra len reported by
+ microcode
+
+Microcode reports one extra byte in response len specifically for
+AES-GCM in TLS-1.3. Handle the extra byte in PMD by decreasing
+the length by 1 byte.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I1ce133231b9d0b9516c4b60a4ed8f8bd174df1ac
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122079
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 9 ++++++---
+ drivers/crypto/cnxk/cn10k_cryptodev_sec.h | 3 ++-
+ drivers/crypto/cnxk/cn10k_tls.c           | 4 ++++
+ 3 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 6cfcbafdccdcc..df19fde2fbf62 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -989,12 +989,15 @@ cn10k_cpt_ipsec_post_process(struct rte_crypto_op *cop, struct cpt_cn10k_res_s *
+ }
+ 
+ static inline void
+-cn10k_cpt_tls_post_process(struct rte_crypto_op *cop, struct cpt_cn10k_res_s *res)
++cn10k_cpt_tls_post_process(struct rte_crypto_op *cop, struct cpt_cn10k_res_s *res,
++			   struct cn10k_sec_session *sess)
+ {
+ 	struct rte_mbuf *mbuf = cop->sym->m_src;
+-	const uint16_t m_len = res->rlen;
++	uint16_t m_len = res->rlen;
+ 
+ 	if (!res->uc_compcode) {
++		if ((sess->tls.tls_ver == RTE_SECURITY_VERSION_TLS_1_3) && (!sess->tls.is_write))
++			m_len -= 1;
+ 		if (mbuf->next == NULL)
+ 			mbuf->data_len = m_len;
+ 		mbuf->pkt_len = m_len;
+@@ -1015,7 +1018,7 @@ cn10k_cpt_sec_post_process(struct rte_crypto_op *cop, struct cpt_cn10k_res_s *re
+ 	if (sess->proto == RTE_SECURITY_PROTOCOL_IPSEC)
+ 		cn10k_cpt_ipsec_post_process(cop, res);
+ 	else if (sess->proto == RTE_SECURITY_PROTOCOL_TLS_RECORD)
+-		cn10k_cpt_tls_post_process(cop, res);
++		cn10k_cpt_tls_post_process(cop, res, sess);
+ }
+ 
+ static inline void
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_sec.h b/drivers/crypto/cnxk/cn10k_cryptodev_sec.h
+index d4ece045a0621..5971acf5075d9 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_sec.h
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_sec.h
+@@ -35,7 +35,8 @@ struct cn10k_sec_session {
+ 			uint8_t enable_padding : 1;
+ 			uint8_t tail_fetch_len : 2;
+ 			uint8_t is_write : 1;
+-			uint8_t rvsd : 4;
++			uint8_t tls_ver : 2;
++			uint8_t rvsd : 2;
+ 		} tls;
+ 	};
+ 	/** Queue pair */
+diff --git a/drivers/crypto/cnxk/cn10k_tls.c b/drivers/crypto/cnxk/cn10k_tls.c
+index a9d2b6c7c33c1..99671e0bf1b9f 100644
+--- a/drivers/crypto/cnxk/cn10k_tls.c
++++ b/drivers/crypto/cnxk/cn10k_tls.c
+@@ -610,6 +610,7 @@ cn10k_tls_read_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 			 struct cn10k_sec_session *sec_sess)
+ {
+ 	struct roc_ie_ot_tls_read_sa *sa_dptr;
++	uint8_t tls_ver = tls_xfrm->ver;
+ 	struct cn10k_tls_record *tls;
+ 	union cpt_inst_w4 inst_w4;
+ 	void *read_sa;
+@@ -659,6 +660,7 @@ cn10k_tls_read_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 			ROC_IE_OT_TLS13_MAJOR_OP_RECORD_DEC | ROC_IE_OT_INPLACE_BIT;
+ 	}
+ 
++	sec_sess->tls.tls_ver = tls_ver;
+ 	sec_sess->inst.w4 = inst_w4.u64;
+ 	sec_sess->inst.w7 = cpt_inst_w7_get(roc_cpt, read_sa);
+ 
+@@ -694,6 +696,7 @@ cn10k_tls_write_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 			  struct cn10k_sec_session *sec_sess)
+ {
+ 	struct roc_ie_ot_tls_write_sa *sa_dptr;
++	uint8_t tls_ver = tls_xfrm->ver;
+ 	struct cn10k_tls_record *tls;
+ 	union cpt_inst_w4 inst_w4;
+ 	void *write_sa;
+@@ -727,6 +730,7 @@ cn10k_tls_write_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 		sec_sess->iv_length = crypto_xfrm->next->cipher.iv.length;
+ 	}
+ 
++	sec_sess->tls.tls_ver = tls_ver;
+ 	sec_sess->tls.is_write = 1;
+ 	sec_sess->tls.enable_padding = tls_xfrm->options.extra_padding_enable;
+ 	sec_sess->max_extended_len = tls_write_rlens_get(tls_xfrm, crypto_xfrm);
+-- 
+2.25.1
+

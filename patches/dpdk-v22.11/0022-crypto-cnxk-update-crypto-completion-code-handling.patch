@@ -1,0 +1,130 @@
+From debd1335b445e2b8da297aaddd3acd86d8ba5885 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Tue, 8 Nov 2022 13:11:22 +0530
+Subject: [PATCH 022/955] crypto/cnxk: update crypto completion code handling
+
+Update crypto and IPsec completion handling as per microcode version
+OCPT-04-IE-IPSEC-MC-30-01-28-00
+
+ci: skip_checkformat
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I9e6b0692471d703d16ac9c3ec229dc2218ef0954
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 18 +++++++++---------
+ drivers/crypto/cnxk/cn10k_ipsec.c         |  7 +++++--
+ drivers/crypto/cnxk/cn10k_ipsec.h         |  1 +
+ drivers/crypto/cnxk/cn10k_ipsec_la_ops.h  |  1 +
+ 4 files changed, 16 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index ab50b63bddf69..98c206872c3c7 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -801,11 +801,9 @@ cn10k_cpt_sec_post_process(struct rte_crypto_op *cop, struct cpt_cn10k_res_s *re
+ 	struct rte_mbuf *mbuf = cop->sym->m_src;
+ 	const uint16_t m_len = res->rlen;
+ 
+-	mbuf->data_len = m_len;
+-	mbuf->pkt_len = m_len;
+-
+ 	switch (res->uc_compcode) {
+ 	case ROC_IE_OT_UCC_SUCCESS_PKT_IP_BADCSUM:
++		mbuf->ol_flags &= ~RTE_MBUF_F_RX_IP_CKSUM_GOOD;
+ 		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_BAD;
+ 		break;
+ 	case ROC_IE_OT_UCC_SUCCESS_PKT_L4_GOODCSUM:
+@@ -817,15 +815,17 @@ cn10k_cpt_sec_post_process(struct rte_crypto_op *cop, struct cpt_cn10k_res_s *re
+ 				  RTE_MBUF_F_RX_IP_CKSUM_GOOD;
+ 		break;
+ 	case ROC_IE_OT_UCC_SUCCESS_PKT_IP_GOODCSUM:
+-		mbuf->ol_flags |= RTE_MBUF_F_RX_IP_CKSUM_GOOD;
+ 		break;
+ 	case ROC_IE_OT_UCC_SUCCESS_SA_SOFTEXP_FIRST:
++	case ROC_IE_OT_UCC_SUCCESS_SA_SOFTEXP_AGAIN:
+ 		cop->aux_flags = RTE_CRYPTO_OP_AUX_FLAGS_IPSEC_SOFT_EXPIRY;
+ 		break;
+ 	default:
+-		plt_dp_err("Success with unknown microcode completion code");
+-		break;
++		cop->status = RTE_CRYPTO_OP_STATUS_ERROR;
++		return;
+ 	}
++	mbuf->data_len = m_len;
++	mbuf->pkt_len = m_len;
+ }
+ 
+ static inline void
+@@ -841,7 +841,7 @@ cn10k_cpt_dequeue_post_process(struct cnxk_cpt_qp *qp,
+ 
+ 	if (cop->type == RTE_CRYPTO_OP_TYPE_SYMMETRIC &&
+ 	    cop->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION) {
+-		if (likely(compcode == CPT_COMP_WARN)) {
++		if (likely(compcode == CPT_COMP_GOOD || compcode == CPT_COMP_WARN)) {
+ 			/* Success with additional info */
+ 			cn10k_cpt_sec_post_process(cop, res);
+ 		} else {
+@@ -858,7 +858,7 @@ cn10k_cpt_dequeue_post_process(struct cnxk_cpt_qp *qp,
+ 		return;
+ 	}
+ 
+-	if (likely(compcode == CPT_COMP_GOOD || compcode == CPT_COMP_WARN)) {
++	if (likely(compcode == CPT_COMP_GOOD)) {
+ 		if (unlikely(uc_compcode)) {
+ 			if (uc_compcode == ROC_SE_ERR_GC_ICV_MISCOMPARE)
+ 				cop->status = RTE_CRYPTO_OP_STATUS_AUTH_FAILED;
+@@ -962,7 +962,7 @@ cn10k_cpt_crypto_adapter_vector_dequeue(uintptr_t get_work1)
+ 
+ #ifdef CNXK_CRYPTODEV_DEBUG
+ 	res.u64[0] = __atomic_load_n(&vec_infl_req->res.u64[0], __ATOMIC_RELAXED);
+-	PLT_ASSERT(res.cn10k.compcode == CPT_COMP_WARN);
++	PLT_ASSERT(res.cn10k.compcode == CPT_COMP_GOOD);
+ 	PLT_ASSERT(res.cn10k.uc_compcode == 0);
+ #endif
+ 
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.c b/drivers/crypto/cnxk/cn10k_ipsec.c
+index 1740a73c36c68..aafd461436ea3 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.c
++++ b/drivers/crypto/cnxk/cn10k_ipsec.c
+@@ -200,9 +200,12 @@ cn10k_ipsec_inb_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 	/* Disable IP checksum verification by default */
+ 	param1.s.ip_csum_disable = ROC_IE_OT_SA_INNER_PKT_IP_CSUM_DISABLE;
+ 
++	/* Set the ip chksum flag in mbuf before enqueue.
++	 * Reset the flag in post process in case of errors
++	 */
+ 	if (ipsec_xfrm->options.ip_csum_enable) {
+-		param1.s.ip_csum_disable =
+-			ROC_IE_OT_SA_INNER_PKT_IP_CSUM_ENABLE;
++		param1.s.ip_csum_disable = ROC_IE_OT_SA_INNER_PKT_IP_CSUM_ENABLE;
++		sec_sess->ip_csum = RTE_MBUF_F_RX_IP_CKSUM_GOOD;
+ 	}
+ 
+ 	/* Disable L4 checksum verification by default */
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.h b/drivers/crypto/cnxk/cn10k_ipsec.h
+index 044fe3304623d..23d7a4fac42d7 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.h
++++ b/drivers/crypto/cnxk/cn10k_ipsec.h
+@@ -33,6 +33,7 @@ struct cn10k_sec_session {
+ 	uint16_t max_extended_len;
+ 	uint16_t iv_offset;
+ 	uint8_t iv_length;
++	uint8_t ip_csum;
+ 	bool is_outbound;
+ 	/** Queue pair */
+ 	struct cnxk_cpt_qp *qp;
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h b/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h
+index 084198b5bb7c2..f2761a55a5dd9 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h
++++ b/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h
+@@ -98,6 +98,7 @@ process_inb_sa(struct rte_crypto_op *cop, struct cn10k_sec_session *sess, struct
+ 	inst->w4.u64 = sess->inst.w4 | rte_pktmbuf_pkt_len(m_src);
+ 	dptr = rte_pktmbuf_mtod(m_src, uint64_t);
+ 	inst->dptr = dptr;
++	m_src->ol_flags |= (uint64_t)sess->ip_csum;
+ 
+ 	return 0;
+ }
+-- 
+2.25.1
+

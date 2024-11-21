@@ -1,0 +1,34 @@
+From 8e7a89a346763cfd69fec97cb5dc6e303dfa4899 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 27 Feb 2024 17:37:10 +0530
+Subject: [PATCH 239/513] net/cnxk: mark stats reset unsupported
+
+Marking representor stats reset for native representees as
+unsupported until kernel changes are merged.
+
+Change-Id: I36a8a12b8ecc83d79affce254b8c425852f25200
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122674
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_rep_ops.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_rep_ops.c b/drivers/net/cnxk/cnxk_rep_ops.c
+index e91357013b410..a300e22fff801 100644
+--- a/drivers/net/cnxk/cnxk_rep_ops.c
++++ b/drivers/net/cnxk/cnxk_rep_ops.c
+@@ -622,6 +622,9 @@ cnxk_rep_stats_reset(struct rte_eth_dev *ethdev)
+ 	if (!rep_dev->is_vf_active)
+ 		return 0;
+ 
++	if (rep_dev->native_repte)
++		return -ENOTSUP;
++
+ 	rc = process_eth_stats(rep_dev, &adata, CNXK_REP_MSG_ETH_STATS_CLEAR);
+ 	if (rc || adata.u.sval < 0) {
+ 		if (adata.u.sval < 0)
+-- 
+2.25.1
+

@@ -1,0 +1,343 @@
+From d5210f47c0627781bb9dcbf10b42cce6e856fd2a Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 19 May 2023 01:54:36 +0530
+Subject: [PATCH 436/955] net/cnxk: add MACsec initialization
+
+Added initialization routines for MACsec for
+cn10kb platform.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I08e0cbc64fededb9c20a47f27982353b022ee8ab
+---
+ drivers/net/cnxk/cn10k_ethdev_sec.c |   6 ++
+ drivers/net/cnxk/cnxk_ethdev.c      |  13 +++
+ drivers/net/cnxk/cnxk_ethdev.h      |  14 +++
+ drivers/net/cnxk/cnxk_ethdev_mcs.c  | 151 ++++++++++++++++++++++++++++
+ drivers/net/cnxk/cnxk_ethdev_mcs.h  |  61 +++++++++++
+ drivers/net/cnxk/meson.build        |   1 +
+ 6 files changed, 246 insertions(+)
+ create mode 100644 drivers/net/cnxk/cnxk_ethdev_mcs.c
+ create mode 100644 drivers/net/cnxk/cnxk_ethdev_mcs.h
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index 8293960743a00..8d4afa79aa426 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -1133,9 +1133,15 @@ cn10k_eth_sec_ops_override(void)
+ 	init_once = 1;
+ 
+ 	/* Update platform specific ops */
++	cnxk_eth_sec_ops.macsec_sa_create = NULL;
++	cnxk_eth_sec_ops.macsec_sc_create = NULL;
++	cnxk_eth_sec_ops.macsec_sa_destroy = NULL;
++	cnxk_eth_sec_ops.macsec_sc_destroy = NULL;
+ 	cnxk_eth_sec_ops.session_create = cn10k_eth_sec_session_create;
+ 	cnxk_eth_sec_ops.session_destroy = cn10k_eth_sec_session_destroy;
+ 	cnxk_eth_sec_ops.capabilities_get = cn10k_eth_sec_capabilities_get;
+ 	cnxk_eth_sec_ops.session_update = cn10k_eth_sec_session_update;
+ 	cnxk_eth_sec_ops.session_stats_get = cn10k_eth_sec_session_stats_get;
++	cnxk_eth_sec_ops.macsec_sc_stats_get = NULL;
++	cnxk_eth_sec_ops.macsec_sa_stats_get = NULL;
+ }
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 916198d802965..5368f0777ddbe 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1961,6 +1961,16 @@ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	if (rc)
+ 		goto free_mac_addrs;
+ 
++	if (roc_feature_nix_has_macsec()) {
++		rc = cnxk_mcs_dev_init(dev, 0);
++		if (rc) {
++			plt_err("Failed to init MCS");
++			goto free_mac_addrs;
++		}
++		dev->rx_offload_capa |= RTE_ETH_RX_OFFLOAD_MACSEC_STRIP;
++		dev->tx_offload_capa |= RTE_ETH_TX_OFFLOAD_MACSEC_INSERT;
++	}
++
+ 	plt_nix_dbg("Port=%d pf=%d vf=%d ver=%s hwcap=0x%" PRIx64
+ 		    " rxoffload_capa=0x%" PRIx64 " txoffload_capa=0x%" PRIx64,
+ 		    eth_dev->data->port_id, roc_nix_get_pf(nix),
+@@ -2058,6 +2068,9 @@ cnxk_eth_dev_uninit(struct rte_eth_dev *eth_dev, bool reset)
+ 	}
+ 	eth_dev->data->nb_rx_queues = 0;
+ 
++	if (roc_feature_nix_has_macsec())
++		cnxk_mcs_dev_fini(dev);
++
+ 	/* Free security resources */
+ 	nix_security_release(dev);
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 4d7e1d025bced..ce6a365634b0c 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -404,6 +404,9 @@ struct cnxk_eth_dev {
+ 	/* Reassembly dynfield/flag offsets */
+ 	int reass_dynfield_off;
+ 	int reass_dynflag_bit;
++
++	/* MCS device */
++	struct cnxk_mcs_dev *mcs_dev;
+ };
+ 
+ struct cnxk_eth_rxq_sp {
+@@ -632,6 +635,17 @@ int cnxk_nix_cman_config_set(struct rte_eth_dev *dev, const struct rte_eth_cman_
+ 
+ int cnxk_nix_cman_config_get(struct rte_eth_dev *dev, struct rte_eth_cman_config *config);
+ 
++int cnxk_mcs_dev_init(struct cnxk_eth_dev *dev, uint8_t mcs_idx);
++void cnxk_mcs_dev_fini(struct cnxk_eth_dev *dev);
++
++struct cnxk_macsec_sess *cnxk_eth_macsec_sess_get_by_sess(struct cnxk_eth_dev *dev,
++							  const struct rte_security_session *sess);
++int cnxk_mcs_flow_configure(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
++			     const struct rte_flow_item pattern[],
++			     const struct rte_flow_action actions[], struct rte_flow_error *error,
++			     void **mcs_flow);
++int cnxk_mcs_flow_destroy(struct cnxk_eth_dev *eth_dev, void *mcs_flow);
++
+ /* Other private functions */
+ int nix_recalc_mtu(struct rte_eth_dev *eth_dev);
+ int nix_mtr_validate(struct rte_eth_dev *dev, uint32_t id);
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mcs.c b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+new file mode 100644
+index 0000000000000..b0205f45c5edf
+--- /dev/null
++++ b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+@@ -0,0 +1,151 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include <cnxk_ethdev.h>
++#include <cnxk_ethdev_mcs.h>
++#include <roc_mcs.h>
++
++static int
++cnxk_mcs_event_cb(void *userdata, struct roc_mcs_event_desc *desc, void *cb_arg)
++{
++	struct rte_eth_event_macsec_desc d = {0};
++
++	d.metadata = (uint64_t)userdata;
++
++	switch (desc->type) {
++	case ROC_MCS_EVENT_SECTAG_VAL_ERR:
++		d.type = RTE_ETH_EVENT_MACSEC_SECTAG_VAL_ERR;
++		switch (desc->subtype) {
++		case ROC_MCS_EVENT_RX_SECTAG_V_EQ1:
++			d.subtype = RTE_ETH_SUBEVENT_MACSEC_RX_SECTAG_V_EQ1;
++			break;
++		case ROC_MCS_EVENT_RX_SECTAG_E_EQ0_C_EQ1:
++			d.subtype = RTE_ETH_SUBEVENT_MACSEC_RX_SECTAG_E_EQ0_C_EQ1;
++			break;
++		case ROC_MCS_EVENT_RX_SECTAG_SL_GTE48:
++			d.subtype = RTE_ETH_SUBEVENT_MACSEC_RX_SECTAG_SL_GTE48;
++			break;
++		case ROC_MCS_EVENT_RX_SECTAG_ES_EQ1_SC_EQ1:
++			d.subtype = RTE_ETH_SUBEVENT_MACSEC_RX_SECTAG_ES_EQ1_SC_EQ1;
++			break;
++		case ROC_MCS_EVENT_RX_SECTAG_SC_EQ1_SCB_EQ1:
++			d.subtype = RTE_ETH_SUBEVENT_MACSEC_RX_SECTAG_SC_EQ1_SCB_EQ1;
++			break;
++		default:
++			plt_err("Unknown MACsec sub event : %d", desc->subtype);
++		}
++		break;
++	case ROC_MCS_EVENT_RX_SA_PN_HARD_EXP:
++		d.type = RTE_ETH_EVENT_MACSEC_RX_SA_PN_HARD_EXP;
++		break;
++	case ROC_MCS_EVENT_RX_SA_PN_SOFT_EXP:
++		d.type = RTE_ETH_EVENT_MACSEC_RX_SA_PN_SOFT_EXP;
++		break;
++	case ROC_MCS_EVENT_TX_SA_PN_HARD_EXP:
++		d.type = RTE_ETH_EVENT_MACSEC_TX_SA_PN_HARD_EXP;
++		break;
++	case ROC_MCS_EVENT_TX_SA_PN_SOFT_EXP:
++		d.type = RTE_ETH_EVENT_MACSEC_TX_SA_PN_SOFT_EXP;
++		break;
++	default:
++		plt_err("Unknown MACsec event type: %d", desc->type);
++	}
++
++	rte_eth_dev_callback_process(cb_arg, RTE_ETH_EVENT_MACSEC, &d);
++
++	return 0;
++}
++
++void
++cnxk_mcs_dev_fini(struct cnxk_eth_dev *dev)
++{
++	struct cnxk_mcs_dev *mcs_dev = dev->mcs_dev;
++	int rc;
++
++	rc = roc_mcs_event_cb_unregister(mcs_dev->mdev, ROC_MCS_EVENT_SECTAG_VAL_ERR);
++	if (rc)
++		plt_err("Failed to unregister MCS event callback: rc: %d", rc);
++
++	rc = roc_mcs_event_cb_unregister(mcs_dev->mdev, ROC_MCS_EVENT_TX_SA_PN_SOFT_EXP);
++	if (rc)
++		plt_err("Failed to unregister MCS event callback: rc: %d", rc);
++
++	rc = roc_mcs_event_cb_unregister(mcs_dev->mdev, ROC_MCS_EVENT_RX_SA_PN_SOFT_EXP);
++	if (rc)
++		plt_err("Failed to unregister MCS event callback: rc: %d", rc);
++
++	/* Cleanup MACsec dev */
++	roc_mcs_dev_fini(mcs_dev->mdev);
++
++	plt_free(mcs_dev);
++}
++
++int
++cnxk_mcs_dev_init(struct cnxk_eth_dev *dev, uint8_t mcs_idx)
++{
++	struct roc_mcs_intr_cfg intr_cfg = {0};
++	struct roc_mcs_hw_info hw_info = {0};
++	struct cnxk_mcs_dev *mcs_dev;
++	int rc;
++
++	rc = roc_mcs_hw_info_get(&hw_info);
++	if (rc) {
++		plt_err("MCS HW info get failed: rc: %d ", rc);
++		return rc;
++	}
++
++	mcs_dev = plt_zmalloc(sizeof(struct cnxk_mcs_dev), PLT_CACHE_LINE_SIZE);
++	if (!mcs_dev)
++		return -ENOMEM;
++
++	mcs_dev->idx = mcs_idx;
++	mcs_dev->mdev = roc_mcs_dev_init(mcs_dev->idx);
++	if (!mcs_dev->mdev) {
++		plt_free(mcs_dev);
++		return rc;
++	}
++	mcs_dev->port_id = dev->eth_dev->data->port_id;
++
++	intr_cfg.intr_mask =
++		ROC_MCS_CPM_RX_SECTAG_V_EQ1_INT | ROC_MCS_CPM_RX_SECTAG_E_EQ0_C_EQ1_INT |
++		ROC_MCS_CPM_RX_SECTAG_SL_GTE48_INT | ROC_MCS_CPM_RX_SECTAG_ES_EQ1_SC_EQ1_INT |
++		ROC_MCS_CPM_RX_SECTAG_SC_EQ1_SCB_EQ1_INT | ROC_MCS_CPM_RX_PACKET_XPN_EQ0_INT |
++		ROC_MCS_CPM_RX_PN_THRESH_REACHED_INT | ROC_MCS_CPM_TX_PACKET_XPN_EQ0_INT |
++		ROC_MCS_CPM_TX_PN_THRESH_REACHED_INT | ROC_MCS_CPM_TX_SA_NOT_VALID_INT |
++		ROC_MCS_BBE_RX_DFIFO_OVERFLOW_INT | ROC_MCS_BBE_RX_PLFIFO_OVERFLOW_INT |
++		ROC_MCS_BBE_TX_DFIFO_OVERFLOW_INT | ROC_MCS_BBE_TX_PLFIFO_OVERFLOW_INT |
++		ROC_MCS_PAB_RX_CHAN_OVERFLOW_INT | ROC_MCS_PAB_TX_CHAN_OVERFLOW_INT;
++
++	rc = roc_mcs_intr_configure(mcs_dev->mdev, &intr_cfg);
++	if (rc) {
++		plt_err("Failed to configure MCS interrupts: rc: %d", rc);
++		plt_free(mcs_dev);
++		return rc;
++	}
++
++	rc = roc_mcs_event_cb_register(mcs_dev->mdev, ROC_MCS_EVENT_SECTAG_VAL_ERR,
++				       cnxk_mcs_event_cb, dev->eth_dev, mcs_dev);
++	if (rc) {
++		plt_err("Failed to register MCS event callback: rc: %d", rc);
++		plt_free(mcs_dev);
++		return rc;
++	}
++	rc = roc_mcs_event_cb_register(mcs_dev->mdev, ROC_MCS_EVENT_TX_SA_PN_SOFT_EXP,
++				       cnxk_mcs_event_cb, dev->eth_dev, mcs_dev);
++	if (rc) {
++		plt_err("Failed to register MCS event callback: rc: %d", rc);
++		plt_free(mcs_dev);
++		return rc;
++	}
++	rc = roc_mcs_event_cb_register(mcs_dev->mdev, ROC_MCS_EVENT_RX_SA_PN_SOFT_EXP,
++				       cnxk_mcs_event_cb, dev->eth_dev, mcs_dev);
++	if (rc) {
++		plt_err("Failed to register MCS event callback: rc: %d", rc);
++		plt_free(mcs_dev);
++		return rc;
++	}
++	dev->mcs_dev = mcs_dev;
++
++	return 0;
++}
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mcs.h b/drivers/net/cnxk/cnxk_ethdev_mcs.h
+new file mode 100644
+index 0000000000000..762c299fb8c86
+--- /dev/null
++++ b/drivers/net/cnxk/cnxk_ethdev_mcs.h
+@@ -0,0 +1,61 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include <cnxk_ethdev.h>
++
++#define CNXK_MACSEC_HASH_KEY 16
++
++struct cnxk_mcs_dev {
++	uint64_t default_sci;
++	void *mdev;
++	uint8_t port_id;
++	uint8_t idx;
++};
++
++struct cnxk_mcs_event_data {
++	/* Valid for below events
++	 * - ROC_MCS_EVENT_RX_SA_PN_SOFT_EXP
++	 * - ROC_MCS_EVENT_TX_SA_PN_SOFT_EXP
++	 */
++	struct {
++		uint8_t secy_idx;
++		uint8_t sc_idx;
++		uint8_t sa_idx;
++	};
++	/* Valid for below event
++	 * - ROC_MCS_EVENT_FIFO_OVERFLOW
++	 *
++	 * Upon fatal error notification on a MCS port, driver resets below attributes of active
++	 * flow entities(sc & sa) and then resets the port.
++	 * - Reset NEXT_PN of active SAs to 1.
++	 * - Reset TX active SA for each SC, TX_SA_ACTIVE = 0, SA_INDEX0_VLD = 1.
++	 * - Clear SA_IN_USE for active ANs in RX_SA_MAP_MEM.
++	 * - Clear all stats mapping to this port.
++	 * - Reactivate SA_IN_USE for active ANs in RX_SA_MAP_MEM.
++	 *
++	 *  UMD driver notifies the following flow entity(sc & sa) details in application callback,
++	 *  application is expected to exchange the Tx/Rx NEXT_PN, TX_SA_ACTIVE, active RX SC AN
++	 *  details with peer device so that peer device can resets it's MACsec flow states and than
++	 *  resume packet transfers.
++	 */
++	struct {
++		uint16_t *tx_sa_array; /* Tx SAs whose PN memories were reset (NEXT_PN=1) */
++		uint16_t *rx_sa_array; /* Rx SAs whose PN memories were reset (NEXT_PN=1) */
++		uint16_t *tx_sc_array; /* Tx SCs whose active SAs were reset (TX_SA_ACTIVE=0) */
++		uint16_t *rx_sc_array; /* Rx SCs whose state was reset */
++		uint8_t *sc_an_array;  /* AN of Rx SCs(in rx_sc_array) which were reactivated */
++		uint8_t num_tx_sa;     /* num entries in tx_sa_array */
++		uint8_t num_rx_sa;     /* num entries in rx_sa_array */
++		uint8_t num_tx_sc;     /* num entries in tx_sc_array */
++		uint8_t num_rx_sc;     /* num entries in rx_sc_array */
++		uint8_t lmac_id;       /* lmac_id/port which was recovered from fatal error */
++	};
++};
++
++struct cnxk_mcs_event_desc {
++	struct rte_eth_dev *eth_dev;
++	enum roc_mcs_event_type type;
++	enum roc_mcs_event_subtype subtype;
++	struct cnxk_mcs_event_data metadata;
++};
+diff --git a/drivers/net/cnxk/meson.build b/drivers/net/cnxk/meson.build
+index 99531c1917573..fe1b49f46caa6 100644
+--- a/drivers/net/cnxk/meson.build
++++ b/drivers/net/cnxk/meson.build
+@@ -22,6 +22,7 @@ sources = files(
+         'cnxk_ethdev.c',
+         'cnxk_ethdev_cman.c',
+         'cnxk_ethdev_devargs.c',
++        'cnxk_ethdev_mcs.c',
+         'cnxk_ethdev_mtr.c',
+         'cnxk_ethdev_ops.c',
+         'cnxk_ethdev_sec.c',
+-- 
+2.25.1
+

@@ -1,0 +1,87 @@
+From 3f1569b06a42fb67bfde763b1adfdde8ca8677cf Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 31 Aug 2023 17:56:28 +0530
+Subject: [PATCH 627/955] common/cnxk: add check of valid lcore ID
+
+Add check and use the valid lcore ID to get LMT line.
+And, In case of invalid lcore ID, use the last LMT line.
+Updated API roc_plt_control_lmt_id_get name to sync with ODP.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I19b7be6728c00bb74d4542444c4de1ce0f6f118b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/111176
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.c  |  2 +-
+ drivers/common/cnxk/roc_platform.c | 10 +++++++---
+ drivers/common/cnxk/roc_platform.h |  2 +-
+ drivers/common/cnxk/version.map    |  2 +-
+ 4 files changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 09fc585435dec..750fd08355f17 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -780,7 +780,7 @@ nix_inl_eng_caps_get(struct nix *nix)
+ 		hw_res->cn10k.compcode = CPT_COMP_NOT_DONE;
+ 
+ 		/* Use this reserved LMT line as no one else is using it */
+-		lmt_id = roc_plt_get_control_lmt_id();
++		lmt_id = roc_plt_control_lmt_id_get();
+ 		lmt_base += ((uint64_t)lmt_id << ROC_LMT_LINE_SIZE_LOG2);
+ 
+ 		memcpy((void *)lmt_base, &inst, sizeof(inst));
+diff --git a/drivers/common/cnxk/roc_platform.c b/drivers/common/cnxk/roc_platform.c
+index f1db8fa081334..76b4234353bed 100644
+--- a/drivers/common/cnxk/roc_platform.c
++++ b/drivers/common/cnxk/roc_platform.c
+@@ -22,10 +22,14 @@ roc_plt_init_cb_register(roc_plt_init_cb_t cb)
+ }
+ 
+ uint16_t
+-roc_plt_get_control_lmt_id(void)
++roc_plt_control_lmt_id_get(void)
+ {
+-	/* Return Last LMT ID to be use in control path functionality */
+-	return ROC_NUM_LMT_LINES - 1;
++	uint32_t lcore_id = plt_lcore_id();
++	if (lcore_id != LCORE_ID_ANY)
++		return lcore_id << ROC_LMT_LINES_PER_CORE_LOG2;
++	else
++		/* Return Last LMT ID to be use in control path functionality */
++		return ROC_NUM_LMT_LINES - 1;
+ }
+ 
+ uint16_t
+diff --git a/drivers/common/cnxk/roc_platform.h b/drivers/common/cnxk/roc_platform.h
+index a3ecfdd73160e..a7d83f45a2d3e 100644
+--- a/drivers/common/cnxk/roc_platform.h
++++ b/drivers/common/cnxk/roc_platform.h
+@@ -315,7 +315,7 @@ __rte_internal
+ int roc_plt_init(void);
+ 
+ __rte_internal
+-uint16_t roc_plt_get_control_lmt_id(void);
++uint16_t roc_plt_control_lmt_id_get(void);
+ __rte_internal
+ uint16_t roc_plt_lmt_validate(void);
+ 
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index c04259738cb41..6de8b94af5472 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -435,7 +435,7 @@ INTERNAL {
+ 	roc_plt_init;
+ 	roc_plt_init_cb_register;
+ 	roc_plt_lmt_validate;
+-	roc_plt_get_control_lmt_id;
++	roc_plt_control_lmt_id_get;
+ 	roc_sso_dev_fini;
+ 	roc_sso_dev_init;
+ 	roc_sso_dump;
+-- 
+2.25.1
+

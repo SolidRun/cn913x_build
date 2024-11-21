@@ -1,0 +1,159 @@
+From 4a5c3204524cb2a0112c5976fdbbfbc3dde8250b Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Fri, 17 May 2024 03:12:08 -0700
+Subject: [PATCH 366/513] cryptodev: add queue pair reset API
+
+The API will reset the specific queue pair of a cryptodev.
+The present API cryptodev_queue_pair_setup() API needs the cryptodev
+to be stopped before reconfiguring any queue pair. Cryptodev stop in
+one thread will result in seg fault when multiple queues are used for
+enqueue and dequeue.
+
+On supported PMDs, the cryptodev_queue_pair_reset() will
+reconfigure/reset the queue pair without affecting other queues or
+cryptodev state.
+
+The caller should make sure that there are no enqueue and dequque are
+going on that queue and there are no inflight packets before the call to
+this API.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I2977d1b2b2e20e1dce7f398243fb9c121352c266
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128029
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129942
+---
+ lib/cryptodev/cryptodev_pmd.h | 18 ++++++++++++++++++
+ lib/cryptodev/rte_cryptodev.c | 23 +++++++++++++++++++++++
+ lib/cryptodev/rte_cryptodev.h | 29 +++++++++++++++++++++++++++++
+ lib/cryptodev/version.map     |  1 +
+ 4 files changed, 71 insertions(+)
+
+diff --git a/lib/cryptodev/cryptodev_pmd.h b/lib/cryptodev/cryptodev_pmd.h
+index f6ef64e1d0199..8ea49847a3b5c 100644
+--- a/lib/cryptodev/cryptodev_pmd.h
++++ b/lib/cryptodev/cryptodev_pmd.h
+@@ -291,6 +291,22 @@ typedef int (*cryptodev_queue_pair_setup_t)(struct rte_cryptodev *dev,
+ typedef int (*cryptodev_queue_pair_release_t)(struct rte_cryptodev *dev,
+ 		uint16_t qp_id);
+ 
++/**
++ * Reset or reconfigure a queue pair for a device.
++ *
++ * @param	dev		Crypto device pointer
++ * @param	qp_id		Queue pair index
++ * @param	qp_conf		Queue configuration structure
++ * @param	socket_id	Socket index
++ *
++ * @return
++ *  - 0: on success.
++ *  - ENOTSUP: if crypto device does not support the operation.
++ */
++typedef int (*cryptodev_queue_pair_reset_t)(struct rte_cryptodev *dev,
++		uint16_t qp_id,	const struct rte_cryptodev_qp_conf *qp_conf,
++		int socket_id);
++
+ /**
+  * Create a session mempool to allocate sessions from
+  *
+@@ -477,6 +493,8 @@ struct rte_cryptodev_ops {
+ 	/**< Set up a device queue pair. */
+ 	cryptodev_queue_pair_release_t queue_pair_release;
+ 	/**< Release a queue pair. */
++	cryptodev_queue_pair_reset_t queue_pair_reset;
++	/**< Reset a queue pair. */
+ 
+ 	cryptodev_sym_get_session_private_size_t sym_session_get_size;
+ 	/**< Return private session. */
+diff --git a/lib/cryptodev/rte_cryptodev.c b/lib/cryptodev/rte_cryptodev.c
+index b258827734217..d2b17589aa909 100644
+--- a/lib/cryptodev/rte_cryptodev.c
++++ b/lib/cryptodev/rte_cryptodev.c
+@@ -1220,6 +1220,29 @@ rte_cryptodev_queue_pairs_config(struct rte_cryptodev *dev, uint16_t nb_qpairs,
+ 	return 0;
+ }
+ 
++int
++rte_cryptodev_queue_pair_reset(uint8_t dev_id, uint16_t queue_pair_id,
++		const struct rte_cryptodev_qp_conf *qp_conf, int socket_id)
++{
++	struct rte_cryptodev *dev;
++
++	if (!rte_cryptodev_is_valid_dev(dev_id)) {
++		CDEV_LOG_ERR("Invalid dev_id=%" PRIu8, dev_id);
++		return -EINVAL;
++	}
++
++	dev = &rte_crypto_devices[dev_id];
++	if (queue_pair_id >= dev->data->nb_queue_pairs) {
++		CDEV_LOG_ERR("Invalid queue_pair_id=%d", queue_pair_id);
++		return -EINVAL;
++	}
++
++	if (*dev->dev_ops->queue_pair_reset == NULL)
++		return -ENOTSUP;
++
++	return (*dev->dev_ops->queue_pair_reset)(dev, queue_pair_id, qp_conf, socket_id);
++}
++
+ int
+ rte_cryptodev_configure(uint8_t dev_id, struct rte_cryptodev_config *config)
+ {
+diff --git a/lib/cryptodev/rte_cryptodev.h b/lib/cryptodev/rte_cryptodev.h
+index c99bdd31b40eb..15facdd352f9e 100644
+--- a/lib/cryptodev/rte_cryptodev.h
++++ b/lib/cryptodev/rte_cryptodev.h
+@@ -842,6 +842,35 @@ int
+ rte_cryptodev_queue_pair_setup(uint8_t dev_id, uint16_t queue_pair_id,
+ 		const struct rte_cryptodev_qp_conf *qp_conf, int socket_id);
+ 
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change without prior notice.
++ *
++ * Reset a queue pair for a device.
++ * The caller of this API must ensure that, there are no enqueues to the queue and there are no
++ * pending/inflight packets in the queue when the API is called.
++ * The API can reconfigure the queue pair when the queue pair configuration data is provided.
++ *
++ * @param	dev_id		The identifier of the device.
++ * @param	queue_pair_id	The index of the queue pairs to set up. The value must be in the
++ *				range [0, nb_queue_pair - 1] previously supplied to
++ *				rte_cryptodev_configure().
++ * @param	qp_conf		The pointer to configuration data to be used for the queue pair.
++ *				It should be NULL, if the API is called from an interrupt context.
++ * @param	socket_id	The *socket_id* argument is the socket identifier in case of NUMA.
++ *				The value can be *SOCKET_ID_ANY* if there is no NUMA constraint
++ *				for the DMA memory allocated for the queue pair.
++ *
++ * @return
++ *   - 0:  Queue pair is reset successfully.
++ *   - ENOTSUP: If the operation is not supported by the PMD.
++ *   - <0: Queue pair reset failed
++ */
++__rte_experimental
++int
++rte_cryptodev_queue_pair_reset(uint8_t dev_id, uint16_t queue_pair_id,
++		const struct rte_cryptodev_qp_conf *qp_conf, int socket_id);
++
+ /**
+  * Get the status of queue pairs setup on a specific crypto device
+  *
+diff --git a/lib/cryptodev/version.map b/lib/cryptodev/version.map
+index eef8e1e0e3ec0..5ce97d3352147 100644
+--- a/lib/cryptodev/version.map
++++ b/lib/cryptodev/version.map
+@@ -86,6 +86,7 @@ EXPERIMENTAL {
+ 
+ 	# added in 24.07
+ 	__rte_cryptodev_trace_qp_depth_used;
++	rte_cryptodev_queue_pair_reset;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

@@ -1,0 +1,170 @@
+From 88961dc75d4becc7a0db7d292e4b8ba077107ba5 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Sun, 4 Jun 2023 20:19:37 +0530
+Subject: [PATCH 490/955] ci: msns: add vlan id for pcap gen
+
+Add VLAN id option for pcap generated for ipsec msns perf
+to work with Cisco profile where DMAC doesn't exist.
+
+Change-Id: I8c8f5c3c28af4e11d411774b82df7a120da7ce49
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104909
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ .../test/cnxk-tests/ipsec_msns/gentraffic.py  | 13 ++-
+ .../test/cnxk-tests/ipsec_msns/pcap_gen.sh    | 96 +++++++++++--------
+ 2 files changed, 68 insertions(+), 41 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py b/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py
+index a9f7863274dbf..239cef0263c13 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py
+@@ -14,6 +14,8 @@
+ 		    default=None)
+ parser.add_argument("--dmac", type=str, help="DMAC of pkts",
+ 		    default=None)
++parser.add_argument("--vlan-id", type=int, help="VLAN id",
++		    default=None)
+ parser.add_argument("--name", type=str, help="Name of pcap",
+ 		    default=None)
+ 
+@@ -22,6 +24,7 @@
+ 	spi = int(args.spi, 16)
+ if args.dmac != None:
+ 	dmac = args.dmac
++vlan_id = args.vlan_id
+ 
+ key = b'\xfe\xff\xe9\x92\x86\x65\x73\x1c\x6d\x6a\x8f\x94\x67\x30\x83\x08\xca\xfe\xba\xbe'
+ eth = Ether(src='12:12:12:12:12:12', dst=dmac)
+@@ -37,7 +40,10 @@
+ 
+ p=ip/TCP()/Raw(5 * 'a')
+ 
+-pkt=Ether(src='12:12:12:12:12:12', dst=dmac)/sa.encrypt(p)
++if vlan_id != None:
++	pkt=Ether(src='12:12:12:12:12:12', dst=dmac)/Dot1Q(vlan=int(vlan_id))/sa.encrypt(p)
++else:
++	pkt=Ether(src='12:12:12:12:12:12', dst=dmac)/sa.encrypt(p)
+ 
+ if args.name != None:
+ 	pcap_name = args.name
+@@ -45,4 +51,7 @@
+ 	pcap_name = 'inb_%08x.pcap' % spi
+ wrpcap(pcap_name, pkt)
+ 
+-sys.stdout.write("Generated %s with SPI %08x\n" % (pcap_name, spi))
++if vlan_id != None:
++	sys.stdout.write("Generated %s with SPI %08x with VLAN %u\n" % (pcap_name, spi, vlan_id))
++else:
++	sys.stdout.write("Generated %s with SPI %08x\n" % (pcap_name, spi))
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/pcap_gen.sh b/marvell-ci/test/cnxk-tests/ipsec_msns/pcap_gen.sh
+index 0e2cd8f581829..c737c4d032752 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/pcap_gen.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/pcap_gen.sh
+@@ -11,42 +11,60 @@ PORT5_DMAC="46:68:D3:16:83:13"
+ PORT6_DMAC="12:D5:E4:C6:1B:04"
+ PORT7_DMAC="D2:7E:BD:7B:04:11"
+ 
+-./gentraffic.py  --spi 0x20000000 --name port0.pcap --dmac $PORT0_DMAC
+-./gentraffic.py  --spi 0x10000000 --name port0_1.pcap --dmac $PORT0_DMAC
+-./gentraffic.py  --spi 0x4000000 --name port0_2.pcap --dmac $PORT0_DMAC
+-./gentraffic.py  --spi 0x6000000 --name port0_3.pcap --dmac $PORT0_DMAC
+-
+-./gentraffic.py  --spi 0x20000010 --name port1.pcap --dmac $PORT1_DMAC
+-./gentraffic.py  --spi 0x10000010 --name port1_1.pcap --dmac $PORT1_DMAC
+-./gentraffic.py  --spi 0x4000010 --name port1_2.pcap --dmac $PORT1_DMAC
+-./gentraffic.py  --spi 0x6000010 --name port1_3.pcap --dmac $PORT1_DMAC
+-
+-./gentraffic.py  --spi 0x20000040 --name port2.pcap --dmac $PORT2_DMAC
+-./gentraffic.py  --spi 0x10000040 --name port2_1.pcap --dmac $PORT2_DMAC
+-./gentraffic.py  --spi 0x4000040 --name port2_2.pcap --dmac $PORT2_DMAC
+-./gentraffic.py  --spi 0x6000040 --name port2_3.pcap --dmac $PORT2_DMAC
+-
+-./gentraffic.py  --spi 0x20000050 --name port3.pcap --dmac $PORT3_DMAC
+-./gentraffic.py  --spi 0x10000050 --name port3_1.pcap --dmac $PORT3_DMAC
+-./gentraffic.py  --spi 0x4000050 --name port3_2.pcap --dmac $PORT3_DMAC
+-./gentraffic.py  --spi 0x6000050 --name port3_3.pcap --dmac $PORT3_DMAC
+-
+-./gentraffic.py  --spi 0x20000080 --name port4.pcap --dmac $PORT4_DMAC
+-./gentraffic.py  --spi 0x10000080 --name port4_1.pcap --dmac $PORT4_DMAC
+-./gentraffic.py  --spi 0x4000080 --name port4_2.pcap --dmac $PORT4_DMAC
+-./gentraffic.py  --spi 0x6000080 --name port4_3.pcap --dmac $PORT4_DMAC
+-
+-./gentraffic.py  --spi 0x20000090 --name port5.pcap --dmac $PORT5_DMAC
+-./gentraffic.py  --spi 0x10000090 --name port5_1.pcap --dmac $PORT5_DMAC
+-./gentraffic.py  --spi 0x4000090 --name port5_2.pcap --dmac $PORT5_DMAC
+-./gentraffic.py  --spi 0x6000090 --name port5_3.pcap --dmac $PORT5_DMAC
+-
+-./gentraffic.py  --spi 0x200000c0 --name port6.pcap --dmac $PORT6_DMAC
+-./gentraffic.py  --spi 0x10000090 --name port6_1.pcap --dmac $PORT6_DMAC
+-./gentraffic.py  --spi 0x40000c0 --name port6_2.pcap --dmac $PORT6_DMAC
+-./gentraffic.py  --spi 0x60000c0 --name port6_3.pcap --dmac $PORT6_DMAC
+-
+-./gentraffic.py  --spi 0x200000d0 --name port7.pcap --dmac $PORT7_DMAC
+-./gentraffic.py  --spi 0x100000d0 --name port7_1.pcap --dmac $PORT7_DMAC
+-./gentraffic.py  --spi 0x40000d0 --name port7_2.pcap --dmac $PORT7_DMAC
+-./gentraffic.py  --spi 0x60000d0 --name port7_3.pcap --dmac $PORT7_DMAC
++PORT0_VLAN=
++PORT1_VLAN=
++PORT2_VLAN=
++PORT3_VLAN=
++PORT4_VLAN=
++PORT5_VLAN=
++PORT6_VLAN=
++PORT7_VLAN=
++
++if [ "$PORT0_VLAN" != "" ]; then PORT0_OPT="--vlan-id $PORT0_VLAN"; fi
++if [ "$PORT1_VLAN" != "" ]; then PORT1_OPT="--vlan-id $PORT1_VLAN"; fi
++if [ "$PORT2_VLAN" != "" ]; then PORT2_OPT="--vlan-id $PORT2_VLAN"; fi
++if [ "$PORT3_VLAN" != "" ]; then PORT3_OPT="--vlan-id $PORT3_VLAN"; fi
++if [ "$PORT4_VLAN" != "" ]; then PORT4_OPT="--vlan-id $PORT4_VLAN"; fi
++if [ "$PORT5_VLAN" != "" ]; then PORT5_OPT="--vlan-id $PORT5_VLAN"; fi
++if [ "$PORT6_VLAN" != "" ]; then PORT6_OPT="--vlan-id $PORT6_VLAN"; fi
++if [ "$PORT7_VLAN" != "" ]; then PORT7_OPT="--vlan-id $PORT7_VLAN"; fi
++
++./gentraffic.py  --spi 0x20000000 --name port0.pcap --dmac $PORT0_DMAC $PORT0_OPT
++./gentraffic.py  --spi 0x10000000 --name port0_1.pcap --dmac $PORT0_DMAC $PORT0_OPT
++./gentraffic.py  --spi 0x4000000 --name port0_2.pcap --dmac $PORT0_DMAC $PORT0_OPT
++./gentraffic.py  --spi 0x6000000 --name port0_3.pcap --dmac $PORT0_DMAC $PORT0_OPT
++
++./gentraffic.py  --spi 0x20000010 --name port1.pcap --dmac $PORT1_DMAC $PORT1_OPT
++./gentraffic.py  --spi 0x10000010 --name port1_1.pcap --dmac $PORT1_DMAC $PORT1_OPT
++./gentraffic.py  --spi 0x4000010 --name port1_2.pcap --dmac $PORT1_DMAC $PORT1_OPT
++./gentraffic.py  --spi 0x6000010 --name port1_3.pcap --dmac $PORT1_DMAC $PORT1_OPT
++
++./gentraffic.py  --spi 0x20000040 --name port2.pcap --dmac $PORT2_DMAC $PORT2_OPT
++./gentraffic.py  --spi 0x10000040 --name port2_1.pcap --dmac $PORT2_DMAC $PORT2_OPT
++./gentraffic.py  --spi 0x4000040 --name port2_2.pcap --dmac $PORT2_DMAC $PORT2_OPT
++./gentraffic.py  --spi 0x6000040 --name port2_3.pcap --dmac $PORT2_DMAC $PORT2_OPT
++
++./gentraffic.py  --spi 0x20000050 --name port3.pcap --dmac $PORT3_DMAC $PORT3_OPT
++./gentraffic.py  --spi 0x10000050 --name port3_1.pcap --dmac $PORT3_DMAC $PORT3_OPT
++./gentraffic.py  --spi 0x4000050 --name port3_2.pcap --dmac $PORT3_DMAC $PORT3_OPT
++./gentraffic.py  --spi 0x6000050 --name port3_3.pcap --dmac $PORT3_DMAC $PORT3_OPT
++
++./gentraffic.py  --spi 0x20000080 --name port4.pcap --dmac $PORT4_DMAC $PORT4_OPT
++./gentraffic.py  --spi 0x10000080 --name port4_1.pcap --dmac $PORT4_DMAC $PORT4_OPT
++./gentraffic.py  --spi 0x4000080 --name port4_2.pcap --dmac $PORT4_DMAC $PORT4_OPT
++./gentraffic.py  --spi 0x6000080 --name port4_3.pcap --dmac $PORT4_DMAC $PORT4_OPT
++
++./gentraffic.py  --spi 0x20000090 --name port5.pcap --dmac $PORT5_DMAC $PORT5_OPT
++./gentraffic.py  --spi 0x10000090 --name port5_1.pcap --dmac $PORT5_DMAC $PORT5_OPT
++./gentraffic.py  --spi 0x4000090 --name port5_2.pcap --dmac $PORT5_DMAC $PORT5_OPT
++./gentraffic.py  --spi 0x6000090 --name port5_3.pcap --dmac $PORT5_DMAC $PORT5_OPT
++
++./gentraffic.py  --spi 0x200000c0 --name port6.pcap --dmac $PORT6_DMAC $PORT6_OPT
++./gentraffic.py  --spi 0x10000090 --name port6_1.pcap --dmac $PORT6_DMAC $PORT6_OPT
++./gentraffic.py  --spi 0x40000c0 --name port6_2.pcap --dmac $PORT6_DMAC $PORT6_OPT
++./gentraffic.py  --spi 0x60000c0 --name port6_3.pcap --dmac $PORT6_DMAC $PORT6_OPT
++
++./gentraffic.py  --spi 0x200000d0 --name port7.pcap --dmac $PORT7_DMAC $PORT7_OPT
++./gentraffic.py  --spi 0x100000d0 --name port7_1.pcap --dmac $PORT7_DMAC $PORT7_OPT
++./gentraffic.py  --spi 0x40000d0 --name port7_2.pcap --dmac $PORT7_DMAC $PORT7_OPT
++./gentraffic.py  --spi 0x60000d0 --name port7_3.pcap --dmac $PORT7_DMAC $PORT7_OPT
+-- 
+2.25.1
+

@@ -1,0 +1,56 @@
+From b12d0a204a22eff8fe87d433c525dcd2205acc10 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Tue, 7 Mar 2023 11:26:38 +0530
+Subject: [PATCH 314/955] common/cnxk: fix null pointer dereference
+
+Fix null pointer dereferences reported by klocwork.
+
+Fixes: 966b12ade29e ("common/cnxk: dump inline device RQ context")
+Fixes: a642441b5f10 ("common/cnxk: add separate inline dev stats API")
+
+Change-Id: I42f6aaa387a610ecdbbd9390ce79fc71ab9479ad
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99433
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_debug.c   | 8 +++++++-
+ drivers/common/cnxk/roc_nix_inl_dev.c | 2 +-
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_debug.c b/drivers/common/cnxk/roc_nix_debug.c
+index 399d0d7eaea48..a1c3db284b583 100644
+--- a/drivers/common/cnxk/roc_nix_debug.c
++++ b/drivers/common/cnxk/roc_nix_debug.c
+@@ -733,7 +733,13 @@ roc_nix_queues_ctx_dump(struct roc_nix *roc_nix, FILE *file)
+ 	inl_rq = roc_nix_inl_dev_rq(roc_nix);
+ 	if (inl_rq) {
+ 		struct idev_cfg *idev = idev_get_cfg();
+-		struct nix_inl_dev *inl_dev = idev->nix_inl_dev;
++		struct nix_inl_dev *inl_dev = NULL;
++
++		if (idev && idev->nix_inl_dev)
++			inl_dev = idev->nix_inl_dev;
++
++		if (!inl_dev)
++			return -EINVAL;
+ 
+ 		rc = nix_q_ctx_get(&inl_dev->dev, NIX_AQ_CTYPE_RQ, inl_rq->qid, &ctx);
+ 		if (rc) {
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index 196a04db095cb..b6abafd5c4aa5 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -843,7 +843,7 @@ roc_nix_inl_dev_stats_get(struct roc_nix_stats *stats)
+ 	if (stats == NULL)
+ 		return NIX_ERR_PARAM;
+ 
+-	if (!idev && idev->nix_inl_dev)
++	if (idev && idev->nix_inl_dev)
+ 		inl_dev = idev->nix_inl_dev;
+ 
+ 	if (!inl_dev)
+-- 
+2.25.1
+

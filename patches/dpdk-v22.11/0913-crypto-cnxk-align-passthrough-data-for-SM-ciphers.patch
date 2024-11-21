@@ -1,0 +1,100 @@
+From 757cc8d06c511d8840125f712f1aa9e8b18bbfc5 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Thu, 15 Aug 2024 22:47:38 -0700
+Subject: [PATCH 913/955] crypto/cnxk: align passthrough data for SM ciphers
+
+Add required padding to make passthrough data length multiple of 16
+bytes for SM ciphers
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I60c29836bfecec7adcabe3746a1f01d82145f555
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133600
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit f466a715240183e3c4c1aa5d4cfe8ba7cfb453b9)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133870
+---
+ drivers/crypto/cnxk/cnxk_se.h | 29 ++++++++++++++---------------
+ 1 file changed, 14 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index a682b59839f4c..b396f6f31068c 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -1097,6 +1097,7 @@ cpt_sm_prep(uint32_t flags, uint64_t d_offs, uint64_t d_lens, struct roc_se_fc_p
+ {
+ 	int32_t inputlen, outputlen, enc_dlen;
+ 	union cpt_inst_w4 cpt_inst_w4;
++	uint32_t passthr_len, pad_len;
+ 	uint32_t passthrough_len = 0;
+ 	const uint8_t *src = NULL;
+ 	struct roc_se_ctx *se_ctx;
+@@ -1116,21 +1117,18 @@ cpt_sm_prep(uint32_t flags, uint64_t d_offs, uint64_t d_lens, struct roc_se_fc_p
+ 	if (unlikely(!(flags & ROC_SE_VALID_IV_BUF)))
+ 		iv_len = 0;
+ 
+-	encr_offset += iv_len;
+-	enc_dlen = RTE_ALIGN_CEIL(encr_data_len, 8) + encr_offset;
++	passthr_len = encr_offset + iv_len;
++	passthr_len = RTE_ALIGN_CEIL(passthr_len, 8);
++	pad_len = passthr_len - encr_offset - iv_len;
++	enc_dlen = RTE_ALIGN_CEIL(encr_data_len, 8) + passthr_len;
+ 
+ 	inputlen = enc_dlen;
+ 	outputlen = enc_dlen;
+ 
+ 	cpt_inst_w4.s.param1 = encr_data_len;
+ 
+-	if (unlikely(encr_offset >> 8)) {
+-		plt_dp_err("Offset not supported");
+-		plt_dp_err("enc_offset: %d", encr_offset);
+-		return -1;
+-	}
+-
+-	offset_ctrl = rte_cpu_to_be_64((uint64_t)encr_offset);
++	offset_ctrl = passthr_len & 0xff;
++	offset_ctrl = rte_cpu_to_be_64(offset_ctrl);
+ 
+ 	/*
+ 	 * In cn9k, cn10k since we have a limitation of
+@@ -1143,14 +1141,14 @@ cpt_sm_prep(uint32_t flags, uint64_t d_offs, uint64_t d_lens, struct roc_se_fc_p
+ 
+ 		/* Use Direct mode */
+ 
+-		offset_vaddr = PLT_PTR_SUB(dm_vaddr, ROC_SE_OFF_CTRL_LEN + iv_len);
++		offset_vaddr = PLT_PTR_SUB(dm_vaddr, ROC_SE_OFF_CTRL_LEN + pad_len + iv_len);
+ 		*(uint64_t *)offset_vaddr = offset_ctrl;
+ 
+ 		/* DPTR */
+ 		inst->dptr = (uint64_t)offset_vaddr;
+ 
+ 		/* RPTR should just exclude offset control word */
+-		inst->rptr = (uint64_t)dm_vaddr - iv_len;
++		inst->rptr = (uint64_t)dm_vaddr - iv_len - pad_len;
+ 
+ 		cpt_inst_w4.s.dlen = inputlen + ROC_SE_OFF_CTRL_LEN;
+ 
+@@ -1168,12 +1166,13 @@ cpt_sm_prep(uint32_t flags, uint64_t d_offs, uint64_t d_lens, struct roc_se_fc_p
+ 		inst->w4.u64 = cpt_inst_w4.u64;
+ 
+ 		if (is_sg_ver2)
+-			ret = sg2_inst_prep(fc_params, inst, offset_ctrl, src, iv_len, 0, 0,
+-					    inputlen, outputlen, passthrough_len, flags, 0,
++			ret = sg2_inst_prep(fc_params, inst, offset_ctrl, src, iv_len + pad_len, 0,
++					    0, inputlen, outputlen, passthrough_len, flags, 0,
+ 					    decrypt);
+ 		else
+-			ret = sg_inst_prep(fc_params, inst, offset_ctrl, src, iv_len, 0, 0,
+-					   inputlen, outputlen, passthrough_len, flags, 0, decrypt);
++			ret = sg_inst_prep(fc_params, inst, offset_ctrl, src, iv_len + pad_len, 0,
++					   0, inputlen, outputlen, passthrough_len, flags, 0,
++					   decrypt);
+ 
+ 		if (unlikely(ret)) {
+ 			plt_dp_err("sg prep failed");
+-- 
+2.25.1
+

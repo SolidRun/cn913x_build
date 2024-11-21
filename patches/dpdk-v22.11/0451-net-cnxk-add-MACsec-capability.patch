@@ -1,0 +1,206 @@
+From 92c20a93d75469f79d53f8a58d7ce8cb84967235 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Fri, 12 May 2023 12:10:53 +0530
+Subject: [PATCH 451/955] net/cnxk: add MACsec capability
+
+Adds the MACsec capability for CN10K-B.
+
+The ethernet security capability structure is populated based on the
+feature supported by the device.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Change-Id: I6efd877e107e1565c74fb534129238954d4e66e4
+---
+ drivers/common/cnxk/roc_features.h  |   6 ++
+ drivers/common/cnxk/roc_mcs.h       |   3 +
+ drivers/net/cnxk/cn10k_ethdev_sec.c | 120 +++++++++++++++++++++++++++-
+ 3 files changed, 125 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index fa75e0af02aa0..aab173976a24c 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -65,4 +65,10 @@ roc_feature_nix_has_macsec(void)
+ {
+ 	return roc_model_is_cn10kb();
+ }
++
++static inline bool
++roc_feature_nix_has_inl_ipsec(void)
++{
++	return !roc_model_is_cnf10kb();
++}
+ #endif
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+index 88c8f3da2770a..0d53874842bfe 100644
+--- a/drivers/common/cnxk/roc_mcs.h
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -7,6 +7,9 @@
+ 
+ #define MCS_AES_GCM_256_KEYLEN 32
+ 
++#define ROC_MCS_MAX_AR_WINSZ BIT_ULL(31)
++#define ROC_MCS_MAX_MTU      (BIT_ULL(16) - 1)
++
+ struct roc_mcs_alloc_rsrc_req {
+ 	uint8_t rsrc_type;
+ 	uint8_t rsrc_cnt; /* Resources count */
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index 63aa7ffde2d31..9a831634dab48 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -304,7 +304,7 @@ static struct rte_cryptodev_capabilities cn10k_eth_sec_crypto_caps[] = {
+ 	RTE_CRYPTODEV_END_OF_CAPABILITIES_LIST()
+ };
+ 
+-static const struct rte_security_capability cn10k_eth_sec_capabilities[] = {
++static const struct rte_security_capability cn10k_eth_sec_ipsec_capabilities[] = {
+ 	{	/* IPsec Inline Protocol ESP Tunnel Ingress */
+ 		.action = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL,
+ 		.protocol = RTE_SECURITY_PROTOCOL_IPSEC,
+@@ -405,11 +405,100 @@ static const struct rte_security_capability cn10k_eth_sec_capabilities[] = {
+ 		.crypto_capabilities = cn10k_eth_sec_crypto_caps,
+ 		.ol_flags = RTE_SECURITY_TX_OLOAD_NEED_MDATA
+ 	},
+-	{
+-		.action = RTE_SECURITY_ACTION_TYPE_NONE
+-	}
+ };
+ 
++static const struct rte_security_capability cn10k_eth_sec_macsec_capabilities[] = {
++	{	/* MACsec Inline Protocol, AES-GCM-128 algo */
++		.action = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL,
++		.protocol = RTE_SECURITY_PROTOCOL_MACSEC,
++		.macsec = {
++			.mtu = ROC_MCS_MAX_MTU,
++			.alg = RTE_SECURITY_MACSEC_ALG_GCM_128,
++			.max_nb_sc = 128,
++			.max_nb_sa = 256,
++			.max_nb_sess = 256,
++			.replay_win_sz = ROC_MCS_MAX_AR_WINSZ,
++			.relative_sectag_insert = 1,
++			.fixed_sectag_insert = 1,
++			.icv_include_da_sa = 1,
++			.ctrl_port_enable = 1,
++			.preserve_sectag = 1,
++			.preserve_icv = 1,
++			.validate_frames = 1,
++			.re_key = 1,
++			.anti_replay = 1,
++		},
++	},
++	{	/* MACsec Inline Protocol, AES-GCM-256 algo */
++		.action = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL,
++		.protocol = RTE_SECURITY_PROTOCOL_MACSEC,
++		.macsec = {
++			.mtu = ROC_MCS_MAX_MTU,
++			.alg = RTE_SECURITY_MACSEC_ALG_GCM_256,
++			.max_nb_sc = 128,
++			.max_nb_sa = 256,
++			.max_nb_sess = 256,
++			.replay_win_sz = ROC_MCS_MAX_AR_WINSZ,
++			.relative_sectag_insert = 1,
++			.fixed_sectag_insert = 1,
++			.icv_include_da_sa = 1,
++			.ctrl_port_enable = 1,
++			.preserve_sectag = 1,
++			.preserve_icv = 1,
++			.validate_frames = 1,
++			.re_key = 1,
++			.anti_replay = 1,
++		},
++	},
++	{	/* MACsec Inline Protocol, AES-GCM-XPN-128 algo */
++		.action = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL,
++		.protocol = RTE_SECURITY_PROTOCOL_MACSEC,
++		.macsec = {
++			.mtu = ROC_MCS_MAX_MTU,
++			.alg = RTE_SECURITY_MACSEC_ALG_GCM_XPN_128,
++			.max_nb_sc = 128,
++			.max_nb_sa = 256,
++			.max_nb_sess = 256,
++			.replay_win_sz = ROC_MCS_MAX_AR_WINSZ,
++			.relative_sectag_insert = 1,
++			.fixed_sectag_insert = 1,
++			.icv_include_da_sa = 1,
++			.ctrl_port_enable = 1,
++			.preserve_sectag = 1,
++			.preserve_icv = 1,
++			.validate_frames = 1,
++			.re_key = 1,
++			.anti_replay = 1,
++		},
++	},
++	{	/* MACsec Inline Protocol, AES-GCM-XPN-256 algo */
++		.action = RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL,
++		.protocol = RTE_SECURITY_PROTOCOL_MACSEC,
++		.macsec = {
++			.mtu = ROC_MCS_MAX_MTU,
++			.alg = RTE_SECURITY_MACSEC_ALG_GCM_XPN_256,
++			.max_nb_sc = 128,
++			.max_nb_sa = 256,
++			.max_nb_sess = 256,
++			.replay_win_sz = ROC_MCS_MAX_AR_WINSZ,
++			.relative_sectag_insert = 1,
++			.fixed_sectag_insert = 1,
++			.icv_include_da_sa = 1,
++			.ctrl_port_enable = 1,
++			.preserve_sectag = 1,
++			.preserve_icv = 1,
++			.validate_frames = 1,
++			.re_key = 1,
++			.anti_replay = 1,
++		},
++	},
++};
++
++#define SEC_CAPS_LEN (RTE_DIM(cn10k_eth_sec_ipsec_capabilities) + \
++		RTE_DIM(cn10k_eth_sec_macsec_capabilities) + 1)
++
++static struct rte_security_capability cn10k_eth_sec_capabilities[SEC_CAPS_LEN];
++
+ static inline void
+ cnxk_pktmbuf_free_no_cache(struct rte_mbuf *mbuf)
+ {
+@@ -1136,15 +1225,38 @@ cn10k_eth_sec_session_stats_get(void *device, struct rte_security_session *sess,
+ 	return 0;
+ }
+ 
++static void
++eth_sec_caps_add(struct rte_security_capability eth_sec_caps[], uint32_t *idx,
++		 const struct rte_security_capability *caps, uint32_t nb_caps)
++{
++	PLT_VERIFY(*idx + nb_caps < SEC_CAPS_LEN);
++
++	rte_memcpy(&eth_sec_caps[*idx], caps, nb_caps * sizeof(caps[0]));
++	*idx += nb_caps;
++}
++
+ void
+ cn10k_eth_sec_ops_override(void)
+ {
+ 	static int init_once;
++	uint32_t idx = 0;
+ 
+ 	if (init_once)
+ 		return;
+ 	init_once = 1;
+ 
++	if (roc_feature_nix_has_inl_ipsec())
++		eth_sec_caps_add(cn10k_eth_sec_capabilities, &idx,
++				 cn10k_eth_sec_ipsec_capabilities,
++				 RTE_DIM(cn10k_eth_sec_ipsec_capabilities));
++
++	if (roc_feature_nix_has_macsec())
++		eth_sec_caps_add(cn10k_eth_sec_capabilities, &idx,
++				 cn10k_eth_sec_macsec_capabilities,
++				 RTE_DIM(cn10k_eth_sec_macsec_capabilities));
++
++	cn10k_eth_sec_capabilities[idx].action = RTE_SECURITY_ACTION_TYPE_NONE;
++
+ 	/* Update platform specific ops */
+ 	cnxk_eth_sec_ops.macsec_sa_create = cnxk_eth_macsec_sa_create;
+ 	cnxk_eth_sec_ops.macsec_sc_create = cnxk_eth_macsec_sc_create;
+-- 
+2.25.1
+

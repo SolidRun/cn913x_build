@@ -1,0 +1,126 @@
+From e7c0db8462e626892ef902bf8303436be1d4454d Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 9 Nov 2023 15:18:50 +0530
+Subject: [PATCH 699/955] common/cnxk: added new API to enable disable SQ
+
+Added a new roc API to disable SQB aura FC
+and update SQ state to disabled state in TX queue
+stop.The same SQ status is verified during sq flush
+to enable or disable SQB aura FC during ethdev
+teardown.This fix reduces teardown time by 90%.
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Ifea387cdc202c245f528303e34335590e5e73b96
+---
+ drivers/common/cnxk/roc_nix.h       |  2 ++
+ drivers/common/cnxk/roc_nix_queue.c | 15 +++++++++++++++
+ drivers/common/cnxk/roc_nix_tm.c    | 20 ++++++++++++--------
+ drivers/common/cnxk/version.map     |  1 +
+ 4 files changed, 30 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 9dbb17d3e8693..c8d8f7e388914 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -400,6 +400,7 @@ struct roc_nix_sq {
+ 	void *sqe_mem;
+ 	void *fc;
+ 	uint8_t tc;
++	bool enable;
+ };
+ 
+ struct roc_nix_link_info {
+@@ -955,6 +956,7 @@ void __roc_api roc_nix_cq_head_tail_get(struct roc_nix *roc_nix, uint16_t qid,
+ 					uint32_t *head, uint32_t *tail);
+ int __roc_api roc_nix_sq_init(struct roc_nix *roc_nix, struct roc_nix_sq *sq);
+ int __roc_api roc_nix_sq_fini(struct roc_nix_sq *sq);
++int __roc_api roc_nix_sq_ena_dis(struct roc_nix_sq *sq, bool enable);
+ void __roc_api roc_nix_sq_head_tail_get(struct roc_nix *roc_nix, uint16_t qid,
+ 					uint32_t *head, uint32_t *tail);
+ 
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index f96d5c3a96705..ae4e0ea40cec8 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -92,6 +92,20 @@ nix_rq_ena_dis(struct dev *dev, struct roc_nix_rq *rq, bool enable)
+ 	return rc;
+ }
+ 
++int
++roc_nix_sq_ena_dis(struct roc_nix_sq *sq, bool enable)
++{
++	int rc = 0;
++
++	rc = roc_nix_tm_sq_aura_fc(sq, enable);
++	if (rc)
++		goto done;
++
++	sq->enable = enable;
++done:
++	return rc;
++}
++
+ int
+ roc_nix_rq_ena_dis(struct roc_nix_rq *rq, bool enable)
+ {
+@@ -1409,6 +1423,7 @@ roc_nix_sq_init(struct roc_nix *roc_nix, struct roc_nix_sq *sq)
+ 	}
+ 	mbox_put(mbox);
+ 
++	sq->enable = true;
+ 	nix->sqs[qid] = sq;
+ 	sq->io_addr = nix->base + NIX_LF_OP_SENDX(0);
+ 	/* Evenly distribute LMT slot for each sq */
+diff --git a/drivers/common/cnxk/roc_nix_tm.c b/drivers/common/cnxk/roc_nix_tm.c
+index ece88b5e99421..6a61e448a107d 100644
+--- a/drivers/common/cnxk/roc_nix_tm.c
++++ b/drivers/common/cnxk/roc_nix_tm.c
+@@ -887,10 +887,12 @@ nix_tm_sq_flush_pre(struct roc_nix_sq *sq)
+ 		if (!sq)
+ 			continue;
+ 
+-		rc = roc_nix_tm_sq_aura_fc(sq, false);
+-		if (rc) {
+-			plt_err("Failed to disable sqb aura fc, rc=%d", rc);
+-			goto cleanup;
++		if (sq->enable) {
++			rc = roc_nix_tm_sq_aura_fc(sq, false);
++			if (rc) {
++				plt_err("Failed to disable sqb aura fc, rc=%d", rc);
++				goto cleanup;
++			}
+ 		}
+ 
+ 		/* Wait for sq entries to be flushed */
+@@ -997,10 +999,12 @@ nix_tm_sq_flush_post(struct roc_nix_sq *sq)
+ 			once = true;
+ 		}
+ 
+-		rc = roc_nix_tm_sq_aura_fc(s_sq, true);
+-		if (rc) {
+-			plt_err("Failed to enable sqb aura fc, rc=%d", rc);
+-			return rc;
++		if (s_sq->enable) {
++			rc = roc_nix_tm_sq_aura_fc(s_sq, true);
++			if (rc) {
++				plt_err("Failed to enable sqb aura fc, rc=%d", rc);
++				return rc;
++			}
+ 		}
+ 	}
+ 
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 03698b9d09706..4fc1488aadcd0 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -309,6 +309,7 @@ INTERNAL {
+ 	roc_nix_rx_queue_intr_enable;
+ 	roc_nix_sq_dump;
+ 	roc_nix_sq_desc_dump;
++	roc_nix_sq_ena_dis;
+ 	roc_nix_sq_fini;
+ 	roc_nix_sq_head_tail_get;
+ 	roc_nix_sq_init;
+-- 
+2.25.1
+

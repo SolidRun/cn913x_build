@@ -1,0 +1,220 @@
+From cbaeaadebaf51f4a9fb878de3996cba44479d86d Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Mon, 10 Jun 2024 22:03:54 -0700
+Subject: [PATCH 379/513] net/octeon_ep: support mbox up messages
+
+Patch registers interrupt handler to handle mailbox
+up messages and handles PF FLR notification.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: Ie4dd4d2e5622ededb0b4389074a4cac34f07cc02
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129922
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit 64b1505609737e612128898c57be29858c1b78b9)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130360
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_vf.h    |  5 ++
+ drivers/net/octeon_ep/otx_ep_ethdev.c |  4 +-
+ drivers/net/octeon_ep/otx_ep_mbox.c   | 70 +++++++++++++++++++++++++--
+ drivers/net/octeon_ep/otx_ep_mbox.h   | 11 ++++-
+ 4 files changed, 82 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.h b/drivers/net/octeon_ep/cnxk_ep_vf.h
+index 41d8fbbb3aadb..8981dd7e866c2 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.h
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.h
+@@ -134,6 +134,9 @@
+ #define CNXK_EP_R_MBOX_VF_PF_DATA(ring)          \
+ 	(CNXK_EP_R_MBOX_VF_PF_DATA_START + ((ring) * CNXK_EP_RING_OFFSET))
+ 
++#define CNXK_EP_R_MBOX_PF_VF_DATA(ring)          \
++	(CNXK_EP_R_MBOX_PF_VF_DATA_START + ((ring) * CNXK_EP_RING_OFFSET))
++
+ #define CNXK_EP_R_MBOX_PF_VF_INT(ring)           \
+ 	(CNXK_EP_R_MBOX_PF_VF_INT_START + ((ring) * CNXK_EP_RING_OFFSET))
+ 
+@@ -195,5 +198,7 @@ struct cnxk_ep_instr_32B {
+ #define CNXK_EP_OQ_ISM_OFFSET(queue)    (RTE_CACHE_LINE_SIZE * (queue))
+ #define CNXK_EP_ISM_EN                  (0x1)
+ #define CNXK_EP_ISM_MSIX_DIS            (0x2)
++#define CNXK_EP_MBOX_INTR               (0x1)
++#define CNXK_EP_MBOX_ENAB               (0x2)
+ 
+ #endif /*_CNXK_EP_VF_H_ */
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 86ed6df6a9989..35746d389aa38 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -656,6 +656,7 @@ otx_ep_dev_close(struct rte_eth_dev *eth_dev)
+ 
+ 	otx_epvf = OTX_EP_DEV(eth_dev);
+ 	otx_ep_mbox_send_dev_exit(eth_dev);
++	otx_ep_mbox_uninit(eth_dev);
+ 	otx_epvf->fn_list.disable_io_queues(otx_epvf);
+ 	num_queues = otx_epvf->nb_rx_queues;
+ 	for (q_no = 0; q_no < num_queues; q_no++) {
+@@ -725,6 +726,7 @@ otx_ep_eth_dev_uninit(struct rte_eth_dev *eth_dev)
+ 		return 0;
+ 	}
+ 
++	otx_ep_mbox_uninit(eth_dev);
+ 	eth_dev->dev_ops = NULL;
+ 	eth_dev->rx_pkt_burst = NULL;
+ 	eth_dev->tx_pkt_burst = NULL;
+@@ -826,7 +828,7 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		return -EINVAL;
+ 	}
+ 
+-	if (otx_ep_mbox_version_check(eth_dev))
++	if (otx_ep_mbox_init(eth_dev))
+ 		return -EINVAL;
+ 
+ 	if (otx_ep_eth_dev_query_set_vf_mac(eth_dev,
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.c b/drivers/net/octeon_ep/otx_ep_mbox.c
+index 4118645dc7f43..04744195997fc 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.c
++++ b/drivers/net/octeon_ep/otx_ep_mbox.c
+@@ -17,7 +17,10 @@
+  * with new command and it's version info.
+  */
+ static uint32_t otx_ep_cmd_versions[OTX_EP_MBOX_CMD_MAX] = {
+-	[0 ... OTX_EP_MBOX_CMD_DEV_REMOVE] = OTX_EP_MBOX_VERSION_V1
++	[0 ... OTX_EP_MBOX_CMD_DEV_REMOVE] = OTX_EP_MBOX_VERSION_V1,
++	[OTX_EP_MBOX_CMD_GET_FW_INFO ... OTX_EP_MBOX_NOTIF_LINK_STATUS] = OTX_EP_MBOX_VERSION_V2,
++	[OTX_EP_MBOX_NOTIF_PF_FLR] = OTX_EP_MBOX_VERSION_V3
++
+ };
+ 
+ static int
+@@ -288,10 +291,9 @@ otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev)
+ 	return rsp.s_get_mtu.mtu;
+ }
+ 
+-int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev)
++static void
++otx_ep_mbox_version_check(struct otx_ep_device *otx_ep)
+ {
+-	struct otx_ep_device *otx_ep =
+-		(struct otx_ep_device *)(eth_dev)->data->dev_private;
+ 	union otx_ep_mbox_word cmd;
+ 	union otx_ep_mbox_word rsp;
+ 	int ret;
+@@ -312,15 +314,73 @@ int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev)
+ 	if (ret == OTX_EP_MBOX_CMD_STATUS_NACK || rsp.s_version.version == 0) {
+ 		otx_ep_dbg("VF Mbox version fallback to base version from:%u\n",
+ 			(uint32_t)cmd.s_version.version);
+-		return 0;
++		return;
+ 	}
+ 	otx_ep->mbox_neg_ver = (uint32_t)rsp.s_version.version;
+ 	otx_ep_dbg("VF Mbox version:%u Negotiated VF version with PF:%u\n",
+ 		    (uint32_t)cmd.s_version.version,
+ 		    (uint32_t)rsp.s_version.version);
++}
++
++static void
++otx_ep_mbox_intr_handler(void *param)
++{
++	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)param;
++	struct otx_ep_device *otx_ep = (struct otx_ep_device *)eth_dev->data->dev_private;
++	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(eth_dev);
++	union otx_ep_mbox_word mbox_cmd;
++
++	if (otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0)) & CNXK_EP_MBOX_INTR) {
++		mbox_cmd.u64 = otx2_read64(otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_DATA(0));
++		otx2_write64(CNXK_EP_MBOX_ENAB | CNXK_EP_MBOX_INTR,
++			     otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0));
++		if (mbox_cmd.s.opcode == OTX_EP_MBOX_NOTIF_PF_FLR) {
++			rte_spinlock_lock(&otx_ep->mbox_lock);
++			mbox_cmd.s.type = OTX_EP_MBOX_TYPE_RSP_ACK;
++			otx2_write64(mbox_cmd.u64, otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_DATA(0));
++			rte_spinlock_unlock(&otx_ep->mbox_lock);
++			rte_dev_event_callback_process(pdev->name, RTE_DEV_EVENT_REMOVE);
++		} else {
++			otx_ep_err("Invalid mbox opcode");
++		}
++	}
++}
++
++int
++otx_ep_mbox_init(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_ep = (struct otx_ep_device *)eth_dev->data->dev_private;
++	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(eth_dev);
++
++	otx_ep_mbox_version_check(otx_ep);
++
++	rte_intr_callback_register(pdev->intr_handle, otx_ep_mbox_intr_handler, (void *)eth_dev);
++
++	if (rte_intr_enable(pdev->intr_handle)) {
++		otx_ep_err("rte_intr_enable failed");
++		return -1;
++	}
++
++	/* Enable pf-vf mbox interrupt & clear the status */
++	otx2_write64(CNXK_EP_MBOX_ENAB | CNXK_EP_MBOX_INTR,
++		     otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0));
++
+ 	return 0;
+ }
+ 
++void
++otx_ep_mbox_uninit(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_ep = (struct otx_ep_device *)eth_dev->data->dev_private;
++	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(eth_dev);
++
++	otx2_write64(0, otx_ep->hw_addr + CNXK_EP_R_MBOX_PF_VF_INT(0));
++
++	rte_intr_disable(pdev->intr_handle);
++
++	rte_intr_callback_unregister(pdev->intr_handle, otx_ep_mbox_intr_handler, (void *)eth_dev);
++}
++
+ int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev)
+ {
+ 	struct otx_ep_device *otx_ep =
+diff --git a/drivers/net/octeon_ep/otx_ep_mbox.h b/drivers/net/octeon_ep/otx_ep_mbox.h
+index a3fc15cca7dd4..ec96e4edc5ecd 100644
+--- a/drivers/net/octeon_ep/otx_ep_mbox.h
++++ b/drivers/net/octeon_ep/otx_ep_mbox.h
+@@ -11,9 +11,11 @@
+ enum octep_pfvf_mbox_version {
+ 	OTX_EP_MBOX_VERSION_V0,
+ 	OTX_EP_MBOX_VERSION_V1,
++	OTX_EP_MBOX_VERSION_V2,
++	OTX_EP_MBOX_VERSION_V3,
+ };
+ 
+-#define OTX_EP_MBOX_VERSION_CURRENT OTX_EP_MBOX_VERSION_V1
++#define OTX_EP_MBOX_VERSION_CURRENT OTX_EP_MBOX_VERSION_V3
+ 
+ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_VERSION,
+@@ -27,6 +29,10 @@ enum otx_ep_mbox_opcode {
+ 	OTX_EP_MBOX_CMD_GET_LINK_STATUS,
+ 	OTX_EP_MBOX_CMD_GET_MTU,
+ 	OTX_EP_MBOX_CMD_DEV_REMOVE,
++	OTX_EP_MBOX_CMD_GET_FW_INFO,
++	OTX_EP_MBOX_CMD_SET_OFFLOADS,
++	OTX_EP_MBOX_NOTIF_LINK_STATUS,
++	OTX_EP_MBOX_NOTIF_PF_FLR,
+ 	OTX_EP_MBOX_CMD_MAX,
+ };
+ 
+@@ -165,6 +171,7 @@ int otx_ep_mbox_get_link_info(struct rte_eth_dev *eth_dev, struct rte_eth_link *
+ void otx_ep_mbox_enable_interrupt(struct otx_ep_device *otx_ep);
+ void otx_ep_mbox_disable_interrupt(struct otx_ep_device *otx_ep);
+ int otx_ep_mbox_get_max_pkt_len(struct rte_eth_dev *eth_dev);
+-int otx_ep_mbox_version_check(struct rte_eth_dev *eth_dev);
+ int otx_ep_mbox_send_dev_exit(struct rte_eth_dev *eth_dev);
++int otx_ep_mbox_init(struct rte_eth_dev *eth_dev);
++void otx_ep_mbox_uninit(struct rte_eth_dev *eth_dev);
+ #endif
+-- 
+2.25.1
+

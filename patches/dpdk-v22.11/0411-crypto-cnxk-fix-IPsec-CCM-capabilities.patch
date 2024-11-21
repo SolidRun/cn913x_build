@@ -1,0 +1,37 @@
+From 773971264be8dc3e6782ffa774fc6e8ef524d99a Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 9 May 2023 11:50:34 +0530
+Subject: [PATCH 411/955] crypto/cnxk: fix IPsec CCM capabilities
+
+Fixing lookaside IPsec AES-CCM capabilities.
+
+Fixes: 246dea7e6efb ("crypto/cnxk: support AES-CCM")
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: If21c715abbef330f61960d73707e7faf585ebbee
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103406
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index bb5cc85331fcd..a94b0737d1feb 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -1107,8 +1107,8 @@ static const struct rte_cryptodev_capabilities sec_caps_aes[] = {
+ 					.increment = 4
+ 				},
+ 				.iv_size = {
+-					.min = 12,
+-					.max = 12,
++					.min = 11,
++					.max = 11,
+ 					.increment = 0
+ 				}
+ 			}, }
+-- 
+2.25.1
+

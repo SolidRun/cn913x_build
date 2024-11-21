@@ -1,0 +1,41 @@
+From 038c633845d5b10e63ad3cc96e53dbfb259bd188 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Thu, 22 Aug 2024 01:54:06 +0530
+Subject: [PATCH 457/513] test/event: fix incorrect target event queue
+
+In OP_FWD mode, if internal port is supported, the target event queue
+should be the TEST_APP_EV_QUEUE_ID.
+
+Fixes: a276e7c8fbb3 ("test/event: add DMA adapter auto-test")
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I54b96b49675ec565693911a4cdf57bcc0bef00a2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133912
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ app/test/test_event_dma_adapter.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_event_dma_adapter.c b/app/test/test_event_dma_adapter.c
+index 3b39521153bbb..9988d4fc7bc50 100644
+--- a/app/test/test_event_dma_adapter.c
++++ b/app/test/test_event_dma_adapter.c
+@@ -271,7 +271,10 @@ test_op_forward_mode(void)
+ 		ev[i].event = 0;
+ 		ev[i].op = RTE_EVENT_OP_NEW;
+ 		ev[i].event_type = RTE_EVENT_TYPE_DMADEV;
+-		ev[i].queue_id = TEST_DMA_EV_QUEUE_ID;
++		if (params.internal_port_op_fwd)
++			ev[i].queue_id = TEST_APP_EV_QUEUE_ID;
++		else
++			ev[i].queue_id = TEST_DMA_EV_QUEUE_ID;
+ 		ev[i].sched_type = RTE_SCHED_TYPE_ATOMIC;
+ 		ev[i].flow_id = 0xAABB;
+ 		ev[i].event_ptr = op;
+-- 
+2.25.1
+

@@ -1,0 +1,51 @@
+From f4b411b425a785ca8ae4b727322f6ccc2ddf8a51 Mon Sep 17 00:00:00 2001
+From: Nawal Kishor <nkishor@marvell.com>
+Date: Thu, 23 Nov 2023 12:12:21 +0530
+Subject: [PATCH 139/513] app/test: fix external mbuf test when assertions
+ enabled
+
+when RTE_ENABLE_ASSERT is defined test_mbuf application is
+failing because we are trying to attach extbuf to a cloned
+buffer to which external mbuf is already attached.To make
+test_mbuf pass CI we have updated ol_flags. This patch fixes
+the same.
+
+Fixes: 7b295dceea07 ("test/mbuf: add unit test cases")
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Signed-off-by: Nawal Kishor <nkishor@marvell.com>
+Acked-by: Olivier Matz <olivier.matz@6wind.com>
+Change-Id: Ib426834ce699a22ebbbd834e92664665a4f35467
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119739
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test/test_mbuf.c | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/app/test/test_mbuf.c b/app/test/test_mbuf.c
+index d7393df7eb5d9..a39288a5f8bd0 100644
+--- a/app/test/test_mbuf.c
++++ b/app/test/test_mbuf.c
+@@ -2345,16 +2345,13 @@ test_pktmbuf_ext_shinfo_init_helper(struct rte_mempool *pktmbuf_pool)
+ 		GOTO_FAIL("%s: External buffer is not attached to mbuf\n",
+ 				__func__);
+ 
+-	/* allocate one more mbuf */
++	/* allocate one more mbuf, it is attached to the same external buffer */
+ 	clone = rte_pktmbuf_clone(m, pktmbuf_pool);
+ 	if (clone == NULL)
+ 		GOTO_FAIL("%s: mbuf clone allocation failed!\n", __func__);
+ 	if (rte_pktmbuf_pkt_len(clone) != 0)
+ 		GOTO_FAIL("%s: Bad packet length\n", __func__);
+ 
+-	/* attach the same external buffer to the cloned mbuf */
+-	rte_pktmbuf_attach_extbuf(clone, ext_buf_addr, buf_iova, buf_len,
+-			ret_shinfo);
+ 	if (clone->ol_flags != RTE_MBUF_F_EXTERNAL)
+ 		GOTO_FAIL("%s: External buffer is not attached to mbuf\n",
+ 				__func__);
+-- 
+2.25.1
+

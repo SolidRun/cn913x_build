@@ -1,0 +1,65 @@
+From 31a98b6c3a0edcae9670cf172859d1bf614c1316 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Tue, 17 Jan 2023 11:36:59 +0530
+Subject: [PATCH 189/955] examples/fips_validation: fix AES XTS to read seq
+ number
+
+Fix AES XTS test to read sequence number correctly.
+
+Fixes: f8e431ed8f6 ("examples/fips_validation: add parsing for AES-XTS")
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I8cb7eec9abd0bea5d59ae99460ab6b6c78526af9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95146
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ examples/fips_validation/fips_validation_xts.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/examples/fips_validation/fips_validation_xts.c b/examples/fips_validation/fips_validation_xts.c
+index 531e3c688e9bf..530df78ab443b 100644
+--- a/examples/fips_validation/fips_validation_xts.c
++++ b/examples/fips_validation/fips_validation_xts.c
+@@ -34,6 +34,7 @@
+ #define DATAUNITLEN_JSON_STR	"dataUnitLen"
+ #define PAYLOADLEN_JSON_STR	"payloadLen"
+ #define TWEAKVALUE_JSON_STR	"tweakValue"
++#define SEQNUMBER_JSON_STR	"sequenceNumber"
+ #define PT_JSON_STR	"pt"
+ #define CT_JSON_STR	"ct"
+ 
+@@ -95,14 +96,17 @@ parser_xts_read_keylen(const char *key, char *src, struct fips_val *val)
+ static int
+ parser_xts_read_tweakval(const char *key, char *src, struct fips_val *val)
+ {
++	char num_str[4] = {0};
+ 	int ret;
+ 
+-	if (info.interim_info.xts_data.tweak_mode == XTS_TWEAK_MODE_HEX)
++	if (info.interim_info.xts_data.tweak_mode == XTS_TWEAK_MODE_HEX) {
+ 		ret = parse_uint8_hex_str(key, src, val);
+-	else if (info.interim_info.xts_data.tweak_mode == XTS_TWEAK_MODE_NUMBER)
+-		ret = parser_read_uint32_bit_val(key, src, val);
+-	else
++	} else if (info.interim_info.xts_data.tweak_mode == XTS_TWEAK_MODE_NUMBER) {
++		snprintf(num_str, RTE_DIM(num_str), "%x", atoi(src));
++		ret = parse_uint8_hex_str(key, num_str, val);
++	} else {
+ 		ret = -1;
++	}
+ 
+ 	return ret;
+ }
+@@ -122,6 +126,7 @@ struct fips_test_callback xts_interim_json_vectors[] = {
+ struct fips_test_callback xts_enc_json_vectors[] = {
+ 		{KEY_JSON_STR, parse_uint8_known_len_hex_str, &vec.cipher_auth.key},
+ 		{TWEAKVALUE_JSON_STR, parser_xts_read_tweakval, &vec.iv},
++		{SEQNUMBER_JSON_STR, parser_xts_read_tweakval, &vec.iv},
+ 		{PT_JSON_STR, parse_uint8_hex_str, &vec.pt},
+ 		{NULL, NULL, NULL} /**< end pointer */
+ };
+-- 
+2.25.1
+

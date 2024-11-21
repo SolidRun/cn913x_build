@@ -1,0 +1,52 @@
+From 0a916159c2fc0e483239e7ec3edeff4554f1bdd7 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Mon, 31 Jul 2023 11:57:16 +0530
+Subject: [PATCH 567/955] common/cnxk: sync from odp
+
+Sync from ODP.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Ib113ac70417fb1f8d64f00336e92eeb265bcfd9b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108630
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npa.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npa.c b/drivers/common/cnxk/roc_npa.c
+index 6675eaf30a1f8..bcf8c306ad332 100644
+--- a/drivers/common/cnxk/roc_npa.c
++++ b/drivers/common/cnxk/roc_npa.c
+@@ -468,8 +468,8 @@ npa_aura_pool_pair_alloc(struct npa_lf *lf, const uint32_t block_size,
+ 	    block_size > ROC_NPA_MAX_BLOCK_SZ)
+ 		return NPA_ERR_INVALID_BLOCK_SZ;
+ 
+-	roc_npa_dev_lock();
+ 	/* Get aura_id from resource bitmap */
++	roc_npa_dev_lock();
+ 	aura_id = find_free_aura(lf, flags);
+ 	if (aura_id < 0) {
+ 		roc_npa_dev_unlock();
+@@ -478,7 +478,6 @@ npa_aura_pool_pair_alloc(struct npa_lf *lf, const uint32_t block_size,
+ 
+ 	/* Mark pool as reserved */
+ 	plt_bitmap_clear(lf->npa_bmp, aura_id);
+-
+ 	roc_npa_dev_unlock();
+ 
+ 	/* Configuration based on each aura has separate pool(aura-pool pair) */
+@@ -1003,6 +1002,8 @@ npa_get_msix_offset(struct mbox *m_box, uint16_t *npa_msixoff)
+ 	struct msix_offset_rsp *msix_rsp;
+ 	int rc;
+ 
++	/* Initialize msixoff */
++	*npa_msixoff = 0;
+ 	/* Get NPA MSIX vector offsets */
+ 	mbox_alloc_msg_msix_offset(mbox);
+ 	rc = mbox_process_msg(mbox, (void *)&msix_rsp);
+-- 
+2.25.1
+

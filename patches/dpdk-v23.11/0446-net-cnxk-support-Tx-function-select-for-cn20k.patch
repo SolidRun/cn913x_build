@@ -1,0 +1,1485 @@
+From bb5f0321361221d61c2729dd5f0e5c6e162c3137 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Sun, 4 Aug 2024 16:50:09 +0530
+Subject: [PATCH 446/513] net/cnxk: support Tx function select for cn20k
+
+Add support to select Tx function based on offload flags
+for cn20k.
+
+Change-Id: Iad9eec1b602f61f839cef528a0f60a18e14e9fe9
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133455
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn20k_ethdev.c               |  80 ++++++
+ drivers/net/cnxk/cn20k_ethdev.h               |   1 +
+ drivers/net/cnxk/cn20k_tx.h                   | 237 ++++++++++++++++++
+ drivers/net/cnxk/cn20k_tx_select.c            | 122 +++++++++
+ drivers/net/cnxk/meson.build                  |  37 +++
+ drivers/net/cnxk/tx/cn20k/tx_0_15.c           |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_0_15_mseg.c      |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_0_15_vec.c       |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_0_15_vec_mseg.c  |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_112_127.c        |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_112_127_mseg.c   |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_112_127_vec.c    |  18 ++
+ .../net/cnxk/tx/cn20k/tx_112_127_vec_mseg.c   |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_16_31.c          |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_16_31_mseg.c     |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_16_31_vec.c      |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_16_31_vec_mseg.c |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_32_47.c          |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_32_47_mseg.c     |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_32_47_vec.c      |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_32_47_vec_mseg.c |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_48_63.c          |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_48_63_mseg.c     |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_48_63_vec.c      |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_48_63_vec_mseg.c |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_64_79.c          |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_64_79_mseg.c     |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_64_79_vec.c      |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_64_79_vec_mseg.c |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_80_95.c          |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_80_95_mseg.c     |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_80_95_vec.c      |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_80_95_vec_mseg.c |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_96_111.c         |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_96_111_mseg.c    |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_96_111_vec.c     |  18 ++
+ .../net/cnxk/tx/cn20k/tx_96_111_vec_mseg.c    |  18 ++
+ drivers/net/cnxk/tx/cn20k/tx_all_offload.c    |  39 +++
+ 38 files changed, 1092 insertions(+)
+ create mode 100644 drivers/net/cnxk/cn20k_tx_select.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_0_15.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_0_15_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_0_15_vec.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_0_15_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_112_127.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_112_127_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_112_127_vec.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_112_127_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_16_31.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_16_31_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_16_31_vec.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_16_31_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_32_47.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_32_47_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_32_47_vec.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_32_47_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_48_63.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_48_63_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_48_63_vec.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_48_63_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_64_79.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_64_79_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_64_79_vec.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_64_79_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_80_95.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_80_95_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_80_95_vec.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_80_95_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_96_111.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_96_111_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_96_111_vec.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_96_111_vec_mseg.c
+ create mode 100644 drivers/net/cnxk/tx/cn20k/tx_all_offload.c
+
+diff --git a/drivers/net/cnxk/cn20k_ethdev.c b/drivers/net/cnxk/cn20k_ethdev.c
+index d1cb3a52bff1d..4b2f04ba319bf 100644
+--- a/drivers/net/cnxk/cn20k_ethdev.c
++++ b/drivers/net/cnxk/cn20k_ethdev.c
+@@ -40,6 +40,78 @@ nix_rx_offload_flags(struct rte_eth_dev *eth_dev)
+ 	return flags;
+ }
+ 
++static uint16_t
++nix_tx_offload_flags(struct rte_eth_dev *eth_dev)
++{
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	uint64_t conf = dev->tx_offloads;
++	struct roc_nix *nix = &dev->nix;
++	uint16_t flags = 0;
++
++	/* Fastpath is dependent on these enums */
++	RTE_BUILD_BUG_ON(RTE_MBUF_F_TX_TCP_CKSUM != (1ULL << 52));
++	RTE_BUILD_BUG_ON(RTE_MBUF_F_TX_SCTP_CKSUM != (2ULL << 52));
++	RTE_BUILD_BUG_ON(RTE_MBUF_F_TX_UDP_CKSUM != (3ULL << 52));
++	RTE_BUILD_BUG_ON(RTE_MBUF_F_TX_IP_CKSUM != (1ULL << 54));
++	RTE_BUILD_BUG_ON(RTE_MBUF_F_TX_IPV4 != (1ULL << 55));
++	RTE_BUILD_BUG_ON(RTE_MBUF_F_TX_OUTER_IP_CKSUM != (1ULL << 58));
++	RTE_BUILD_BUG_ON(RTE_MBUF_F_TX_OUTER_IPV4 != (1ULL << 59));
++	RTE_BUILD_BUG_ON(RTE_MBUF_F_TX_OUTER_IPV6 != (1ULL << 60));
++	RTE_BUILD_BUG_ON(RTE_MBUF_F_TX_OUTER_UDP_CKSUM != (1ULL << 41));
++	RTE_BUILD_BUG_ON(RTE_MBUF_L2_LEN_BITS != 7);
++	RTE_BUILD_BUG_ON(RTE_MBUF_L3_LEN_BITS != 9);
++	RTE_BUILD_BUG_ON(RTE_MBUF_OUTL2_LEN_BITS != 7);
++	RTE_BUILD_BUG_ON(RTE_MBUF_OUTL3_LEN_BITS != 9);
++	RTE_BUILD_BUG_ON(offsetof(struct rte_mbuf, data_off) !=
++			 offsetof(struct rte_mbuf, buf_addr) + 16);
++	RTE_BUILD_BUG_ON(offsetof(struct rte_mbuf, ol_flags) !=
++			 offsetof(struct rte_mbuf, buf_addr) + 24);
++	RTE_BUILD_BUG_ON(offsetof(struct rte_mbuf, pkt_len) !=
++			 offsetof(struct rte_mbuf, ol_flags) + 12);
++	RTE_BUILD_BUG_ON(offsetof(struct rte_mbuf, tx_offload) !=
++			 offsetof(struct rte_mbuf, pool) + 2 * sizeof(void *));
++
++	if (conf & RTE_ETH_TX_OFFLOAD_VLAN_INSERT || conf & RTE_ETH_TX_OFFLOAD_QINQ_INSERT)
++		flags |= NIX_TX_OFFLOAD_VLAN_QINQ_F;
++
++	if (conf & RTE_ETH_TX_OFFLOAD_OUTER_IPV4_CKSUM || conf & RTE_ETH_TX_OFFLOAD_OUTER_UDP_CKSUM)
++		flags |= NIX_TX_OFFLOAD_OL3_OL4_CSUM_F;
++
++	if (conf & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM || conf & RTE_ETH_TX_OFFLOAD_TCP_CKSUM ||
++	    conf & RTE_ETH_TX_OFFLOAD_UDP_CKSUM || conf & RTE_ETH_TX_OFFLOAD_SCTP_CKSUM)
++		flags |= NIX_TX_OFFLOAD_L3_L4_CSUM_F;
++
++	if (!(conf & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE))
++		flags |= NIX_TX_OFFLOAD_MBUF_NOFF_F;
++
++	if (conf & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
++		flags |= NIX_TX_MULTI_SEG_F;
++
++	/* Enable Inner checksum for TSO */
++	if (conf & RTE_ETH_TX_OFFLOAD_TCP_TSO)
++		flags |= (NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_L3_L4_CSUM_F);
++
++	/* Enable Inner and Outer checksum for Tunnel TSO */
++	if (conf & (RTE_ETH_TX_OFFLOAD_VXLAN_TNL_TSO | RTE_ETH_TX_OFFLOAD_GENEVE_TNL_TSO |
++		    RTE_ETH_TX_OFFLOAD_GRE_TNL_TSO))
++		flags |= (NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
++			  NIX_TX_OFFLOAD_L3_L4_CSUM_F);
++
++	if ((dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP))
++		flags |= NIX_TX_OFFLOAD_TSTAMP_F;
++
++	if (conf & RTE_ETH_TX_OFFLOAD_SECURITY)
++		flags |= NIX_TX_OFFLOAD_SECURITY_F;
++
++	if (dev->tx_mark)
++		flags |= NIX_TX_OFFLOAD_VLAN_QINQ_F;
++
++	if (nix->tx_compl_ena)
++		flags |= NIX_TX_OFFLOAD_MBUF_NOFF_F;
++
++	return flags;
++}
++
+ static int
+ cn20k_nix_ptypes_set(struct rte_eth_dev *eth_dev, uint32_t ptype_mask)
+ {
+@@ -226,6 +298,7 @@ cn20k_nix_rx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t qid, uint16_t nb_
+ 
+ 		/* Update offload flags */
+ 		dev->rx_offload_flags = nix_rx_offload_flags(eth_dev);
++		dev->tx_offload_flags = nix_tx_offload_flags(eth_dev);
+ 	}
+ 
+ 	rq = &dev->rqs[qid];
+@@ -286,6 +359,8 @@ cn20k_nix_configure(struct rte_eth_dev *eth_dev)
+ 
+ 	/* Update offload flags */
+ 	dev->rx_offload_flags = nix_rx_offload_flags(eth_dev);
++	dev->tx_offload_flags = nix_tx_offload_flags(eth_dev);
++
+ 	/* reset reassembly dynfield/flag offset */
+ 	dev->reass_dynfield_off = -1;
+ 	dev->reass_dynflag_bit = -1;
+@@ -316,6 +391,7 @@ cn20k_nix_timesync_enable(struct rte_eth_dev *eth_dev)
+ 	 * in rx[tx]_offloads.
+ 	 */
+ 	cn20k_eth_set_rx_function(eth_dev);
++	cn20k_eth_set_tx_function(eth_dev);
+ 	return 0;
+ }
+ 
+@@ -339,6 +415,7 @@ cn20k_nix_timesync_disable(struct rte_eth_dev *eth_dev)
+ 	 * in rx[tx]_offloads.
+ 	 */
+ 	cn20k_eth_set_rx_function(eth_dev);
++	cn20k_eth_set_tx_function(eth_dev);
+ 	return 0;
+ }
+ 
+@@ -378,10 +455,12 @@ cn20k_nix_dev_start(struct rte_eth_dev *eth_dev)
+ 	 * in rx[tx]_offloads.
+ 	 */
+ 	dev->rx_offload_flags |= nix_rx_offload_flags(eth_dev);
++	dev->tx_offload_flags |= nix_tx_offload_flags(eth_dev);
+ 	/* Set flags for Rx Inject feature */
+ 	if (roc_idev_nix_rx_inject_get(nix->port_id))
+ 		dev->rx_offload_flags |= NIX_RX_SEC_REASSEMBLY_F;
+ 
++	cn20k_eth_set_tx_function(eth_dev);
+ 	cn20k_eth_set_rx_function(eth_dev);
+ 	return 0;
+ }
+@@ -581,6 +660,7 @@ cn20k_nix_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
+ 
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+ 		/* Setup callbacks for secondary process */
++		cn20k_eth_set_tx_function(eth_dev);
+ 		cn20k_eth_set_rx_function(eth_dev);
+ 		return 0;
+ 	}
+diff --git a/drivers/net/cnxk/cn20k_ethdev.h b/drivers/net/cnxk/cn20k_ethdev.h
+index 2049ee7fa4f01..cb46044d604dc 100644
+--- a/drivers/net/cnxk/cn20k_ethdev.h
++++ b/drivers/net/cnxk/cn20k_ethdev.h
+@@ -10,5 +10,6 @@
+ 
+ /* Rx and Tx routines */
+ void cn20k_eth_set_rx_function(struct rte_eth_dev *eth_dev);
++void cn20k_eth_set_tx_function(struct rte_eth_dev *eth_dev);
+ 
+ #endif /* __CN20K_ETHDEV_H__ */
+diff --git a/drivers/net/cnxk/cn20k_tx.h b/drivers/net/cnxk/cn20k_tx.h
+index a00c9d5776e06..9fd925ac345ad 100644
+--- a/drivers/net/cnxk/cn20k_tx.h
++++ b/drivers/net/cnxk/cn20k_tx.h
+@@ -32,4 +32,241 @@
+ #define NIX_TX_NEED_EXT_HDR                                                                        \
+ 	(NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_TSO_F)
+ 
++#define L3L4CSUM_F   NIX_TX_OFFLOAD_L3_L4_CSUM_F
++#define OL3OL4CSUM_F NIX_TX_OFFLOAD_OL3_OL4_CSUM_F
++#define VLAN_F	     NIX_TX_OFFLOAD_VLAN_QINQ_F
++#define NOFF_F	     NIX_TX_OFFLOAD_MBUF_NOFF_F
++#define TSO_F	     NIX_TX_OFFLOAD_TSO_F
++#define TSP_F	     NIX_TX_OFFLOAD_TSTAMP_F
++#define T_SEC_F	     NIX_TX_OFFLOAD_SECURITY_F
++
++/* [T_SEC_F] [TSP] [TSO] [NOFF] [VLAN] [OL3OL4CSUM] [L3L4CSUM] */
++#define NIX_TX_FASTPATH_MODES_0_15                                                                 \
++	T(no_offload, 6, NIX_TX_OFFLOAD_NONE)                                                      \
++	T(l3l4csum, 6, L3L4CSUM_F)                                                                 \
++	T(ol3ol4csum, 6, OL3OL4CSUM_F)                                                             \
++	T(ol3ol4csum_l3l4csum, 6, OL3OL4CSUM_F | L3L4CSUM_F)                                       \
++	T(vlan, 6, VLAN_F)                                                                         \
++	T(vlan_l3l4csum, 6, VLAN_F | L3L4CSUM_F)                                                   \
++	T(vlan_ol3ol4csum, 6, VLAN_F | OL3OL4CSUM_F)                                               \
++	T(vlan_ol3ol4csum_l3l4csum, 6, VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)                         \
++	T(noff, 6, NOFF_F)                                                                         \
++	T(noff_l3l4csum, 6, NOFF_F | L3L4CSUM_F)                                                   \
++	T(noff_ol3ol4csum, 6, NOFF_F | OL3OL4CSUM_F)                                               \
++	T(noff_ol3ol4csum_l3l4csum, 6, NOFF_F | OL3OL4CSUM_F | L3L4CSUM_F)                         \
++	T(noff_vlan, 6, NOFF_F | VLAN_F)                                                           \
++	T(noff_vlan_l3l4csum, 6, NOFF_F | VLAN_F | L3L4CSUM_F)                                     \
++	T(noff_vlan_ol3ol4csum, 6, NOFF_F | VLAN_F | OL3OL4CSUM_F)                                 \
++	T(noff_vlan_ol3ol4csum_l3l4csum, 6, NOFF_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)
++
++#define NIX_TX_FASTPATH_MODES_16_31                                                                \
++	T(tso, 6, TSO_F)                                                                           \
++	T(tso_l3l4csum, 6, TSO_F | L3L4CSUM_F)                                                     \
++	T(tso_ol3ol4csum, 6, TSO_F | OL3OL4CSUM_F)                                                 \
++	T(tso_ol3ol4csum_l3l4csum, 6, TSO_F | OL3OL4CSUM_F | L3L4CSUM_F)                           \
++	T(tso_vlan, 6, TSO_F | VLAN_F)                                                             \
++	T(tso_vlan_l3l4csum, 6, TSO_F | VLAN_F | L3L4CSUM_F)                                       \
++	T(tso_vlan_ol3ol4csum, 6, TSO_F | VLAN_F | OL3OL4CSUM_F)                                   \
++	T(tso_vlan_ol3ol4csum_l3l4csum, 6, TSO_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)             \
++	T(tso_noff, 6, TSO_F | NOFF_F)                                                             \
++	T(tso_noff_l3l4csum, 6, TSO_F | NOFF_F | L3L4CSUM_F)                                       \
++	T(tso_noff_ol3ol4csum, 6, TSO_F | NOFF_F | OL3OL4CSUM_F)                                   \
++	T(tso_noff_ol3ol4csum_l3l4csum, 6, TSO_F | NOFF_F | OL3OL4CSUM_F | L3L4CSUM_F)             \
++	T(tso_noff_vlan, 6, TSO_F | NOFF_F | VLAN_F)                                               \
++	T(tso_noff_vlan_l3l4csum, 6, TSO_F | NOFF_F | VLAN_F | L3L4CSUM_F)                         \
++	T(tso_noff_vlan_ol3ol4csum, 6, TSO_F | NOFF_F | VLAN_F | OL3OL4CSUM_F)                     \
++	T(tso_noff_vlan_ol3ol4csum_l3l4csum, 6, TSO_F | NOFF_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)
++
++#define NIX_TX_FASTPATH_MODES_32_47                                                                \
++	T(ts, 8, TSP_F)                                                                            \
++	T(ts_l3l4csum, 8, TSP_F | L3L4CSUM_F)                                                      \
++	T(ts_ol3ol4csum, 8, TSP_F | OL3OL4CSUM_F)                                                  \
++	T(ts_ol3ol4csum_l3l4csum, 8, TSP_F | OL3OL4CSUM_F | L3L4CSUM_F)                            \
++	T(ts_vlan, 8, TSP_F | VLAN_F)                                                              \
++	T(ts_vlan_l3l4csum, 8, TSP_F | VLAN_F | L3L4CSUM_F)                                        \
++	T(ts_vlan_ol3ol4csum, 8, TSP_F | VLAN_F | OL3OL4CSUM_F)                                    \
++	T(ts_vlan_ol3ol4csum_l3l4csum, 8, TSP_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)              \
++	T(ts_noff, 8, TSP_F | NOFF_F)                                                              \
++	T(ts_noff_l3l4csum, 8, TSP_F | NOFF_F | L3L4CSUM_F)                                        \
++	T(ts_noff_ol3ol4csum, 8, TSP_F | NOFF_F | OL3OL4CSUM_F)                                    \
++	T(ts_noff_ol3ol4csum_l3l4csum, 8, TSP_F | NOFF_F | OL3OL4CSUM_F | L3L4CSUM_F)              \
++	T(ts_noff_vlan, 8, TSP_F | NOFF_F | VLAN_F)                                                \
++	T(ts_noff_vlan_l3l4csum, 8, TSP_F | NOFF_F | VLAN_F | L3L4CSUM_F)                          \
++	T(ts_noff_vlan_ol3ol4csum, 8, TSP_F | NOFF_F | VLAN_F | OL3OL4CSUM_F)                      \
++	T(ts_noff_vlan_ol3ol4csum_l3l4csum, 8, TSP_F | NOFF_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)
++
++#define NIX_TX_FASTPATH_MODES_48_63                                                                \
++	T(ts_tso, 8, TSP_F | TSO_F)                                                                \
++	T(ts_tso_l3l4csum, 8, TSP_F | TSO_F | L3L4CSUM_F)                                          \
++	T(ts_tso_ol3ol4csum, 8, TSP_F | TSO_F | OL3OL4CSUM_F)                                      \
++	T(ts_tso_ol3ol4csum_l3l4csum, 8, TSP_F | TSO_F | OL3OL4CSUM_F | L3L4CSUM_F)                \
++	T(ts_tso_vlan, 8, TSP_F | TSO_F | VLAN_F)                                                  \
++	T(ts_tso_vlan_l3l4csum, 8, TSP_F | TSO_F | VLAN_F | L3L4CSUM_F)                            \
++	T(ts_tso_vlan_ol3ol4csum, 8, TSP_F | TSO_F | VLAN_F | OL3OL4CSUM_F)                        \
++	T(ts_tso_vlan_ol3ol4csum_l3l4csum, 8, TSP_F | TSO_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)  \
++	T(ts_tso_noff, 8, TSP_F | TSO_F | NOFF_F)                                                  \
++	T(ts_tso_noff_l3l4csum, 8, TSP_F | TSO_F | NOFF_F | L3L4CSUM_F)                            \
++	T(ts_tso_noff_ol3ol4csum, 8, TSP_F | TSO_F | NOFF_F | OL3OL4CSUM_F)                        \
++	T(ts_tso_noff_ol3ol4csum_l3l4csum, 8, TSP_F | TSO_F | NOFF_F | OL3OL4CSUM_F | L3L4CSUM_F)  \
++	T(ts_tso_noff_vlan, 8, TSP_F | TSO_F | NOFF_F | VLAN_F)                                    \
++	T(ts_tso_noff_vlan_l3l4csum, 8, TSP_F | TSO_F | NOFF_F | VLAN_F | L3L4CSUM_F)              \
++	T(ts_tso_noff_vlan_ol3ol4csum, 8, TSP_F | TSO_F | NOFF_F | VLAN_F | OL3OL4CSUM_F)          \
++	T(ts_tso_noff_vlan_ol3ol4csum_l3l4csum, 8,                                                 \
++	  TSP_F | TSO_F | NOFF_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)
++
++#define NIX_TX_FASTPATH_MODES_64_79                                                                \
++	T(sec, 6, T_SEC_F)                                                                         \
++	T(sec_l3l4csum, 6, T_SEC_F | L3L4CSUM_F)                                                   \
++	T(sec_ol3ol4csum, 6, T_SEC_F | OL3OL4CSUM_F)                                               \
++	T(sec_ol3ol4csum_l3l4csum, 6, T_SEC_F | OL3OL4CSUM_F | L3L4CSUM_F)                         \
++	T(sec_vlan, 6, T_SEC_F | VLAN_F)                                                           \
++	T(sec_vlan_l3l4csum, 6, T_SEC_F | VLAN_F | L3L4CSUM_F)                                     \
++	T(sec_vlan_ol3ol4csum, 6, T_SEC_F | VLAN_F | OL3OL4CSUM_F)                                 \
++	T(sec_vlan_ol3ol4csum_l3l4csum, 6, T_SEC_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)           \
++	T(sec_noff, 6, T_SEC_F | NOFF_F)                                                           \
++	T(sec_noff_l3l4csum, 6, T_SEC_F | NOFF_F | L3L4CSUM_F)                                     \
++	T(sec_noff_ol3ol4csum, 6, T_SEC_F | NOFF_F | OL3OL4CSUM_F)                                 \
++	T(sec_noff_ol3ol4csum_l3l4csum, 6, T_SEC_F | NOFF_F | OL3OL4CSUM_F | L3L4CSUM_F)           \
++	T(sec_noff_vlan, 6, T_SEC_F | NOFF_F | VLAN_F)                                             \
++	T(sec_noff_vlan_l3l4csum, 6, T_SEC_F | NOFF_F | VLAN_F | L3L4CSUM_F)                       \
++	T(sec_noff_vlan_ol3ol4csum, 6, T_SEC_F | NOFF_F | VLAN_F | OL3OL4CSUM_F)                   \
++	T(sec_noff_vlan_ol3ol4csum_l3l4csum, 6,                                                    \
++	  T_SEC_F | NOFF_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)
++
++#define NIX_TX_FASTPATH_MODES_80_95                                                                \
++	T(sec_tso, 6, T_SEC_F | TSO_F)                                                             \
++	T(sec_tso_l3l4csum, 6, T_SEC_F | TSO_F | L3L4CSUM_F)                                       \
++	T(sec_tso_ol3ol4csum, 6, T_SEC_F | TSO_F | OL3OL4CSUM_F)                                   \
++	T(sec_tso_ol3ol4csum_l3l4csum, 6, T_SEC_F | TSO_F | OL3OL4CSUM_F | L3L4CSUM_F)             \
++	T(sec_tso_vlan, 6, T_SEC_F | TSO_F | VLAN_F)                                               \
++	T(sec_tso_vlan_l3l4csum, 6, T_SEC_F | TSO_F | VLAN_F | L3L4CSUM_F)                         \
++	T(sec_tso_vlan_ol3ol4csum, 6, T_SEC_F | TSO_F | VLAN_F | OL3OL4CSUM_F)                     \
++	T(sec_tso_vlan_ol3ol4csum_l3l4csum, 6,                                                     \
++	  T_SEC_F | TSO_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)                                    \
++	T(sec_tso_noff, 6, T_SEC_F | TSO_F | NOFF_F)                                               \
++	T(sec_tso_noff_l3l4csum, 6, T_SEC_F | TSO_F | NOFF_F | L3L4CSUM_F)                         \
++	T(sec_tso_noff_ol3ol4csum, 6, T_SEC_F | TSO_F | NOFF_F | OL3OL4CSUM_F)                     \
++	T(sec_tso_noff_ol3ol4csum_l3l4csum, 6,                                                     \
++	  T_SEC_F | TSO_F | NOFF_F | OL3OL4CSUM_F | L3L4CSUM_F)                                    \
++	T(sec_tso_noff_vlan, 6, T_SEC_F | TSO_F | NOFF_F | VLAN_F)                                 \
++	T(sec_tso_noff_vlan_l3l4csum, 6, T_SEC_F | TSO_F | NOFF_F | VLAN_F | L3L4CSUM_F)           \
++	T(sec_tso_noff_vlan_ol3ol4csum, 6, T_SEC_F | TSO_F | NOFF_F | VLAN_F | OL3OL4CSUM_F)       \
++	T(sec_tso_noff_vlan_ol3ol4csum_l3l4csum, 6,                                                \
++	  T_SEC_F | TSO_F | NOFF_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)
++
++#define NIX_TX_FASTPATH_MODES_96_111                                                               \
++	T(sec_ts, 8, T_SEC_F | TSP_F)                                                              \
++	T(sec_ts_l3l4csum, 8, T_SEC_F | TSP_F | L3L4CSUM_F)                                        \
++	T(sec_ts_ol3ol4csum, 8, T_SEC_F | TSP_F | OL3OL4CSUM_F)                                    \
++	T(sec_ts_ol3ol4csum_l3l4csum, 8, T_SEC_F | TSP_F | OL3OL4CSUM_F | L3L4CSUM_F)              \
++	T(sec_ts_vlan, 8, T_SEC_F | TSP_F | VLAN_F)                                                \
++	T(sec_ts_vlan_l3l4csum, 8, T_SEC_F | TSP_F | VLAN_F | L3L4CSUM_F)                          \
++	T(sec_ts_vlan_ol3ol4csum, 8, T_SEC_F | TSP_F | VLAN_F | OL3OL4CSUM_F)                      \
++	T(sec_ts_vlan_ol3ol4csum_l3l4csum, 8,                                                      \
++	  T_SEC_F | TSP_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)                                    \
++	T(sec_ts_noff, 8, T_SEC_F | TSP_F | NOFF_F)                                                \
++	T(sec_ts_noff_l3l4csum, 8, T_SEC_F | TSP_F | NOFF_F | L3L4CSUM_F)                          \
++	T(sec_ts_noff_ol3ol4csum, 8, T_SEC_F | TSP_F | NOFF_F | OL3OL4CSUM_F)                      \
++	T(sec_ts_noff_ol3ol4csum_l3l4csum, 8,                                                      \
++	  T_SEC_F | TSP_F | NOFF_F | OL3OL4CSUM_F | L3L4CSUM_F)                                    \
++	T(sec_ts_noff_vlan, 8, T_SEC_F | TSP_F | NOFF_F | VLAN_F)                                  \
++	T(sec_ts_noff_vlan_l3l4csum, 8, T_SEC_F | TSP_F | NOFF_F | VLAN_F | L3L4CSUM_F)            \
++	T(sec_ts_noff_vlan_ol3ol4csum, 8, T_SEC_F | TSP_F | NOFF_F | VLAN_F | OL3OL4CSUM_F)        \
++	T(sec_ts_noff_vlan_ol3ol4csum_l3l4csum, 8,                                                 \
++	  T_SEC_F | TSP_F | NOFF_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)
++
++#define NIX_TX_FASTPATH_MODES_112_127                                                              \
++	T(sec_ts_tso, 8, T_SEC_F | TSP_F | TSO_F)                                                  \
++	T(sec_ts_tso_l3l4csum, 8, T_SEC_F | TSP_F | TSO_F | L3L4CSUM_F)                            \
++	T(sec_ts_tso_ol3ol4csum, 8, T_SEC_F | TSP_F | TSO_F | OL3OL4CSUM_F)                        \
++	T(sec_ts_tso_ol3ol4csum_l3l4csum, 8, T_SEC_F | TSP_F | TSO_F | OL3OL4CSUM_F | L3L4CSUM_F)  \
++	T(sec_ts_tso_vlan, 8, T_SEC_F | TSP_F | TSO_F | VLAN_F)                                    \
++	T(sec_ts_tso_vlan_l3l4csum, 8, T_SEC_F | TSP_F | TSO_F | VLAN_F | L3L4CSUM_F)              \
++	T(sec_ts_tso_vlan_ol3ol4csum, 8, T_SEC_F | TSP_F | TSO_F | VLAN_F | OL3OL4CSUM_F)          \
++	T(sec_ts_tso_vlan_ol3ol4csum_l3l4csum, 8,                                                  \
++	  T_SEC_F | TSP_F | TSO_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)                            \
++	T(sec_ts_tso_noff, 8, T_SEC_F | TSP_F | TSO_F | NOFF_F)                                    \
++	T(sec_ts_tso_noff_l3l4csum, 8, T_SEC_F | TSP_F | TSO_F | NOFF_F | L3L4CSUM_F)              \
++	T(sec_ts_tso_noff_ol3ol4csum, 8, T_SEC_F | TSP_F | TSO_F | NOFF_F | OL3OL4CSUM_F)          \
++	T(sec_ts_tso_noff_ol3ol4csum_l3l4csum, 8,                                                  \
++	  T_SEC_F | TSP_F | TSO_F | NOFF_F | OL3OL4CSUM_F | L3L4CSUM_F)                            \
++	T(sec_ts_tso_noff_vlan, 8, T_SEC_F | TSP_F | TSO_F | NOFF_F | VLAN_F)                      \
++	T(sec_ts_tso_noff_vlan_l3l4csum, 8,                                                        \
++	  T_SEC_F | TSP_F | TSO_F | NOFF_F | VLAN_F | L3L4CSUM_F)                                  \
++	T(sec_ts_tso_noff_vlan_ol3ol4csum, 8,                                                      \
++	  T_SEC_F | TSP_F | TSO_F | NOFF_F | VLAN_F | OL3OL4CSUM_F)                                \
++	T(sec_ts_tso_noff_vlan_ol3ol4csum_l3l4csum, 8,                                             \
++	  T_SEC_F | TSP_F | TSO_F | NOFF_F | VLAN_F | OL3OL4CSUM_F | L3L4CSUM_F)
++
++#define NIX_TX_FASTPATH_MODES                                                                      \
++	NIX_TX_FASTPATH_MODES_0_15                                                                 \
++	NIX_TX_FASTPATH_MODES_16_31                                                                \
++	NIX_TX_FASTPATH_MODES_32_47                                                                \
++	NIX_TX_FASTPATH_MODES_48_63                                                                \
++	NIX_TX_FASTPATH_MODES_64_79                                                                \
++	NIX_TX_FASTPATH_MODES_80_95                                                                \
++	NIX_TX_FASTPATH_MODES_96_111                                                               \
++	NIX_TX_FASTPATH_MODES_112_127
++
++#define T(name, sz, flags)                                                                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_xmit_pkts_##name(                              \
++		void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_xmit_pkts_mseg_##name(                         \
++		void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_xmit_pkts_vec_##name(                          \
++		void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts);                         \
++	uint16_t __rte_noinline __rte_hot cn20k_nix_xmit_pkts_vec_mseg_##name(                     \
++		void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts);
++
++NIX_TX_FASTPATH_MODES
++#undef T
++
++#define NIX_TX_XMIT(fn, sz, flags)                                                                 \
++	uint16_t __rte_noinline __rte_hot fn(void *tx_queue, struct rte_mbuf **tx_pkts,            \
++					     uint16_t pkts)                                        \
++	{                                                                                          \
++		RTE_SET_USED(tx_queue);                                                            \
++		RTE_SET_USED(tx_pkts);                                                             \
++		RTE_SET_USED(pkts);                                                                \
++		return 0;                                                                          \
++	}
++
++#define NIX_TX_XMIT_MSEG(fn, sz, flags)                                                            \
++	uint16_t __rte_noinline __rte_hot fn(void *tx_queue, struct rte_mbuf **tx_pkts,            \
++					     uint16_t pkts)                                        \
++	{                                                                                          \
++		RTE_SET_USED(tx_queue);                                                            \
++		RTE_SET_USED(tx_pkts);                                                             \
++		RTE_SET_USED(pkts);                                                                \
++		return 0;                                                                          \
++	}
++
++#define NIX_TX_XMIT_VEC(fn, sz, flags)                                                             \
++	uint16_t __rte_noinline __rte_hot fn(void *tx_queue, struct rte_mbuf **tx_pkts,            \
++					     uint16_t pkts)                                        \
++	{                                                                                          \
++		RTE_SET_USED(tx_queue);                                                            \
++		RTE_SET_USED(tx_pkts);                                                             \
++		RTE_SET_USED(pkts);                                                                \
++		return 0;                                                                          \
++	}
++
++#define NIX_TX_XMIT_VEC_MSEG(fn, sz, flags)                                                        \
++	uint16_t __rte_noinline __rte_hot fn(void *tx_queue, struct rte_mbuf **tx_pkts,            \
++					     uint16_t pkts)                                        \
++	{                                                                                          \
++		RTE_SET_USED(tx_queue);                                                            \
++		RTE_SET_USED(tx_pkts);                                                             \
++		RTE_SET_USED(pkts);                                                                \
++		return 0;                                                                          \
++	}
++
++uint16_t __rte_noinline __rte_hot cn20k_nix_xmit_pkts_all_offload(void *tx_queue,
++								  struct rte_mbuf **tx_pkts,
++								  uint16_t pkts);
++
++uint16_t __rte_noinline __rte_hot cn20k_nix_xmit_pkts_vec_all_offload(void *tx_queue,
++								      struct rte_mbuf **tx_pkts,
++								      uint16_t pkts);
++
+ #endif /* __CN20K_TX_H__ */
+diff --git a/drivers/net/cnxk/cn20k_tx_select.c b/drivers/net/cnxk/cn20k_tx_select.c
+new file mode 100644
+index 0000000000000..fb62b54a5fda5
+--- /dev/null
++++ b/drivers/net/cnxk/cn20k_tx_select.c
+@@ -0,0 +1,122 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_ethdev.h"
++#include "cn20k_tx.h"
++
++static __rte_used inline void
++pick_tx_func(struct rte_eth_dev *eth_dev, const eth_tx_burst_t tx_burst[NIX_TX_OFFLOAD_MAX])
++{
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	/* [SEC] [TSP] [TSO] [NOFF] [VLAN] [OL3_OL4_CSUM] [IL3_IL4_CSUM] */
++	eth_dev->tx_pkt_burst = tx_burst[dev->tx_offload_flags & (NIX_TX_OFFLOAD_MAX - 1)];
++
++	if (eth_dev->data->dev_started)
++		rte_eth_fp_ops[eth_dev->data->port_id].tx_pkt_burst = eth_dev->tx_pkt_burst;
++}
++
++#if defined(RTE_ARCH_ARM64)
++static int
++cn20k_nix_tx_queue_count(void *tx_queue)
++{
++	struct cn20k_eth_txq *txq = (struct cn20k_eth_txq *)tx_queue;
++
++	return cnxk_nix_tx_queue_count(txq->fc_mem, txq->sqes_per_sqb_log2);
++}
++
++static int
++cn20k_nix_tx_queue_sec_count(void *tx_queue)
++{
++	struct cn20k_eth_txq *txq = (struct cn20k_eth_txq *)tx_queue;
++
++	return cnxk_nix_tx_queue_sec_count(txq->fc_mem, txq->sqes_per_sqb_log2, txq->cpt_fc);
++}
++
++static void
++cn20k_eth_set_tx_tmplt_func(struct rte_eth_dev *eth_dev)
++{
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	const eth_tx_burst_t nix_eth_tx_burst[NIX_TX_OFFLOAD_MAX] = {
++#define T(name, sz, flags) [flags] = cn20k_nix_xmit_pkts_##name,
++
++		NIX_TX_FASTPATH_MODES
++#undef T
++	};
++
++	const eth_tx_burst_t nix_eth_tx_burst_mseg[NIX_TX_OFFLOAD_MAX] = {
++#define T(name, sz, flags) [flags] = cn20k_nix_xmit_pkts_mseg_##name,
++
++		NIX_TX_FASTPATH_MODES
++#undef T
++	};
++
++	const eth_tx_burst_t nix_eth_tx_vec_burst[NIX_TX_OFFLOAD_MAX] = {
++#define T(name, sz, flags) [flags] = cn20k_nix_xmit_pkts_vec_##name,
++
++		NIX_TX_FASTPATH_MODES
++#undef T
++	};
++
++	const eth_tx_burst_t nix_eth_tx_vec_burst_mseg[NIX_TX_OFFLOAD_MAX] = {
++#define T(name, sz, flags) [flags] = cn20k_nix_xmit_pkts_vec_mseg_##name,
++
++		NIX_TX_FASTPATH_MODES
++#undef T
++	};
++
++	if (dev->scalar_ena || dev->tx_mark) {
++		pick_tx_func(eth_dev, nix_eth_tx_burst);
++		if (dev->tx_offloads & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
++			pick_tx_func(eth_dev, nix_eth_tx_burst_mseg);
++	} else {
++		pick_tx_func(eth_dev, nix_eth_tx_vec_burst);
++		if (dev->tx_offloads & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
++			pick_tx_func(eth_dev, nix_eth_tx_vec_burst_mseg);
++	}
++#else
++	RTE_SET_USED(eth_dev);
++#endif
++}
++
++static void
++cn20k_eth_set_tx_blk_func(struct rte_eth_dev *eth_dev)
++{
++#if defined(CNXK_DIS_TMPLT_FUNC)
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	if (dev->scalar_ena || dev->tx_mark)
++		eth_dev->tx_pkt_burst = cn20k_nix_xmit_pkts_all_offload;
++	else
++		eth_dev->tx_pkt_burst = cn20k_nix_xmit_pkts_vec_all_offload;
++
++	if (eth_dev->data->dev_started)
++		rte_eth_fp_ops[eth_dev->data->port_id].tx_pkt_burst = eth_dev->tx_pkt_burst;
++#else
++	RTE_SET_USED(eth_dev);
++#endif
++}
++#endif
++
++void
++cn20k_eth_set_tx_function(struct rte_eth_dev *eth_dev)
++{
++#if defined(RTE_ARCH_ARM64)
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	cn20k_eth_set_tx_blk_func(eth_dev);
++	cn20k_eth_set_tx_tmplt_func(eth_dev);
++
++	if (dev->tx_offloads & RTE_ETH_TX_OFFLOAD_SECURITY)
++		eth_dev->tx_queue_count = cn20k_nix_tx_queue_sec_count;
++	else
++		eth_dev->tx_queue_count = cn20k_nix_tx_queue_count;
++
++	rte_atomic_thread_fence(rte_memory_order_release);
++#else
++	RTE_SET_USED(eth_dev);
++#endif
++}
+diff --git a/drivers/net/cnxk/meson.build b/drivers/net/cnxk/meson.build
+index f41238be9c079..fcf48f600ae0a 100644
+--- a/drivers/net/cnxk/meson.build
++++ b/drivers/net/cnxk/meson.build
+@@ -237,6 +237,7 @@ if soc_type == 'cn20k' or soc_type == 'all'
+ sources += files(
+         'cn20k_ethdev.c',
+         'cn20k_rx_select.c',
++        'cn20k_tx_select.c',
+ )
+ 
+ if host_machine.cpu_family().startswith('aarch') and not disable_template
+@@ -276,9 +277,45 @@ sources += files(
+         'rx/cn20k/rx_all_offload.c',
+ )
+ 
++sources += files(
++        'tx/cn20k/tx_0_15.c',
++        'tx/cn20k/tx_16_31.c',
++        'tx/cn20k/tx_32_47.c',
++        'tx/cn20k/tx_48_63.c',
++        'tx/cn20k/tx_64_79.c',
++        'tx/cn20k/tx_80_95.c',
++        'tx/cn20k/tx_96_111.c',
++        'tx/cn20k/tx_112_127.c',
++        'tx/cn20k/tx_0_15_mseg.c',
++        'tx/cn20k/tx_16_31_mseg.c',
++        'tx/cn20k/tx_32_47_mseg.c',
++        'tx/cn20k/tx_48_63_mseg.c',
++        'tx/cn20k/tx_64_79_mseg.c',
++        'tx/cn20k/tx_80_95_mseg.c',
++        'tx/cn20k/tx_96_111_mseg.c',
++        'tx/cn20k/tx_112_127_mseg.c',
++        'tx/cn20k/tx_0_15_vec.c',
++        'tx/cn20k/tx_16_31_vec.c',
++        'tx/cn20k/tx_32_47_vec.c',
++        'tx/cn20k/tx_48_63_vec.c',
++        'tx/cn20k/tx_64_79_vec.c',
++        'tx/cn20k/tx_80_95_vec.c',
++        'tx/cn20k/tx_96_111_vec.c',
++        'tx/cn20k/tx_112_127_vec.c',
++        'tx/cn20k/tx_0_15_vec_mseg.c',
++        'tx/cn20k/tx_16_31_vec_mseg.c',
++        'tx/cn20k/tx_32_47_vec_mseg.c',
++        'tx/cn20k/tx_48_63_vec_mseg.c',
++        'tx/cn20k/tx_64_79_vec_mseg.c',
++        'tx/cn20k/tx_80_95_vec_mseg.c',
++        'tx/cn20k/tx_96_111_vec_mseg.c',
++        'tx/cn20k/tx_112_127_vec_mseg.c',
++        'tx/cn20k/tx_all_offload.c',
++)
+ else
+ sources += files(
+         'rx/cn20k/rx_all_offload.c',
++        'tx/cn20k/tx_all_offload.c',
+ )
+ endif
+ endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_0_15.c b/drivers/net/cnxk/tx/cn20k/tx_0_15.c
+new file mode 100644
+index 0000000000000..2de434ccb4eff
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_0_15.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT(cn20k_nix_xmit_pkts_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_0_15
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_0_15_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_0_15_mseg.c
+new file mode 100644
+index 0000000000000..c928902b0264f
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_0_15_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_MSEG(cn20k_nix_xmit_pkts_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_0_15
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_0_15_vec.c b/drivers/net/cnxk/tx/cn20k/tx_0_15_vec.c
+new file mode 100644
+index 0000000000000..0e82451c7e505
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_0_15_vec.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC(cn20k_nix_xmit_pkts_vec_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_0_15
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_0_15_vec_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_0_15_vec_mseg.c
+new file mode 100644
+index 0000000000000..b0cd33f7810ae
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_0_15_vec_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC_MSEG(cn20k_nix_xmit_pkts_vec_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_0_15
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_112_127.c b/drivers/net/cnxk/tx/cn20k/tx_112_127.c
+new file mode 100644
+index 0000000000000..c116c4876327b
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_112_127.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT(cn20k_nix_xmit_pkts_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_112_127
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_112_127_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_112_127_mseg.c
+new file mode 100644
+index 0000000000000..5d67426f2b593
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_112_127_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_MSEG(cn20k_nix_xmit_pkts_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_112_127
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_112_127_vec.c b/drivers/net/cnxk/tx/cn20k/tx_112_127_vec.c
+new file mode 100644
+index 0000000000000..5a3e5c660d0b0
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_112_127_vec.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC(cn20k_nix_xmit_pkts_vec_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_112_127
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_112_127_vec_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_112_127_vec_mseg.c
+new file mode 100644
+index 0000000000000..c6918de6df80c
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_112_127_vec_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC_MSEG(cn20k_nix_xmit_pkts_vec_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_112_127
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_16_31.c b/drivers/net/cnxk/tx/cn20k/tx_16_31.c
+new file mode 100644
+index 0000000000000..953f63b192d2d
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_16_31.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT(cn20k_nix_xmit_pkts_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_16_31
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_16_31_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_16_31_mseg.c
+new file mode 100644
+index 0000000000000..cdfd6bf69cae1
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_16_31_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_MSEG(cn20k_nix_xmit_pkts_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_16_31
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_16_31_vec.c b/drivers/net/cnxk/tx/cn20k/tx_16_31_vec.c
+new file mode 100644
+index 0000000000000..6e6ad7c968413
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_16_31_vec.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC(cn20k_nix_xmit_pkts_vec_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_16_31
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_16_31_vec_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_16_31_vec_mseg.c
+new file mode 100644
+index 0000000000000..a3a0fcace38a9
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_16_31_vec_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC_MSEG(cn20k_nix_xmit_pkts_vec_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_16_31
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_32_47.c b/drivers/net/cnxk/tx/cn20k/tx_32_47.c
+new file mode 100644
+index 0000000000000..50295fcd16e25
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_32_47.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT(cn20k_nix_xmit_pkts_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_32_47
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_32_47_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_32_47_mseg.c
+new file mode 100644
+index 0000000000000..8b4da505ad6a8
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_32_47_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_MSEG(cn20k_nix_xmit_pkts_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_32_47
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_32_47_vec.c b/drivers/net/cnxk/tx/cn20k/tx_32_47_vec.c
+new file mode 100644
+index 0000000000000..3a3298ffa60f0
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_32_47_vec.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC(cn20k_nix_xmit_pkts_vec_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_32_47
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_32_47_vec_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_32_47_vec_mseg.c
+new file mode 100644
+index 0000000000000..93168990a83db
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_32_47_vec_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC_MSEG(cn20k_nix_xmit_pkts_vec_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_32_47
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_48_63.c b/drivers/net/cnxk/tx/cn20k/tx_48_63.c
+new file mode 100644
+index 0000000000000..5765b1fe57570
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_48_63.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT(cn20k_nix_xmit_pkts_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_48_63
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_48_63_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_48_63_mseg.c
+new file mode 100644
+index 0000000000000..5f591eee685a4
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_48_63_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_MSEG(cn20k_nix_xmit_pkts_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_48_63
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_48_63_vec.c b/drivers/net/cnxk/tx/cn20k/tx_48_63_vec.c
+new file mode 100644
+index 0000000000000..06eec1597658f
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_48_63_vec.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC(cn20k_nix_xmit_pkts_vec_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_48_63
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_48_63_vec_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_48_63_vec_mseg.c
+new file mode 100644
+index 0000000000000..220f117c47b99
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_48_63_vec_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC_MSEG(cn20k_nix_xmit_pkts_vec_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_48_63
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_64_79.c b/drivers/net/cnxk/tx/cn20k/tx_64_79.c
+new file mode 100644
+index 0000000000000..c05ef2a2382ea
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_64_79.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT(cn20k_nix_xmit_pkts_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_64_79
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_64_79_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_64_79_mseg.c
+new file mode 100644
+index 0000000000000..79d40a09edf1f
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_64_79_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_MSEG(cn20k_nix_xmit_pkts_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_64_79
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_64_79_vec.c b/drivers/net/cnxk/tx/cn20k/tx_64_79_vec.c
+new file mode 100644
+index 0000000000000..a4fac7e73e9f1
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_64_79_vec.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC(cn20k_nix_xmit_pkts_vec_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_64_79
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_64_79_vec_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_64_79_vec_mseg.c
+new file mode 100644
+index 0000000000000..90d6b4f2f927e
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_64_79_vec_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC_MSEG(cn20k_nix_xmit_pkts_vec_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_64_79
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_80_95.c b/drivers/net/cnxk/tx/cn20k/tx_80_95.c
+new file mode 100644
+index 0000000000000..8a09ff842ba03
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_80_95.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT(cn20k_nix_xmit_pkts_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_80_95
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_80_95_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_80_95_mseg.c
+new file mode 100644
+index 0000000000000..59f959b29fe92
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_80_95_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_MSEG(cn20k_nix_xmit_pkts_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_80_95
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_80_95_vec.c b/drivers/net/cnxk/tx/cn20k/tx_80_95_vec.c
+new file mode 100644
+index 0000000000000..ca78d423440c0
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_80_95_vec.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC(cn20k_nix_xmit_pkts_vec_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_80_95
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_80_95_vec_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_80_95_vec_mseg.c
+new file mode 100644
+index 0000000000000..a3a9856783f98
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_80_95_vec_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC_MSEG(cn20k_nix_xmit_pkts_vec_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_80_95
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_96_111.c b/drivers/net/cnxk/tx/cn20k/tx_96_111.c
+new file mode 100644
+index 0000000000000..fab39f8fccb46
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_96_111.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT(cn20k_nix_xmit_pkts_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_96_111
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_96_111_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_96_111_mseg.c
+new file mode 100644
+index 0000000000000..11b68142232b3
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_96_111_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_MSEG(cn20k_nix_xmit_pkts_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_96_111
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_96_111_vec.c b/drivers/net/cnxk/tx/cn20k/tx_96_111_vec.c
+new file mode 100644
+index 0000000000000..e1e3b1bca3f23
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_96_111_vec.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC(cn20k_nix_xmit_pkts_vec_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_96_111
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_96_111_vec_mseg.c b/drivers/net/cnxk/tx/cn20k/tx_96_111_vec_mseg.c
+new file mode 100644
+index 0000000000000..b6af4e34c0a47
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_96_111_vec_mseg.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if !defined(CNXK_DIS_TMPLT_FUNC)
++
++#define T(name, sz, flags) NIX_TX_XMIT_VEC_MSEG(cn20k_nix_xmit_pkts_vec_mseg_##name, sz, flags)
++
++NIX_TX_FASTPATH_MODES_96_111
++#undef T
++
++#endif
+diff --git a/drivers/net/cnxk/tx/cn20k/tx_all_offload.c b/drivers/net/cnxk/tx/cn20k/tx_all_offload.c
+new file mode 100644
+index 0000000000000..c7258b5df7fef
+--- /dev/null
++++ b/drivers/net/cnxk/tx/cn20k/tx_all_offload.c
+@@ -0,0 +1,39 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include "cn20k_tx.h"
++
++#ifdef _ROC_API_H_
++#error "roc_api.h is included"
++#endif
++
++#if defined(CNXK_DIS_TMPLT_FUNC)
++
++uint16_t __rte_noinline __rte_hot
++cn20k_nix_xmit_pkts_all_offload(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts)
++{
++	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
++
++	return cn20k_nix_xmit_pkts_mseg(
++		tx_queue, NULL, tx_pkts, pkts, cmd,
++		NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
++			NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
++			NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F |
++			NIX_TX_MULTI_SEG_F);
++}
++
++uint16_t __rte_noinline __rte_hot
++cn20k_nix_xmit_pkts_vec_all_offload(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts)
++{
++	uint64_t cmd[8 + CNXK_NIX_TX_MSEG_SG_DWORDS - 2];
++
++	return cn20k_nix_xmit_pkts_vector(
++		tx_queue, NULL, tx_pkts, pkts, cmd,
++		NIX_TX_OFFLOAD_L3_L4_CSUM_F | NIX_TX_OFFLOAD_OL3_OL4_CSUM_F |
++			NIX_TX_OFFLOAD_VLAN_QINQ_F | NIX_TX_OFFLOAD_MBUF_NOFF_F |
++			NIX_TX_OFFLOAD_TSO_F | NIX_TX_OFFLOAD_TSTAMP_F | NIX_TX_OFFLOAD_SECURITY_F |
++			NIX_TX_MULTI_SEG_F);
++}
++
++#endif
+-- 
+2.25.1
+

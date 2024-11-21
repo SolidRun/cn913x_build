@@ -1,0 +1,40 @@
+From 657e2d419dc64ea42055049d75be8dd417476c28 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Mon, 29 May 2023 21:12:23 +0530
+Subject: [PATCH 479/955] crypto/cnxk: fix order of ECFPM parameters
+
+Fix order of ECFPM parameters.
+
+Fixes: 13526d0c77 ("crypto/cnxk: fix order of ECFPM params")
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I886870d5fc68e1cad532487b00d19bc72fbb0410
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104730
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit cb8bdb11da572a6c33700054a921a02f91f46daa)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104831
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_ae.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_ae.h b/drivers/crypto/cnxk/cnxk_ae.h
+index 4955721aef083..8bd8573f24fa8 100644
+--- a/drivers/crypto/cnxk/cnxk_ae.h
++++ b/drivers/crypto/cnxk/cnxk_ae.h
+@@ -721,7 +721,8 @@ cnxk_ae_ecfpm_prep(struct rte_crypto_ecpm_op_param *ecpm,
+ 	 * optionally ROUNDUP8(input point(x and y coordinates)).
+ 	 * Please note point length is equivalent to prime of the curve
+ 	 */
+-	if (cpt_ver == ROC_CPT_REVISION_ID_96XX_C0) {
++	if (cpt_ver == ROC_CPT_REVISION_ID_96XX_B0 || cpt_ver == ROC_CPT_REVISION_ID_96XX_C0 ||
++	    cpt_ver == ROC_CPT_REVISION_ID_98XX) {
+ 		dlen = sizeof(fpm_table_iova) + 3 * p_align + scalar_align;
+ 		memset(dptr, 0, dlen);
+ 		*(uint64_t *)dptr = fpm_table_iova;
+-- 
+2.25.1
+

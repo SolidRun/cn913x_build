@@ -1,0 +1,90 @@
+From 632e9332ca1e78121b37bd8e018080cc38130d57 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 25 Jul 2023 13:33:40 +0530
+Subject: [PATCH 585/955] ci: increase tx first size in event perf tests
+
+Increase tx first size to make sure there is enough work flowing
+through.
+Reduce the number of testpmd cores used for flowgen for CN9K.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ibd5f26591ae79424a30c4f23d95facc2ba749407
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108225
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/event_perf/cnxk_event_perf.sh    | 12 +++++++-----
+ .../cnxk-tests/event_perf/cnxk_event_perf_gen.sh     |  6 ++----
+ 2 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+index 958ee270786e3..5f6a03aeb534f 100755
+--- a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
++++ b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+@@ -41,6 +41,8 @@ get_test_args()
+ 	local num_cores=$2
+ 	local sched_mode=$3
+ 
++	local tx_cnt=$((num_cores * 50))
++
+ 	case $test_name in
+ 		L2FWD_EVENT)
+ 			echo "-l 0-$num_cores -n 4 -a $IF0 -a $SSO_DEV -- -p 1" \
+@@ -59,31 +61,31 @@ get_test_args()
+ 			echo "-l 0-$num_cores -n 4 -a $IF1 -a $IF2 -a $SSO_DEV -- " \
+ 				"--prod_type_ethdev --nb_pkts=0 --verbose 2" \
+ 				"--test=pipeline_atq --stlist=${sched_mode:0:1}"\
+-				"--wlcores=1-$num_cores --tx_first 256"
++				"--wlcores=1-$num_cores --tx_first $tx_cnt"
+ 			;;
+ 		GW_MODE_NO_PREF)
+ 			echo "-l 0-$num_cores -n 4 -a $IF1 -a $IF2 -a $SSO_DEV,gw_mode=0 -- " \
+ 				"--prod_type_ethdev --nb_pkts=0 --verbose 2" \
+ 				"--test=pipeline_atq --stlist=${sched_mode:0:1}" \
+-				"--wlcores=1-$num_cores --tx_first 256"
++				"--wlcores=1-$num_cores --tx_first $tx_cnt"
+ 			;;
+ 		GW_MODE_PREF)
+ 			echo "-l 0-$num_cores -n 4 -a $IF1 -a $IF2 -a $SSO_DEV,gw_mode=1 -- " \
+ 				"--prod_type_ethdev --nb_pkts=0 --verbose 2" \
+ 				"--test=pipeline_atq --stlist=${sched_mode:0:1}" \
+-				"--wlcores=1-$num_cores --tx_first 256"
++				"--wlcores=1-$num_cores --tx_first $tx_cnt"
+ 			;;
+ 		GW_MODE_WFE_PREF)
+ 			echo "-l 0-$num_cores -n 4 -a $IF1 -a $IF2 -a $SSO_DEV,gw_mode=2 -- " \
+ 				"--prod_type_ethdev --nb_pkts=0 --verbose 2" \
+ 				"--test=pipeline_atq --stlist=${sched_mode:0:1}" \
+-				"--wlcores=1-$num_cores --tx_first 256"
++				"--wlcores=1-$num_cores --tx_first $tx_cnt"
+ 			;;
+ 		VECTOR_MODE)
+ 			echo "-l 0-$num_cores -n 4 -a $IF1 -a $IF2 -a $SSO_DEV -- " \
+ 				"--prod_type_ethdev --nb_pkts=0 --verbose 2" \
+ 				"--test=pipeline_atq --stlist=${sched_mode:0:1}" \
+-				"--wlcores=1-$num_cores --tx_first 256" \
++				"--wlcores=1-$num_cores --tx_first 2048" \
+ 				"--enable_vector --nb_eth_queues 2 --vector_size 128"
+ 			;;
+ 		CRYPTO_ADAPTER_FWD)
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh
+index aa0c71a4c9fdb..409dbb2fddef5 100755
+--- a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh
++++ b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh
+@@ -23,11 +23,9 @@ launch_testpmd()
+ {
+ 	local fwd_cores=$(($(grep -c ^processor /proc/cpuinfo) - 1))
+ 
+-	# Limit the number forwarding cores on cn10k.
++	# Limit the number forwarding cores on cn9/10k.
+ 	# Tx rate peaks (99 MPPS) after 10 cores and drop after 18.
+-	if [[ $PLAT == "cn10k" ]]; then
+-		fwd_cores=$(( fwd_cores < 12 ? fwd_cores : 12 ))
+-	fi
++	fwd_cores=$(( fwd_cores < 12 ? fwd_cores : 12 ))
+ 
+ 	testpmd_launch $PRFX \
+ 		"-l 0-$fwd_cores -a $IF0" \
+-- 
+2.25.1
+

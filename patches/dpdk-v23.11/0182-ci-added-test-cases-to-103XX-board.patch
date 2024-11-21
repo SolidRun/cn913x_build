@@ -1,0 +1,408 @@
+From d771a54a51fbd7325587fb24590eda0f02bf124b Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 18 Jan 2024 16:13:08 +0530
+Subject: [PATCH 182/513] ci: added test cases to 103XX board
+
+Added
+
+cnxk_hotplug_test
+cnxk_cman_test_config
+cnxk_tx_vlan
+cnxk_txrx_stats
+cnxk_rx_chksum
+cnxk_read_config
+cnxk_ingress_policer
+
+testcases to ci for 103XX board
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I2bae52fb9c854942f4423a5feb6161e4ce8c21c2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120023
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ .../cnxk-tests/cman_test/cnxk_cman_test.sh    | 25 ++++++++++----
+ .../test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh | 33 ++++++++++++++-----
+ .../test/cnxk-tests/fwd_perf/meson.build      | 12 +++++++
+ .../ref_numbers/rclk2000_sclk1000.cn103.l2fwd |  4 +++
+ .../ref_numbers/rclk2000_sclk1000.cn103.l3fwd |  4 +++
+ .../rclk2000_sclk1000.cn103.testpmd           |  5 +++
+ .../ref_numbers/rclk2200_sclk1000.cn103.l2fwd |  4 +++
+ .../ref_numbers/rclk2200_sclk1000.cn103.l3fwd |  4 +++
+ .../rclk2200_sclk1000.cn103.testpmd           |  5 +++
+ .../ref_numbers/rclk2500_sclk1000.cn103.l2fwd |  4 +++
+ .../ref_numbers/rclk2500_sclk1000.cn103.l3fwd |  4 +++
+ .../rclk2500_sclk1000.cn103.testpmd           |  5 +++
+ .../ref_numbers/rclk2500_sclk1100.cn103.l2fwd |  4 +++
+ .../ref_numbers/rclk2500_sclk1100.cn103.l3fwd |  4 +++
+ .../rclk2500_sclk1100.cn103.testpmd           |  5 +++
+ .../policer_test/cnxk_ingress_policer.sh      | 18 +++++++---
+ marvell-ci/test/env/cn103.env                 |  8 +++++
+ 17 files changed, 130 insertions(+), 18 deletions(-)
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.l2fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.l3fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.testpmd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.l2fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.l3fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.testpmd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.l2fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.l3fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.testpmd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.l2fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.l3fwd
+ create mode 100644 marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.testpmd
+
+diff --git a/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh b/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh
+index 1e6746c4075cd..ce516d3cce273 100755
+--- a/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh
++++ b/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh
+@@ -17,6 +17,7 @@ TXPRFX="cman-config_tx"
+ RXPRFX="cman-config_rx"
+ TESTPMD_TXPORT="0002:01:00.1"
+ TESTPMD_RXPORT="0002:01:00.2"
++DTC=$(tr -d '\0' </proc/device-tree/model | awk '{print $2}')
+ 
+ if [ -f $CNXKTESTPATH/../board/oxk-devbind-basic.sh ]
+ then
+@@ -300,22 +301,34 @@ function run_testpmd()
+ 	else
+ 		mbufs=2048
+ 	fi
++	if [[ $DTC == "CN103XX" ]]; then
++		TX_CORES="0-3"
++		RX_CORES="4-7"
++		QUEUES=3
++		QUEUES_MQ=2
++	else
++		TX_CORES="0-10"
++		RX_CORES="11-20"
++		QUEUES=8
++		QUEUES_MQ=4
++	fi
++
+ 	testpmd_launch $TXPRFX \
+-        	"-l 0-10 -n 1 -a $TESTPMD_TXPORT" \
+-        	"--no-flush-rx --nb-cores=8 --forward-mode=txonly --txq=8 --rxq=8"
++		"-l $TX_CORES -n 1 -a $TESTPMD_TXPORT" \
++		"--no-flush-rx --nb-cores=$QUEUES --forward-mode=txonly --txq=$QUEUES --rxq=$QUEUES"
+ 	sleep 1
+ 	testpmd_cmd $TXPRFX "start"
+ 
+ 	if [ $1 == "mempool" ] ;then
+ 		testpmd_launch $RXPRFX \
+-			"-l 11-20 -n 1 -a $TESTPMD_RXPORT" \
+-			"--no-flush-rx --nb-cores=4 --forward-mode=rxonly --txq=4 --rxq=4 --total-num-mbufs=$mbufs"
++			"-l $RX_CORES -n 1 -a $TESTPMD_RXPORT" \
++			"--no-flush-rx --nb-cores=$QUEUES --forward-mode=rxonly --txq=$QUEUES_MQ --rxq=$QUEUES_MQ --total-num-mbufs=$mbufs"
+ 	fi
+ 
+ 	if [ $1 == "queue" ] ;then
+ 		testpmd_launch $RXPRFX \
+-			"-l 11-20 -n 1 -a $TESTPMD_RXPORT" \
+-			"--no-flush-rx --nb-cores=4 --forward-mode=rxonly --txq=4 --rxq=4"
++			"-l $RX_CORES -n 1 -a $TESTPMD_RXPORT" \
++			"--no-flush-rx --nb-cores=$QUEUES --forward-mode=rxonly --txq=$QUEUES_MQ --rxq=$QUEUES_MQ"
+ 	fi
+ 
+ }
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+index 4ab2aae59dc5e..26d2e10d53bbc 100755
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+@@ -122,11 +122,24 @@ trap "sig_handler EXIT" EXIT
+ # Get CPU PART NUMBER
+ PARTNUM_106XX=0xd49
+ PARTNUM=$(grep -m 1 'CPU part' /proc/cpuinfo | awk -F': ' '{print $2}')
++DTC=$(tr -d '\0' </proc/device-tree/model | awk '{print $2}')
++
++if [[ $DTC == "CN103XX" ]]; then
++	CORES=0x0000ff
++else
++	CORES=0xff0000
++fi
++
++
+ if [[ $PARTNUM == $PARTNUM_98XX ]]; then
+ 	HW="cn98"
+ else
+ 	if [[ $PARTNUM == $PARTNUM_106XX ]]; then
+-		HW="cn106"
++		if [[ $DTC == "CN103XX" ]]; then
++			HW="cn103"
++		else
++			HW="cn106"
++		fi
+ 		TOLERANCE=$(echo "$TOLERANCE - 3" | bc)
+ 	else
+ 		HW="cn96"
+@@ -326,11 +339,11 @@ run_one() {
+ 			exit 1
+ 		fi
+ 
+-		echo -n "Starting testpmd with '-c 0xff0000 -a $IF0 -a $IF1 "
++		echo -n "Starting testpmd with '-c $CORES -a $IF0 -a $IF1 "
+ 		echo " ${test_eal_args[$idx]} -- ${test_args[$idx]} -i'"
+ 
+ 		tail -f $in | \
+-			$unbuffer dpdk-testpmd -c 0xff0000 \
++			$unbuffer dpdk-testpmd -c $CORES \
+ 			--file-prefix $PRFX -a $IF0 -a $IF1 \
+ 			${test_eal_args[$idx]} -- \
+ 			${test_args[$idx]} -i &>$out 2>&1 &
+@@ -368,12 +381,12 @@ run_one() {
+ 			exit 1
+ 		fi
+ 
+-		echo -n "Starting l3fwd with '-c 0xff0000 -a $IF0 "
++		echo -n "Starting l3fwd with '-c $CORES -a $IF0 "
+ 		echo " ${test_eal_args[$idx]} -- ${test_args[$idx]}'"
+ 
+ 		tail -f $in | \
+ 			$unbuffer dpdk-l3fwd --file-prefix $PRFX \
+-			-c 0xff0000 -a $IF0 ${test_eal_args[$idx]} -- \
++			-c $CORES -a $IF0 ${test_eal_args[$idx]} -- \
+ 			${test_args[$idx]} &>$out 2>&1 &
+ 		# Wait for l3fwd to be up
+ 		itr=0
+@@ -397,12 +410,12 @@ run_one() {
+ 			exit 1
+ 		fi
+ 
+-		echo -n "Starting l2fwd with '-c 0xff0000 -a $IF0 "
++		echo -n "Starting l2fwd with '-c $CORES -a $IF0 "
+ 		echo " ${test_eal_args[$idx]} -- ${test_args[$idx]} -i'"
+ 
+ 		tail -f $in | \
+ 			$unbuffer dpdk-l2fwd --file-prefix $PRFX \
+-			-c 0xff0000 -a $IF0 ${test_eal_args[$idx]} -- \
++			-c $CORES -a $IF0 ${test_eal_args[$idx]} -- \
+ 			${test_args[$idx]} &>$out 2>&1 &
+ 		# Wait for l2fwd to be up
+ 		itr=0
+@@ -498,7 +511,11 @@ if [[ $IS_CN10K -ne 0 ]]; then
+ 	register_fwd_test "TESTPMD_LBK_NO_OFFLOAD" "testpmd" "" "--no-flush-rx --nb-cores=1" "1"
+ fi
+ 
+-register_fwd_test "L3FWD_1C" "l3fwd" "" "-p 0x1 --config (0,0,23) -P" "0"
++if [[ $DTC == "CN103XX" ]]; then
++	register_fwd_test "L3FWD_1C" "l3fwd" "" "-p 0x1 --config (0,0,7) -P" "0"
++else
++	register_fwd_test "L3FWD_1C" "l3fwd" "" "-p 0x1 --config (0,0,23) -P" "0"
++fi
+ 
+ register_fwd_test "L2FWD_1C" "l2fwd" "" "-p 0x1 -T 0 -P" "0"
+ 
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/meson.build b/marvell-ci/test/cnxk-tests/fwd_perf/meson.build
+index 1cb149dc5f106..0f3b19e281365 100644
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/meson.build
+@@ -26,6 +26,18 @@ run_command(copy_data, 'ref_numbers/rclk2500_sclk1000.cn106.l3fwd')
+ run_command(copy_data, 'ref_numbers/rclk2500_sclk1100.cn106.testpmd')
+ run_command(copy_data, 'ref_numbers/rclk2500_sclk1100.cn106.l2fwd')
+ run_command(copy_data, 'ref_numbers/rclk2500_sclk1100.cn106.l3fwd')
++run_command(copy_data, 'ref_numbers/rclk2500_sclk1100.cn103.testpmd')
++run_command(copy_data, 'ref_numbers/rclk2500_sclk1100.cn103.l2fwd')
++run_command(copy_data, 'ref_numbers/rclk2500_sclk1100.cn103.l3fwd')
++run_command(copy_data, 'ref_numbers/rclk2500_sclk1000.cn103.testpmd')
++run_command(copy_data, 'ref_numbers/rclk2500_sclk1000.cn103.l2fwd')
++run_command(copy_data, 'ref_numbers/rclk2500_sclk1000.cn103.l3fwd')
++run_command(copy_data, 'ref_numbers/rclk2200_sclk1000.cn103.testpmd')
++run_command(copy_data, 'ref_numbers/rclk2200_sclk1000.cn103.l2fwd')
++run_command(copy_data, 'ref_numbers/rclk2200_sclk1000.cn103.l3fwd')
++run_command(copy_data, 'ref_numbers/rclk2000_sclk1000.cn103.testpmd')
++run_command(copy_data, 'ref_numbers/rclk2000_sclk1000.cn103.l2fwd')
++run_command(copy_data, 'ref_numbers/rclk2000_sclk1000.cn103.l3fwd')
+ # Add the meson test
+ test(test_name,
+     cnxk_test_script_wrapper,
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.l2fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.l2fwd
+new file mode 100644
+index 0000000000000..bbe69107d096c
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.l2fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L2FWD_1C 50000000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.l3fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.l3fwd
+new file mode 100644
+index 0000000000000..c46c7021139c1
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.l3fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L3FWD_1C 34950000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.testpmd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.testpmd
+new file mode 100644
+index 0000000000000..29e625ecd6268
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2000_sclk1000.cn103.testpmd
+@@ -0,0 +1,5 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++TESTPMD_NO_OFFLOAD 100000000
++TESTPMD_LBK_NO_OFFLOAD 100000000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.l2fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.l2fwd
+new file mode 100644
+index 0000000000000..7c2227151d0c7
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.l2fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L2FWD_1C 49800000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.l3fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.l3fwd
+new file mode 100644
+index 0000000000000..94a6ad22b4670
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.l3fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L3FWD_1C 39000000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.testpmd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.testpmd
+new file mode 100644
+index 0000000000000..29e625ecd6268
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2200_sclk1000.cn103.testpmd
+@@ -0,0 +1,5 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++TESTPMD_NO_OFFLOAD 100000000
++TESTPMD_LBK_NO_OFFLOAD 100000000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.l2fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.l2fwd
+new file mode 100644
+index 0000000000000..bbe69107d096c
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.l2fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L2FWD_1C 50000000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.l3fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.l3fwd
+new file mode 100644
+index 0000000000000..364656cdf9605
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.l3fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L3FWD_1C 45000000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.testpmd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.testpmd
+new file mode 100644
+index 0000000000000..29e625ecd6268
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1000.cn103.testpmd
+@@ -0,0 +1,5 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++TESTPMD_NO_OFFLOAD 100000000
++TESTPMD_LBK_NO_OFFLOAD 100000000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.l2fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.l2fwd
+new file mode 100644
+index 0000000000000..0e30ed53ab95a
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.l2fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L2FWD_1C 54000000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.l3fwd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.l3fwd
+new file mode 100644
+index 0000000000000..93f607fb5c136
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.l3fwd
+@@ -0,0 +1,4 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++L3FWD_1C 44000000
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.testpmd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.testpmd
+new file mode 100644
+index 0000000000000..29e625ecd6268
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn103.testpmd
+@@ -0,0 +1,5 @@
++PPS of tests on 106xx and multiple RCLK
++---------------------------------------
++
++TESTPMD_NO_OFFLOAD 100000000
++TESTPMD_LBK_NO_OFFLOAD 100000000
+diff --git a/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh b/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh
+index e16918ee1a93a..e59cd819a4dae 100755
+--- a/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh
++++ b/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh
+@@ -33,6 +33,7 @@ else
+         fi
+ fi
+ 
++DTC=$(tr -d '\0' </proc/device-tree/model | awk '{print $2}')
+ 
+ function sig_handler()
+ {
+@@ -158,17 +159,26 @@ function testpmd_rxbps_stats()
+ function run_testpmd()
+ {
+ 	echo "Testpmd running with Coremask=$COREMASK"
++	CORES_TX="0-4"
++	CORES_RX="5-10"
++	CORES=4
++
++	if [[ $DTC == "CN103XX" ]]; then
++		CORES_TX="0-3"
++		CORES_RX="4-7"
++		CORES=3
++	fi
+ 
+ 	testpmd_launch $PRFX \
+-		"-l 0-4 -a $TXPORT" \
+-		"--no-flush-rx --nb-cores=4 --forward-mode=txonly --txonly-multi-flow --txq=4 --rxq=4"
++		"-l $CORES_TX -a $TXPORT" \
++		"--no-flush-rx --nb-cores=$CORES --forward-mode=txonly --txonly-multi-flow --txq=4 --rxq=4"
+ 
+ 	testpmd_cmd $PRFX "start"
+ 
+ 	# Launch capture testpmd
+ 	testpmd_launch $CAP_PRFX \
+-		"-l 5-10 -a $RXPORT" \
+-        	"--no-flush-rx --nb-cores=4 --forward-mode=rxonly --txq=4 --rxq=4"
++		"-l $CORES_RX -a $RXPORT" \
++		"--no-flush-rx --nb-cores=$CORES --forward-mode=rxonly --txq=4 --rxq=4"
+ }
+ 
+ function stop_testpmd()
+diff --git a/marvell-ci/test/env/cn103.env b/marvell-ci/test/env/cn103.env
+index 136f5aa2a0def..efa048503aaad 100644
+--- a/marvell-ci/test/env/cn103.env
++++ b/marvell-ci/test/env/cn103.env
+@@ -8,6 +8,14 @@ source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
+ RUN_TESTS="
+ 	inline_macsec_autotest
+ 	cnxk_macsec_inline_perf
++	cnxk_hotplug_test
++	cnxk_cman_test_config
++	cnxk_tx_vlan
++	cnxk_txrx_stats
++	cnxk_rx_chksum
++	cnxk_read_config
++	cnxk_ingress_policer
++	flow_regression
+ "
+ 
+ # Update command timeout
+-- 
+2.25.1
+

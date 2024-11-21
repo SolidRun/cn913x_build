@@ -1,0 +1,42 @@
+From 9878a46a2dbbe6ce4f6b31229ea6da711fc26238 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Thu, 12 Sep 2024 20:34:07 +0530
+Subject: [PATCH 501/513] common/cnxk: convert MCS message ID to name
+
+Added MCS up message enum in mbox_id2name and
+mbox_id2size APIs to get name/size of MCS message ids.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I47da6d56820ee60182c85ee19df691b143662422
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/135634
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_mbox.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_mbox.c b/drivers/common/cnxk/roc_mbox.c
+index db77babfdb76e..1568e7e03987d 100644
+--- a/drivers/common/cnxk/roc_mbox.c
++++ b/drivers/common/cnxk/roc_mbox.c
+@@ -557,6 +557,7 @@ mbox_id2name(uint16_t id)
+ 		return #_name;
+ 		MBOX_MESSAGES
+ 		MBOX_UP_CGX_MESSAGES
++		MBOX_UP_MCS_MESSAGES
+ 		MBOX_UP_REP_MESSAGES
+ #undef M
+ 	}
+@@ -573,6 +574,7 @@ mbox_id2size(uint16_t id)
+ 		return sizeof(struct _req_type);
+ 		MBOX_MESSAGES
+ 		MBOX_UP_CGX_MESSAGES
++		MBOX_UP_MCS_MESSAGES
+ 		MBOX_UP_REP_MESSAGES
+ #undef M
+ 	}
+-- 
+2.25.1
+

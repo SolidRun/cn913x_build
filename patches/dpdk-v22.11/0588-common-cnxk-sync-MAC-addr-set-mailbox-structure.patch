@@ -1,0 +1,97 @@
+From c54551ecaa95695f5f1dee8a8de75eeed5a79685 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Fri, 4 Aug 2023 14:30:15 +0530
+Subject: [PATCH 588/955] common/cnxk: sync MAC addr set mailbox structure
+
+Sync MAC address set mailbox format with kernel. And
+send match table index to the kernel to add the
+mac address. This fixes the issues on cn10kb, where
+traffic was not received when promisc is disabled
+and two ports are used.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Ia07e1387d65ee6d2c7328303ea14bcb2f1e93f49
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109491
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_mbox.h     |  1 +
+ drivers/common/cnxk/roc_nix.c      |  1 +
+ drivers/common/cnxk/roc_nix_mac.c  | 13 ++++++++++---
+ drivers/common/cnxk/roc_nix_priv.h |  1 +
+ 4 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 8150e0c5e19fb..05434aec5a2e1 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -586,6 +586,7 @@ struct cgx_fec_stats_rsp {
+ struct cgx_mac_addr_set_or_get {
+ 	struct mbox_msghdr hdr;
+ 	uint8_t __io mac_addr[PLT_ETHER_ADDR_LEN];
++	uint32_t index;
+ };
+ 
+ /* Structure for requesting the operation to
+diff --git a/drivers/common/cnxk/roc_nix.c b/drivers/common/cnxk/roc_nix.c
+index 152ef7269e9e9..498328d6eddcc 100644
+--- a/drivers/common/cnxk/roc_nix.c
++++ b/drivers/common/cnxk/roc_nix.c
+@@ -475,6 +475,7 @@ roc_nix_dev_init(struct roc_nix *roc_nix)
+ 	nix->pci_dev = pci_dev;
+ 	nix->reta_sz = reta_sz;
+ 	nix->mtu = ROC_NIX_DEFAULT_HW_FRS;
++	nix->dmac_flt_idx = -1;
+ 
+ 	/* Register error and ras interrupts */
+ 	rc = nix_register_irqs(nix);
+diff --git a/drivers/common/cnxk/roc_nix_mac.c b/drivers/common/cnxk/roc_nix_mac.c
+index ac30fb52d1f1f..2d1c29dd66438 100644
+--- a/drivers/common/cnxk/roc_nix_mac.c
++++ b/drivers/common/cnxk/roc_nix_mac.c
+@@ -81,10 +81,10 @@ int
+ roc_nix_mac_addr_set(struct roc_nix *roc_nix, const uint8_t addr[])
+ {
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct cgx_mac_addr_set_or_get *req, *rsp;
+ 	struct dev *dev = &nix->dev;
+ 	struct mbox *mbox = mbox_get(dev->mbox);
+-	struct cgx_mac_addr_set_or_get *req;
+-	int rc;
++	int rc = -ENOSPC;
+ 
+ 	if (roc_nix_is_vf_or_sdp(roc_nix)) {
+ 		rc = NIX_ERR_OP_NOTSUP;
+@@ -97,9 +97,16 @@ roc_nix_mac_addr_set(struct roc_nix *roc_nix, const uint8_t addr[])
+ 	}
+ 
+ 	req = mbox_alloc_msg_cgx_mac_addr_set(mbox);
++	if (req == NULL)
++		goto exit;
++
++	req->index = nix->dmac_flt_idx;
+ 	mbox_memcpy(req->mac_addr, addr, PLT_ETHER_ADDR_LEN);
+ 
+-	rc = mbox_process(mbox);
++	rc = mbox_process_msg(mbox, (void *)&rsp);
++	if (rc)
++		goto exit;
++	nix->dmac_flt_idx = rsp->index;
+ exit:
+ 	mbox_put(mbox);
+ 	return rc;
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index ea4211dfeda88..f82e411b709fa 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -153,6 +153,7 @@ struct nix {
+ 	uint8_t sdp_links;
+ 	uint8_t tx_link;
+ 	uint16_t sqb_size;
++	uint32_t dmac_flt_idx;
+ 	/* Without FCS, with L2 overhead */
+ 	uint16_t mtu;
+ 	uint16_t chan_cnt;
+-- 
+2.25.1
+

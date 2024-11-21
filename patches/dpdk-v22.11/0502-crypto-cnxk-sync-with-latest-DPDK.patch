@@ -1,0 +1,247 @@
+From bf4006b6fe5d0bf29cae2f26ed44ed8a4c595966 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 19 Jun 2023 12:25:53 +0530
+Subject: [PATCH 502/955] crypto/cnxk: sync with latest DPDK
+
+Move SM prep function up to match the code in DPDK 23.03 devel branch.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I92f24566dbc837825d5765614323c756f8b9d17c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105849
+Reviewed-by: Vidya Sagar Velumuri
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_se.h | 208 +++++++++++++++++-----------------
+ 1 file changed, 104 insertions(+), 104 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index 10331cbfc0631..3444f2d599425 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -2547,6 +2547,110 @@ prepare_iov_from_pkt_inplace(struct rte_mbuf *pkt,
+ 	return;
+ }
+ 
++static __rte_always_inline int
++fill_sm_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
++	       struct cpt_qp_meta_info *m_info, struct cpt_inflight_req *infl_req,
++	       struct cpt_inst_s *inst, const bool is_sg_ver2)
++{
++	struct rte_crypto_sym_op *sym_op = cop->sym;
++	struct roc_se_fc_params fc_params;
++	struct rte_mbuf *m_src, *m_dst;
++	uint8_t cpt_op = sess->cpt_op;
++	uint64_t d_offs, d_lens;
++	char src[SRC_IOV_SIZE];
++	char dst[SRC_IOV_SIZE];
++	void *mdata = NULL;
++#ifdef CPT_ALWAYS_USE_SG_MODE
++	uint8_t inplace = 0;
++#else
++	uint8_t inplace = 1;
++#endif
++	uint32_t flags = 0;
++	int ret;
++
++	uint32_t ci_data_length = sym_op->cipher.data.length;
++	uint32_t ci_data_offset = sym_op->cipher.data.offset;
++
++	fc_params.cipher_iv_len = sess->iv_length;
++	fc_params.auth_iv_len = 0;
++	fc_params.auth_iv_buf = NULL;
++	fc_params.iv_buf = NULL;
++	fc_params.mac_buf.size = 0;
++	fc_params.mac_buf.vaddr = 0;
++
++	if (likely(sess->iv_length)) {
++		flags |= ROC_SE_VALID_IV_BUF;
++		fc_params.iv_buf = rte_crypto_op_ctod_offset(cop, uint8_t *, sess->iv_offset);
++	}
++
++	m_src = sym_op->m_src;
++	m_dst = sym_op->m_dst;
++
++	d_offs = ci_data_offset;
++	d_offs = (d_offs << 16);
++
++	d_lens = ci_data_length;
++	d_lens = (d_lens << 32);
++
++	fc_params.ctx = &sess->roc_se_ctx;
++
++	if (likely(!m_dst && inplace)) {
++		fc_params.dst_iov = fc_params.src_iov = (void *)src;
++
++		prepare_iov_from_pkt_inplace(m_src, &fc_params, &flags);
++
++	} else {
++		/* Out of place processing */
++		fc_params.src_iov = (void *)src;
++		fc_params.dst_iov = (void *)dst;
++
++		/* Store SG I/O in the api for reuse */
++		if (prepare_iov_from_pkt(m_src, fc_params.src_iov, 0)) {
++			plt_dp_err("Prepare src iov failed");
++			ret = -EINVAL;
++			goto err_exit;
++		}
++
++		if (unlikely(m_dst != NULL)) {
++			if (prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0)) {
++				plt_dp_err("Prepare dst iov failed for m_dst %p", m_dst);
++				ret = -EINVAL;
++				goto err_exit;
++			}
++		} else {
++			fc_params.dst_iov = (void *)src;
++		}
++	}
++
++	fc_params.meta_buf.vaddr = NULL;
++
++	if (unlikely(!((flags & ROC_SE_SINGLE_BUF_INPLACE) &&
++		       (flags & ROC_SE_SINGLE_BUF_HEADROOM)))) {
++		mdata = alloc_op_meta(&fc_params.meta_buf, m_info->mlen, m_info->pool, infl_req);
++		if (mdata == NULL) {
++			plt_dp_err("Error allocating meta buffer for request");
++			return -ENOMEM;
++		}
++	}
++
++	/* Finally prepare the instruction */
++	ret = cpt_sm_prep(flags, d_offs, d_lens, &fc_params, inst, is_sg_ver2,
++			  !(cpt_op & ROC_SE_OP_ENCODE));
++
++	if (unlikely(ret)) {
++		plt_dp_err("Preparing request failed due to bad input arg");
++		goto free_mdata_and_exit;
++	}
++
++	return 0;
++
++free_mdata_and_exit:
++	if (infl_req->op_flags & CPT_OP_FLAGS_METABUF)
++		rte_mempool_put(m_info->pool, infl_req->mdata);
++err_exit:
++	return ret;
++}
++
+ static __rte_always_inline int
+ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	       struct cpt_qp_meta_info *m_info, struct cpt_inflight_req *infl_req,
+@@ -3006,110 +3110,6 @@ fill_pdcp_chain_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	return ret;
+ }
+ 
+-static __rte_always_inline int
+-fill_sm_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+-	       struct cpt_qp_meta_info *m_info, struct cpt_inflight_req *infl_req,
+-	       struct cpt_inst_s *inst, const bool is_sg_ver2)
+-{
+-	struct rte_crypto_sym_op *sym_op = cop->sym;
+-	struct roc_se_fc_params fc_params;
+-	struct rte_mbuf *m_src, *m_dst;
+-	uint8_t cpt_op = sess->cpt_op;
+-	uint64_t d_offs, d_lens;
+-	char src[SRC_IOV_SIZE];
+-	char dst[SRC_IOV_SIZE];
+-	void *mdata = NULL;
+-#ifdef CPT_ALWAYS_USE_SG_MODE
+-	uint8_t inplace = 0;
+-#else
+-	uint8_t inplace = 1;
+-#endif
+-	uint32_t flags = 0;
+-	int ret;
+-
+-	uint32_t ci_data_length = sym_op->cipher.data.length;
+-	uint32_t ci_data_offset = sym_op->cipher.data.offset;
+-
+-	fc_params.cipher_iv_len = sess->iv_length;
+-	fc_params.auth_iv_len = 0;
+-	fc_params.auth_iv_buf = NULL;
+-	fc_params.iv_buf = NULL;
+-	fc_params.mac_buf.size = 0;
+-	fc_params.mac_buf.vaddr = 0;
+-
+-	if (likely(sess->iv_length)) {
+-		flags |= ROC_SE_VALID_IV_BUF;
+-		fc_params.iv_buf = rte_crypto_op_ctod_offset(cop, uint8_t *, sess->iv_offset);
+-	}
+-
+-	m_src = sym_op->m_src;
+-	m_dst = sym_op->m_dst;
+-
+-	d_offs = ci_data_offset;
+-	d_offs = (d_offs << 16);
+-
+-	d_lens = ci_data_length;
+-	d_lens = (d_lens << 32);
+-
+-	fc_params.ctx = &sess->roc_se_ctx;
+-
+-	if (likely(!m_dst && inplace)) {
+-		fc_params.dst_iov = fc_params.src_iov = (void *)src;
+-
+-		prepare_iov_from_pkt_inplace(m_src, &fc_params, &flags);
+-
+-	} else {
+-		/* Out of place processing */
+-		fc_params.src_iov = (void *)src;
+-		fc_params.dst_iov = (void *)dst;
+-
+-		/* Store SG I/O in the api for reuse */
+-		if (prepare_iov_from_pkt(m_src, fc_params.src_iov, 0)) {
+-			plt_dp_err("Prepare src iov failed");
+-			ret = -EINVAL;
+-			goto err_exit;
+-		}
+-
+-		if (unlikely(m_dst != NULL)) {
+-			if (prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0)) {
+-				plt_dp_err("Prepare dst iov failed for m_dst %p", m_dst);
+-				ret = -EINVAL;
+-				goto err_exit;
+-			}
+-		} else {
+-			fc_params.dst_iov = (void *)src;
+-		}
+-	}
+-
+-	fc_params.meta_buf.vaddr = NULL;
+-
+-	if (unlikely(!((flags & ROC_SE_SINGLE_BUF_INPLACE) &&
+-		       (flags & ROC_SE_SINGLE_BUF_HEADROOM)))) {
+-		mdata = alloc_op_meta(&fc_params.meta_buf, m_info->mlen, m_info->pool, infl_req);
+-		if (mdata == NULL) {
+-			plt_dp_err("Error allocating meta buffer for request");
+-			return -ENOMEM;
+-		}
+-	}
+-
+-	/* Finally prepare the instruction */
+-	ret = cpt_sm_prep(flags, d_offs, d_lens, &fc_params, inst, is_sg_ver2,
+-			  !(cpt_op & ROC_SE_OP_ENCODE));
+-
+-	if (unlikely(ret)) {
+-		plt_dp_err("Preparing request failed due to bad input arg");
+-		goto free_mdata_and_exit;
+-	}
+-
+-	return 0;
+-
+-free_mdata_and_exit:
+-	if (infl_req->op_flags & CPT_OP_FLAGS_METABUF)
+-		rte_mempool_put(m_info->pool, infl_req->mdata);
+-err_exit:
+-	return ret;
+-}
+-
+ static __rte_always_inline void
+ compl_auth_verify(struct rte_crypto_op *op, uint8_t *gen_mac, uint64_t mac_len)
+ {
+-- 
+2.25.1
+

@@ -1,0 +1,166 @@
+From dd32e72fad6256ce9b7a730e3524173ced396b61 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Mon, 28 Nov 2022 20:13:47 +0530
+Subject: [PATCH 071/955] ci: limit cores used by testpmd on cn10k
+
+On cn10k, TX rate saturates after 10 cores and drops after 18. So the
+number of forwarding cores are limited to 12.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I7fcf3c2d46cdbdef383d3016ce3d5070478fec4c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91641
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit ee917eefd59b01cbd0144e99a9fd99c1b93492bc)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92411
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ .../test/cnxk-tests/event_perf/cnxk_event_perf.sh |  4 ++--
+ .../cnxk-tests/event_perf/cnxk_event_perf_gen.sh  |  8 ++++++++
+ .../test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh      | 15 +++++++++++++++
+ .../test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh     | 15 ++++++++-------
+ 4 files changed, 33 insertions(+), 9 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+index d819a444d6006..ae6cf1e5c8afc 100755
+--- a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
++++ b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+@@ -108,13 +108,13 @@ find_exec()
+ exec_testpmd_cmd()
+ {
+ 	$TARGET_SSH_CMD $GENERATOR_BOARD "cd $REMOTE_DIR;" \
+-		"sudo TESTPMD_OP=$1 $(find_exec $GENERATOR_BOARD $GENERATOR_SCRIPT)"
++		"sudo PLAT=$PLAT TESTPMD_OP=$1 $(find_exec $GENERATOR_BOARD $GENERATOR_SCRIPT)"
+ }
+ 
+ launch_testpmd()
+ {
+ 	$TARGET_SSH_CMD $GENERATOR_BOARD "cd $REMOTE_DIR;" \
+-		"sudo TESTPMD_OP=launch $(find_exec $GENERATOR_BOARD $GENERATOR_SCRIPT)"
++		"sudo PLAT=$PLAT TESTPMD_OP=launch $(find_exec $GENERATOR_BOARD $GENERATOR_SCRIPT)"
+ }
+ 
+ gen_needed()
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh
+index 2216c3c09f7dc..3d31d2a2beca0 100755
+--- a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh
++++ b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf_gen.sh
+@@ -6,6 +6,7 @@ CNXKTESTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )/.."
+ source $CNXKTESTPATH/common/testpmd/common.env
+ IF0=${IF0:-0002:02:00.0}
+ PRFX="event_perf"
++PLAT=${PLAT:?}
+ 
+ trap "cleanup $?" EXIT
+ 
+@@ -21,6 +22,13 @@ cleanup()
+ launch_testpmd()
+ {
+ 	local fwd_cores=$(($(grep -c ^processor /proc/cpuinfo) - 1))
++
++	# Limit the number forwarding cores on cn10k.
++	# Tx rate peaks (99 MPPS) after 10 cores and drop after 18.
++	if [[ $PLAT == "cn10k" ]]; then
++		fwd_cores=$(( fwd_cores < 12 ? fwd_cores : 12 ))
++	fi
++
+ 	testpmd_launch $PRFX \
+ 		"-l 0-$fwd_cores -a $IF0" \
+ 		"--nb-cores=$fwd_cores --rxq=$fwd_cores --txq=$fwd_cores \
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh
+index 7f499b6562250..00dc15f54f119 100755
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_gen.sh
+@@ -11,6 +11,7 @@ source $CNXKTESTPATH/common/testpmd/common.env
+ 
+ PRFX="fwd-gen"
+ PORT0="${PORT0:-0002:02:00.0}"
++PLAT=${PLAT:?}
+ 
+ if [ -f $1/oxk-devbind-basic.sh ]
+ then
+@@ -45,6 +46,13 @@ case $TEST_OP in
+ 		((num_cores-=1))
+ 		num_cores=${GEN_CORES:-$num_cores}
+ 		((fwd_cores=num_cores-1))
++
++		# Limit the number forwarding cores on cn10k.
++		# Tx rate peaks (99 MPPS) after 10 cores and drop after 18.
++		if [[ $PLAT == "cn10k" ]]; then
++			fwd_cores=$(( fwd_cores < 12 ? fwd_cores : 12 ))
++		fi
++
+ 		testpmd_launch $PRFX \
+ 			"-l 1-$num_cores -a $PORT0" \
+ 			"--no-flush-rx --nb-cores=$fwd_cores --forward-mode=flowgen \
+@@ -59,6 +67,13 @@ case $TEST_OP in
+ 		((num_cores-=1))
+ 		num_cores=${GEN_CORES:-$num_cores}
+ 		((fwd_cores=num_cores-1))
++
++		# Limit the number forwarding cores on cn10k.
++		# Tx rate peaks (99 MPPS) after 10 cores and drop after 18.
++		if [[ $PLAT == "cn10k" ]]; then
++			fwd_cores=$(( fwd_cores < 12 ? fwd_cores : 12 ))
++		fi
++
+ 		testpmd_launch $PRFX \
+ 			"-l 1-$num_cores -a $PORT0" \
+ 			"--no-flush-rx --nb-cores=$fwd_cores \
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+index 37d71e9687bbf..79bafb2700526 100755
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+@@ -5,6 +5,7 @@
+ set -e
+ 
+ GENERATOR_BOARD=${GENERATOR_BOARD:-}
++PLAT=${PLAT:-}
+ CNXKTESTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+ VFIO_DEVBIND="$1/marvell-ci/test/board/oxk-devbind-basic.sh"
+ 
+@@ -193,25 +194,25 @@ launch_gen() {
+ 	echo $START_STR ${test_name[$1]} >>$GEN_LOG_FULL
+ 	if [[ $WITH_GEN_BOARD -eq 1 ]] && [[ "${test_cmd[$idx]}" == "testpmd" ]]
+ 	then
+-	$remote_ssh "$SUDO PORT0=$GEN_PORT TEST_OP=launch_basic $G_ENV $gen $GEN_ARG"
++	$remote_ssh "$SUDO PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=launch_basic $G_ENV $gen $GEN_ARG"
+ 	else
+-	$remote_ssh "$SUDO PORT0=$GEN_PORT TEST_OP=launch $G_ENV $gen $GEN_ARG"
++	$remote_ssh "$SUDO PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=launch $G_ENV $gen $GEN_ARG"
+ 	fi
+ }
+ 
+ start_gen() {
+-	$remote_ssh "$SUDO PORT0=$GEN_PORT TEST_OP=start $gen"
++	$remote_ssh "$SUDO PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=start $gen"
+ }
+ 
+ stop_gen() {
+-	$remote_ssh "$SUDO PORT0=$GEN_PORT TEST_OP=stop $gen"
++	$remote_ssh "$SUDO PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=stop $gen"
+ }
+ 
+ cleanup_gen() {
+-	$remote_ssh "$SUDO PORT0=$GEN_PORT TEST_OP=log $gen" >>$GEN_LOG_FULL
++	$remote_ssh "$SUDO PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=log $gen" >>$GEN_LOG_FULL
+ 	echo $END_STR ${test_name[$idx]} >>$GEN_LOG_FULL
+ 
+-	$remote_ssh "$SUDO PORT0=$GEN_PORT TEST_OP=cleanup $gen"
++	$remote_ssh "$SUDO PLAT=$PLAT PORT0=$GEN_PORT TEST_OP=cleanup $gen"
+ }
+ 
+ testpmd_pps_local() {
+@@ -250,7 +251,7 @@ check_pps() {
+ 		then
+ 			rx_pps=$(testpmd_pps_local)
+ 		else
+-			rx_pps=$($remote_ssh "$SUDO TEST_OP=rx_pps $gen")
++			rx_pps=$($remote_ssh "$SUDO PLAT=$PLAT TEST_OP=rx_pps $gen")
+ 		fi
+ 
+ 		if [[ rx_pps -lt pass_pps ]]; then
+-- 
+2.25.1
+

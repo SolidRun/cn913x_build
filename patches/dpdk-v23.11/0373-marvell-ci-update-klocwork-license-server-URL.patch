@@ -1,0 +1,40 @@
+From 930f8980b0af33ce52a30a45f651e3ecf557c597 Mon Sep 17 00:00:00 2001
+From: Nawal Kishor <nkishor@marvell.com>
+Date: Wed, 26 Jun 2024 00:20:24 +0530
+Subject: [PATCH 373/513] marvell-ci: update klocwork license server URL
+
+Updated klocwork license server URL for klocwork 23.4.
+
+Signed-off-by: Nawal Kishor <nkishor@marvell.com>
+Change-Id: I7b7459b2a7d2c46b390189daed41d1f9a26eba8e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130225
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/klocwork/klocwork.sh | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/marvell-ci/klocwork/klocwork.sh b/marvell-ci/klocwork/klocwork.sh
+index 1ffd4db281315..8c29f12d65eb7 100755
+--- a/marvell-ci/klocwork/klocwork.sh
++++ b/marvell-ci/klocwork/klocwork.sh
+@@ -73,7 +73,7 @@ meson $BUILD_DIR --cross-file $CROSS_FILE
+ 
+ rm -rf .kwlp .kwps
+ kwcheck create
+-kwcheck set license.host=llic5-02.marvell.com license.port=33138
++kwcheck set license.host=llic5-01.marvell.com license.port=33138
+ 
+ # List of directories to ignore in klocwork checks
+ IGNORE_FILES=""
+@@ -100,5 +100,3 @@ echo "#########################################################################"
+ echo "Klocwork CNXK Issues: $CNXK_ISSUES"
+ echo "Klocwork Report : $PWD/kwreport-detailed.txt"
+ echo "#########################################################################"
+-
+-
+-- 
+2.25.1
+

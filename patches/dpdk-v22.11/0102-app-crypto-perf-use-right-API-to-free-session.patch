@@ -1,0 +1,102 @@
+From 6309586b07a36c9547c21056bc239752e15af23d Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 15 Dec 2022 07:31:57 +0000
+Subject: [PATCH 102/955] app/crypto-perf: use right API to free session
+
+Use the right API for session freeing. Sessions can be asymmetric,
+symmetric or security.
+
+Fixes: 28dde5da503e ("app/crypto-perf: support lookaside IPsec")
+Fixes: a538d1d2d01e ("test/crypto-perf: extend asymmetric crypto throughput test")
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I709b08cf49119dee286511c1b461e38b09cd7dc1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92687
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test-crypto-perf/cperf_test_latency.c | 27 +++++++++++++++++------
+ app/test-crypto-perf/cperf_test_verify.c  | 25 ++++++++++++++++-----
+ 2 files changed, 39 insertions(+), 13 deletions(-)
+
+diff --git a/app/test-crypto-perf/cperf_test_latency.c b/app/test-crypto-perf/cperf_test_latency.c
+index 49bf421c01556..406e082e4e204 100644
+--- a/app/test-crypto-perf/cperf_test_latency.c
++++ b/app/test-crypto-perf/cperf_test_latency.c
+@@ -43,15 +43,28 @@ struct priv_op_data {
+ static void
+ cperf_latency_test_free(struct cperf_latency_ctx *ctx)
+ {
+-	if (ctx) {
+-		if (ctx->sess)
+-			rte_cryptodev_sym_session_free(ctx->dev_id, ctx->sess);
+-
+-		rte_mempool_free(ctx->pool);
++	if (ctx == NULL)
++		return;
+ 
+-		rte_free(ctx->res);
+-		rte_free(ctx);
++	if (ctx->sess != NULL) {
++		if (ctx->options->op_type == CPERF_ASYM_MODEX)
++			rte_cryptodev_asym_session_free(ctx->dev_id, ctx->sess);
++#ifdef RTE_LIB_SECURITY
++		else if (ctx->options->op_type == CPERF_PDCP ||
++			 ctx->options->op_type == CPERF_DOCSIS ||
++			 ctx->options->op_type == CPERF_IPSEC) {
++			struct rte_security_ctx *sec_ctx =
++				rte_cryptodev_get_sec_ctx(ctx->dev_id);
++			rte_security_session_destroy(sec_ctx, ctx->sess);
++		}
++#endif
++		else
++			rte_cryptodev_sym_session_free(ctx->dev_id, ctx->sess);
+ 	}
++
++	rte_mempool_free(ctx->pool);
++	rte_free(ctx->res);
++	rte_free(ctx);
+ }
+ 
+ void *
+diff --git a/app/test-crypto-perf/cperf_test_verify.c b/app/test-crypto-perf/cperf_test_verify.c
+index c03e1d5ba5aaa..8042c94e04ba1 100644
+--- a/app/test-crypto-perf/cperf_test_verify.c
++++ b/app/test-crypto-perf/cperf_test_verify.c
+@@ -38,14 +38,27 @@ struct cperf_op_result {
+ static void
+ cperf_verify_test_free(struct cperf_verify_ctx *ctx)
+ {
+-	if (ctx) {
+-		if (ctx->sess)
+-			rte_cryptodev_sym_session_free(ctx->dev_id, ctx->sess);
+-
+-		rte_mempool_free(ctx->pool);
++	if (ctx == NULL)
++		return;
+ 
+-		rte_free(ctx);
++	if (ctx->sess != NULL) {
++		if (ctx->options->op_type == CPERF_ASYM_MODEX)
++			rte_cryptodev_asym_session_free(ctx->dev_id, ctx->sess);
++#ifdef RTE_LIB_SECURITY
++		else if (ctx->options->op_type == CPERF_PDCP ||
++			 ctx->options->op_type == CPERF_DOCSIS ||
++			 ctx->options->op_type == CPERF_IPSEC) {
++			struct rte_security_ctx *sec_ctx =
++				rte_cryptodev_get_sec_ctx(ctx->dev_id);
++			rte_security_session_destroy(sec_ctx, ctx->sess);
++		}
++#endif
++		else
++			rte_cryptodev_sym_session_free(ctx->dev_id, ctx->sess);
+ 	}
++
++	rte_mempool_free(ctx->pool);
++	rte_free(ctx);
+ }
+ 
+ void *
+-- 
+2.25.1
+

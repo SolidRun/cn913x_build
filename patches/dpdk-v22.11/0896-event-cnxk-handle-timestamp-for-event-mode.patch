@@ -1,0 +1,149 @@
+From a5a878cc41b428db5694ec133aa05cae19e36fa1 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 20 Jun 2024 13:45:41 +0530
+Subject: [PATCH 896/955] event/cnxk: handle timestamp for event mode
+
+handle timestamp correctly for VF when ptp is enabled
+before running application in event mode by updating
+RX offload flags in link up notification
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I9753480912df4df39d288b1f3fdb87bd6dce6b57
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129916
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/event/cnxk/cn10k_eventdev.c      | 32 ++++++++++++++++++++++++
+ drivers/event/cnxk/cn9k_eventdev.c       | 31 +++++++++++++++++++++++
+ drivers/event/cnxk/cnxk_eventdev_adptr.c |  2 +-
+ 3 files changed, 64 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index fdf7161a1138c..c53bf23727d60 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -818,12 +818,40 @@ cn10k_sso_set_priv_mem(const struct rte_eventdev *event_dev, void *lookup_mem)
+ 	}
+ }
+ 
++static void
++eventdev_fops_tstamp_update(struct rte_eventdev *event_dev)
++{
++	struct rte_event_fp_ops *fp_op =
++		rte_event_fp_ops + event_dev->data->dev_id;
++
++	fp_op->dequeue = event_dev->dequeue;
++	fp_op->dequeue_burst = event_dev->dequeue_burst;
++}
++
++static void
++cn10k_sso_tstamp_hdl_update(uint16_t port_id, uint16_t flags, bool ptp_en)
++{
++	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
++	struct cnxk_eth_dev *cnxk_eth_dev = dev->data->dev_private;
++	struct rte_eventdev *event_dev = cnxk_eth_dev->evdev_priv;
++	struct cnxk_sso_evdev *evdev = cnxk_sso_pmd_priv(event_dev);
++
++	evdev->rx_offloads |= flags;
++	if (ptp_en)
++		evdev->tstamp[port_id] = &cnxk_eth_dev->tstamp;
++	else
++		evdev->tstamp[port_id] = NULL;
++	cn10k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
++	eventdev_fops_tstamp_update(event_dev);
++}
++
+ static int
+ cn10k_sso_rx_adapter_queue_add(
+ 	const struct rte_eventdev *event_dev, const struct rte_eth_dev *eth_dev,
+ 	int32_t rx_queue_id,
+ 	const struct rte_event_eth_rx_adapter_queue_conf *queue_conf)
+ {
++	struct cnxk_eth_dev *cnxk_eth_dev = eth_dev->data->dev_private;
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	struct roc_sso_hwgrp_stash stash;
+ 	struct cn10k_eth_rxq *rxq;
+@@ -838,6 +866,10 @@ cn10k_sso_rx_adapter_queue_add(
+ 					   queue_conf);
+ 	if (rc)
+ 		return -EINVAL;
++
++	cnxk_eth_dev->cnxk_sso_ptp_tstamp_cb = cn10k_sso_tstamp_hdl_update;
++	cnxk_eth_dev->evdev_priv = (struct rte_eventdev *)(uintptr_t)event_dev;
++
+ 	rxq = eth_dev->data->rx_queues[0];
+ 	lookup_mem = rxq->lookup_mem;
+ 	cn10k_sso_set_priv_mem(event_dev, lookup_mem);
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index cb5ca98c75eb5..3290a7fff23af 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -898,12 +898,40 @@ cn9k_sso_set_priv_mem(const struct rte_eventdev *event_dev, void *lookup_mem)
+ 	}
+ }
+ 
++static void
++eventdev_fops_tstamp_update(struct rte_eventdev *event_dev)
++{
++	struct rte_event_fp_ops *fp_op =
++		rte_event_fp_ops + event_dev->data->dev_id;
++
++	fp_op->dequeue = event_dev->dequeue;
++	fp_op->dequeue_burst = event_dev->dequeue_burst;
++}
++
++static void
++cn9k_sso_tstamp_hdl_update(uint16_t port_id, uint16_t flags, bool ptp_en)
++{
++	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
++	struct cnxk_eth_dev *cnxk_eth_dev = dev->data->dev_private;
++	struct rte_eventdev *event_dev = cnxk_eth_dev->evdev_priv;
++	struct cnxk_sso_evdev *evdev = cnxk_sso_pmd_priv(event_dev);
++
++	evdev->rx_offloads |= flags;
++	if (ptp_en)
++		evdev->tstamp[port_id] = &cnxk_eth_dev->tstamp;
++	else
++		evdev->tstamp[port_id] = NULL;
++	cn9k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
++	eventdev_fops_tstamp_update(event_dev);
++}
++
+ static int
+ cn9k_sso_rx_adapter_queue_add(
+ 	const struct rte_eventdev *event_dev, const struct rte_eth_dev *eth_dev,
+ 	int32_t rx_queue_id,
+ 	const struct rte_event_eth_rx_adapter_queue_conf *queue_conf)
+ {
++	struct cnxk_eth_dev *cnxk_eth_dev = eth_dev->data->dev_private;
+ 	struct cn9k_eth_rxq *rxq;
+ 	void *lookup_mem;
+ 	int rc;
+@@ -917,6 +945,9 @@ cn9k_sso_rx_adapter_queue_add(
+ 	if (rc)
+ 		return -EINVAL;
+ 
++	cnxk_eth_dev->cnxk_sso_ptp_tstamp_cb = cn9k_sso_tstamp_hdl_update;
++	cnxk_eth_dev->evdev_priv = (struct rte_eventdev *)(uintptr_t)event_dev;
++
+ 	rxq = eth_dev->data->rx_queues[0];
+ 	lookup_mem = rxq->lookup_mem;
+ 	cn9k_sso_set_priv_mem(event_dev, lookup_mem);
+diff --git a/drivers/event/cnxk/cnxk_eventdev_adptr.c b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+index a190f93669f49..f947d2e7f0011 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_adptr.c
++++ b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+@@ -213,7 +213,7 @@ static void
+ cnxk_sso_tstamp_cfg(uint16_t port_id, struct cnxk_eth_dev *cnxk_eth_dev,
+ 		    struct cnxk_sso_evdev *dev)
+ {
+-	if (cnxk_eth_dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
++	if (cnxk_eth_dev->rx_offloads & RTE_ETH_RX_OFFLOAD_TIMESTAMP || cnxk_eth_dev->ptp_en)
+ 		dev->tstamp[port_id] = &cnxk_eth_dev->tstamp;
+ }
+ 
+-- 
+2.25.1
+

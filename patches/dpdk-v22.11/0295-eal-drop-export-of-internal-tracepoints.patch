@@ -1,0 +1,614 @@
+From a0840b9be214cbc712f2d8fd1c93c2fdbed81ce4 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Wed, 15 Feb 2023 15:12:26 +0530
+Subject: [PATCH 295/955] eal: drop export of internal tracepoints
+
+The file rte_eal_trace.h contains some tracepoints which are internal to
+the eal library. Those tracepoints are moved to a new file
+eal_trace_internal.h. The internal tracepoints are removed from the
+version.map file.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Acked-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: I875eed7c7b9d08b42a869b6e65897f533d9a22e0
+---
+ doc/guides/prog_guide/trace_lib.rst      |   8 +-
+ lib/eal/common/eal_common_launch.c       |   2 +-
+ lib/eal/common/eal_common_memzone.c      |   2 +-
+ lib/eal/common/eal_common_thread.c       |   2 +-
+ lib/eal/common/eal_common_trace_points.c |   2 +
+ lib/eal/common/rte_malloc.c              |   2 +-
+ lib/eal/freebsd/eal_alarm.c              |   2 +-
+ lib/eal/freebsd/eal_interrupts.c         |   2 +-
+ lib/eal/include/eal_trace_internal.h     | 182 +++++++++++++++++++++++
+ lib/eal/include/rte_eal_trace.h          | 158 --------------------
+ lib/eal/linux/eal_alarm.c                |   2 +-
+ lib/eal/linux/eal_interrupts.c           |   2 +-
+ lib/eal/version.map                      |  15 --
+ lib/eal/windows/eal_alarm.c              |   3 +-
+ 14 files changed, 198 insertions(+), 186 deletions(-)
+ create mode 100644 lib/eal/include/eal_trace_internal.h
+
+diff --git a/doc/guides/prog_guide/trace_lib.rst b/doc/guides/prog_guide/trace_lib.rst
+index 6f444534e82fc..e5718feddc154 100644
+--- a/doc/guides/prog_guide/trace_lib.rst
++++ b/doc/guides/prog_guide/trace_lib.rst
+@@ -121,9 +121,11 @@ convention.
+ .. note::
+ 
+    The ``RTE_TRACE_POINT_REGISTER`` defines the placeholder for the
+-   ``rte_trace_point_t`` tracepoint object. The user must export a
+-   ``__<trace_function_name>`` symbol in the library ``.map`` file for this
+-   tracepoint to be used out of the library, in shared builds.
++   ``rte_trace_point_t`` tracepoint object.
++   For generic tracepoint or for tracepoint used in public header files,
++   the user must export a ``__<trace_function_name>`` symbol
++   in the library ``.map`` file for this tracepoint
++   to be used out of the library, in shared builds.
+    For example, ``__app_trace_string`` will be the exported symbol in the
+    above example.
+ 
+diff --git a/lib/eal/common/eal_common_launch.c b/lib/eal/common/eal_common_launch.c
+index 487e58c124243..050459857a867 100644
+--- a/lib/eal/common/eal_common_launch.c
++++ b/lib/eal/common/eal_common_launch.c
+@@ -4,8 +4,8 @@
+ 
+ #include <errno.h>
+ 
++#include <eal_trace_internal.h>
+ #include <rte_launch.h>
+-#include <rte_eal_trace.h>
+ #include <rte_pause.h>
+ #include <rte_lcore.h>
+ 
+diff --git a/lib/eal/common/eal_common_memzone.c b/lib/eal/common/eal_common_memzone.c
+index 860fb5fb6436f..a9cd91ffeac3f 100644
+--- a/lib/eal/common/eal_common_memzone.c
++++ b/lib/eal/common/eal_common_memzone.c
+@@ -8,6 +8,7 @@
+ #include <string.h>
+ #include <errno.h>
+ 
++#include <eal_trace_internal.h>
+ #include <rte_log.h>
+ #include <rte_memory.h>
+ #include <rte_memzone.h>
+@@ -15,7 +16,6 @@
+ #include <rte_errno.h>
+ #include <rte_string_fns.h>
+ #include <rte_common.h>
+-#include <rte_eal_trace.h>
+ 
+ #include "malloc_heap.h"
+ #include "malloc_elem.h"
+diff --git a/lib/eal/common/eal_common_thread.c b/lib/eal/common/eal_common_thread.c
+index c5d8b4327dcdb..e4181eeb5d271 100644
+--- a/lib/eal/common/eal_common_thread.c
++++ b/lib/eal/common/eal_common_thread.c
+@@ -10,7 +10,7 @@
+ #include <assert.h>
+ #include <string.h>
+ 
+-#include <rte_eal_trace.h>
++#include <eal_trace_internal.h>
+ #include <rte_errno.h>
+ #include <rte_lcore.h>
+ #include <rte_log.h>
+diff --git a/lib/eal/common/eal_common_trace_points.c b/lib/eal/common/eal_common_trace_points.c
+index 051f89809cf3d..3f5bf5c55c84a 100644
+--- a/lib/eal/common/eal_common_trace_points.c
++++ b/lib/eal/common/eal_common_trace_points.c
+@@ -6,6 +6,8 @@
+ 
+ #include <rte_eal_trace.h>
+ 
++#include <eal_trace_internal.h>
++
+ RTE_TRACE_POINT_REGISTER(rte_eal_trace_generic_void,
+ 	lib.eal.generic.void)
+ RTE_TRACE_POINT_REGISTER(rte_eal_trace_generic_u64,
+diff --git a/lib/eal/common/rte_malloc.c b/lib/eal/common/rte_malloc.c
+index 48db2644496f0..d39870bf3caf9 100644
+--- a/lib/eal/common/rte_malloc.c
++++ b/lib/eal/common/rte_malloc.c
+@@ -16,7 +16,7 @@
+ #include <rte_common.h>
+ #include <rte_spinlock.h>
+ 
+-#include <rte_eal_trace.h>
++#include <eal_trace_internal.h>
+ 
+ #include <rte_malloc.h>
+ #include "malloc_elem.h"
+diff --git a/lib/eal/freebsd/eal_alarm.c b/lib/eal/freebsd/eal_alarm.c
+index 1023c329378fd..177897fbc4db5 100644
+--- a/lib/eal/freebsd/eal_alarm.c
++++ b/lib/eal/freebsd/eal_alarm.c
+@@ -11,13 +11,13 @@
+ #include <time.h>
+ #include <errno.h>
+ 
++#include <eal_trace_internal.h>
+ #include <rte_alarm.h>
+ #include <rte_cycles.h>
+ #include <rte_common.h>
+ #include <rte_errno.h>
+ #include <rte_interrupts.h>
+ #include <rte_spinlock.h>
+-#include <rte_eal_trace.h>
+ 
+ #include "eal_private.h"
+ #include "eal_alarm_private.h"
+diff --git a/lib/eal/freebsd/eal_interrupts.c b/lib/eal/freebsd/eal_interrupts.c
+index 9f720bdc8f109..ffcf97ad4c58a 100644
+--- a/lib/eal/freebsd/eal_interrupts.c
++++ b/lib/eal/freebsd/eal_interrupts.c
+@@ -8,12 +8,12 @@
+ #include <sys/queue.h>
+ #include <unistd.h>
+ 
++#include <eal_trace_internal.h>
+ #include <rte_errno.h>
+ #include <rte_lcore.h>
+ #include <rte_spinlock.h>
+ #include <rte_common.h>
+ #include <rte_interrupts.h>
+-#include <rte_eal_trace.h>
+ 
+ #include "eal_private.h"
+ #include "eal_alarm_private.h"
+diff --git a/lib/eal/include/eal_trace_internal.h b/lib/eal/include/eal_trace_internal.h
+new file mode 100644
+index 0000000000000..57d6de2535c8a
+--- /dev/null
++++ b/lib/eal/include/eal_trace_internal.h
+@@ -0,0 +1,182 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell International Ltd.
++ */
++
++#ifndef EAL_TRACE_INTERNAL_H
++#define EAL_TRACE_INTERNAL_H
++
++/**
++ * @file
++ *
++ * API for EAL trace support
++ */
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#include <rte_alarm.h>
++#include <rte_interrupts.h>
++#include <rte_trace_point.h>
++
++#include "eal_interrupts.h"
++
++/* Alarm */
++RTE_TRACE_POINT(
++	rte_eal_trace_alarm_set,
++	RTE_TRACE_POINT_ARGS(uint64_t us, rte_eal_alarm_callback cb_fn,
++		void *cb_arg, int rc),
++	rte_trace_point_emit_u64(us);
++	rte_trace_point_emit_ptr(cb_fn);
++	rte_trace_point_emit_ptr(cb_arg);
++	rte_trace_point_emit_int(rc);
++)
++
++RTE_TRACE_POINT(
++	rte_eal_trace_alarm_cancel,
++	RTE_TRACE_POINT_ARGS(rte_eal_alarm_callback cb_fn, void *cb_arg,
++		int count),
++	rte_trace_point_emit_ptr(cb_fn);
++	rte_trace_point_emit_ptr(cb_arg);
++	rte_trace_point_emit_int(count);
++)
++
++/* Interrupt */
++RTE_TRACE_POINT(
++	rte_eal_trace_intr_callback_register,
++	RTE_TRACE_POINT_ARGS(const struct rte_intr_handle *handle,
++		rte_intr_callback_fn cb, void *cb_arg, int rc),
++	rte_trace_point_emit_int(rc);
++	rte_trace_point_emit_int(handle->dev_fd);
++	rte_trace_point_emit_int(handle->fd);
++	rte_trace_point_emit_int(handle->type);
++	rte_trace_point_emit_u32(handle->max_intr);
++	rte_trace_point_emit_u32(handle->nb_efd);
++	rte_trace_point_emit_ptr(cb);
++	rte_trace_point_emit_ptr(cb_arg);
++)
++RTE_TRACE_POINT(
++	rte_eal_trace_intr_callback_unregister,
++	RTE_TRACE_POINT_ARGS(const struct rte_intr_handle *handle,
++		rte_intr_callback_fn cb, void *cb_arg, int rc),
++	rte_trace_point_emit_int(rc);
++	rte_trace_point_emit_int(handle->dev_fd);
++	rte_trace_point_emit_int(handle->fd);
++	rte_trace_point_emit_int(handle->type);
++	rte_trace_point_emit_u32(handle->max_intr);
++	rte_trace_point_emit_u32(handle->nb_efd);
++	rte_trace_point_emit_ptr(cb);
++	rte_trace_point_emit_ptr(cb_arg);
++)
++RTE_TRACE_POINT(
++	rte_eal_trace_intr_enable,
++	RTE_TRACE_POINT_ARGS(const struct rte_intr_handle *handle, int rc),
++	rte_trace_point_emit_int(rc);
++	rte_trace_point_emit_int(handle->dev_fd);
++	rte_trace_point_emit_int(handle->fd);
++	rte_trace_point_emit_int(handle->type);
++	rte_trace_point_emit_u32(handle->max_intr);
++	rte_trace_point_emit_u32(handle->nb_efd);
++)
++RTE_TRACE_POINT(
++	rte_eal_trace_intr_disable,
++	RTE_TRACE_POINT_ARGS(const struct rte_intr_handle *handle, int rc),
++	rte_trace_point_emit_int(rc);
++	rte_trace_point_emit_int(handle->dev_fd);
++	rte_trace_point_emit_int(handle->fd);
++	rte_trace_point_emit_int(handle->type);
++	rte_trace_point_emit_u32(handle->max_intr);
++	rte_trace_point_emit_u32(handle->nb_efd);
++)
++
++/* Memory */
++RTE_TRACE_POINT(
++	rte_eal_trace_mem_zmalloc,
++	RTE_TRACE_POINT_ARGS(const char *type, size_t size, unsigned int align,
++		int socket, void *ptr),
++	rte_trace_point_emit_string(type);
++	rte_trace_point_emit_size_t(size);
++	rte_trace_point_emit_u32(align);
++	rte_trace_point_emit_int(socket);
++	rte_trace_point_emit_ptr(ptr);
++)
++
++RTE_TRACE_POINT(
++	rte_eal_trace_mem_malloc,
++	RTE_TRACE_POINT_ARGS(const char *type, size_t size, unsigned int align,
++		int socket, void *ptr),
++	rte_trace_point_emit_string(type);
++	rte_trace_point_emit_size_t(size);
++	rte_trace_point_emit_u32(align);
++	rte_trace_point_emit_int(socket);
++	rte_trace_point_emit_ptr(ptr);
++)
++
++RTE_TRACE_POINT(
++	rte_eal_trace_mem_realloc,
++	RTE_TRACE_POINT_ARGS(size_t size, unsigned int align, int socket,
++		void *ptr),
++	rte_trace_point_emit_size_t(size);
++	rte_trace_point_emit_u32(align);
++	rte_trace_point_emit_int(socket);
++	rte_trace_point_emit_ptr(ptr);
++)
++
++RTE_TRACE_POINT(
++	rte_eal_trace_mem_free,
++	RTE_TRACE_POINT_ARGS(void *ptr),
++	rte_trace_point_emit_ptr(ptr);
++)
++
++/* Memzone */
++RTE_TRACE_POINT(
++	rte_eal_trace_memzone_reserve,
++	RTE_TRACE_POINT_ARGS(const char *name, size_t len, int socket_id,
++		unsigned int flags, unsigned int align, unsigned int bound,
++		const void *mz),
++	rte_trace_point_emit_string(name);
++	rte_trace_point_emit_size_t(len);
++	rte_trace_point_emit_int(socket_id);
++	rte_trace_point_emit_u32(flags);
++	rte_trace_point_emit_u32(align);
++	rte_trace_point_emit_u32(bound);
++	rte_trace_point_emit_ptr(mz);
++)
++
++RTE_TRACE_POINT(
++	rte_eal_trace_memzone_lookup,
++	RTE_TRACE_POINT_ARGS(const char *name, const void *memzone),
++	rte_trace_point_emit_string(name);
++	rte_trace_point_emit_ptr(memzone);
++)
++
++RTE_TRACE_POINT(
++	rte_eal_trace_memzone_free,
++	RTE_TRACE_POINT_ARGS(const char *name, void *addr, int rc),
++	rte_trace_point_emit_string(name);
++	rte_trace_point_emit_ptr(addr);
++	rte_trace_point_emit_int(rc);
++)
++
++/* Thread */
++RTE_TRACE_POINT(
++	rte_eal_trace_thread_remote_launch,
++	RTE_TRACE_POINT_ARGS(int (*f)(void *), void *arg,
++		unsigned int worker_id, int rc),
++	rte_trace_point_emit_ptr(f);
++	rte_trace_point_emit_ptr(arg);
++	rte_trace_point_emit_u32(worker_id);
++	rte_trace_point_emit_int(rc);
++)
++RTE_TRACE_POINT(
++	rte_eal_trace_thread_lcore_ready,
++	RTE_TRACE_POINT_ARGS(unsigned int lcore_id, const char *cpuset),
++	rte_trace_point_emit_u32(lcore_id);
++	rte_trace_point_emit_string(cpuset);
++)
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* EAL_TRACE_INTERNAL_H */
+diff --git a/lib/eal/include/rte_eal_trace.h b/lib/eal/include/rte_eal_trace.h
+index 6f5c022558608..c3d15bbe5e0aa 100644
+--- a/lib/eal/include/rte_eal_trace.h
++++ b/lib/eal/include/rte_eal_trace.h
+@@ -15,32 +15,8 @@
+ extern "C" {
+ #endif
+ 
+-#include <rte_alarm.h>
+-#include <rte_interrupts.h>
+ #include <rte_trace_point.h>
+ 
+-#include "eal_interrupts.h"
+-
+-/* Alarm */
+-RTE_TRACE_POINT(
+-	rte_eal_trace_alarm_set,
+-	RTE_TRACE_POINT_ARGS(uint64_t us, rte_eal_alarm_callback cb_fn,
+-		void *cb_arg, int rc),
+-	rte_trace_point_emit_u64(us);
+-	rte_trace_point_emit_ptr(cb_fn);
+-	rte_trace_point_emit_ptr(cb_arg);
+-	rte_trace_point_emit_int(rc);
+-)
+-
+-RTE_TRACE_POINT(
+-	rte_eal_trace_alarm_cancel,
+-	RTE_TRACE_POINT_ARGS(rte_eal_alarm_callback cb_fn, void *cb_arg,
+-		int count),
+-	rte_trace_point_emit_ptr(cb_fn);
+-	rte_trace_point_emit_ptr(cb_arg);
+-	rte_trace_point_emit_int(count);
+-)
+-
+ /* Generic */
+ RTE_TRACE_POINT(
+ 	rte_eal_trace_generic_void,
+@@ -151,140 +127,6 @@ RTE_TRACE_POINT(
+ 
+ #define RTE_EAL_TRACE_GENERIC_FUNC rte_eal_trace_generic_func(__func__)
+ 
+-/* Interrupt */
+-RTE_TRACE_POINT(
+-	rte_eal_trace_intr_callback_register,
+-	RTE_TRACE_POINT_ARGS(const struct rte_intr_handle *handle,
+-		rte_intr_callback_fn cb, void *cb_arg, int rc),
+-	rte_trace_point_emit_int(rc);
+-	rte_trace_point_emit_int(handle->dev_fd);
+-	rte_trace_point_emit_int(handle->fd);
+-	rte_trace_point_emit_int(handle->type);
+-	rte_trace_point_emit_u32(handle->max_intr);
+-	rte_trace_point_emit_u32(handle->nb_efd);
+-	rte_trace_point_emit_ptr(cb);
+-	rte_trace_point_emit_ptr(cb_arg);
+-)
+-RTE_TRACE_POINT(
+-	rte_eal_trace_intr_callback_unregister,
+-	RTE_TRACE_POINT_ARGS(const struct rte_intr_handle *handle,
+-		rte_intr_callback_fn cb, void *cb_arg, int rc),
+-	rte_trace_point_emit_int(rc);
+-	rte_trace_point_emit_int(handle->dev_fd);
+-	rte_trace_point_emit_int(handle->fd);
+-	rte_trace_point_emit_int(handle->type);
+-	rte_trace_point_emit_u32(handle->max_intr);
+-	rte_trace_point_emit_u32(handle->nb_efd);
+-	rte_trace_point_emit_ptr(cb);
+-	rte_trace_point_emit_ptr(cb_arg);
+-)
+-RTE_TRACE_POINT(
+-	rte_eal_trace_intr_enable,
+-	RTE_TRACE_POINT_ARGS(const struct rte_intr_handle *handle, int rc),
+-	rte_trace_point_emit_int(rc);
+-	rte_trace_point_emit_int(handle->dev_fd);
+-	rte_trace_point_emit_int(handle->fd);
+-	rte_trace_point_emit_int(handle->type);
+-	rte_trace_point_emit_u32(handle->max_intr);
+-	rte_trace_point_emit_u32(handle->nb_efd);
+-)
+-RTE_TRACE_POINT(
+-	rte_eal_trace_intr_disable,
+-	RTE_TRACE_POINT_ARGS(const struct rte_intr_handle *handle, int rc),
+-	rte_trace_point_emit_int(rc);
+-	rte_trace_point_emit_int(handle->dev_fd);
+-	rte_trace_point_emit_int(handle->fd);
+-	rte_trace_point_emit_int(handle->type);
+-	rte_trace_point_emit_u32(handle->max_intr);
+-	rte_trace_point_emit_u32(handle->nb_efd);
+-)
+-
+-/* Memory */
+-RTE_TRACE_POINT(
+-	rte_eal_trace_mem_zmalloc,
+-	RTE_TRACE_POINT_ARGS(const char *type, size_t size, unsigned int align,
+-		int socket, void *ptr),
+-	rte_trace_point_emit_string(type);
+-	rte_trace_point_emit_size_t(size);
+-	rte_trace_point_emit_u32(align);
+-	rte_trace_point_emit_int(socket);
+-	rte_trace_point_emit_ptr(ptr);
+-)
+-
+-RTE_TRACE_POINT(
+-	rte_eal_trace_mem_malloc,
+-	RTE_TRACE_POINT_ARGS(const char *type, size_t size, unsigned int align,
+-		int socket, void *ptr),
+-	rte_trace_point_emit_string(type);
+-	rte_trace_point_emit_size_t(size);
+-	rte_trace_point_emit_u32(align);
+-	rte_trace_point_emit_int(socket);
+-	rte_trace_point_emit_ptr(ptr);
+-)
+-
+-RTE_TRACE_POINT(
+-	rte_eal_trace_mem_realloc,
+-	RTE_TRACE_POINT_ARGS(size_t size, unsigned int align, int socket,
+-		void *ptr),
+-	rte_trace_point_emit_size_t(size);
+-	rte_trace_point_emit_u32(align);
+-	rte_trace_point_emit_int(socket);
+-	rte_trace_point_emit_ptr(ptr);
+-)
+-
+-RTE_TRACE_POINT(
+-	rte_eal_trace_mem_free,
+-	RTE_TRACE_POINT_ARGS(void *ptr),
+-	rte_trace_point_emit_ptr(ptr);
+-)
+-
+-/* Memzone */
+-RTE_TRACE_POINT(
+-	rte_eal_trace_memzone_reserve,
+-	RTE_TRACE_POINT_ARGS(const char *name, size_t len, int socket_id,
+-		unsigned int flags, unsigned int align, unsigned int bound,
+-		const void *mz),
+-	rte_trace_point_emit_string(name);
+-	rte_trace_point_emit_size_t(len);
+-	rte_trace_point_emit_int(socket_id);
+-	rte_trace_point_emit_u32(flags);
+-	rte_trace_point_emit_u32(align);
+-	rte_trace_point_emit_u32(bound);
+-	rte_trace_point_emit_ptr(mz);
+-)
+-
+-RTE_TRACE_POINT(
+-	rte_eal_trace_memzone_lookup,
+-	RTE_TRACE_POINT_ARGS(const char *name, const void *memzone),
+-	rte_trace_point_emit_string(name);
+-	rte_trace_point_emit_ptr(memzone);
+-)
+-
+-RTE_TRACE_POINT(
+-	rte_eal_trace_memzone_free,
+-	RTE_TRACE_POINT_ARGS(const char *name, void *addr, int rc),
+-	rte_trace_point_emit_string(name);
+-	rte_trace_point_emit_ptr(addr);
+-	rte_trace_point_emit_int(rc);
+-)
+-
+-/* Thread */
+-RTE_TRACE_POINT(
+-	rte_eal_trace_thread_remote_launch,
+-	RTE_TRACE_POINT_ARGS(int (*f)(void *), void *arg,
+-		unsigned int worker_id, int rc),
+-	rte_trace_point_emit_ptr(f);
+-	rte_trace_point_emit_ptr(arg);
+-	rte_trace_point_emit_u32(worker_id);
+-	rte_trace_point_emit_int(rc);
+-)
+-RTE_TRACE_POINT(
+-	rte_eal_trace_thread_lcore_ready,
+-	RTE_TRACE_POINT_ARGS(unsigned int lcore_id, const char *cpuset),
+-	rte_trace_point_emit_u32(lcore_id);
+-	rte_trace_point_emit_string(cpuset);
+-)
+-
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/eal/linux/eal_alarm.c b/lib/eal/linux/eal_alarm.c
+index 9a68e4ce684c5..397f25d7d580b 100644
+--- a/lib/eal/linux/eal_alarm.c
++++ b/lib/eal/linux/eal_alarm.c
+@@ -9,12 +9,12 @@
+ #include <sys/time.h>
+ #include <sys/timerfd.h>
+ 
++#include <eal_trace_internal.h>
+ #include <rte_interrupts.h>
+ #include <rte_alarm.h>
+ #include <rte_common.h>
+ #include <rte_errno.h>
+ #include <rte_spinlock.h>
+-#include <rte_eal_trace.h>
+ 
+ #include <eal_private.h>
+ 
+diff --git a/lib/eal/linux/eal_interrupts.c b/lib/eal/linux/eal_interrupts.c
+index d52ec8eb4cd73..c9881143be5fc 100644
+--- a/lib/eal/linux/eal_interrupts.c
++++ b/lib/eal/linux/eal_interrupts.c
+@@ -16,6 +16,7 @@
+ #include <assert.h>
+ #include <stdbool.h>
+ 
++#include <eal_trace_internal.h>
+ #include <rte_common.h>
+ #include <rte_interrupts.h>
+ #include <rte_per_lcore.h>
+@@ -27,7 +28,6 @@
+ #include <rte_spinlock.h>
+ #include <rte_pause.h>
+ #include <rte_vfio.h>
+-#include <rte_eal_trace.h>
+ 
+ #include "eal_private.h"
+ 
+diff --git a/lib/eal/version.map b/lib/eal/version.map
+index 67be24686af3f..ef39799833d03 100644
+--- a/lib/eal/version.map
++++ b/lib/eal/version.map
+@@ -333,8 +333,6 @@ EXPERIMENTAL {
+ 	rte_dev_dma_unmap;
+ 
+ 	# added in 20.05
+-	__rte_eal_trace_alarm_cancel;
+-	__rte_eal_trace_alarm_set;
+ 	__rte_eal_trace_generic_double;
+ 	__rte_eal_trace_generic_float;
+ 	__rte_eal_trace_generic_func;
+@@ -351,19 +349,6 @@ EXPERIMENTAL {
+ 	__rte_eal_trace_generic_u64;
+ 	__rte_eal_trace_generic_u8;
+ 	__rte_eal_trace_generic_void;
+-	__rte_eal_trace_intr_callback_register;
+-	__rte_eal_trace_intr_callback_unregister;
+-	__rte_eal_trace_intr_enable;
+-	__rte_eal_trace_intr_disable;
+-	__rte_eal_trace_mem_free;
+-	__rte_eal_trace_mem_malloc;
+-	__rte_eal_trace_mem_realloc;
+-	__rte_eal_trace_mem_zmalloc;
+-	__rte_eal_trace_memzone_free;
+-	__rte_eal_trace_memzone_lookup;
+-	__rte_eal_trace_memzone_reserve;
+-	__rte_eal_trace_thread_lcore_ready;
+-	__rte_eal_trace_thread_remote_launch;
+ 	__rte_trace_mem_per_thread_alloc;
+ 	__rte_trace_point_emit_field;
+ 	__rte_trace_point_register;
+diff --git a/lib/eal/windows/eal_alarm.c b/lib/eal/windows/eal_alarm.c
+index 51fe752c16d4b..48203a2870386 100644
+--- a/lib/eal/windows/eal_alarm.c
++++ b/lib/eal/windows/eal_alarm.c
+@@ -9,8 +9,7 @@
+ #include <rte_alarm.h>
+ #include <rte_spinlock.h>
+ 
+-#include <rte_eal_trace.h>
+-
++#include <eal_trace_internal.h>
+ #include "eal_windows.h"
+ 
+ enum alarm_state {
+-- 
+2.25.1
+

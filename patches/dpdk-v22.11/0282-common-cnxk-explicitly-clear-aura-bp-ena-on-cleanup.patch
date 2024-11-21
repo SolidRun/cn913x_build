@@ -1,0 +1,37 @@
+From 4f5eb937bdb8ab334d45108156e57e4959411c52 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Sun, 12 Mar 2023 01:00:27 +0530
+Subject: [PATCH 282/955] common/cnxk: explicitly clear aura bp ena on cleanup
+
+As done in FLR, similar to CQ disable, in process of
+aura disable we needs explicitly clear BP_ENA in order to
+deassert backpressure if it was earlier asserted.
+
+Change-Id: I397df3887aacefbcc87c0064e2ba8f0df14101f0
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98955
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npa.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_npa.c b/drivers/common/cnxk/roc_npa.c
+index febafd21f6160..2526e25b389e4 100644
+--- a/drivers/common/cnxk/roc_npa.c
++++ b/drivers/common/cnxk/roc_npa.c
+@@ -122,6 +122,8 @@ npa_aura_pool_fini(struct mbox *m_box, uint32_t aura_id, uint64_t aura_handle)
+ 	aura_req->op = NPA_AQ_INSTOP_WRITE;
+ 	aura_req->aura.ena = 0;
+ 	aura_req->aura_mask.ena = ~aura_req->aura_mask.ena;
++	aura_req->aura.bp_ena = 0;
++	aura_req->aura_mask.bp_ena = ~aura_req->aura_mask.bp_ena;
+ 
+ 	rc = mbox_process(mbox);
+ 	if (rc < 0)
+-- 
+2.25.1
+

@@ -1,0 +1,106 @@
+From 3ad4b07bc3a6645fea4195ce996afc5b3855c8c0 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 15 Dec 2022 20:00:26 +0530
+Subject: [PATCH 092/955] ci: update the ipsec mb library version
+
+Update the ipsec mb library version used to tag
+SECLIB-IPSEC-2022.05.25
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I7e4bb873c8c01d328d05b27069c932c455c992f5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92722
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ marvell-ci/build/build-deps.sh                | 12 +++---
+ .../0001-enable-cross-compilation.patch       | 37 ++++---------------
+ 2 files changed, 14 insertions(+), 35 deletions(-)
+
+diff --git a/marvell-ci/build/build-deps.sh b/marvell-ci/build/build-deps.sh
+index 755fe33cef45d..a5fecac8d4ec1 100755
+--- a/marvell-ci/build/build-deps.sh
++++ b/marvell-ci/build/build-deps.sh
+@@ -73,14 +73,14 @@ function setup_ipsec_mb()
+ 	mkdir -p $BUILD_ROOT/ipsec_mb
+ 
+ 	pushd $BUILD_ROOT/ipsec_mb
+-	fetch_dep https://gitlab.arm.com/arm-reference-solutions/ipsec-mb/-/archive/main/ipsec-mb-main.tar.gz
+-	tar -zxvf ipsec-mb-main.tar.gz --strip-components=1
++	fetch_dep https://gitlab.arm.com/arm-reference-solutions/ipsec-mb/-/archive/SECLIB-IPSEC-2022.05.25/ipsec-mb-SECLIB-IPSEC-2022.05.25.tar.gz
++	tar -zxvf ipsec-mb-SECLIB-IPSEC-2022.05.25.tar.gz --strip-components=1
+ 	patch -p1 < $PROJECT_ROOT/marvell-ci/patches/ipsec_mb/$patch1
+ 	patch -p1 < $PROJECT_ROOT/marvell-ci/patches/ipsec_mb/$patch2
+-	SHARED=y CC=aarch64-marvell-linux-gnu-gcc STRIP=aarch64-marvell-linux-gnu-strip \
+-		make -C lib AESNI_EMU=y ARCH=aarch64 PREFIX=$INSTALL_ROOT
+-	SHARED=y CC=aarch64-marvell-linux-gnu-gcc STRIP=aarch64-marvell-linux-gnu-strip \
+-		make -C lib AESNI_EMU=y ARCH=aarch64 PREFIX=$INSTALL_ROOT install
++	SHARED=y CC=aarch64-marvell-linux-gnu-gcc \
++		make -C lib AESNI_EMU=y ARCH=aarch64 PREFIX=$INSTALL_ROOT NOLDCONFIG=y
++	SHARED=y CC=aarch64-marvell-linux-gnu-gcc \
++		make -C lib AESNI_EMU=y ARCH=aarch64 PREFIX=$INSTALL_ROOT NOLDCONFIG=y install
+ 	popd
+ }
+ 
+diff --git a/marvell-ci/patches/ipsec_mb/0001-enable-cross-compilation.patch b/marvell-ci/patches/ipsec_mb/0001-enable-cross-compilation.patch
+index f6afabba75324..133f9e1fe028b 100644
+--- a/marvell-ci/patches/ipsec_mb/0001-enable-cross-compilation.patch
++++ b/marvell-ci/patches/ipsec_mb/0001-enable-cross-compilation.patch
+@@ -1,48 +1,27 @@
+-From 65a4b960a0cecaf8099deb499be3385964d13a88 Mon Sep 17 00:00:00 2001
++From 558e6baedda1dda6c8dc968a74ce354150e543a6 Mon Sep 17 00:00:00 2001
+ From: Ashwin Sekhar T K <asekhar@marvell.com>
+-Date: Fri, 3 Jun 2022 05:12:14 +0000
++Date: Thu, 15 Dec 2022 19:28:48 +0530
+ Subject: [PATCH] enable cross compilation
+ 
+ Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+ ---
+- lib/Makefile | 8 ++++++--
+- 1 file changed, 6 insertions(+), 2 deletions(-)
++ lib/Makefile | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
+ 
+ diff --git a/lib/Makefile b/lib/Makefile
+-index 4168b45..9503aae 100644
++index 4168b45..fa9e9a8 100644
+ --- a/lib/Makefile
+ +++ b/lib/Makefile
+-@@ -84,6 +84,7 @@ INCLUDE_DIRS := include . no-aesni
+- INCLUDES := $(foreach i,$(INCLUDE_DIRS),-I $i)
+- 
+- CC ?= gcc
+-+STRIP ?= strip
+- # MINGW should be non-zero value if detected
+- MINGW ?= $(shell $(CC) -dM -E - < /dev/null | grep -i mingw | wc -l | sed 's/^ *//')
+- 
+-@@ -781,17 +782,20 @@ install: $(LIB_DIR)/$(LIBNAME)
++@@ -781,7 +781,8 @@ install: $(LIB_DIR)/$(LIBNAME)
+  	install -m 0444 $(MAN2) $(MAN_DIR)
+  	install -d $(LIB_INSTALL_DIR)
+  ifeq ($(SHARED),y)
+ -	install -s -m $(LIBPERM) $(LIB_DIR)/$(LIBNAME) $(LIB_INSTALL_DIR)
+-+	install -s --strip-program=$(STRIP) -m $(LIBPERM) \
+++	install -s --strip-program=aarch64-marvell-linux-gnu-strip -m $(LIBPERM) \
+ +		$(LIB_DIR)/$(LIBNAME) $(LIB_INSTALL_DIR)
+  else
+  	# must not strip symbol table for static libs
+  	install -m $(LIBPERM) $(LIB_DIR)/$(LIBNAME) $(LIB_INSTALL_DIR)
+- endif
+-+	cd $(HDR_DIR); \
+-+		ln -f -s $(IMB_HDR) intel-ipsec-mb.h
+- ifeq ($(SHARED),y)
+- 	cd $(LIB_INSTALL_DIR); \
+- 		ln -f -s $(LIB).so.$(VERSION) $(LIB).so.$(SO_VERSION); \
+- 		ln -f -s $(LIB).so.$(SO_VERSION) $(LIB).so
+- ifneq ($(NOLDCONFIG),y)
+--	ldconfig
+-+	ldconfig -N
+- endif
+- endif
+- 
+ -- 
+-2.17.1
++2.25.1
+ 
+-- 
+2.25.1
+

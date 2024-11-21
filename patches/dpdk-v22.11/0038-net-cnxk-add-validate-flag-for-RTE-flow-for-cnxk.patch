@@ -1,0 +1,43 @@
+From abe5220e8079ff3b0ef75463a1c681448363296d Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Wed, 2 Nov 2022 17:04:34 +0530
+Subject: [PATCH 038/955] net/cnxk: add validate flag for RTE flow for cnxk
+
+Add a flag to check flow validate. In case of MSNS don't
+need to configure the API to SA translation while validating
+the flow. Skip this with a check.
+
+ci: skip_checkformat skip_checkpatch
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I4a633bea313c29f188db9493df07906529a5c03a
+---
+ drivers/net/cnxk/cnxk_flow.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index 6d155d924c537..bf4c55f00aa72 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -299,12 +299,13 @@ cnxk_flow_validate(struct rte_eth_dev *eth_dev,
+ 	int rc;
+ 
+ 	memset(&flow, 0, sizeof(flow));
++	flow.is_validate = true;
+ 
+-	rc = cnxk_map_flow_data(eth_dev, attr, pattern, actions, &in_attr,
+-				in_pattern, in_actions, &flowkey_cfg);
++	rc = cnxk_map_flow_data(eth_dev, attr, pattern, actions, &in_attr, in_pattern, in_actions,
++				&flowkey_cfg);
+ 	if (rc) {
+-		rte_flow_error_set(error, 0, RTE_FLOW_ERROR_TYPE_ACTION_NUM,
+-				   NULL, "Failed to map flow data");
++		rte_flow_error_set(error, 0, RTE_FLOW_ERROR_TYPE_ACTION_NUM, NULL,
++				   "Failed to map flow data");
+ 		return rc;
+ 	}
+ 
+-- 
+2.25.1
+

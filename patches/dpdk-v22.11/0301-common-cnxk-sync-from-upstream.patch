@@ -1,0 +1,200 @@
+From e353e319a1fe7bfe5c9744ba80a5c7bad6a06927 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 14 Mar 2023 00:17:12 +0530
+Subject: [PATCH 301/955] common/cnxk: sync from upstream
+
+Sync from upstream.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I0c2442a184e780a0501cef31ad1ff6584aea3b7f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99066
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/hw/sso.h  |  1 +
+ drivers/common/cnxk/hw/ssow.h |  4 ++
+ drivers/common/cnxk/hw/tim.h  |  5 +-
+ drivers/common/cnxk/roc_sso.c | 89 +++++++++++++++++------------------
+ drivers/common/cnxk/roc_tim.c |  1 +
+ 5 files changed, 53 insertions(+), 47 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/sso.h b/drivers/common/cnxk/hw/sso.h
+index 25deaa4c149b5..09b8d4955fbc1 100644
+--- a/drivers/common/cnxk/hw/sso.h
++++ b/drivers/common/cnxk/hw/sso.h
+@@ -157,6 +157,7 @@
+ #define SSO_LF_GGRP_AQ_CNT	 (0x1c0ull)
+ #define SSO_LF_GGRP_AQ_THR	 (0x1e0ull)
+ #define SSO_LF_GGRP_MISC_CNT	 (0x200ull)
++#define SSO_LF_GGRP_OP_AW_LMTST	 (0x400ull)
+ 
+ #define SSO_AF_IAQ_FREE_CNT_MASK      0x3FFFull
+ #define SSO_AF_IAQ_RSVD_FREE_MASK     0x3FFFull
+diff --git a/drivers/common/cnxk/hw/ssow.h b/drivers/common/cnxk/hw/ssow.h
+index 618ab7973b26f..c146a8c3ef879 100644
+--- a/drivers/common/cnxk/hw/ssow.h
++++ b/drivers/common/cnxk/hw/ssow.h
+@@ -54,6 +54,8 @@
+ #define SSOW_LF_GWS_OP_SWTAG_FULL1   (0xc28ull)
+ #define SSOW_LF_GWS_OP_GWC_INVAL     (0xe00ull)
+ 
++#define SSOW_LF_GWS_MAX_NW_TIM_US (0x400) /* [CN9K, CN10K) */
++
+ /* Enum offsets */
+ 
+ #define SSOW_LF_INT_VEC_IOP (0x0ull)
+@@ -65,6 +67,8 @@
+ #define SSOW_LF_GWS_TAG_PEND_GET_WORK_BIT 63
+ #define SSOW_LF_GWS_TAG_PEND_SWITCH_BIT	  62
+ #define SSOW_LF_GWS_TAG_PEND_DESCHED_BIT  58
++#define SSOW_LF_GWS_TAG_PEND_FLUSH	  56
++#define SSOW_LF_GWS_TAG_PEND_SWUNT	  54
+ #define SSOW_LF_GWS_TAG_HEAD_BIT	  35
+ 
+ #endif /* __SSOW_HW_H__ */
+diff --git a/drivers/common/cnxk/hw/tim.h b/drivers/common/cnxk/hw/tim.h
+index 61c38ae175416..82b094e3dcb43 100644
+--- a/drivers/common/cnxk/hw/tim.h
++++ b/drivers/common/cnxk/hw/tim.h
+@@ -49,7 +49,8 @@
+ #define TIM_LF_RING_REL		   (0x400)
+ 
+ #define TIM_MAX_INTERVAL_TICKS ((1ULL << 32) - 1)
+-#define TIM_MAX_BUCKET_SIZE    ((1ULL << 20) - 1)
+-#define TIM_MIN_BUCKET_SIZE    3
++#define TIM_MAX_BUCKET_SIZE    ((1ULL << 20) - 2)
++#define TIM_MIN_BUCKET_SIZE    1
++#define TIM_BUCKET_WRAP_SIZE   3
+ 
+ #endif /* __TIM_HW_H__ */
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index 9c92580d4de07..4a6a5080f78e2 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -414,8 +414,7 @@ roc_sso_hwgrp_hws_link_status(struct roc_sso *roc_sso, uint8_t hws,
+ }
+ 
+ int
+-roc_sso_hwgrp_qos_config(struct roc_sso *roc_sso, struct roc_sso_hwgrp_qos *qos,
+-			 uint16_t nb_qos)
++roc_sso_hwgrp_qos_config(struct roc_sso *roc_sso, struct roc_sso_hwgrp_qos *qos, uint16_t nb_qos)
+ {
+ 	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
+ 	struct dev *dev = &sso->dev;
+@@ -706,49 +705,6 @@ roc_sso_hwgrp_set_priority(struct roc_sso *roc_sso, uint16_t hwgrp,
+ 	return rc;
+ }
+ 
+-int
+-roc_sso_hwgrp_stash_config(struct roc_sso *roc_sso,
+-			   struct roc_sso_hwgrp_stash *stash, uint16_t nb_stash)
+-{
+-	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
+-	struct sso_grp_stash_cfg *req;
+-	struct dev *dev = &sso->dev;
+-	struct mbox *mbox;
+-	int i, rc;
+-
+-	if (!nb_stash)
+-		return 0;
+-
+-	mbox = mbox_get(dev->mbox);
+-	for (i = 0; i < nb_stash; i++) {
+-		req = mbox_alloc_msg_sso_grp_stash_config(mbox);
+-		if (req == NULL) {
+-			rc = mbox_process(mbox);
+-			if (rc) {
+-				rc = -EIO;
+-				goto fail;
+-			}
+-
+-			req = mbox_alloc_msg_sso_grp_stash_config(mbox);
+-			if (req == NULL) {
+-				rc = -ENOSPC;
+-				goto fail;
+-			}
+-		}
+-		req->ena = true;
+-		req->grp = stash[i].hwgrp;
+-		req->offset = stash[i].stash_offset;
+-		req->num_linesm1 = stash[i].stash_count - 1;
+-	}
+-
+-	rc = mbox_process(mbox);
+-	if (rc)
+-		rc = -EIO;
+-fail:
+-	mbox_put(mbox);
+-	return rc;
+-}
+-
+ static int
+ sso_update_msix_vec_count(struct roc_sso *roc_sso, uint16_t sso_vec_cnt)
+ {
+@@ -794,6 +750,49 @@ sso_update_msix_vec_count(struct roc_sso *roc_sso, uint16_t sso_vec_cnt)
+ 	return rc;
+ }
+ 
++int
++roc_sso_hwgrp_stash_config(struct roc_sso *roc_sso, struct roc_sso_hwgrp_stash *stash,
++			   uint16_t nb_stash)
++{
++	struct sso *sso = roc_sso_to_sso_priv(roc_sso);
++	struct sso_grp_stash_cfg *req;
++	struct dev *dev = &sso->dev;
++	struct mbox *mbox;
++	int i, rc;
++
++	if (!nb_stash)
++		return 0;
++
++	mbox = mbox_get(dev->mbox);
++	for (i = 0; i < nb_stash; i++) {
++		req = mbox_alloc_msg_sso_grp_stash_config(mbox);
++		if (req == NULL) {
++			rc = mbox_process(mbox);
++			if (rc) {
++				rc = -EIO;
++				goto fail;
++			}
++
++			req = mbox_alloc_msg_sso_grp_stash_config(mbox);
++			if (req == NULL) {
++				rc = -ENOSPC;
++				goto fail;
++			}
++		}
++		req->ena = true;
++		req->grp = stash[i].hwgrp;
++		req->offset = stash[i].stash_offset;
++		req->num_linesm1 = stash[i].stash_count - 1;
++	}
++
++	rc = mbox_process(mbox);
++	if (rc)
++		rc = -EIO;
++fail:
++	mbox_put(mbox);
++	return rc;
++}
++
+ int
+ roc_sso_rsrc_init(struct roc_sso *roc_sso, uint8_t nb_hws, uint16_t nb_hwgrp, uint16_t nb_tim_lfs)
+ {
+diff --git a/drivers/common/cnxk/roc_tim.c b/drivers/common/cnxk/roc_tim.c
+index 62e77ac3ae4fb..f8607b2852759 100644
+--- a/drivers/common/cnxk/roc_tim.c
++++ b/drivers/common/cnxk/roc_tim.c
+@@ -324,6 +324,7 @@ tim_free_lf_count_get(struct dev *dev, uint16_t *nb_lfs)
+ 
+ 	*nb_lfs = rsrc_cnt->tim;
+ 	mbox_put(mbox);
++
+ 	return 0;
+ }
+ 
+-- 
+2.25.1
+

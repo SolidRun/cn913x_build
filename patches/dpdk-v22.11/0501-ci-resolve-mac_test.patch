@@ -1,0 +1,47 @@
+From aff6370906cfca98c5d884caf54f17dc554fe2ce Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Mon, 19 Jun 2023 11:03:13 +0530
+Subject: [PATCH 501/955] ci: resolve mac_test
+
+add sleep for 2 sec after testpmd cleanup to resolve
+ci issue in sdk12
+
+Change-Id: I3810f0ddf0c4ce2dab3f9f3547332df6000b1e10
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105842
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh | 1 +
+ marvell-ci/test/env/cn10k.env                        | 1 -
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+index 8a7fe50cdafbe..b7e179c80581c 100755
+--- a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
++++ b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+@@ -93,6 +93,7 @@ function macfltr_cleanup()
+ {
+ 	testpmd_quit $PRFX
+ 	testpmd_cleanup $PRFX
++	sleep 2
+ }
+ 
+ function macfltr_launch()
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index ba5f8476d3543..158fad71a23bb 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -75,7 +75,6 @@ FIXME_SKIP_TESTS="
+ 	cnxk_mtr_test_config
+ 	cnxk_fc_test_config
+ 	cryptodev_openssl_autotest
+-	cnxk_mac_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+-- 
+2.25.1
+

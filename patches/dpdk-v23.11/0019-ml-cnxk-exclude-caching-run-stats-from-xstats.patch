@@ -1,0 +1,53 @@
+From 52f4ac4ede2dddd7c9b1a9f31adc649e24c2df10 Mon Sep 17 00:00:00 2001
+From: Anup Prabhu <aprabhu@marvell.com>
+Date: Tue, 28 Nov 2023 01:13:21 -0800
+Subject: [PATCH 019/513] ml/cnxk: exclude caching run stats from xstats
+
+Exclude the hardware and firmware latency of model data
+caching run from xstats calculation.
+
+Fixes: 9cfad6c334f2 ("ml/cnxk: update device and model xstats functions")
+
+Signed-off-by: Anup Prabhu <aprabhu@marvell.com>
+Acked-by: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Change-Id: I4884dbd246a75cafe022251acd0551fce0d923f3
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117167
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Srikanth Yalavarthi <syalavarthi@marvell.com>
+---
+ drivers/ml/cnxk/cn10k_ml_ops.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/drivers/ml/cnxk/cn10k_ml_ops.c b/drivers/ml/cnxk/cn10k_ml_ops.c
+index 7f7e5efceace6..5370038733524 100644
+--- a/drivers/ml/cnxk/cn10k_ml_ops.c
++++ b/drivers/ml/cnxk/cn10k_ml_ops.c
+@@ -288,6 +288,7 @@ cn10k_ml_model_xstat_get(struct cnxk_ml_dev *cnxk_mldev, struct cnxk_ml_layer *l
+ static int
+ cn10k_ml_cache_model_data(struct cnxk_ml_dev *cnxk_mldev, struct cnxk_ml_layer *layer)
+ {
++	struct cn10k_ml_layer_xstats *xstats;
+ 	char str[RTE_MEMZONE_NAMESIZE];
+ 	const struct plt_memzone *mz;
+ 	uint64_t isize = 0;
+@@ -309,6 +310,16 @@ cn10k_ml_cache_model_data(struct cnxk_ml_dev *cnxk_mldev, struct cnxk_ml_layer *
+ 				      PLT_PTR_ADD(mz->addr, isize), 1);
+ 	plt_memzone_free(mz);
+ 
++	/* Reset sync xstats. */
++	xstats = layer->glow.sync_xstats;
++	xstats->hw_latency_tot = 0;
++	xstats->hw_latency_min = UINT64_MAX;
++	xstats->hw_latency_max = 0;
++	xstats->fw_latency_tot = 0;
++	xstats->fw_latency_min = UINT64_MAX;
++	xstats->fw_latency_max = 0;
++	xstats->dequeued_count = 0;
++
+ 	return ret;
+ }
+ 
+-- 
+2.25.1
+

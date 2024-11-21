@@ -1,0 +1,61 @@
+From b0a3ba8a29fc941ca580b08f9e566b291f695b65 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 22 Aug 2023 18:07:55 +0530
+Subject: [PATCH 613/955] event/cnxk: remove unnecessary timer state change
+
+Timer state change to NOT_ARMED is not mandatory for HW
+implementations and might cause corruption to the timer WQE.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ia02176d4ff56c6073a721833ab5eede4baa7bad6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110262
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_worker.h | 5 -----
+ drivers/event/cnxk/cn9k_worker.h  | 4 ----
+ 2 files changed, 9 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index d1c278ce6ed9f..a145181de2b8b 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -5,7 +5,6 @@
+ #ifndef __CN10K_WORKER_H__
+ #define __CN10K_WORKER_H__
+ 
+-#include <rte_event_timer_adapter.h>
+ #include <rte_eventdev.h>
+ 
+ #include "cn10k_cryptodev_event_dp.h"
+@@ -238,10 +237,6 @@ cn10k_sso_hws_post_process(struct cn10k_sso_hws *ws, uint64_t *u64,
+ 		/* Mark vector mempool object as get */
+ 		RTE_MEMPOOL_CHECK_COOKIES(rte_mempool_from_obj((void *)u64[1]),
+ 					  (void **)&u64[1], 1, 1);
+-	} else if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_TIMER) {
+-		struct rte_event_timer *tim = (void *)u64[1];
+-
+-		tim->state = RTE_EVENT_TIMER_NOT_ARMED;
+ 	}
+ }
+ 
+diff --git a/drivers/event/cnxk/cn9k_worker.h b/drivers/event/cnxk/cn9k_worker.h
+index 33827ac5b453c..33e819a3b21de 100644
+--- a/drivers/event/cnxk/cn9k_worker.h
++++ b/drivers/event/cnxk/cn9k_worker.h
+@@ -214,10 +214,6 @@ cn9k_sso_hws_post_process(uint64_t *u64, uint64_t mbuf, const uint32_t flags,
+ 		if (flags & NIX_RX_OFFLOAD_TSTAMP_F)
+ 			cn9k_sso_process_tstamp(u64[1], mbuf, tstamp[port]);
+ 		u64[1] = mbuf;
+-	} else if (CNXK_EVENT_TYPE_FROM_TAG(u64[0]) == RTE_EVENT_TYPE_TIMER) {
+-		struct rte_event_timer *tim = (void *)u64[1];
+-
+-		tim->state = RTE_EVENT_TIMER_NOT_ARMED;
+ 	}
+ }
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,118 @@
+From fdfd09c5d74c3730d4ce13eeeafdc219d63dc28d Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Tue, 28 Nov 2023 22:22:49 +0530
+Subject: [PATCH 117/513] net/virtio-user: add VIRTIO_NET_F_RSS to supported
+ features
+
+This patch introduces new function to get rss device config
+and adds code to forward the RSS control command to backend
+through hw control queue if RSS feature is negotiated.
+This patch will help to negotiate VIRTIO_NET_F_RSS feature
+if vhost-vdpa backend supports RSS in HW.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Idfd536242debc5ceacaab97a2ed3c11ac43a5ece
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117721
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../net/virtio/virtio_user/virtio_user_dev.c  | 31 ++++++++++++++++++-
+ .../net/virtio/virtio_user/virtio_user_dev.h  |  2 ++
+ drivers/net/virtio/virtio_user_ethdev.c       |  3 ++
+ 3 files changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.c b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+index dcd698b8db1b7..3232109898c9a 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.c
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+@@ -304,6 +304,24 @@ virtio_user_dev_init_max_queue_pairs(struct virtio_user_dev *dev, uint32_t user_
+ 	return 0;
+ }
+ 
++int
++virtio_user_dev_get_rss_config(struct virtio_user_dev *dev, void *dst, size_t offset, int length)
++{
++	int ret = 0;
++
++	if (!(dev->device_features & (1ULL << VIRTIO_NET_F_RSS)))
++		return -ENOTSUP;
++
++	if (!dev->ops->get_config)
++		return -ENOTSUP;
++
++	ret = dev->ops->get_config(dev, dst, offset, length);
++	if (ret)
++		PMD_DRV_LOG(ERR, "(%s) Failed to get rss config in device", dev->path);
++
++	return ret;
++}
++
+ int
+ virtio_user_dev_set_mac(struct virtio_user_dev *dev)
+ {
+@@ -687,7 +705,8 @@ virtio_user_free_vrings(struct virtio_user_dev *dev)
+ 	 1ULL << VIRTIO_F_IN_ORDER		|	\
+ 	 1ULL << VIRTIO_F_VERSION_1		|	\
+ 	 1ULL << VIRTIO_F_RING_PACKED		|	\
+-	 1ULL << VIRTIO_F_NOTIFICATION_DATA)
++	 1ULL << VIRTIO_F_NOTIFICATION_DATA	|	\
++	 1ULL << VIRTIO_NET_F_RSS)
+ 
+ int
+ virtio_user_dev_init(struct virtio_user_dev *dev, char *path, uint16_t queues,
+@@ -903,6 +922,11 @@ virtio_user_handle_ctrl_msg_split(struct virtio_user_dev *dev, struct vring *vri
+ 
+ 		queues = *(uint16_t *)(uintptr_t)vring->desc[idx_data].addr;
+ 		status = virtio_user_handle_mq(dev, queues);
++	} else if (hdr->class == VIRTIO_NET_CTRL_MQ && hdr->cmd == VIRTIO_NET_CTRL_MQ_RSS_CONFIG) {
++		struct virtio_net_ctrl_rss *rss;
++
++		rss = (struct virtio_net_ctrl_rss *)vring->desc[idx_data].addr;
++		status = virtio_user_handle_mq(dev, rss->max_tx_vq);
+ 	} else if (hdr->class == VIRTIO_NET_CTRL_RX  ||
+ 		   hdr->class == VIRTIO_NET_CTRL_MAC ||
+ 		   hdr->class == VIRTIO_NET_CTRL_VLAN) {
+@@ -964,6 +988,11 @@ virtio_user_handle_ctrl_msg_packed(struct virtio_user_dev *dev,
+ 		queues = *(uint16_t *)(uintptr_t)
+ 				vring->desc[idx_data].addr;
+ 		status = virtio_user_handle_mq(dev, queues);
++	} else if (hdr->class == VIRTIO_NET_CTRL_MQ && hdr->cmd == VIRTIO_NET_CTRL_MQ_RSS_CONFIG) {
++		struct virtio_net_ctrl_rss *rss;
++
++		rss = (struct virtio_net_ctrl_rss *)vring->desc[idx_data].addr;
++		status = virtio_user_handle_mq(dev, rss->max_tx_vq);
+ 	} else if (hdr->class == VIRTIO_NET_CTRL_RX  ||
+ 		   hdr->class == VIRTIO_NET_CTRL_MAC ||
+ 		   hdr->class == VIRTIO_NET_CTRL_VLAN) {
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.h b/drivers/net/virtio/virtio_user/virtio_user_dev.h
+index 29ec386da5ad4..39b3eec0f2b60 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.h
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.h
+@@ -86,6 +86,8 @@ int virtio_user_dev_update_status(struct virtio_user_dev *dev);
+ int virtio_user_dev_update_link_state(struct virtio_user_dev *dev);
+ int virtio_user_dev_set_mac(struct virtio_user_dev *dev);
+ int virtio_user_dev_get_mac(struct virtio_user_dev *dev);
++int virtio_user_dev_get_rss_config(struct virtio_user_dev *dev, void *dst, size_t offset,
++				   int length);
+ void virtio_user_dev_delayed_disconnect_handler(void *param);
+ int virtio_user_dev_server_reconnect(struct virtio_user_dev *dev);
+ extern const char * const virtio_user_backend_strings[];
+diff --git a/drivers/net/virtio/virtio_user_ethdev.c b/drivers/net/virtio/virtio_user_ethdev.c
+index 40900ef859d65..8ac7ff1ab2600 100644
+--- a/drivers/net/virtio/virtio_user_ethdev.c
++++ b/drivers/net/virtio/virtio_user_ethdev.c
+@@ -52,6 +52,9 @@ virtio_user_read_dev_config(struct virtio_hw *hw, size_t offset,
+ 
+ 	if (offset == offsetof(struct virtio_net_config, max_virtqueue_pairs))
+ 		*(uint16_t *)dst = dev->max_queue_pairs;
++
++	if (offset >= offsetof(struct virtio_net_config, rss_max_key_size))
++		virtio_user_dev_get_rss_config(dev, dst, offset, length);
+ }
+ 
+ static void
+-- 
+2.25.1
+

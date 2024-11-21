@@ -1,0 +1,111 @@
+From fa3de7ab8916077c858045dca1138ef44e335687 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Mon, 19 Dec 2022 14:38:11 +0530
+Subject: [PATCH 110/955] crypto/cnxk: add error interrupt event query handler
+
+Adds RTE_CRYPTODEV_EVENT_ERROR query handler for cn9k/cn10k PMD.
+The query handler finds the next queue pair ID with pending error
+interrupt event if any, starting from the given queue pair index,
+for the device.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I545a621b1c5f6d01208e96df6ddd8795a7e80c09
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93224
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c             |  4 +++-
+ drivers/common/cnxk/roc_cpt.h             |  1 +
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c |  1 +
+ drivers/crypto/cnxk/cn9k_cryptodev_ops.c  |  1 +
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  | 15 +++++++++++++++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.h  |  1 +
+ 6 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index ca7a2010de1ec..cf514be69f7e2 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -63,8 +63,10 @@ cpt_lf_misc_irq(void *param)
+ 	/* Clear interrupt */
+ 	plt_write64(intr, lf->rbase + CPT_LF_MISC_INT);
+ 
+-	if (int_cb.cb != NULL)
++	if (int_cb.cb != NULL) {
++		lf->error_event_pending = 1;
+ 		int_cb.cb(lf, int_cb.cb_args);
++	}
+ }
+ 
+ static int
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index 5fecde9aa7114..fab0dd289c2b7 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -121,6 +121,7 @@ struct roc_cpt_lf {
+ 	uint64_t io_addr;
+ 	uint8_t *iq_vaddr;
+ 	struct roc_nix *inl_outb_nix;
++	uint8_t error_event_pending;
+ } __plt_cache_aligned;
+ 
+ struct roc_cpt {
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 06b42c215dc5c..4ee6b944c4cc8 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -1098,4 +1098,5 @@ struct rte_cryptodev_ops cn10k_cpt_ops = {
+ 
+ 	/* Event crypto ops */
+ 	.session_ev_mdata_set = cn10k_cpt_crypto_adapter_ev_mdata_set,
++	.queue_pair_event_error_query = cnxk_cpt_queue_pair_event_error_query,
+ };
+diff --git a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+index 99734bf11de02..3a07842e4b6a1 100644
+--- a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+@@ -769,5 +769,6 @@ struct rte_cryptodev_ops cn9k_cpt_ops = {
+ 
+ 	/* Event crypto ops */
+ 	.session_ev_mdata_set = cn9k_cpt_crypto_adapter_ev_mdata_set,
++	.queue_pair_event_error_query = cnxk_cpt_queue_pair_event_error_query,
+ 
+ };
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 7ff1d158cdedc..27f2846f740fd 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -843,3 +843,18 @@ cnxk_cpt_dump_on_err(struct cnxk_cpt_qp *qp)
+ 	plt_print("");
+ 	roc_cpt_afs_print(qp->lf.roc_cpt);
+ }
++
++int
++cnxk_cpt_queue_pair_event_error_query(struct rte_cryptodev *dev, uint16_t qp_id)
++{
++	struct cnxk_cpt_vf *vf = dev->data->dev_private;
++	struct roc_cpt *roc_cpt = &vf->cpt;
++	struct roc_cpt_lf *lf;
++
++	lf = roc_cpt->lf[qp_id];
++	if (lf && lf->error_event_pending) {
++		lf->error_event_pending = 0;
++		return 1;
++	}
++	return 0;
++}
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+index 0dfe73c976e7a..b1a40e8e25ba6 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+@@ -130,6 +130,7 @@ int cnxk_ae_session_cfg(struct rte_cryptodev *dev,
+ 			struct rte_crypto_asym_xform *xform,
+ 			struct rte_cryptodev_asym_session *sess);
+ void cnxk_cpt_dump_on_err(struct cnxk_cpt_qp *qp);
++int cnxk_cpt_queue_pair_event_error_query(struct rte_cryptodev *dev, uint16_t qp_id);
+ 
+ static __rte_always_inline void
+ pending_queue_advance(uint64_t *index, const uint64_t mask)
+-- 
+2.25.1
+

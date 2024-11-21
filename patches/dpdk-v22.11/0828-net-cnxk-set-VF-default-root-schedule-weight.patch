@@ -1,0 +1,48 @@
+From 5f2e2281c580a537cec3a68d766662c1f158dd20 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Tue, 13 Feb 2024 22:53:31 +0530
+Subject: [PATCH 828/955] net/cnxk: set VF default root schedule weight
+
+To get better performance on LBK or VF interfaces, set the default
+root schedule weight to known tested value.
+
+Change-Id: I946515c8f0408f64df40358624ae85b95b82563c
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121845
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit e28c0b16ec7783899e714c026b773f67db2da16f)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122905
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 6b37bd877ffa0..744dd98f923ad 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -7,6 +7,8 @@
+ 
+ #define CNXK_NIX_CQ_INL_CLAMP_MAX (64UL * 1024UL)
+ 
++#define NIX_TM_DFLT_RR_WT 71
++
+ static inline uint64_t
+ nix_get_rx_offload_capa(struct cnxk_eth_dev *dev)
+ {
+@@ -1877,6 +1879,8 @@ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	nix->pci_dev = pci_dev;
+ 	nix->hw_vlan_ins = true;
+ 	nix->port_id = eth_dev->data->port_id;
++	/* For better performance set default VF root schedule weight */
++	nix->root_sched_weight = NIX_TM_DFLT_RR_WT;
+ 	if (roc_feature_nix_has_own_meta_aura())
+ 		nix->local_meta_aura_ena = true;
+ 	rc = roc_nix_dev_init(nix);
+-- 
+2.25.1
+

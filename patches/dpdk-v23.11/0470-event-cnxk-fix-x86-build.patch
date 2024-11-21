@@ -1,0 +1,94 @@
+From a72d4dca4beb90b6b6f35a1cfdb38480789b962d Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Thu, 5 Sep 2024 02:34:21 +0530
+Subject: [PATCH 470/513] event/cnxk: fix x86 build
+
+Fix x86 build by disabling template functions.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I82edb102d61fa43ac5cf8714694185da771b6ccb
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134970
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_eventdev.c | 10 ++++++----
+ drivers/event/cnxk/cn9k_eventdev.c  |  8 +++++---
+ 2 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index c2d2a8bd4c0e5..229d7a03fee28 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -305,10 +305,11 @@ cn10k_sso_updt_tx_adptr_data(const struct rte_eventdev *event_dev)
+ 	return 0;
+ }
+ 
+-static void
++#if defined(RTE_ARCH_ARM64)
++static inline void
+ cn10k_sso_fp_tmplt_fns_set(struct rte_eventdev *event_dev)
+ {
+-#if defined(RTE_ARCH_ARM64) && !defined(CNXK_DIS_TMPLT_FUNC)
++#if !defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	const event_dequeue_t sso_hws_deq[NIX_RX_OFFLOAD_MAX] = {
+ #define R(name, flags)[flags] = cn10k_sso_hws_deq_##name,
+@@ -479,10 +480,10 @@ cn10k_sso_fp_tmplt_fns_set(struct rte_eventdev *event_dev)
+ #endif
+ }
+ 
+-static void
++static inline void
+ cn10k_sso_fp_blk_fns_set(struct rte_eventdev *event_dev)
+ {
+-#if defined(RTE_ARCH_ARM64) && defined(CNXK_DIS_TMPLT_FUNC)
++#if defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 
+ 	event_dev->dequeue = cn10k_sso_hws_deq_all_offload;
+@@ -502,6 +503,7 @@ cn10k_sso_fp_blk_fns_set(struct rte_eventdev *event_dev)
+ 	RTE_SET_USED(event_dev);
+ #endif
+ }
++#endif
+ 
+ static void
+ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 7a74534fa3219..377e910837c7d 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -307,10 +307,11 @@ cn9k_sso_updt_tx_adptr_data(const struct rte_eventdev *event_dev)
+ 	return 0;
+ }
+ 
+-static void
++#if defined(RTE_ARCH_ARM64)
++static inline void
+ cn9k_sso_fp_tmplt_fns_set(struct rte_eventdev *event_dev)
+ {
+-#if defined(RTE_ARCH_ARM64) && !defined(CNXK_DIS_TMPLT_FUNC)
++#if !defined(CNXK_DIS_TMPLT_FUNC)
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	/* Single WS modes */
+ 	const event_dequeue_t sso_hws_deq[NIX_RX_OFFLOAD_MAX] = {
+@@ -524,7 +525,7 @@ cn9k_sso_fp_tmplt_fns_set(struct rte_eventdev *event_dev)
+ #endif
+ }
+ 
+-static void
++static inline void
+ cn9k_sso_fp_blk_fns_set(struct rte_eventdev *event_dev)
+ {
+ #if defined(CNXK_DIS_TMPLT_FUNC)
+@@ -561,6 +562,7 @@ cn9k_sso_fp_blk_fns_set(struct rte_eventdev *event_dev)
+ 	RTE_SET_USED(event_dev);
+ #endif
+ }
++#endif
+ 
+ static void
+ cn9k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+-- 
+2.25.1
+

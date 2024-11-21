@@ -1,0 +1,309 @@
+From 8449b59757ba705905c1a9701575a383d4181de0 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Thu, 18 May 2023 21:28:06 +0530
+Subject: [PATCH 428/955] common/cnxk: add MACsec secy and flow configuration
+
+Added ROC APIs to configure MACsec secy policy and
+flow entries.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ia99d8d032fe35727181c5bb85f4eee8d36b129f0
+---
+ drivers/common/cnxk/roc_mbox.h        |  38 +++++++++
+ drivers/common/cnxk/roc_mcs.h         |  37 +++++++++
+ drivers/common/cnxk/roc_mcs_sec_cfg.c | 115 ++++++++++++++++++++++++++
+ drivers/common/cnxk/version.map       |   5 ++
+ 4 files changed, 195 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 40b761ee99796..fcfcc90f6c6e4 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -300,10 +300,14 @@ struct mbox_msghdr {
+ 	M(MCS_ALLOC_RESOURCES, 0xa000, mcs_alloc_resources, mcs_alloc_rsrc_req,                    \
+ 	  mcs_alloc_rsrc_rsp)                                                                      \
+ 	M(MCS_FREE_RESOURCES, 0xa001, mcs_free_resources, mcs_free_rsrc_req, msg_rsp)              \
++	M(MCS_FLOWID_ENTRY_WRITE, 0xa002, mcs_flowid_entry_write, mcs_flowid_entry_write_req,      \
++	  msg_rsp)                                                                                 \
++	M(MCS_SECY_PLCY_WRITE, 0xa003, mcs_secy_plcy_write, mcs_secy_plcy_write_req, msg_rsp)      \
+ 	M(MCS_RX_SC_CAM_WRITE, 0xa004, mcs_rx_sc_cam_write, mcs_rx_sc_cam_write_req, msg_rsp)      \
+ 	M(MCS_SA_PLCY_WRITE, 0xa005, mcs_sa_plcy_write, mcs_sa_plcy_write_req, msg_rsp)            \
+ 	M(MCS_TX_SC_SA_MAP_WRITE, 0xa006, mcs_tx_sc_sa_map_write, mcs_tx_sc_sa_map, msg_rsp)       \
+ 	M(MCS_RX_SC_SA_MAP_WRITE, 0xa007, mcs_rx_sc_sa_map_write, mcs_rx_sc_sa_map, msg_rsp)       \
++	M(MCS_FLOWID_ENA_ENTRY, 0xa008, mcs_flowid_ena_entry, mcs_flowid_ena_dis_entry, msg_rsp)   \
+ 	M(MCS_GET_HW_INFO, 0xa00b, mcs_get_hw_info, msg_req, mcs_hw_info)                          \
+ 
+ /* Messages initiated by AF (range 0xC00 - 0xDFF) */
+@@ -729,6 +733,31 @@ struct mcs_free_rsrc_req {
+ 	uint64_t __io rsvd;
+ };
+ 
++struct mcs_flowid_entry_write_req {
++	struct mbox_msghdr hdr;
++	uint64_t __io data[4];
++	uint64_t __io mask[4];
++	uint64_t __io sci; /* CNF10K-B for tx_secy_mem_map */
++	uint8_t __io flow_id;
++	uint8_t __io secy_id; /* secyid for which flowid is mapped */
++	/* sc_id is Valid if dir = MCS_TX, SC_CAM id mapped to flowid */
++	uint8_t __io sc_id;
++	uint8_t __io ena; /* Enable tcam entry */
++	uint8_t __io ctr_pkt;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint64_t __io rsvd;
++};
++
++struct mcs_secy_plcy_write_req {
++	struct mbox_msghdr hdr;
++	uint64_t __io plcy;
++	uint8_t __io secy_id;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint64_t __io rsvd;
++};
++
+ /* RX SC_CAM mapping */
+ struct mcs_rx_sc_cam_write_req {
+ 	struct mbox_msghdr hdr;
+@@ -774,6 +803,15 @@ struct mcs_rx_sc_sa_map {
+ 	uint64_t __io rsvd;
+ };
+ 
++struct mcs_flowid_ena_dis_entry {
++	struct mbox_msghdr hdr;
++	uint8_t __io flow_id;
++	uint8_t __io ena;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++	uint64_t __io rsvd;
++};
++
+ struct mcs_hw_info {
+ 	struct mbox_msghdr hdr;
+ 	uint8_t __io num_mcs_blks; /* Number of MCS blocks */
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+index 2787d6a940c56..7e0a98e91a8d2 100644
+--- a/drivers/common/cnxk/roc_mcs.h
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -32,6 +32,24 @@ struct roc_mcs_free_rsrc_req {
+ 	uint8_t all; /* Free all the cam resources */
+ };
+ 
++struct roc_mcs_flowid_entry_write_req {
++	uint64_t data[4];
++	uint64_t mask[4];
++	uint64_t sci; /* 105N for tx_secy_mem_map */
++	uint8_t flow_id;
++	uint8_t secy_id; /* secyid for which flowid is mapped */
++	uint8_t sc_id;	 /* Valid if dir = MCS_TX, SC_CAM id mapped to flowid */
++	uint8_t ena;	 /* Enable tcam entry */
++	uint8_t ctr_pkt;
++	uint8_t dir;
++};
++
++struct roc_mcs_secy_plcy_write_req {
++	uint64_t plcy;
++	uint8_t secy_id;
++	uint8_t dir;
++};
++
+ /* RX SC_CAM mapping */
+ struct roc_mcs_rx_sc_cam_write_req {
+ 	uint64_t sci;	  /* SCI */
+@@ -64,6 +82,12 @@ struct roc_mcs_rx_sc_sa_map {
+ 	uint8_t an; /* value range 0-3, sc_id + an used as index SA_MEM_MAP */
+ };
+ 
++struct roc_mcs_flowid_ena_dis_entry {
++	uint8_t flow_id;
++	uint8_t ena;
++	uint8_t dir;
++};
++
+ struct roc_mcs_hw_info {
+ 	uint8_t num_mcs_blks; /* Number of MCS blocks */
+ 	uint8_t tcam_entries; /* RX/TX Tcam entries per mcs block */
+@@ -110,6 +134,11 @@ __roc_api int roc_mcs_rx_sc_cam_read(struct roc_mcs *mcs,
+ 				     struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam);
+ __roc_api int roc_mcs_rx_sc_cam_enable(struct roc_mcs *mcs,
+ 				       struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam);
++/* SECY policy read and write */
++__roc_api int roc_mcs_secy_policy_write(struct roc_mcs *mcs,
++					struct roc_mcs_secy_plcy_write_req *secy_plcy);
++__roc_api int roc_mcs_secy_policy_read(struct roc_mcs *mcs,
++				       struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam);
+ /* RX SC-SA MAP read and write */
+ __roc_api int roc_mcs_rx_sc_sa_map_write(struct roc_mcs *mcs,
+ 					 struct roc_mcs_rx_sc_sa_map *rx_sc_sa_map);
+@@ -120,4 +149,12 @@ __roc_api int roc_mcs_tx_sc_sa_map_write(struct roc_mcs *mcs,
+ 					 struct roc_mcs_tx_sc_sa_map *tx_sc_sa_map);
+ __roc_api int roc_mcs_tx_sc_sa_map_read(struct roc_mcs *mcs,
+ 					struct roc_mcs_tx_sc_sa_map *tx_sc_sa_map);
++/* Flow entry read, write and enable */
++__roc_api int roc_mcs_flowid_entry_write(struct roc_mcs *mcs,
++					 struct roc_mcs_flowid_entry_write_req *flowid_req);
++__roc_api int roc_mcs_flowid_entry_read(struct roc_mcs *mcs,
++					struct roc_mcs_flowid_entry_write_req *flowid_rsp);
++__roc_api int roc_mcs_flowid_entry_enable(struct roc_mcs *mcs,
++					  struct roc_mcs_flowid_ena_dis_entry *entry);
++
+ #endif /* _ROC_MCS_H_ */
+diff --git a/drivers/common/cnxk/roc_mcs_sec_cfg.c b/drivers/common/cnxk/roc_mcs_sec_cfg.c
+index 04bbbbfda08e6..50369c73d74ab 100644
+--- a/drivers/common/cnxk/roc_mcs_sec_cfg.c
++++ b/drivers/common/cnxk/roc_mcs_sec_cfg.c
+@@ -267,6 +267,38 @@ roc_mcs_rx_sc_cam_enable(struct roc_mcs *mcs __plt_unused,
+ 	return -ENOTSUP;
+ }
+ 
++int
++roc_mcs_secy_policy_write(struct roc_mcs *mcs, struct roc_mcs_secy_plcy_write_req *secy_plcy)
++{
++	struct mcs_secy_plcy_write_req *secy;
++	struct msg_rsp *rsp;
++
++	MCS_SUPPORT_CHECK;
++
++	if (secy_plcy == NULL)
++		return -EINVAL;
++
++	secy = mbox_alloc_msg_mcs_secy_plcy_write(mcs->mbox);
++	if (secy == NULL)
++		return -ENOMEM;
++
++	secy->plcy = secy_plcy->plcy;
++	secy->secy_id = secy_plcy->secy_id;
++	secy->mcs_id = mcs->idx;
++	secy->dir = secy_plcy->dir;
++
++	return mbox_process_msg(mcs->mbox, (void *)&rsp);
++}
++
++int
++roc_mcs_secy_policy_read(struct roc_mcs *mcs __plt_unused,
++			 struct roc_mcs_rx_sc_cam_write_req *rx_sc_cam __plt_unused)
++{
++	MCS_SUPPORT_CHECK;
++
++	return -ENOTSUP;
++}
++
+ int
+ roc_mcs_rx_sc_sa_map_write(struct roc_mcs *mcs, struct roc_mcs_rx_sc_sa_map *rx_sc_sa_map)
+ {
+@@ -380,3 +412,86 @@ roc_mcs_tx_sc_sa_map_read(struct roc_mcs *mcs __plt_unused,
+ 
+ 	return -ENOTSUP;
+ }
++
++int
++roc_mcs_flowid_entry_write(struct roc_mcs *mcs, struct roc_mcs_flowid_entry_write_req *flowid_req)
++{
++	struct mcs_priv *priv = roc_mcs_to_mcs_priv(mcs);
++	struct mcs_flowid_entry_write_req *flow_req;
++	struct msg_rsp *rsp;
++	uint8_t port;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	if (flowid_req == NULL)
++		return -EINVAL;
++
++	flow_req = mbox_alloc_msg_mcs_flowid_entry_write(mcs->mbox);
++	if (flow_req == NULL)
++		return -ENOMEM;
++
++	mbox_memcpy(flow_req->data, flowid_req->data, sizeof(uint64_t) * 4);
++	mbox_memcpy(flow_req->mask, flowid_req->mask, sizeof(uint64_t) * 4);
++	flow_req->sci = flowid_req->sci;
++	flow_req->flow_id = flowid_req->flow_id;
++	flow_req->secy_id = flowid_req->secy_id;
++	flow_req->sc_id = flowid_req->sc_id;
++	flow_req->ena = flowid_req->ena;
++	flow_req->ctr_pkt = flowid_req->ctr_pkt;
++	flow_req->mcs_id = mcs->idx;
++	flow_req->dir = flowid_req->dir;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&rsp);
++	if (rc)
++		return rc;
++
++	if (flow_req->mask[3] & (BIT_ULL(10) | BIT_ULL(11)))
++		return rc;
++
++	port = (flow_req->data[3] >> 10) & 0x3;
++
++	plt_bitmap_set(priv->port_rsrc[port].tcam_bmap,
++		       flowid_req->flow_id +
++			       ((flowid_req->dir == MCS_TX) ? priv->tcam_entries : 0));
++	plt_bitmap_set(priv->port_rsrc[port].secy_bmap,
++		       flowid_req->secy_id +
++			       ((flowid_req->dir == MCS_TX) ? priv->secy_entries : 0));
++
++	if (flowid_req->dir == MCS_TX)
++		plt_bitmap_set(priv->port_rsrc[port].sc_bmap, priv->sc_entries + flowid_req->sc_id);
++
++	return 0;
++}
++
++int
++roc_mcs_flowid_entry_read(struct roc_mcs *mcs __plt_unused,
++			  struct roc_mcs_flowid_entry_write_req *flowid_rsp __plt_unused)
++{
++	MCS_SUPPORT_CHECK;
++
++	return -ENOTSUP;
++}
++
++int
++roc_mcs_flowid_entry_enable(struct roc_mcs *mcs, struct roc_mcs_flowid_ena_dis_entry *entry)
++{
++	struct mcs_flowid_ena_dis_entry *flow_entry;
++	struct msg_rsp *rsp;
++
++	MCS_SUPPORT_CHECK;
++
++	if (entry == NULL)
++		return -EINVAL;
++
++	flow_entry = mbox_alloc_msg_mcs_flowid_ena_entry(mcs->mbox);
++	if (flow_entry == NULL)
++		return -ENOMEM;
++
++	flow_entry->flow_id = entry->flow_id;
++	flow_entry->ena = entry->ena;
++	flow_entry->mcs_id = mcs->idx;
++	flow_entry->dir = entry->dir;
++
++	return mbox_process_msg(mcs->mbox, (void *)&rsp);
++}
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 442aa8f2c1602..3e99bcea02369 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -109,6 +109,9 @@ INTERNAL {
+ 	roc_mcs_dev_init;
+ 	roc_mcs_dev_fini;
+ 	roc_mcs_dev_get;
++	roc_mcs_flowid_entry_enable;
++	roc_mcs_flowid_entry_read;
++	roc_mcs_flowid_entry_write;
+ 	roc_mcs_free_rsrc;
+ 	roc_mcs_hw_info_get;
+ 	roc_mcs_rx_sc_cam_enable;
+@@ -118,6 +121,8 @@ INTERNAL {
+ 	roc_mcs_rx_sc_sa_map_write;
+ 	roc_mcs_sa_policy_read;
+ 	roc_mcs_sa_policy_write;
++	roc_mcs_secy_policy_read;
++	roc_mcs_secy_policy_write;
+ 	roc_mcs_tx_sc_sa_map_read;
+ 	roc_mcs_tx_sc_sa_map_write;
+ 	roc_nix_bpf_alloc;
+-- 
+2.25.1
+

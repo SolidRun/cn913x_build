@@ -1,0 +1,365 @@
+From cd3eb5423be2db0a594dc5051012562206e071d0 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Wed, 13 Dec 2023 23:11:20 +0530
+Subject: [PATCH 153/513] net/cnxk: eswitch devargs parsing
+
+Implementing the devargs parsing logic via which the representors
+pattern is provided. These patterns define for which representies
+representors shall be created.
+
+Change-Id: If6d379bad812c633ac611c7677c612ad3835fc29
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/net/cnxk/cnxk_eswitch.c         |  88 +++++++++++++++++
+ drivers/net/cnxk/cnxk_eswitch.h         |  52 ++++++++++
+ drivers/net/cnxk/cnxk_eswitch_devargs.c | 124 ++++++++++++++++++++++++
+ drivers/net/cnxk/meson.build            |   1 +
+ 4 files changed, 265 insertions(+)
+ create mode 100644 drivers/net/cnxk/cnxk_eswitch_devargs.c
+
+diff --git a/drivers/net/cnxk/cnxk_eswitch.c b/drivers/net/cnxk/cnxk_eswitch.c
+index 0bffe04ee7e9e..caa22a2db06d2 100644
+--- a/drivers/net/cnxk/cnxk_eswitch.c
++++ b/drivers/net/cnxk/cnxk_eswitch.c
+@@ -387,6 +387,7 @@ nix_lf_setup(struct cnxk_eswitch_dev *eswitch_dev)
+ 		plt_err("Failed to get rep cnt, rc=%d(%s)", rc, roc_error_msg_get(rc));
+ 		goto free_cqs;
+ 	}
++	eswitch_dev->repr_cnt.max_repr = eswitch_dev->nix.rep_cnt;
+ 
+ 	/* Allocating an NIX LF */
+ 	nb_rxq = CNXK_ESWITCH_MAX_RXQ;
+@@ -531,11 +532,73 @@ eswitch_hw_rsrc_setup(struct cnxk_eswitch_dev *eswitch_dev)
+ 	return rc;
+ }
+ 
++int
++cnxk_eswitch_representor_info_get(struct cnxk_eswitch_dev *eswitch_dev,
++				  struct rte_eth_representor_info *info)
++{
++	struct cnxk_eswitch_devargs *esw_da;
++	int rc = 0, n_entries, i, j = 0, k = 0;
++
++	for (i = 0; i < eswitch_dev->nb_esw_da; i++) {
++		for (j = 0; j < eswitch_dev->esw_da[i].nb_repr_ports; j++)
++			k++;
++	}
++	n_entries = k;
++
++	if (info == NULL)
++		goto out;
++
++	if ((uint32_t)n_entries > info->nb_ranges_alloc)
++		n_entries = info->nb_ranges_alloc;
++
++	k = 0;
++	info->controller = 0;
++	info->pf = 0;
++	for (i = 0; i < eswitch_dev->nb_esw_da; i++) {
++		esw_da = &eswitch_dev->esw_da[i];
++		info->ranges[k].type = esw_da->da.type;
++		switch (esw_da->da.type) {
++		case RTE_ETH_REPRESENTOR_PF:
++			info->ranges[k].controller = 0;
++			info->ranges[k].pf = esw_da->repr_hw_info[0].pfvf;
++			info->ranges[k].vf = 0;
++			info->ranges[k].id_base = info->ranges[i].pf;
++			info->ranges[k].id_end = info->ranges[i].pf;
++			snprintf(info->ranges[k].name, sizeof(info->ranges[k].name), "pf%d",
++				 info->ranges[k].pf);
++			k++;
++			break;
++		case RTE_ETH_REPRESENTOR_VF:
++			for (j = 0; j < esw_da->nb_repr_ports; j++) {
++				info->ranges[k].controller = 0;
++				info->ranges[k].pf = esw_da->da.ports[0];
++				info->ranges[k].vf = esw_da->repr_hw_info[j].pfvf;
++				info->ranges[k].id_base = esw_da->repr_hw_info[j].port_id;
++				info->ranges[k].id_end = esw_da->repr_hw_info[j].port_id;
++				snprintf(info->ranges[k].name, sizeof(info->ranges[k].name),
++					 "pf%dvf%d", info->ranges[k].pf, info->ranges[k].vf);
++				k++;
++			}
++			break;
++		default:
++			plt_err("Invalid type %d", esw_da->da.type);
++			rc = 0;
++			goto fail;
++		};
++	}
++	info->nb_ranges = k;
++fail:
++	return rc;
++out:
++	return n_entries;
++}
++
+ static int
+ cnxk_eswitch_dev_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
+ {
+ 	struct cnxk_eswitch_dev *eswitch_dev;
+ 	const struct rte_memzone *mz = NULL;
++	uint16_t num_reps;
+ 	int rc = -ENOMEM;
+ 
+ 	RTE_SET_USED(pci_drv);
+@@ -568,12 +631,37 @@ cnxk_eswitch_dev_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pc
+ 		}
+ 	}
+ 
++	if (pci_dev->device.devargs) {
++		rc = cnxk_eswitch_repr_devargs(pci_dev, eswitch_dev);
++		if (rc)
++			goto rsrc_cleanup;
++	}
++
++	if (eswitch_dev->repr_cnt.nb_repr_created > eswitch_dev->repr_cnt.max_repr) {
++		plt_err("Representors to be created %d can be greater than max allowed %d",
++			eswitch_dev->repr_cnt.nb_repr_created, eswitch_dev->repr_cnt.max_repr);
++		rc = -EINVAL;
++		goto rsrc_cleanup;
++	}
++
++	num_reps = eswitch_dev->repr_cnt.nb_repr_created;
++	if (!num_reps) {
++		plt_err("No representors enabled");
++		goto fail;
++	}
++
++	plt_esw_dbg("Max no of reps %d reps to be created %d Eswtch pfunc %x",
++		    eswitch_dev->repr_cnt.max_repr, eswitch_dev->repr_cnt.nb_repr_created,
++		    roc_nix_get_pf_func(&eswitch_dev->nix));
++
+ 	/* Spinlock for synchronization between representors traffic and control
+ 	 * messages
+ 	 */
+ 	rte_spinlock_init(&eswitch_dev->rep_lock);
+ 
+ 	return rc;
++rsrc_cleanup:
++	eswitch_hw_rsrc_cleanup(eswitch_dev);
+ free_mem:
+ 	rte_memzone_free(mz);
+ fail:
+diff --git a/drivers/net/cnxk/cnxk_eswitch.h b/drivers/net/cnxk/cnxk_eswitch.h
+index d1b4fa8761309..6ff296399e313 100644
+--- a/drivers/net/cnxk/cnxk_eswitch.h
++++ b/drivers/net/cnxk/cnxk_eswitch.h
+@@ -25,6 +25,47 @@
+ #define CNXK_ESWITCH_QUEUE_STATE_STARTED    2
+ #define CNXK_ESWITCH_QUEUE_STATE_STOPPED    3
+ 
++enum cnxk_esw_da_pattern_type {
++	CNXK_ESW_DA_TYPE_LIST = 0,
++	CNXK_ESW_DA_TYPE_PFVF,
++};
++
++struct cnxk_esw_repr_hw_info {
++	/* Representee pcifunc value */
++	uint16_t hw_func;
++	/* rep id in sync with kernel */
++	uint16_t rep_id;
++	/* pf or vf id */
++	uint16_t pfvf;
++	/* representor port id assigned to representee */
++	uint16_t port_id;
++};
++
++/* Structure representing per devarg information - this can be per representee
++ * or range of representee
++ */
++struct cnxk_eswitch_devargs {
++	/* Devargs populated */
++	struct rte_eth_devargs da;
++	/* HW info of representee */
++	struct cnxk_esw_repr_hw_info *repr_hw_info;
++	/* No of representor ports */
++	uint16_t nb_repr_ports;
++	/* Devargs pattern type */
++	enum cnxk_esw_da_pattern_type type;
++};
++
++struct cnxk_eswitch_repr_cnt {
++	/* Max possible representors */
++	uint16_t max_repr;
++	/* Representors to be created as per devargs passed */
++	uint16_t nb_repr_created;
++	/* Representors probed successfully */
++	uint16_t nb_repr_probed;
++	/* Representors started representing a representee */
++	uint16_t nb_repr_started;
++};
++
+ struct cnxk_rep_info {
+ 	struct rte_eth_dev *rep_eth_dev;
+ };
+@@ -70,6 +111,14 @@ struct cnxk_eswitch_dev {
+ 	uint16_t rep_cnt;
+ 	uint8_t configured;
+ 
++	/* Eswitch Representors Devargs */
++	uint16_t nb_esw_da;
++	uint16_t last_probed;
++	struct cnxk_eswitch_devargs esw_da[RTE_MAX_ETHPORTS];
++
++	/* No of representors */
++	struct cnxk_eswitch_repr_cnt repr_cnt;
++
+ 	/* Port representor fields */
+ 	rte_spinlock_t rep_lock;
+ 	uint16_t switch_domain_id;
+@@ -90,6 +139,9 @@ cnxk_eswitch_pmd_priv(void)
+ }
+ 
+ int cnxk_eswitch_nix_rsrc_start(struct cnxk_eswitch_dev *eswitch_dev);
++int cnxk_eswitch_repr_devargs(struct rte_pci_device *pci_dev, struct cnxk_eswitch_dev *eswitch_dev);
++int cnxk_eswitch_representor_info_get(struct cnxk_eswitch_dev *eswitch_dev,
++				      struct rte_eth_representor_info *info);
+ int cnxk_eswitch_txq_setup(struct cnxk_eswitch_dev *eswitch_dev, uint16_t qid, uint16_t nb_desc,
+ 			   const struct rte_eth_txconf *tx_conf);
+ int cnxk_eswitch_txq_release(struct cnxk_eswitch_dev *eswitch_dev, uint16_t qid);
+diff --git a/drivers/net/cnxk/cnxk_eswitch_devargs.c b/drivers/net/cnxk/cnxk_eswitch_devargs.c
+new file mode 100644
+index 0000000000000..b5f28e185c862
+--- /dev/null
++++ b/drivers/net/cnxk/cnxk_eswitch_devargs.c
+@@ -0,0 +1,124 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include <cnxk_eswitch.h>
++
++#define PF_SHIFT 10
++static inline int
++get_hw_func(uint16_t pf, uint16_t vf)
++{
++	return (pf << PF_SHIFT) | vf;
++}
++
++static int
++populate_repr_hw_info(struct cnxk_eswitch_dev *eswitch_dev, struct rte_eth_devargs *eth_da,
++		      uint16_t idx)
++{
++	struct cnxk_eswitch_devargs *esw_da = &eswitch_dev->esw_da[idx];
++	uint16_t nb_repr_ports, hw_func;
++	int rc, i, j;
++
++	if (eth_da->type == RTE_ETH_REPRESENTOR_NONE) {
++		plt_err("No representor type found");
++		return -EINVAL;
++	}
++
++	if (eth_da->type != RTE_ETH_REPRESENTOR_VF && eth_da->type != RTE_ETH_REPRESENTOR_PF &&
++	    eth_da->type != RTE_ETH_REPRESENTOR_SF) {
++		plt_err("unsupported representor type %d\n", eth_da->type);
++		return -ENOTSUP;
++	}
++
++	nb_repr_ports = (eth_da->type == RTE_ETH_REPRESENTOR_PF) ? eth_da->nb_ports :
++								   eth_da->nb_representor_ports;
++	esw_da->nb_repr_ports = nb_repr_ports;
++	/* If plain list is provided as representor pattern */
++	if (eth_da->nb_ports == 0)
++		return 0;
++
++	esw_da->repr_hw_info = plt_zmalloc(nb_repr_ports * sizeof(struct cnxk_esw_repr_hw_info), 0);
++	if (!esw_da->repr_hw_info) {
++		plt_err("Failed to allocate memory");
++		rc = -ENOMEM;
++		goto fail;
++	}
++
++	plt_esw_dbg("Representor param %d has %d pfvf", idx, nb_repr_ports);
++	/* Check if representor can be created for PFVF and populating HW func list */
++	for (i = 0; i < nb_repr_ports; i++) {
++		if (eth_da->type == RTE_ETH_REPRESENTOR_PF)
++			hw_func = get_hw_func(eth_da->ports[i], 0);
++		else
++			hw_func = get_hw_func(eth_da->ports[0], eth_da->representor_ports[i] + 1);
++
++		for (j = 0; j < eswitch_dev->repr_cnt.max_repr; j++) {
++			if (eswitch_dev->nix.rep_pfvf_map[j] == hw_func)
++				break;
++		}
++
++		/* HW func which doesn not match the map table received from AF, no
++		 * representor port is assigned.
++		 */
++		if (j == eswitch_dev->repr_cnt.max_repr) {
++			plt_err("Representor port cant be created for PF%dVF%d", eth_da->ports[0],
++				eth_da->representor_ports[i]);
++			rc = -EINVAL;
++			goto fail;
++		}
++
++		esw_da->repr_hw_info[i].hw_func = hw_func;
++		esw_da->repr_hw_info[i].rep_id = j;
++		esw_da->repr_hw_info[i].pfvf = (eth_da->type == RTE_ETH_REPRESENTOR_PF) ?
++						       eth_da->ports[0] :
++						       eth_da->representor_ports[i];
++		plt_esw_dbg("	HW func %x index %d type %d", hw_func, j, eth_da->type);
++	}
++
++	esw_da->type = CNXK_ESW_DA_TYPE_PFVF;
++
++	return 0;
++fail:
++	return rc;
++}
++
++int
++cnxk_eswitch_repr_devargs(struct rte_pci_device *pci_dev, struct cnxk_eswitch_dev *eswitch_dev)
++{
++	struct rte_devargs *devargs = pci_dev->device.devargs;
++	struct rte_eth_devargs eth_da[RTE_MAX_ETHPORTS];
++	int rc, i, j, count;
++
++	if (devargs == NULL) {
++		plt_err("No devargs passed");
++		rc = -EINVAL;
++		goto fail;
++	}
++
++	/* Parse devargs passed to ESW device */
++	rc = rte_eth_devargs_parse(devargs->args, eth_da, RTE_MAX_ETHPORTS);
++	if (rc < 0) {
++		plt_err("Failed to parse devargs, err %d", rc);
++		goto fail;
++	}
++
++	count = rc;
++	j = eswitch_dev->nb_esw_da;
++	for (i = 0; i < count; i++) {
++		rc = populate_repr_hw_info(eswitch_dev, &eth_da[i], j);
++		if (rc) {
++			plt_err("Failed to populate representer hw funcs, err %d", rc);
++			goto fail;
++		}
++
++		rte_memcpy(&eswitch_dev->esw_da[j].da, &eth_da[i], sizeof(struct rte_eth_devargs));
++		/* No of representor ports to be created */
++		eswitch_dev->repr_cnt.nb_repr_created += eswitch_dev->esw_da[j].nb_repr_ports;
++		j++;
++	}
++	eswitch_dev->nb_esw_da += count;
++
++	return 0;
++fail:
++	return rc;
++}
+diff --git a/drivers/net/cnxk/meson.build b/drivers/net/cnxk/meson.build
+index 012d098f80d94..ea7e363e89bb6 100644
+--- a/drivers/net/cnxk/meson.build
++++ b/drivers/net/cnxk/meson.build
+@@ -29,6 +29,7 @@ sources = files(
+         'cnxk_ethdev_telemetry.c',
+         'cnxk_ethdev_sec_telemetry.c',
+         'cnxk_eswitch.c',
++        'cnxk_eswitch_devargs.c',
+         'cnxk_link.c',
+         'cnxk_lookup.c',
+         'cnxk_ptp.c',
+-- 
+2.25.1
+

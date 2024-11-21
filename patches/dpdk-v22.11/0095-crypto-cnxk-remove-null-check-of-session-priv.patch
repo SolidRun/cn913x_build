@@ -1,0 +1,41 @@
+From 1b13f5e9981933dc1afd7d14602ba4142ca4f4d6 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 15 Dec 2022 07:31:57 +0000
+Subject: [PATCH 095/955] crypto/cnxk: remove null check of session priv
+
+Session private data is at an offset of session. This can never be
+NULL. Remove check for the same.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I0d8e5543481ec7cb7b3ea69cc042918baa49acad
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92686
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_ipsec.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.c b/drivers/crypto/cnxk/cn10k_ipsec.c
+index aafd461436ea3..ffd3f50eed5bf 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.c
++++ b/drivers/crypto/cnxk/cn10k_ipsec.c
+@@ -422,14 +422,12 @@ cn10k_sec_session_update(void *device, struct rte_security_session *sess,
+ 			 struct rte_security_session_conf *conf)
+ {
+ 	struct rte_cryptodev *crypto_dev = device;
+-	struct cn10k_sec_session *priv;
+ 	struct roc_cpt *roc_cpt;
+ 	struct cnxk_cpt_qp *qp;
+ 	struct cnxk_cpt_vf *vf;
+ 	int ret;
+ 
+-	priv = SECURITY_GET_SESS_PRIV(sess);
+-	if (priv == NULL)
++	if (sess == NULL)
+ 		return -EINVAL;
+ 
+ 	qp = crypto_dev->data->queue_pairs[0];
+-- 
+2.25.1
+

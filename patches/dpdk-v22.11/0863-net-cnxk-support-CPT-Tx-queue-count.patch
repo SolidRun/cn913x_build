@@ -1,0 +1,193 @@
+From fe4be40ce290c4408e452fa332e19e3c8f439305 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 16 Feb 2024 22:33:26 +0530
+Subject: [PATCH 863/955] net/cnxk: support CPT Tx queue count
+
+Extend tx queue count API to support CPT.
+
+Change-Id: I2f69c761420a06f410a97be8ec17d8081fa73797
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/127998
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev.c    | 10 ----------
+ drivers/net/cnxk/cn10k_tx_select.c | 23 +++++++++++++++++++++++
+ drivers/net/cnxk/cn9k_ethdev.c     | 10 ----------
+ drivers/net/cnxk/cn9k_tx_select.c  | 23 +++++++++++++++++++++++
+ drivers/net/cnxk/cnxk_ethdev.h     | 13 +++++++++++++
+ 5 files changed, 59 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index 6fbd6daa4f478..941bb1e10a6a6 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -844,14 +844,6 @@ cn10k_nix_tm_mark_ip_dscp(struct rte_eth_dev *eth_dev, int mark_green,
+ 	return rc;
+ }
+ 
+-static int
+-cn10k_nix_tx_queue_count(void *tx_queue)
+-{
+-	struct cn10k_eth_txq *txq = (struct cn10k_eth_txq *)tx_queue;
+-
+-	return cnxk_nix_tx_queue_count(txq->fc_mem, txq->sqes_per_sqb_log2);
+-}
+-
+ /* Update platform specific eth dev ops */
+ static void
+ nix_eth_dev_ops_override(void)
+@@ -951,8 +943,6 @@ cn10k_nix_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
+ 		return -ENOENT;
+ 	}
+ 
+-	eth_dev->tx_queue_count = cn10k_nix_tx_queue_count;
+-
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+ 		/* Setup callbacks for secondary process */
+ 		cn10k_eth_set_tx_function(eth_dev);
+diff --git a/drivers/net/cnxk/cn10k_tx_select.c b/drivers/net/cnxk/cn10k_tx_select.c
+index 01729e6cb32e9..3eb70d2a09c64 100644
+--- a/drivers/net/cnxk/cn10k_tx_select.c
++++ b/drivers/net/cnxk/cn10k_tx_select.c
+@@ -21,6 +21,22 @@ pick_tx_func(struct rte_eth_dev *eth_dev,
+ }
+ 
+ #if defined(RTE_ARCH_ARM64)
++static int
++cn10k_nix_tx_queue_count(void *tx_queue)
++{
++	struct cn10k_eth_txq *txq = (struct cn10k_eth_txq *)tx_queue;
++
++	return cnxk_nix_tx_queue_count(txq->fc_mem, txq->sqes_per_sqb_log2);
++}
++
++static int
++cn10k_nix_tx_queue_sec_count(void *tx_queue)
++{
++	struct cn10k_eth_txq *txq = (struct cn10k_eth_txq *)tx_queue;
++
++	return cnxk_nix_tx_queue_sec_count(txq->fc_mem, txq->sqes_per_sqb_log2, txq->cpt_fc);
++}
++
+ static void
+ cn10k_eth_set_tx_tmplt_func(struct rte_eth_dev *eth_dev)
+ {
+@@ -92,9 +108,16 @@ void
+ cn10k_eth_set_tx_function(struct rte_eth_dev *eth_dev)
+ {
+ #if defined(RTE_ARCH_ARM64)
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
+ 	cn10k_eth_set_tx_blk_func(eth_dev);
+ 	cn10k_eth_set_tx_tmplt_func(eth_dev);
+ 
++	if (dev->tx_offloads & RTE_ETH_TX_OFFLOAD_SECURITY)
++		eth_dev->tx_queue_count = cn10k_nix_tx_queue_sec_count;
++	else
++		eth_dev->tx_queue_count = cn10k_nix_tx_queue_count;
++
+ 	rte_atomic_thread_fence(__ATOMIC_RELEASE);
+ #else
+ 	RTE_SET_USED(eth_dev);
+diff --git a/drivers/net/cnxk/cn9k_ethdev.c b/drivers/net/cnxk/cn9k_ethdev.c
+index 4647ee39b4577..ea92b1dcb6493 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.c
++++ b/drivers/net/cnxk/cn9k_ethdev.c
+@@ -722,14 +722,6 @@ cn9k_rx_descriptor_dump(const struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	return 0;
+ }
+ 
+-static int
+-cn9k_nix_tx_queue_count(void *tx_queue)
+-{
+-	struct cn9k_eth_txq *txq = (struct cn9k_eth_txq *)tx_queue;
+-
+-	return cnxk_nix_tx_queue_count(txq->fc_mem, txq->sqes_per_sqb_log2);
+-}
+-
+ /* Update platform specific eth dev ops */
+ static void
+ nix_eth_dev_ops_override(void)
+@@ -826,8 +818,6 @@ cn9k_nix_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
+ 		return -ENOENT;
+ 	}
+ 
+-	eth_dev->tx_queue_count = cn9k_nix_tx_queue_count;
+-
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+ 		/* Setup callbacks for secondary process */
+ 		cn9k_eth_set_tx_function(eth_dev);
+diff --git a/drivers/net/cnxk/cn9k_tx_select.c b/drivers/net/cnxk/cn9k_tx_select.c
+index ba64abc843de9..f2831990cac60 100644
+--- a/drivers/net/cnxk/cn9k_tx_select.c
++++ b/drivers/net/cnxk/cn9k_tx_select.c
+@@ -21,6 +21,22 @@ pick_tx_func(struct rte_eth_dev *eth_dev,
+ }
+ 
+ #if defined(RTE_ARCH_ARM64)
++static int
++cn9k_nix_tx_queue_count(void *tx_queue)
++{
++	struct cn9k_eth_txq *txq = (struct cn9k_eth_txq *)tx_queue;
++
++	return cnxk_nix_tx_queue_count(txq->fc_mem, txq->sqes_per_sqb_log2);
++}
++
++static int
++cn9k_nix_tx_queue_sec_count(void *tx_queue)
++{
++	struct cn9k_eth_txq *txq = (struct cn9k_eth_txq *)tx_queue;
++
++	return cnxk_nix_tx_queue_sec_count(txq->fc_mem, txq->sqes_per_sqb_log2, txq->cpt_fc);
++}
++
+ static void
+ cn9k_eth_set_tx_tmplt_func(struct rte_eth_dev *eth_dev)
+ {
+@@ -88,9 +104,16 @@ void
+ cn9k_eth_set_tx_function(struct rte_eth_dev *eth_dev)
+ {
+ #if defined(RTE_ARCH_ARM64)
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
+ 	cn9k_eth_set_tx_blk_func(eth_dev);
+ 	cn9k_eth_set_tx_tmplt_func(eth_dev);
+ 
++	if (dev->tx_offloads & RTE_ETH_TX_OFFLOAD_SECURITY)
++		eth_dev->tx_queue_count = cn9k_nix_tx_queue_sec_count;
++	else
++		eth_dev->tx_queue_count = cn9k_nix_tx_queue_count;
++
+ 	rte_atomic_thread_fence(__ATOMIC_RELEASE);
+ #else
+ 	RTE_SET_USED(eth_dev);
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 1ae2d01b34aab..f96e8d1981675 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -478,6 +478,19 @@ cnxk_nix_tx_queue_count(uint64_t *mem, uint16_t sqes_per_sqb_log2)
+ 	return (val & 0xFFFF);
+ }
+ 
++static inline int
++cnxk_nix_tx_queue_sec_count(uint64_t *mem, uint16_t sqes_per_sqb_log2, uint64_t *sec_fc)
++{
++	uint64_t sq_cnt, sec_cnt, val;
++
++	sq_cnt = __atomic_load_n(mem, __ATOMIC_RELAXED);
++	sq_cnt = (sq_cnt << sqes_per_sqb_log2) - sq_cnt;
++	sec_cnt = __atomic_load_n(sec_fc, __ATOMIC_RELAXED);
++	val = RTE_MAX(sq_cnt, sec_cnt);
++
++	return (val & 0xFFFF);
++}
++
+ /* Common ethdev ops */
+ extern struct eth_dev_ops cnxk_eth_dev_ops;
+ 
+-- 
+2.25.1
+

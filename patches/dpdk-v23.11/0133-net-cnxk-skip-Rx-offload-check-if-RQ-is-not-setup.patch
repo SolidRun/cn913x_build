@@ -1,0 +1,41 @@
+From c36dda85bf858f1aa268ad6502df1c21cf181f30 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 11 Jan 2024 18:57:06 +0530
+Subject: [PATCH 133/513] net/cnxk: skip Rx offload check if RQ is not setup
+
+Currently MTU set would fail if RQ is not setup.
+Skip the check if RQ is not setup as this will be again
+checked when device is started anyway.
+
+Change-Id: I241858b2bf6bd9a3b322aaca0616a3a76dd854a7
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119584
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index 0b2805ce6f585..56049c5dd2d3c 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -574,10 +574,9 @@ cnxk_nix_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ 			buffsz = rte_pktmbuf_data_room_size(rxq_sp->qconf.mp);
+ 	}
+ 
+-	if (!buffsz) {
+-		plt_err("Unable to get min buf size");
+-		goto exit;
+-	}
++	/* Skip validation if RQ's are not yet setup */
++	if (!buffsz)
++		goto skip_buffsz_check;
+ 
+ 	buffsz -= RTE_PKTMBUF_HEADROOM;
+ 
+-- 
+2.25.1
+

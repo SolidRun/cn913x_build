@@ -1,0 +1,232 @@
+From c8f818ce79feefb357e41fffd3836eb3a78d8d9a Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Mon, 4 Dec 2023 02:16:04 -0800
+Subject: [PATCH 111/513] dma/cnxk: support pending count per HW DMA channel
+
+Adds code changes to maintain pending count per hw dma channel
+instead of per vchan. This enables ringing dbell for exact number
+of dma commands present in the DPI queue.
+
+Patch also increase vchan count to 128 to serve more transfer contexts.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: Ief75aaa717a66fc1190471ab1e911fd8ffc53345
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117527
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.c    | 17 ++++----
+ drivers/dma/cnxk/cnxk_dmadev.h    |  3 +-
+ drivers/dma/cnxk/cnxk_dmadev_fp.c | 64 ++++++++++++++-----------------
+ 3 files changed, 36 insertions(+), 48 deletions(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index a748331da163d..ef4c5d0e8510a 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -294,12 +294,12 @@ cnxk_dmadev_start(struct rte_dma_dev *dev)
+ 	int i, j, rc = 0;
+ 	void *chunk;
+ 
++	dpivf->total_pnum_words = 0;
++
+ 	for (i = 0; i < dpivf->num_vchans; i++) {
+ 		dpi_conf = &dpivf->conf[i];
+ 		dpi_conf->c_desc.head = 0;
+ 		dpi_conf->c_desc.tail = 0;
+-		dpi_conf->pnum_words = 0;
+-		dpi_conf->pending = 0;
+ 		dpi_conf->desc_idx = 0;
+ 		for (j = 0; j < dpi_conf->c_desc.max_cnt + 1; j++) {
+ 			if (dpi_conf->c_desc.compl_ptr[j])
+@@ -444,8 +444,7 @@ cnxk_damdev_burst_capacity(const void *dev_private, uint16_t vchan)
+ 	uint16_t burst_cap;
+ 
+ 	burst_cap = dpi_conf->c_desc.max_cnt -
+-		    ((dpi_conf->stats.submitted - dpi_conf->stats.completed) + dpi_conf->pending) +
+-		    1;
++		    (dpi_conf->stats.submitted - dpi_conf->stats.completed) + 1;
+ 
+ 	return burst_cap;
+ }
+@@ -454,18 +453,16 @@ static int
+ cnxk_dmadev_submit(void *dev_private, uint16_t vchan)
+ {
+ 	struct cnxk_dpi_vf_s *dpivf = dev_private;
+-	struct cnxk_dpi_conf *dpi_conf = &dpivf->conf[vchan];
+-	uint32_t num_words = dpi_conf->pnum_words;
++	uint32_t num_words = dpivf->total_pnum_words;
++	RTE_SET_USED(vchan);
+ 
+-	if (!dpi_conf->pnum_words)
++	if (!num_words)
+ 		return 0;
+ 
+ 	rte_wmb();
+ 	plt_write64(num_words, dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+ 
+-	dpi_conf->stats.submitted += dpi_conf->pending;
+-	dpi_conf->pnum_words = 0;
+-	dpi_conf->pending = 0;
++	dpivf->total_pnum_words = 0;
+ 
+ 	return 0;
+ }
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.h b/drivers/dma/cnxk/cnxk_dmadev.h
+index 332325d6b6d3b..899befd5bbdbb 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.h
++++ b/drivers/dma/cnxk/cnxk_dmadev.h
+@@ -113,8 +113,6 @@ struct cnxk_dma_adapter_info {
+ struct cnxk_dpi_conf {
+ 	union cnxk_dpi_instr_cmd cmd;
+ 	struct cnxk_dpi_cdesc_data_s c_desc;
+-	uint16_t pnum_words;
+-	uint16_t pending;
+ 	uint16_t desc_idx;
+ 	struct rte_dma_stats stats;
+ 	uint64_t completed_offset;
+@@ -126,6 +124,7 @@ struct cnxk_dpi_vf_s {
+ 	uint64_t *chunk_base;
+ 	uint16_t chunk_head;
+ 	uint16_t chunk_size_m1;
++	uint16_t total_pnum_words;
+ 	struct rte_mempool *chunk_pool;
+ 	struct cnxk_dpi_conf conf[CNXK_DPI_MAX_VCHANS_PER_QUEUE];
+ 	/* Slow path */
+diff --git a/drivers/dma/cnxk/cnxk_dmadev_fp.c b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+index 85a8e1310e796..56812ed661d63 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev_fp.c
++++ b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+@@ -284,16 +284,15 @@ cnxk_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t d
+ 
+ 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 		rte_wmb();
+-		plt_write64(dpi_conf->pnum_words + CNXK_DPI_DW_PER_SINGLE_CMD,
++		plt_write64(dpivf->total_pnum_words + CNXK_DPI_DW_PER_SINGLE_CMD,
+ 			    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-		dpi_conf->stats.submitted += dpi_conf->pending + 1;
+-		dpi_conf->pnum_words = 0;
+-		dpi_conf->pending = 0;
++		dpivf->total_pnum_words = 0;
+ 	} else {
+-		dpi_conf->pnum_words += CNXK_DPI_DW_PER_SINGLE_CMD;
+-		dpi_conf->pending++;
++		dpivf->total_pnum_words += CNXK_DPI_DW_PER_SINGLE_CMD;
+ 	}
+ 
++	dpi_conf->stats.submitted += 1;
++
+ 	return dpi_conf->desc_idx++;
+ }
+ 
+@@ -340,16 +339,15 @@ cnxk_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge
+ 
+ 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 		rte_wmb();
+-		plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++		plt_write64(dpivf->total_pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
+ 			    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-		dpi_conf->stats.submitted += dpi_conf->pending + 1;
+-		dpi_conf->pnum_words = 0;
+-		dpi_conf->pending = 0;
++		dpivf->total_pnum_words = 0;
+ 	} else {
+-		dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
+-		dpi_conf->pending++;
++		dpivf->total_pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
+ 	}
+ 
++	dpi_conf->stats.submitted += 1;
++
+ 	return dpi_conf->desc_idx++;
+ }
+ 
+@@ -386,16 +384,15 @@ cn10k_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t
+ 
+ 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 		rte_wmb();
+-		plt_write64(dpi_conf->pnum_words + CNXK_DPI_DW_PER_SINGLE_CMD,
++		plt_write64(dpivf->total_pnum_words + CNXK_DPI_DW_PER_SINGLE_CMD,
+ 			    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-		dpi_conf->stats.submitted += dpi_conf->pending + 1;
+-		dpi_conf->pnum_words = 0;
+-		dpi_conf->pending = 0;
++		dpivf->total_pnum_words = 0;
+ 	} else {
+-		dpi_conf->pnum_words += 8;
+-		dpi_conf->pending++;
++		dpivf->total_pnum_words += CNXK_DPI_DW_PER_SINGLE_CMD;
+ 	}
+ 
++	dpi_conf->stats.submitted += 1;
++
+ 	return dpi_conf->desc_idx++;
+ }
+ 
+@@ -429,16 +426,15 @@ cn10k_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge
+ 
+ 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 		rte_wmb();
+-		plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++		plt_write64(dpivf->total_pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
+ 			    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-		dpi_conf->stats.submitted += dpi_conf->pending + 1;
+-		dpi_conf->pnum_words = 0;
+-		dpi_conf->pending = 0;
++		dpivf->total_pnum_words = 0;
+ 	} else {
+-		dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
+-		dpi_conf->pending++;
++		dpivf->total_pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
+ 	}
+ 
++	dpi_conf->stats.submitted += 1;
++
+ 	return dpi_conf->desc_idx++;
+ }
+ 
+@@ -511,15 +507,13 @@ cn10k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
+ 
+ 		if (op->flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 			rte_wmb();
+-			plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++			plt_write64(dpivf->total_pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
+ 				    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-			dpi_conf->stats.submitted += dpi_conf->pending + 1;
+-			dpi_conf->pnum_words = 0;
+-			dpi_conf->pending = 0;
++			dpivf->total_pnum_words = 0;
+ 		} else {
+-			dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
+-			dpi_conf->pending++;
++			dpivf->total_pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
+ 		}
++		dpi_conf->stats.submitted += 1;
+ 		rte_mcslock_unlock(&dpi_ml, &ml_me);
+ 	}
+ 
+@@ -592,15 +586,13 @@ cn9k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
+ 
+ 		if (op->flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 			rte_wmb();
+-			plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++			plt_write64(dpivf->total_pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
+ 				    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-			dpi_conf->stats.submitted += dpi_conf->pending + 1;
+-			dpi_conf->pnum_words = 0;
+-			dpi_conf->pending = 0;
++			dpivf->total_pnum_words = 0;
+ 		} else {
+-			dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
+-			dpi_conf->pending++;
++			dpivf->total_pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
+ 		}
++		dpi_conf->stats.submitted += 1;
+ 		rte_mcslock_unlock(&dpi_ml, &ml_me);
+ 	}
+ 
+-- 
+2.25.1
+

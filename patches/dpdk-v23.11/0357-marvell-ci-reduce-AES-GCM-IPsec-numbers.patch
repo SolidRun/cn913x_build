@@ -1,0 +1,38 @@
+From 05eb8c25a7518c694a18033bae66407631a6ecba Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Fri, 7 Jun 2024 12:26:03 +0530
+Subject: [PATCH 357/513] marvell-ci: reduce AES GCM IPsec numbers
+
+Reduce aes-gcm-ipsec-numbers for cn9k.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Icfa7bf1de36d2031f9ecfa099d51e01c61f07c8c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129240
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx      | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx
+index 55ec260d8669e..3ab511ae60e0d 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx
+@@ -19,9 +19,9 @@ aes-cbc_sha1-hmac-ipsec
+ 1504: 10.569 11.110 11.880
+ <end>
+ aes-gcm-ipsec
+-64: 16.938 27.891 44.529
+-384: 14.208 27.586 31.711
+-1504: 11.250 13.922 12.381
++64: 16.500 27.891 44.100
++384: 14.100 27.000 31.100
++1504: 11.250 13.500 12.100
+ <end>
+ zuc-eia3
+ 64: 5.071 10.026 17.877
+-- 
+2.25.1
+

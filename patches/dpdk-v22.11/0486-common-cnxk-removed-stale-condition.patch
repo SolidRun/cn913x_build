@@ -1,0 +1,37 @@
+From 2dca99fd304564298224e76c8eb1a277ee0f22fd Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Wed, 14 Jun 2023 09:26:33 +0530
+Subject: [PATCH 486/955] common/cnxk: removed stale condition
+
+Removed condition that doesn't have any effect on code flow.
+
+Coverity issue: 385405
+Fixes: 13e54b2cb7c0 ("common/cnxk: allocate dynamic BPIDs")
+
+Change-Id: I2665b1d35b2b088dd66ccb786f4c82e7b8488888
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105487
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_fc.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 88439f8e6ba7d..7dc37dc23354c 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -750,8 +750,6 @@ roc_nix_rx_chan_cfg_set(struct roc_nix *roc_nix, uint16_t chan, bool is_cpt, uin
+ 	req->read = 0;
+ 
+ 	rc = mbox_process(mbox);
+-	if (rc)
+-		goto exit;
+ exit:
+ 	mbox_put(mbox);
+ 	return rc;
+-- 
+2.25.1
+

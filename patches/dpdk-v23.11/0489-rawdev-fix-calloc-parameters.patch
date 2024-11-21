@@ -1,0 +1,52 @@
+From 02f91d24bda58a2f58eb9780b2cee530ca855db7 Mon Sep 17 00:00:00 2001
+From: Ferruh Yigit <ferruh.yigit@amd.com>
+Date: Wed, 24 Jan 2024 18:54:00 +0000
+Subject: [PATCH 489/513] rawdev: fix calloc parameters
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+gcc [1] generates warning [2] about calloc usage, because calloc
+parameter order is wrong, fixing it by replacing parameters.
+
+[1]
+gcc (GCC) 14.0.0 20240108 (experimental)
+
+[2]
+Compiling C object .../lib/librte_rawdev.a.p/rawdev_rte_rawdev.c.o
+../lib/rawdev/rte_rawdev.c: In function ‘handle_dev_dump’:
+../lib/rawdev/rte_rawdev.c:659:29:
+  error: ‘calloc’ sizes specified with ‘sizeof’ in the earlier
+  argument and not in the later argument
+  [-Werror=calloc-transposed-args]
+  659 |     buf = calloc(sizeof(char), RTE_TEL_MAX_SINGLE_STRING_LEN);
+      |                         ^~~~
+
+Fixes: e915d404eb72 ("rawdev: support telemetry dump rawdev")
+Cc: stable@dpdk.org
+
+Signed-off-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Acked-by: Morten Brørup <mb@smartsharesystems.com>
+Reviewed-by: Chengwen Feng <fengchengwen@huawei.com>
+Reviewed-by: Hemant Agrawal <hemant.agrawal@nxp.com>
+Change-Id: I6b0abf091d60ae2e74b3caaf438be098968f0f5b
+---
+ lib/rawdev/rte_rawdev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/rawdev/rte_rawdev.c b/lib/rawdev/rte_rawdev.c
+index 474bdc95407f6..4f8897b63947b 100644
+--- a/lib/rawdev/rte_rawdev.c
++++ b/lib/rawdev/rte_rawdev.c
+@@ -656,7 +656,7 @@ handle_dev_dump(const char *cmd __rte_unused,
+ 	if (!rte_rawdev_pmd_is_valid_dev(dev_id))
+ 		return -EINVAL;
+ 
+-	buf = calloc(sizeof(char), RTE_TEL_MAX_SINGLE_STRING_LEN);
++	buf = calloc(RTE_TEL_MAX_SINGLE_STRING_LEN, sizeof(char));
+ 	if (buf == NULL)
+ 		return -ENOMEM;
+ 
+-- 
+2.25.1
+

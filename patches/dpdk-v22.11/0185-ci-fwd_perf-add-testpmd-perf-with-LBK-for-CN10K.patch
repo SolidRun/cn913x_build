@@ -1,0 +1,127 @@
+From 2753163bc1a332712ef52d4ebc5dbe1628957140 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Fri, 27 Jan 2023 12:35:44 +0530
+Subject: [PATCH 185/955] ci/fwd_perf: add testpmd perf with LBK for CN10K
+
+Adds testpmd perf with LBK interfaces also for CN10K.
+Updates the cn10k testpmd b2b setup perf reference number.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: If05736505c096ef40c596f724d29938bbdfbf94a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95121
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95371
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh | 43 +++++++++++++++----
+ .../rclk2500_sclk1100.cn106.testpmd           |  3 +-
+ 2 files changed, 36 insertions(+), 10 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+index 0c739d3c0efbd..82699184e6e09 100755
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+@@ -37,6 +37,7 @@ declare -a test_name
+ declare -a test_cmd
+ declare -a test_args
+ declare -a test_eal_args
++declare -a test_lbk
+ 
+ SUDO="sudo"
+ PRFX="fwd_perf"
+@@ -56,6 +57,9 @@ GEN_LOG_FULL=gen.out.full
+ START_STR=">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+ END_STR="<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+ 
++LIF0=0002:01:00.1
++LIF1=0002:01:00.2
++
+ ! $(cat /proc/device-tree/compatible | grep -q "cn10k")
+ IS_CN10K=$?
+ 
+@@ -71,8 +75,8 @@ fi
+ 
+ if [[ $WITH_GEN_BOARD -eq 0 ]]
+ then
+-	IF0=0002:01:00.1
+-	IF1=0002:01:00.2
++	IF0=$LIF0
++	IF1=$LIF1
+ 	remote_ssh="sh -c "
+ 	GEN_PORT=$IF1
+ 	G_ENV="GEN_CORES=6"
+@@ -169,6 +173,7 @@ register_fwd_test() {
+ 	test_cmd[$num_tests]=$2
+ 	test_eal_args[$num_tests]=$3
+         test_args[$num_tests]=$4
++	test_lbk[$num_tests]=$5
+         ((num_tests+=1))
+ }
+ 
+@@ -424,8 +429,24 @@ run_fwd_tests() {
+ 
+ 	idx=0
+ 	ret=0
++	REF_WITH_GEN_BOARD=$WITH_GEN_BOARD
++	REF_IF0=$IF0
++	REF_IF1=$IF1
+ 	local retry_count=$MAX_RETRY
+ 	while [[ idx -lt num_tests ]]; do
++
++		if [[ ${test_lbk[$idx]} -eq 1 ]]; then
++		# Forcing change to run on LBK interface only
++			WITH_GEN_BOARD=0
++			IF0=$LIF0
++			IF1=$LIF1
++		else
++			# Restore for other cases
++			WITH_GEN_BOARD=$REF_WITH_GEN_BOARD
++			IF0=$REF_IF0
++			IF1=$REF_IF1
++		fi
++
+ 		run_one $idx
+ 
+ 		sleep 3
+@@ -463,15 +484,19 @@ run_fwd_tests() {
+ num_tests=0
+ 
+ # Register fwd performance tests.
+-# Format:		<test name>		<cmd>          <args>
+-register_fwd_test "TESTPMD_NO_OFFLOAD" "testpmd" "" \
+-			"--no-flush-rx --nb-cores=1"
++# Format:		<test name>		<cmd>     <EAL args>    <args>     <test LBK-IFs>
++
++register_fwd_test "TESTPMD_NO_OFFLOAD" "testpmd" "" "--no-flush-rx --nb-cores=1" "0"
++
++# Additional tests to check on LBK interfaces too.
++# Specific for CN10k only as CN9k tests are already with LBK interfaces.
++if [[ $IS_CN10K -ne 0 ]]; then
++	register_fwd_test "TESTPMD_LBK_NO_OFFLOAD" "testpmd" "" "--no-flush-rx --nb-cores=1" "1"
++fi
+ 
+-register_fwd_test "L3FWD_1C"          "l3fwd"   "" \
+-			  "-p 0x1 --config (0,0,23) -P"
++register_fwd_test "L3FWD_1C" "l3fwd" "" "-p 0x1 --config (0,0,23) -P" "0"
+ 
+-register_fwd_test "L2FWD_1C"          "l2fwd"   "" \
+-			  "-p 0x1 -T 0 -P"
++register_fwd_test "L2FWD_1C" "l2fwd" "" "-p 0x1 -T 0 -P" "0"
+ 
+ run_fwd_tests
+ 
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.testpmd b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.testpmd
+index 24ceaefd4790f..535da012dd097 100644
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.testpmd
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/ref_numbers/rclk2500_sclk1100.cn106.testpmd
+@@ -1,4 +1,5 @@
+ PPS of tests on 106xx and multiple RCLK
+ ---------------------------------------
+ 
+-TESTPMD_NO_OFFLOAD 99900000
++TESTPMD_NO_OFFLOAD 98000000
++TESTPMD_LBK_NO_OFFLOAD 100000000
+-- 
+2.25.1
+

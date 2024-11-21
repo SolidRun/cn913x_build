@@ -1,0 +1,216 @@
+From 25a676ae96e71759c69c52386bef158d0cd130f6 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 25 Jun 2024 13:48:25 +0530
+Subject: [PATCH 893/955] net/cnxk: move PMD function defines to common code
+
+Move PMD function definitions to common code for
+cn9k/cn10k since they are declared commonly.
+
+Also remove the reference to 'struct rte_security_session'
+since it is now a driver internal structure and not
+exported to application code.
+
+Change-Id: Ic308e2ce8c114c5e5dfd3eecf6904a6541026c69
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev_sec.c | 61 ----------------------------
+ drivers/net/cnxk/cnxk_ethdev_sec.c  | 63 +++++++++++++++++++++++++++++
+ drivers/net/cnxk/rte_pmd_cnxk.h     |  8 ++--
+ 3 files changed, 67 insertions(+), 65 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index 5e509e97d4532..074bb09822961 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -1208,67 +1208,6 @@ cn10k_eth_sec_session_update(void *device, struct rte_security_session *sess,
+ 	return 0;
+ }
+ 
+-int
+-rte_pmd_cnxk_hw_sa_read(void *device, struct rte_security_session *sess,
+-			union rte_pmd_cnxk_ipsec_hw_sa *data, uint32_t len)
+-{
+-	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
+-	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+-	struct cnxk_eth_sec_sess *eth_sec;
+-	int rc;
+-
+-	eth_sec = cnxk_eth_sec_sess_get_by_sess(dev, sess);
+-	if (eth_sec == NULL)
+-		return -EINVAL;
+-
+-	rc = roc_nix_inl_sa_sync(&dev->nix, eth_sec->sa, eth_sec->inb,
+-			    ROC_NIX_INL_SA_OP_FLUSH);
+-	if (rc)
+-		return -EINVAL;
+-	rte_delay_ms(1);
+-	memcpy(data, eth_sec->sa, len);
+-
+-	return 0;
+-}
+-
+-int
+-rte_pmd_cnxk_hw_sa_write(void *device, struct rte_security_session *sess,
+-			 union rte_pmd_cnxk_ipsec_hw_sa *data, uint32_t len)
+-{
+-	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
+-	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+-	struct cnxk_eth_sec_sess *eth_sec;
+-	int rc = -EINVAL;
+-
+-	eth_sec = cnxk_eth_sec_sess_get_by_sess(dev, sess);
+-	if (eth_sec == NULL)
+-		return rc;
+-	rc = roc_nix_inl_ctx_write(&dev->nix, data, eth_sec->sa, eth_sec->inb,
+-				   len);
+-	if (rc)
+-		return rc;
+-
+-	return 0;
+-}
+-
+-union rte_pmd_cnxk_cpt_res_s *
+-rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf)
+-{
+-	const union nix_rx_parse_u *rx;
+-	uint16_t desc_size;
+-	uintptr_t wqe;
+-
+-	if (!mbuf || !(mbuf->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD))
+-		return NULL;
+-
+-	wqe = (uintptr_t)(mbuf + 1);
+-	rx = (const union nix_rx_parse_u *)(wqe + 8);
+-	desc_size = (rx->desc_sizem1 + 1) * 16;
+-
+-	/* rte_pmd_cnxk_cpt_res_s sits after SG list at 16B aligned address */
+-	return (void *)(wqe + 64 + desc_size);
+-}
+-
+ static int
+ cn10k_eth_sec_session_stats_get(void *device, struct rte_security_session *sess,
+ 			    struct rte_security_stats *stats)
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index 6f5319e534fd2..cdd56568171de 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -2,6 +2,8 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
++#include <rte_pmd_cnxk.h>
++
+ #include <cnxk_ethdev.h>
+ #include <cnxk_mempool.h>
+ 
+@@ -295,6 +297,67 @@ cnxk_eth_sec_sess_get_by_sess(struct cnxk_eth_dev *dev,
+ 	return NULL;
+ }
+ 
++int
++rte_pmd_cnxk_hw_sa_read(void *device, void *__sess, union rte_pmd_cnxk_ipsec_hw_sa *data,
++			uint32_t len)
++{
++	struct rte_security_session *sess = __sess;
++	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct cnxk_eth_sec_sess *eth_sec;
++	int rc;
++
++	eth_sec = cnxk_eth_sec_sess_get_by_sess(dev, sess);
++	if (eth_sec == NULL)
++		return -EINVAL;
++
++	rc = roc_nix_inl_sa_sync(&dev->nix, eth_sec->sa, eth_sec->inb, ROC_NIX_INL_SA_OP_FLUSH);
++	if (rc)
++		return -EINVAL;
++	rte_delay_ms(1);
++	memcpy(data, eth_sec->sa, len);
++
++	return 0;
++}
++
++int
++rte_pmd_cnxk_hw_sa_write(void *device, void *__sess, union rte_pmd_cnxk_ipsec_hw_sa *data,
++			 uint32_t len)
++{
++	struct rte_security_session *sess = __sess;
++	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct cnxk_eth_sec_sess *eth_sec;
++	int rc = -EINVAL;
++
++	eth_sec = cnxk_eth_sec_sess_get_by_sess(dev, sess);
++	if (eth_sec == NULL)
++		return rc;
++	rc = roc_nix_inl_ctx_write(&dev->nix, data, eth_sec->sa, eth_sec->inb, len);
++	if (rc)
++		return rc;
++
++	return 0;
++}
++
++union rte_pmd_cnxk_cpt_res_s *
++rte_pmd_cnxk_inl_ipsec_res(struct rte_mbuf *mbuf)
++{
++	const union nix_rx_parse_u *rx;
++	uint16_t desc_size;
++	uintptr_t wqe;
++
++	if (!mbuf || !(mbuf->ol_flags & RTE_MBUF_F_RX_SEC_OFFLOAD))
++		return NULL;
++
++	wqe = (uintptr_t)(mbuf + 1);
++	rx = (const union nix_rx_parse_u *)(wqe + 8);
++	desc_size = (rx->desc_sizem1 + 1) * 16;
++
++	/* rte_pmd_cnxk_cpt_res_s sits after SG list at 16B aligned address */
++	return (void *)(wqe + 64 + desc_size);
++}
++
+ static unsigned int
+ cnxk_eth_sec_session_get_size(void *device __rte_unused)
+ {
+diff --git a/drivers/net/cnxk/rte_pmd_cnxk.h b/drivers/net/cnxk/rte_pmd_cnxk.h
+index 67c8329abd3b7..71b0c2b9d45bc 100644
+--- a/drivers/net/cnxk/rte_pmd_cnxk.h
++++ b/drivers/net/cnxk/rte_pmd_cnxk.h
+@@ -483,7 +483,7 @@ union rte_pmd_cnxk_cpt_res_s {
+  * @param device
+  *   Port identifier of Ethernet device.
+  * @param sess
+- *   Handle of the security session.
++ *   Handle of the security session as void *.
+  * @param[out] data
+  *   Destination pointer to copy SA context for application.
+  * @param len
+@@ -493,7 +493,7 @@ union rte_pmd_cnxk_cpt_res_s {
+  *   0 on success, a negative errno value otherwise.
+  */
+ __rte_experimental
+-int rte_pmd_cnxk_hw_sa_read(void *device, struct rte_security_session *sess,
++int rte_pmd_cnxk_hw_sa_read(void *device, void *sess,
+ 			    union rte_pmd_cnxk_ipsec_hw_sa *data, uint32_t len);
+ /**
+  * Write HW SA context to session.
+@@ -501,7 +501,7 @@ int rte_pmd_cnxk_hw_sa_read(void *device, struct rte_security_session *sess,
+  * @param device
+  *   Port identifier of Ethernet device.
+  * @param sess
+- *   Handle of the security session.
++ *   Handle of the security session as void *.
+  * @param[in] data
+  *   Source data pointer from application to copy SA context into session.
+  * @param len
+@@ -511,7 +511,7 @@ int rte_pmd_cnxk_hw_sa_read(void *device, struct rte_security_session *sess,
+  *   0 on success, a negative errno value otherwise.
+  */
+ __rte_experimental
+-int rte_pmd_cnxk_hw_sa_write(void *device, struct rte_security_session *sess,
++int rte_pmd_cnxk_hw_sa_write(void *device, void *sess,
+ 			     union rte_pmd_cnxk_ipsec_hw_sa *data, uint32_t len);
+ 
+ /**
+-- 
+2.25.1
+

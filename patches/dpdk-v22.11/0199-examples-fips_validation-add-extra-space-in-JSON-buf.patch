@@ -1,0 +1,40 @@
+From 0978aed32dd13c49060b15f2020b39b935384615 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Mon, 6 Feb 2023 14:59:51 +0530
+Subject: [PATCH 199/955] examples/fips_validation: add extra space in JSON
+ buffer
+
+Current test buffer to copy input data of maximum possible length
+did not account NULL character, due to which a last input character
+is always ignored and it causes tests like RSA SIGVER for modulo
+of 4096 bits to fail. This patch fixes it.
+
+Fixes: 0b65d54f3a4 ("examples/fips_validation: fix JSON buffer size")
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I9355b90d9c1c23fec9f6469ae465f8675073f523
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96169
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ examples/fips_validation/fips_validation.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/examples/fips_validation/fips_validation.h b/examples/fips_validation/fips_validation.h
+index c4988053c1cd5..abc1d64742df7 100644
+--- a/examples/fips_validation/fips_validation.h
++++ b/examples/fips_validation/fips_validation.h
+@@ -247,7 +247,7 @@ struct ecdsa_interim_data {
+  * Esp, in asym op, modulo bits decide char buffer size.
+  * max = (modulo / 4)
+  */
+-#define FIPS_TEST_JSON_BUF_LEN (4096 / 4)
++#define FIPS_TEST_JSON_BUF_LEN ((4096 / 4) + 1)
+ 
+ struct fips_test_json_info {
+ 	/* Information used for reading from json */
+-- 
+2.25.1
+

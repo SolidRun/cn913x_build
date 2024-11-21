@@ -1,0 +1,60 @@
+From 6dd2797412b5e94c12a9d1a8f997fe350f7a0324 Mon Sep 17 00:00:00 2001
+From: Sivaramakrishnan Venkat <venkatx.sivaramakrishnan@intel.com>
+Date: Fri, 18 Aug 2023 09:52:47 +0000
+Subject: [PATCH 843/955] test/crypto: fix typo in asym tests
+
+test_dh_keygenration() changed to test_dh_key_generation()
+
+Fixes: fc6c9066e40d ("test/crypto: add DH and DSA tests")
+Fixes: da74df7d38c0 ("test/crypto: move test suite parameters to header file")
+Cc: stable@dpdk.org
+
+Signed-off-by: Sivaramakrishnan Venkat <venkatx.sivaramakrishnan@intel.com>
+Acked-by: Ciara Power <ciara.power@intel.com>
+Change-Id: Ic1f1096a64be5622690aa0d7b2c4fc88ffefe6b8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123929
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .mailmap                       | 1 +
+ app/test/test_cryptodev_asym.c | 4 ++--
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/.mailmap b/.mailmap
+index 90a8850ad221b..3a26b3eadf286 100644
+--- a/.mailmap
++++ b/.mailmap
+@@ -1236,6 +1236,7 @@ Simon Kuenzer <simon.kuenzer@neclab.eu>
+ Siobhan Butler <siobhan.a.butler@intel.com>
+ Sirshak Das <sirshak.das@arm.com>
+ Sivaprasad Tummala <sivaprasad.tummala@amd.com> <sivaprasad.tummala@intel.com>
++Sivaramakrishnan Venkat <venkatx.sivaramakrishnan@intel.com>
+ Siwar Zitouni <siwar.zitouni@6wind.com>
+ Slawomir Mrozowicz <slawomirx.mrozowicz@intel.com>
+ Slawomir Rosek <slawomir.rosek@semihalf.com>
+diff --git a/app/test/test_cryptodev_asym.c b/app/test/test_cryptodev_asym.c
+index c2393577879ff..3641cb7efd98f 100644
+--- a/app/test/test_cryptodev_asym.c
++++ b/app/test/test_cryptodev_asym.c
+@@ -1210,7 +1210,7 @@ test_mod_exp(void)
+ }
+ 
+ static int
+-test_dh_keygenration(void)
++test_dh_key_generation(void)
+ {
+ 	int status;
+ 
+@@ -2114,7 +2114,7 @@ static struct unit_test_suite cryptodev_openssl_asym_testsuite  = {
+ 		TEST_CASE_ST(ut_setup_asym, ut_teardown_asym, test_capability),
+ 		TEST_CASE_ST(ut_setup_asym, ut_teardown_asym, test_dsa),
+ 		TEST_CASE_ST(ut_setup_asym, ut_teardown_asym,
+-				test_dh_keygenration),
++				test_dh_key_generation),
+ 		TEST_CASE_ST(ut_setup_asym, ut_teardown_asym, test_rsa_enc_dec),
+ 		TEST_CASE_ST(ut_setup_asym, ut_teardown_asym,
+ 				test_rsa_sign_verify),
+-- 
+2.25.1
+

@@ -1,0 +1,241 @@
+From 150ff33614172cf0def54a02172a2c42dc37a487 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 30 Nov 2023 18:19:23 +0530
+Subject: [PATCH 017/513] cnxk-tests: update dependencies
+
+The dependency handling for files have changed in 23.11.
+Update dependencies for cnxk-tests accordingly.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Ic067ff676cb0b4ed3e1fc0d05eec20aa4701ac0f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117185
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/bphy_irq/meson.build |  2 +-
+ marvell-ci/test/cnxk-tests/common/meson.build   |  7 +++----
+ .../test/cnxk-tests/common/pcap/meson.build     |  6 +++---
+ marvell-ci/test/cnxk-tests/extbuf/meson.build   |  2 +-
+ marvell-ci/test/cnxk-tests/hwpool/meson.build   |  2 +-
+ .../test/cnxk-tests/ipsec_msns/meson.build      |  2 +-
+ .../test/cnxk-tests/l2fwd_event_pfc/meson.build |  2 +-
+ .../test/cnxk-tests/l2fwd_tmc/meson.build       |  4 ++--
+ .../test/cnxk-tests/mbuf_perf/meson.build       |  2 +-
+ marvell-ci/test/cnxk-tests/meson.build          | 17 +++++++++++++++++
+ .../cnxk-tests/multi_pool_pkt_tx/meson.build    |  2 +-
+ .../test/cnxk-tests/udp4-recv/meson.build       |  2 +-
+ 12 files changed, 33 insertions(+), 17 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/bphy_irq/meson.build b/marvell-ci/test/cnxk-tests/bphy_irq/meson.build
+index ba8cbc9daad34..2067f547c1792 100644
+--- a/marvell-ci/test/cnxk-tests/bphy_irq/meson.build
++++ b/marvell-ci/test/cnxk-tests/bphy_irq/meson.build
+@@ -24,7 +24,7 @@ bphy_irq_test=executable(
+     test_exec,
+     files('bphy_irq.c'),
+     link_whole: link_libs,
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     c_args: cflags,
+     install_dir: 'bin/cnxk/bphy_irq',
+     install: true
+diff --git a/marvell-ci/test/cnxk-tests/common/meson.build b/marvell-ci/test/cnxk-tests/common/meson.build
+index bd47a0f2cc94b..cd910216914a6 100644
+--- a/marvell-ci/test/cnxk-tests/common/meson.build
++++ b/marvell-ci/test/cnxk-tests/common/meson.build
+@@ -6,12 +6,11 @@ if not get_option('tests')
+ endif
+ 
+ # This executable is used as a workaround to make sure that the exe_wrapper gets
+-# called for scripts also. In the exe_wrapper, this executable is ignored. Note
+-# that the test_dep_objs is inherited from app/test/meson.build.
++# called for scripts also. In the exe_wrapper, this executable is ignored.
+ cnxk_test_script_wrapper = executable(
+     'cnxk-test-script-wrapper',
+     files('cnxk_test_script_wrapper.c'),
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     install: false)
+ 
+ # Helper command to copy files to build dir
+@@ -29,7 +28,7 @@ dpdk_test_sources += files('../../../../app/test/test_pdump.c')
+ dpdk_test_sources += files('../../../../app/test/sample_packet_forward.c')
+ dpdk_test_inc_dir = include_directories('../../../../app/test')
+ dpdk_test_link = dpdk_static_libraries + dpdk_drivers
+-dpdk_test_deps = test_dep_objs + ext_deps
++dpdk_test_deps = cnxk_test_dep_objs + ext_deps
+ 
+ subdir('scapy')
+ subdir('pcap')
+diff --git a/marvell-ci/test/cnxk-tests/common/pcap/meson.build b/marvell-ci/test/cnxk-tests/common/pcap/meson.build
+index fcfe116d1fd07..f69a2f7a7a405 100644
+--- a/marvell-ci/test/cnxk-tests/common/pcap/meson.build
++++ b/marvell-ci/test/cnxk-tests/common/pcap/meson.build
+@@ -8,21 +8,21 @@ endif
+ executable(
+     'pcap-pkt-cnt',
+     files('pcap_pkt_cnt.c'),
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     install: true,
+     install_dir : 'bin/cnxk/common/pcap')
+ 
+ executable(
+     'pcap-len',
+     files('pcap_len.c'),
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     install: true,
+     install_dir : 'bin/cnxk/common/pcap')
+ 
+ executable(
+     'pcap-mac',
+     files('pcap_mac.c'),
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     install: true,
+     install_dir : 'bin/cnxk/common/pcap')
+ 
+diff --git a/marvell-ci/test/cnxk-tests/extbuf/meson.build b/marvell-ci/test/cnxk-tests/extbuf/meson.build
+index 85031d0a5070d..2150b31041ebc 100644
+--- a/marvell-ci/test/cnxk-tests/extbuf/meson.build
++++ b/marvell-ci/test/cnxk-tests/extbuf/meson.build
+@@ -24,7 +24,7 @@ extbuf_test=executable(
+     test_exec,
+     files('extbuf.c'),
+     link_whole: link_libs,
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     c_args: cflags,
+     install_dir: 'bin/cnxk/extbuf',
+     install: true
+diff --git a/marvell-ci/test/cnxk-tests/hwpool/meson.build b/marvell-ci/test/cnxk-tests/hwpool/meson.build
+index c7090007e835b..312264896df33 100644
+--- a/marvell-ci/test/cnxk-tests/hwpool/meson.build
++++ b/marvell-ci/test/cnxk-tests/hwpool/meson.build
+@@ -15,7 +15,7 @@ extbuf_test=executable(
+     test_exec,
+     files('hwpool.c'),
+     link_whole: link_libs,
+-    dependencies:[test_dep_objs, get_variable(def_lib + '_rte_mempool_cnxk')],
++    dependencies:[cnxk_test_dep_objs, get_variable(def_lib + '_rte_mempool_cnxk')],
+     c_args: cflags,
+     install_dir: 'bin/cnxk/hwpool',
+     install: true
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/meson.build b/marvell-ci/test/cnxk-tests/ipsec_msns/meson.build
+index 7762ef27142e3..fc83df2c7b9c2 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/meson.build
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/meson.build
+@@ -25,7 +25,7 @@ ipsec_msns_test=executable(
+     files('ipsec_msns.c'),
+     link_whole: link_libs,
+     include_directories: includes,
+-    dependencies: [test_dep_objs, get_variable(def_lib + '_rte_net_cnxk')],
++    dependencies: [cnxk_test_dep_objs, get_variable(def_lib + '_rte_net_cnxk')],
+     c_args: cflags,
+     install_dir: 'bin/cnxk/ipsec_msns',
+     install: true
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/meson.build b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/meson.build
+index ba1cfaf57214b..f1ca83a699ab6 100644
+--- a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/meson.build
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/meson.build
+@@ -18,7 +18,7 @@ l2fwd_event_pfc_test=executable(
+           'l2fwd_event_generic.c', 'l2fwd_event_internal_port.c',
+           'l2fwd_poll.c'),
+     link_whole: link_libs,
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     c_args: cflags,
+     install_dir: 'bin/cnxk/l2fwd_event_pfc',
+     install: true,
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_tmc/meson.build b/marvell-ci/test/cnxk-tests/l2fwd_tmc/meson.build
+index 647122e9917ee..406d0ba74c98e 100644
+--- a/marvell-ci/test/cnxk-tests/l2fwd_tmc/meson.build
++++ b/marvell-ci/test/cnxk-tests/l2fwd_tmc/meson.build
+@@ -23,14 +23,14 @@ if get_option('default_library') == 'static'
+     link_whole_libs = dpdk_static_libraries + dpdk_drivers
+ endif
+ 
+-test_dep_objs += tmc_dep
++cnxk_test_dep_objs += tmc_dep
+ # Create the test executable
+ l2fwd_tmc_test=executable(
+     test_exec,
+     files('main.c', 'l2fwd_common.c', 'l2fwd_event.c', 'l2fwd_event_generic.c',
+           'l2fwd_event_internal_port.c', 'l2fwd_poll.c'),
+     link_whole: link_whole_libs,
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     link_args: extra_ldflags,
+     c_args: cflags,
+     install_dir: 'bin/cnxk/l2fwd_tmc',
+diff --git a/marvell-ci/test/cnxk-tests/mbuf_perf/meson.build b/marvell-ci/test/cnxk-tests/mbuf_perf/meson.build
+index bab6bd9d33c53..5b768950d90cc 100644
+--- a/marvell-ci/test/cnxk-tests/mbuf_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/mbuf_perf/meson.build
+@@ -15,7 +15,7 @@ mbuf_perf_test=executable(
+     test_exec,
+     files('mbuf_perf.c'),
+     link_whole: link_libs,
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     c_args: cflags,
+     install_dir: 'bin/cnxk/mbuf_perf',
+     install: true,
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index 4f6b045874af7..536204a8a5837 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -5,6 +5,23 @@ if not get_option('tests')
+     subdir_done()
+ endif
+ 
++cnxk_test_deps = [
++        'cmdline',
++        'eventdev',
++        'graph',
++        'ipsec',
++        'net_ring',
++        'node',
++        'pdump',
++        'rawdev',
++]
++
++cnxk_test_dep_objs = []
++cnxk_def_lib = get_option('default_library')
++foreach d : cnxk_test_deps
++    cnxk_test_dep_objs += get_variable(cnxk_def_lib + '_rte_' + d)
++endforeach
++
+ subdir('common')
+ 
+ # The developer is expected to add new scripts in subdirectories and add it to
+diff --git a/marvell-ci/test/cnxk-tests/multi_pool_pkt_tx/meson.build b/marvell-ci/test/cnxk-tests/multi_pool_pkt_tx/meson.build
+index cd809f3de5f38..5a277d2114de5 100644
+--- a/marvell-ci/test/cnxk-tests/multi_pool_pkt_tx/meson.build
++++ b/marvell-ci/test/cnxk-tests/multi_pool_pkt_tx/meson.build
+@@ -21,7 +21,7 @@ multi_pool_pkt_tx_test=executable(
+     test_exec,
+     files('multi_pool_pkt_tx.c'),
+     link_whole: link_libs,
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     c_args: cflags,
+     install_dir: test_install_dir,
+     install: true
+diff --git a/marvell-ci/test/cnxk-tests/udp4-recv/meson.build b/marvell-ci/test/cnxk-tests/udp4-recv/meson.build
+index ac60ab9e4b04b..dc3a1be3cec86 100644
+--- a/marvell-ci/test/cnxk-tests/udp4-recv/meson.build
++++ b/marvell-ci/test/cnxk-tests/udp4-recv/meson.build
+@@ -18,7 +18,7 @@ extbuf_test=executable(
+     test_exec,
+     files('main.c'),
+     link_whole: link_libs,
+-    dependencies: test_dep_objs,
++    dependencies: cnxk_test_dep_objs,
+     c_args: cflags,
+     install_dir: 'bin/cnxk/udp4-recv',
+     install: true
+-- 
+2.25.1
+

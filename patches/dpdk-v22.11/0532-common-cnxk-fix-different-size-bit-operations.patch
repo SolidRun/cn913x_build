@@ -1,0 +1,38 @@
+From 646424f8ef21d71be62d93d4c453afe9ad883877 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 14 Jul 2023 15:52:32 +0530
+Subject: [PATCH 532/955] common/cnxk: fix different size bit operations
+
+WORD_SIZE is made as unsigned long long so that
+bit operations are done on same size of variables.
+
+Fixes: 1ec23c7523b4 ("common/cnxk: support anti-replay check in SW for cn9k")
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I66bf11ccac538b00ffd2aab98cfe72ae54848869
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107560
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/cnxk_security_ar.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security_ar.h b/drivers/common/cnxk/cnxk_security_ar.h
+index deb38db0d0379..d0151a752c0b4 100644
+--- a/drivers/common/cnxk/cnxk_security_ar.h
++++ b/drivers/common/cnxk/cnxk_security_ar.h
+@@ -17,7 +17,7 @@
+ 	 BITS_PER_LONG_LONG)
+ 
+ #define WORD_SHIFT 6
+-#define WORD_SIZE  (1 << WORD_SHIFT)
++#define WORD_SIZE  (1ULL << WORD_SHIFT)
+ #define WORD_MASK  (WORD_SIZE - 1)
+ 
+ #define IPSEC_ANTI_REPLAY_FAILED (-1)
+-- 
+2.25.1
+

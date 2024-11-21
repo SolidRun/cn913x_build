@@ -1,0 +1,38 @@
+From 491a18bb1f8235b7007bc681ba7a47f113adb4b3 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Mon, 4 Mar 2024 06:43:12 -0800
+Subject: [PATCH 259/513] crypto/cnxk: use proper offset for context
+ calculation
+
+Use the proper offset for calculating the context size in case of TLS-1.3.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I55e40325b818f4d21c4825b01170ff3e01c9c075
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123141
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit a2e014ef72b7388875186453775cb95512b77eeb)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123215
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_tls.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_tls.c b/drivers/crypto/cnxk/cn10k_tls.c
+index ded95a6d2587c..475ef4c7cf366 100644
+--- a/drivers/crypto/cnxk/cn10k_tls.c
++++ b/drivers/crypto/cnxk/cn10k_tls.c
+@@ -309,7 +309,7 @@ tls_read_ctx_size(struct roc_ie_ot_tls_read_sa *sa, enum rte_security_tls_versio
+ 	/* Variable based on Anti-replay Window */
+ 	if (tls_ver == RTE_SECURITY_VERSION_TLS_1_3) {
+ 		size = offsetof(struct roc_ie_ot_tls_read_sa, tls_13.ctx) +
+-		       offsetof(struct roc_ie_ot_tls_read_ctx_update_reg, ar_winbits);
++		       sizeof(struct roc_ie_ot_tls_1_3_read_ctx_update_reg);
+ 	} else {
+ 		size = offsetof(struct roc_ie_ot_tls_read_sa, tls_12.ctx) +
+ 		       offsetof(struct roc_ie_ot_tls_read_ctx_update_reg, ar_winbits);
+-- 
+2.25.1
+

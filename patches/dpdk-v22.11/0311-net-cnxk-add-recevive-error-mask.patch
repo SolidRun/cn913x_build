@@ -1,0 +1,38 @@
+From 929675127434d9a32ed1f504631dac7c70227a15 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Tue, 28 Feb 2023 12:25:25 +0530
+Subject: [PATCH 311/955] net/cnxk: add recevive error mask
+
+receive errors related to MACSEC and USXGMI are masked
+for cn10kb_b0 and cn10kb
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I340283e1238c846c76d10483816f38b9e2ecdb4d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95213
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index b185866338226..23e08e61652a6 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1264,6 +1264,11 @@ cnxk_nix_configure(struct rte_eth_dev *eth_dev)
+ 		   ROC_NIX_LF_RX_CFG_LEN_IL4 | ROC_NIX_LF_RX_CFG_LEN_IL3 |
+ 		   ROC_NIX_LF_RX_CFG_LEN_OL4 | ROC_NIX_LF_RX_CFG_LEN_OL3);
+ 
++	rx_cfg &= (ROC_NIX_LF_RX_CFG_RX_ERROR_MASK);
++
++	if (roc_feature_nix_has_drop_re_mask())
++		rx_cfg |= (ROC_NIX_RE_CRC8_PCH | ROC_NIX_RE_MACSEC);
++
+ 	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY) {
+ 		rx_cfg |= ROC_NIX_LF_RX_CFG_IP6_UDP_OPT;
+ 		/* Disable drop re if rx offload security is enabled and
+-- 
+2.25.1
+

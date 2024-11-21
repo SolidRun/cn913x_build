@@ -1,0 +1,34 @@
+From 74ba033bae967338e3cea2835fb8d4f332f6f60d Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 1 Aug 2024 23:15:32 +0530
+Subject: [PATCH 429/513] mempool/cnxk: initialize mempool ops for cn20k
+
+Initialize mempool ops for cn20k.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Id73e970f32f3f1aec12585e6357ed92e5ce0a2d6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132658
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/mempool/cnxk/cnxk_mempool_ops.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/mempool/cnxk/cnxk_mempool_ops.c b/drivers/mempool/cnxk/cnxk_mempool_ops.c
+index a1aeaee746f58..bb35e2d1d2f1e 100644
+--- a/drivers/mempool/cnxk/cnxk_mempool_ops.c
++++ b/drivers/mempool/cnxk/cnxk_mempool_ops.c
+@@ -192,7 +192,7 @@ cnxk_mempool_plt_init(void)
+ 
+ 	if (roc_model_is_cn9k()) {
+ 		rte_mbuf_set_platform_mempool_ops("cn9k_mempool_ops");
+-	} else if (roc_model_is_cn10k()) {
++	} else if (roc_model_is_cn10k() || roc_model_is_cn20k()) {
+ 		rte_mbuf_set_platform_mempool_ops("cn10k_mempool_ops");
+ 		rc = cn10k_mempool_plt_init();
+ 	}
+-- 
+2.25.1
+

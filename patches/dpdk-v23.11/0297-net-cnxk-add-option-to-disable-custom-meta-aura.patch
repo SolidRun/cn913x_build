@@ -1,0 +1,188 @@
+From 5bb3002dda237e78bc6062a56c92488b7033b396 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 10 Apr 2024 18:28:05 +0530
+Subject: [PATCH 297/513] net/cnxk: add option to disable custom meta aura
+
+Add option to explicitly disable custom meta aura. Currently
+custom meta aura is enabled automatically when inl_cpt_channel
+is set i.e inline dev is masking CHAN field in IPsec rules.
+
+Also decouple the custom meta aura feature from custom sa action
+so that the custom sa action can independently be used.
+
+Change-Id: I964b6214317c4665b61494cff2b6195c299384b9
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125118
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ doc/guides/nics/cnxk.rst               | 13 +++++++++++++
+ drivers/common/cnxk/roc_nix_inl.c      | 16 +++++++++++++---
+ drivers/common/cnxk/roc_nix_inl.h      |  1 +
+ drivers/common/cnxk/version.map        |  1 +
+ drivers/net/cnxk/cnxk_ethdev.c         |  5 +++++
+ drivers/net/cnxk/cnxk_ethdev.h         |  3 +++
+ drivers/net/cnxk/cnxk_ethdev_devargs.c |  8 +++++++-
+ 7 files changed, 43 insertions(+), 4 deletions(-)
+
+diff --git a/doc/guides/nics/cnxk.rst b/doc/guides/nics/cnxk.rst
+index c4ee89aa7db57..f2d726047e21d 100644
+--- a/doc/guides/nics/cnxk.rst
++++ b/doc/guides/nics/cnxk.rst
+@@ -444,6 +444,19 @@ Runtime Config Options
+    With the above configuration, driver would poll for aging flows every 50
+    seconds.
+ 
++- ``Disable custom meta aura feature`` (default ``0``)
++
++   Custom meta aura i.e 1:N meta aura is enabled for second pass traffic by default when
++   ``inl_cpt_channel`` devarg is provided. Provide an option to disable the custom
++   meta aura feature by setting devarg ``custom_meta_aura_dis`` to ``1``.
++
++   For example::
++
++     -a 0002:02:00.0,custom_meta_aura_dis=1
++
++   With the above configuration, driver would disable custom meta aura feature for
++   ``0002:02:00.0`` ethdev.
++
+ .. note::
+ 
+    Above devarg parameters are configurable per device, user needs to pass the
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 7dbeae5017292..1061d61ed8044 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -931,9 +931,6 @@ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ 
+ 	inl_dev = idev->nix_inl_dev;
+ 
+-	roc_nix->custom_meta_aura_ena = (roc_nix->local_meta_aura_ena &&
+-					 ((inl_dev && inl_dev->is_multi_channel) ||
+-					  roc_nix->custom_sa_action));
+ 	if (!roc_model_is_cn9k() && !roc_errata_nix_no_meta_aura()) {
+ 		nix->need_meta_aura = true;
+ 		if (!roc_nix->local_meta_aura_ena || roc_nix->custom_meta_aura_ena)
+@@ -1245,6 +1242,19 @@ roc_nix_inl_dev_is_probed(void)
+ 	return !!idev->nix_inl_dev;
+ }
+ 
++bool
++roc_nix_inl_dev_is_multi_channel(void)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++	struct nix_inl_dev *inl_dev;
++
++	if (idev == NULL || !idev->nix_inl_dev)
++		return false;
++
++	inl_dev = idev->nix_inl_dev;
++	return inl_dev->is_multi_channel;
++}
++
+ bool
+ roc_nix_inl_inb_is_enabled(struct roc_nix *roc_nix)
+ {
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index 8acd7e054565b..ab0965e512b85 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -115,6 +115,7 @@ int __roc_api roc_nix_inl_dev_stats_get(struct roc_nix_stats *stats);
+ uint16_t __roc_api roc_nix_inl_dev_pffunc_get(void);
+ int __roc_api roc_nix_inl_dev_cpt_setup(bool use_inl_dev_sso);
+ int __roc_api roc_nix_inl_dev_cpt_release(void);
++bool __roc_api roc_nix_inl_dev_is_multi_channel(void);
+ 
+ /* NIX Inline Inbound API */
+ int __roc_api roc_nix_inl_inb_init(struct roc_nix *roc_nix);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 75f85f4805757..25f0e977821e0 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -240,6 +240,7 @@ INTERNAL {
+ 	roc_nix_inl_dev_dump;
+ 	roc_nix_inl_dev_fini;
+ 	roc_nix_inl_dev_init;
++	roc_nix_inl_dev_is_multi_channel;
+ 	roc_nix_inl_dev_is_probed;
+ 	roc_nix_inl_dev_stats_get;
+ 	roc_nix_inl_dev_lock;
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 1bccebad9ffa4..db8feca620c79 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -107,6 +107,11 @@ nix_security_setup(struct cnxk_eth_dev *dev)
+ 		nix->ipsec_in_min_spi = dev->inb.no_inl_dev ? dev->inb.min_spi : 0;
+ 		nix->ipsec_in_max_spi = dev->inb.no_inl_dev ? dev->inb.max_spi : 1;
+ 
++		/* Enable custom meta aura when multi-chan is used */
++		if (nix->local_meta_aura_ena && roc_nix_inl_dev_is_multi_channel() &&
++		    !dev->inb.custom_meta_aura_dis)
++			nix->custom_meta_aura_ena = true;
++
+ 		/* Setup Inline Inbound */
+ 		rc = roc_nix_inl_inb_init(nix);
+ 		if (rc) {
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index ef815150be060..e0f67fdf912c9 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -257,6 +257,9 @@ struct cnxk_eth_dev_sec_inb {
+ 
+ 	/* Lock to synchronize sa setup/release */
+ 	rte_spinlock_t lock;
++
++	/* Disable custom meta aura */
++	bool custom_meta_aura_dis;
+ };
+ 
+ /* Outbound security data */
+diff --git a/drivers/net/cnxk/cnxk_ethdev_devargs.c b/drivers/net/cnxk/cnxk_ethdev_devargs.c
+index 1bab19fc23fc0..3454295d7d42f 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_devargs.c
++++ b/drivers/net/cnxk/cnxk_ethdev_devargs.c
+@@ -280,6 +280,7 @@ parse_val_u16(const char *key, const char *value, void *extra_args)
+ #define CNXK_NIX_META_BUF_SZ	"meta_buf_sz"
+ #define CNXK_FLOW_AGING_POLL_FREQ	"aging_poll_freq"
+ #define CNXK_NIX_RX_INJ_ENABLE	"rx_inj_ena"
++#define CNXK_CUSTOM_META_AURA_DIS "custom_meta_aura_dis"
+ 
+ int
+ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+@@ -291,6 +292,7 @@ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+ 	uint32_t ipsec_in_max_spi = BIT(8) - 1;
+ 	uint16_t sqb_slack = ROC_NIX_SQB_SLACK;
+ 	uint32_t ipsec_out_max_sa = BIT(12);
++	uint16_t custom_meta_aura_dis = 0;
+ 	uint16_t flow_prealloc_size = 1;
+ 	uint16_t switch_header_type = 0;
+ 	uint16_t flow_max_priority = 3;
+@@ -358,6 +360,8 @@ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+ 	rte_kvargs_process(kvlist, CNXK_FLOW_AGING_POLL_FREQ, &parse_val_u16,
+ 			   &aging_thread_poll_freq);
+ 	rte_kvargs_process(kvlist, CNXK_NIX_RX_INJ_ENABLE, &parse_flag, &rx_inj_ena);
++	rte_kvargs_process(kvlist, CNXK_CUSTOM_META_AURA_DIS, &parse_flag,
++			   &custom_meta_aura_dis);
+ 	rte_kvargs_free(kvlist);
+ 
+ null_devargs:
+@@ -366,6 +370,7 @@ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+ 	dev->inb.no_inl_dev = !!no_inl_dev;
+ 	dev->inb.min_spi = ipsec_in_min_spi;
+ 	dev->inb.max_spi = ipsec_in_max_spi;
++	dev->inb.custom_meta_aura_dis = custom_meta_aura_dis;
+ 	dev->outb.max_sa = ipsec_out_max_sa;
+ 	dev->outb.nb_desc = outb_nb_desc;
+ 	dev->outb.nb_crypto_qs = outb_nb_crypto_qs;
+@@ -415,4 +420,5 @@ RTE_PMD_REGISTER_PARAM_STRING(net_cnxk,
+ 			      CNXK_CUSTOM_SA_ACT "=1"
+ 			      CNXK_SQB_SLACK "=<12-512>"
+ 			      CNXK_FLOW_AGING_POLL_FREQ "=<10-65535>"
+-			      CNXK_NIX_RX_INJ_ENABLE "=1");
++			      CNXK_NIX_RX_INJ_ENABLE "=1"
++			      CNXK_CUSTOM_META_AURA_DIS "=1");
+-- 
+2.25.1
+

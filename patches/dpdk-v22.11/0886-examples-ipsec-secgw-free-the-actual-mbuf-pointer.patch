@@ -1,0 +1,51 @@
+From f48bb46f262fa6a582dde5d9ea6d7522f4e1722b Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Sun, 23 Jun 2024 00:15:13 -0700
+Subject: [PATCH 886/955] examples/ipsec-secgw: free the actual mbuf pointer
+
+In case of crypto event vector, the vector points to crypto op structure
+in priv area and not actual mbuf.
+extract the mbuf pointer and pass these to rte_mbuf_free to free the
+mbufs
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: If7d1111e81a162efaf83704fec90f2cc3de68a52
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130053
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit b6073b9901507fd92ae94c3f46628f3788b675c6)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130350
+---
+ examples/ipsec-secgw/ipsec_worker.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/examples/ipsec-secgw/ipsec_worker.c b/examples/ipsec-secgw/ipsec_worker.c
+index 58c80c73f029c..6868d93a02c47 100644
+--- a/examples/ipsec-secgw/ipsec_worker.c
++++ b/examples/ipsec-secgw/ipsec_worker.c
+@@ -960,7 +960,18 @@ static void
+ ipsec_event_vector_free(struct rte_event *ev)
+ {
+ 	struct rte_event_vector *vec = ev->vec;
+-	rte_pktmbuf_free_bulk(vec->mbufs + vec->elem_offset, vec->nb_elem);
++
++	if (ev->event_type == RTE_EVENT_TYPE_CRYPTODEV_VECTOR) {
++		struct rte_crypto_op *cop;
++		int i;
++
++		for (i = 0; i < vec->nb_elem; i++) {
++			cop = vec->ptrs[i];
++			rte_pktmbuf_free(cop->sym->m_src);
++		}
++	} else {
++		rte_pktmbuf_free_bulk(vec->mbufs + vec->elem_offset, vec->nb_elem);
++	}
+ 	rte_mempool_put(rte_mempool_from_obj(vec), vec);
+ }
+ 
+-- 
+2.25.1
+

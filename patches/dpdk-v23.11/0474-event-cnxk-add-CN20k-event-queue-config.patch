@@ -1,0 +1,102 @@
+From 08171293d7d43120561910205439e022bb4c0f6a Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 19 Aug 2024 15:13:00 +0530
+Subject: [PATCH 474/513] event/cnxk: add CN20k event queue config
+
+Add setup and release functions for event queues i.e. SSO HWGRPs.
+Allocate buffers in DRAM that hold inflight events.
+Register device args to modify inflight event buffer count,
+HWGRP QoS and stash.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I93eeb7f4a5791307b085d13abb5bbc0fff14ca92
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134411
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_eventdev.c |  2 +-
+ drivers/event/cnxk/cn20k_eventdev.c | 14 ++++++++++++++
+ drivers/event/cnxk/cnxk_eventdev.c  |  4 ++--
+ drivers/event/cnxk/cnxk_eventdev.h  |  2 +-
+ 4 files changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index 8922aee60d5fc..aed1c7980b336 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -1290,7 +1290,7 @@ RTE_PMD_REGISTER_PARAM_STRING(event_cn10k, CNXK_SSO_XAE_CNT "=<int>"
+ 			      CNXK_SSO_GGRP_QOS "=<string>"
+ 			      CNXK_SSO_FORCE_BP "=1"
+ 			      CN10K_SSO_GW_MODE "=<int>"
+-			      CN10K_SSO_STASH "=<string>"
++			      CNXK_SSO_STASH "=<string>"
+ 			      CNXK_TIM_DISABLE_NPA "=1"
+ 			      CNXK_TIM_CHNK_SLOTS "=<int>"
+ 			      CNXK_TIM_RINGS_LMT "=<int>"
+diff --git a/drivers/event/cnxk/cn20k_eventdev.c b/drivers/event/cnxk/cn20k_eventdev.c
+index 753a976cd324a..b876c368069c5 100644
+--- a/drivers/event/cnxk/cn20k_eventdev.c
++++ b/drivers/event/cnxk/cn20k_eventdev.c
+@@ -56,6 +56,12 @@ cn20k_sso_dev_configure(const struct rte_eventdev *event_dev)
+ 		return -ENODEV;
+ 	}
+ 
++	rc = cnxk_sso_xaq_allocate(dev);
++	if (rc < 0)
++		goto cnxk_rsrc_fini;
++
++cnxk_rsrc_fini:
++	roc_sso_rsrc_fini(&dev->sso);
+ 	return rc;
+ }
+ 
+@@ -64,6 +70,10 @@ static struct eventdev_ops cn20k_sso_dev_ops = {
+ 	.dev_configure = cn20k_sso_dev_configure,
+ 
+ 	.queue_def_conf = cnxk_sso_queue_def_conf,
++	.queue_setup = cnxk_sso_queue_setup,
++	.queue_release = cnxk_sso_queue_release,
++	.queue_attr_set = cnxk_sso_queue_attribute_set,
++
+ 	.port_def_conf = cnxk_sso_port_def_conf,
+ };
+ 
+@@ -127,3 +137,7 @@ static struct rte_pci_driver cn20k_pci_sso = {
+ RTE_PMD_REGISTER_PCI(event_cn20k, cn20k_pci_sso);
+ RTE_PMD_REGISTER_PCI_TABLE(event_cn20k, cn20k_pci_sso_map);
+ RTE_PMD_REGISTER_KMOD_DEP(event_cn20k, "vfio-pci");
++RTE_PMD_REGISTER_PARAM_STRING(event_cn20k,
++			      CNXK_SSO_XAE_CNT "=<int>"
++			      CNXK_SSO_GGRP_QOS "=<string>"
++			      CNXK_SSO_STASH "=<string>");
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index 02606a47ff6ad..862c8d25ea18f 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -620,8 +620,8 @@ cnxk_sso_parse_devargs(struct cnxk_sso_evdev *dev, struct rte_devargs *devargs)
+ 			   &single_ws);
+ 	rte_kvargs_process(kvlist, CN10K_SSO_GW_MODE, &parse_kvargs_value,
+ 			   &dev->gw_mode);
+-	rte_kvargs_process(kvlist, CN10K_SSO_STASH,
+-			   &parse_sso_kvargs_stash_dict, dev);
++	rte_kvargs_process(kvlist, CNXK_SSO_STASH, &parse_sso_kvargs_stash_dict,
++			   dev);
+ 	dev->dual_ws = !single_ws;
+ 	rte_kvargs_free(kvlist);
+ }
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index 5b1359a32e2c2..f7249d18fe2c0 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -28,7 +28,7 @@
+ #define CNXK_SSO_FORCE_BP  "force_rx_bp"
+ #define CN9K_SSO_SINGLE_WS "single_ws"
+ #define CN10K_SSO_GW_MODE  "gw_mode"
+-#define CN10K_SSO_STASH	   "stash"
++#define CNXK_SSO_STASH	   "stash"
+ 
+ #define CNXK_SSO_MAX_PROFILES 2
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,63 @@
+From 1346ede15ee6433f729f3ef8a8d2f16725d589cc Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Mon, 23 Jan 2023 13:00:44 +0530
+Subject: [PATCH 180/955] common/cnxk: replace CPT revision check with caps
+
+Replace SG version revision check with capabilities
+populated from microcode.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Ia432987efc447e595f430d8bd81bf3be8fb068f8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94995
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/hw/cpt.h              | 3 ++-
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 2 +-
+ drivers/event/cnxk/cn10k_eventdev.c       | 3 ++-
+ 3 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/cpt.h b/drivers/common/cnxk/hw/cpt.h
+index 44ff8b08b2d08..82ea076e4c09e 100644
+--- a/drivers/common/cnxk/hw/cpt.h
++++ b/drivers/common/cnxk/hw/cpt.h
+@@ -75,7 +75,8 @@ union cpt_eng_caps {
+ 		uint64_t __io mmul : 1;
+ 		uint64_t __io reserved_15_33 : 19;
+ 		uint64_t __io pdcp_chain : 1;
+-		uint64_t __io reserved_35_63 : 29;
++		uint64_t __io sg_ver2 : 1;
++		uint64_t __io reserved_36_63 : 28;
+ 	};
+ };
+ 
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index d1a43eaf13d99..9f6fd4e411c64 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -1045,7 +1045,7 @@ cn10k_cpt_dequeue_burst(void *qptr, struct rte_crypto_op **ops, uint16_t nb_ops)
+ void
+ cn10k_cpt_set_enqdeq_fns(struct rte_cryptodev *dev, struct cnxk_cpt_vf *vf)
+ {
+-	if (vf->cpt.cpt_revision > ROC_CPT_REVISION_ID_106XX)
++	if (vf->cpt.hw_caps[CPT_ENG_TYPE_SE].sg_ver2 && vf->cpt.hw_caps[CPT_ENG_TYPE_IE].sg_ver2)
+ 		dev->enqueue_burst = cn10k_cpt_sg_ver2_enqueue_burst;
+ 	else
+ 		dev->enqueue_burst = cn10k_cpt_sg_ver1_enqueue_burst;
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index e56eaa76d6bca..2aebdf71ee5f7 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -602,7 +602,8 @@ cn10k_sso_fp_fns_set(struct rte_eventdev *event_dev)
+ 		}
+ 	}
+ 
+-	if ((cpt != NULL) && (cpt->cpt_revision > ROC_CPT_REVISION_ID_106XX))
++	if ((cpt != NULL) && cpt->hw_caps[CPT_ENG_TYPE_SE].sg_ver2 &&
++	    cpt->hw_caps[CPT_ENG_TYPE_IE].sg_ver2)
+ 		event_dev->ca_enqueue = cn10k_cpt_sg_ver2_crypto_adapter_enqueue;
+ 	else
+ 		event_dev->ca_enqueue = cn10k_cpt_sg_ver1_crypto_adapter_enqueue;
+-- 
+2.25.1
+

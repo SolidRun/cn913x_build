@@ -1,0 +1,47 @@
+From 9b90972e5b1e154310cf85b5060b301698e20d0d Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Thu, 26 Oct 2023 13:22:14 +0530
+Subject: [PATCH 094/513] ci: add cryptodev crosscheck suite
+
+Add cryptodev_crosscheck suite to CI.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: Ie8fddd22ad993078458ad1d41a20eef4726695a5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117858
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+index f7baa9fbcb8e1..2093c6f3dd8fd 100755
+--- a/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
++++ b/marvell-ci/test/cnxk-tests/crypto_autotest/crypto_autotest.sh
+@@ -7,6 +7,7 @@ set -euo pipefail
+ SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+ 
+ CNXK_MEMPOOL_DEVICE=$(lspci -d :a0fb | tail -1 | awk -e '{ print $1 }')
++CNXK_EAL_VDEV_OPENSSL="--vdev crypto_openssl"
+ 
+ CN10K_CRYPTO_DEVICE="0002:20:00.1"
+ CN10K_EAL_ARGS="-a $CN10K_CRYPTO_DEVICE,max_qps_limit=4 -a $CNXK_MEMPOOL_DEVICE"
+@@ -33,11 +34,13 @@ fi
+ run_cn10k_crypto_autotest() {
+ 	DPDK_TEST=cryptodev_cn10k_autotest $DPDK_TEST_BIN $CN10K_EAL_ARGS
+ 	DPDK_TEST=cryptodev_cn10k_asym_autotest $DPDK_TEST_BIN $CN10K_EAL_ARGS
++	DPDK_TEST=cryptodev_crosscheck $DPDK_TEST_BIN $CN10K_EAL_ARGS $CNXK_EAL_VDEV_OPENSSL
+ }
+ 
+ run_cn9k_crypto_autotest() {
+ 	DPDK_TEST=cryptodev_cn9k_autotest $DPDK_TEST_BIN $CN9K_EAL_ARGS
+ 	DPDK_TEST=cryptodev_cn9k_asym_autotest $DPDK_TEST_BIN $CN9K_EAL_ARGS
++	DPDK_TEST=cryptodev_crosscheck $DPDK_TEST_BIN $CN9K_EAL_ARGS $CNXK_EAL_VDEV_OPENSSL
+ }
+ 
+ run_crypto_autotest() {
+-- 
+2.25.1
+

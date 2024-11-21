@@ -1,0 +1,76 @@
+From 5c3c69e95a52f7785dd08f204ecbcc169f70ddb5 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Wed, 9 Aug 2023 16:12:09 +0530
+Subject: [PATCH 600/955] common/cnxk: expose different params for bp config
+
+Currently same bp percentage is applied on SPB and
+LPB pool but both pools can be configured with different
+bp level.
+
+Added one more parameter so that separate threshold parameters
+can be passed for SPB and LPB pools.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I8a113be1ac1189967232a385cb0f508bf9ff1b3e
+---
+ drivers/common/cnxk/roc_nix.h    |  3 ++-
+ drivers/common/cnxk/roc_nix_fc.c | 14 +++++++++-----
+ 2 files changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index b403141de57b4..5892de6b248e4 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -196,10 +196,11 @@ struct roc_nix_fc_cfg {
+ 			uint32_t rq;
+ 			uint16_t tc;
+ 			uint16_t cq_drop;
+-			bool enable;
+ 			uint64_t pool;
+ 			uint64_t spb_pool;
+ 			uint64_t pool_drop_pct;
++			uint64_t spb_pool_drop_pct;
++			bool enable;
+ 		} rq_cfg;
+ 
+ 		struct {
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 2a585677517c0..12bfb9816b71c 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -282,8 +282,8 @@ static int
+ nix_fc_rq_config_set(struct roc_nix *roc_nix, struct roc_nix_fc_cfg *fc_cfg)
+ {
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	uint64_t pool_drop_pct, spb_pool_drop_pct;
+ 	struct roc_nix_fc_cfg tmp;
+-	uint64_t pool_drop_pct;
+ 	struct roc_nix_rq *rq;
+ 	int rc;
+ 
+@@ -295,14 +295,18 @@ nix_fc_rq_config_set(struct roc_nix *roc_nix, struct roc_nix_fc_cfg *fc_cfg)
+ 		if (fc_cfg->rq_cfg.enable && !pool_drop_pct)
+ 			pool_drop_pct = ROC_NIX_AURA_THRESH;
+ 
+-		roc_nix_fc_npa_bp_cfg(roc_nix, fc_cfg->rq_cfg.pool,
+-				      fc_cfg->rq_cfg.enable, roc_nix->force_rx_aura_bp,
+-				      fc_cfg->rq_cfg.tc, pool_drop_pct);
++		roc_nix_fc_npa_bp_cfg(roc_nix, fc_cfg->rq_cfg.pool, fc_cfg->rq_cfg.enable,
++				      roc_nix->force_rx_aura_bp, fc_cfg->rq_cfg.tc, pool_drop_pct);
+ 
+ 		if (rq->spb_ena) {
++			spb_pool_drop_pct = fc_cfg->rq_cfg.spb_pool_drop_pct;
++			/* Use default value for zero pct */
++			if (!spb_pool_drop_pct)
++				spb_pool_drop_pct = ROC_NIX_AURA_THRESH;
++
+ 			roc_nix_fc_npa_bp_cfg(roc_nix, fc_cfg->rq_cfg.spb_pool,
+ 					      fc_cfg->rq_cfg.enable, roc_nix->force_rx_aura_bp,
+-					      fc_cfg->rq_cfg.tc, pool_drop_pct);
++					      fc_cfg->rq_cfg.tc, spb_pool_drop_pct);
+ 		}
+ 
+ 		if (roc_nix->local_meta_aura_ena && roc_nix->meta_aura_handle)
+-- 
+2.25.1
+

@@ -1,0 +1,114 @@
+From 93145532179785aa7ad152f683e866550154bee4 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 23 Mar 2023 13:56:37 +0530
+Subject: [PATCH 335/955] ci: enable congestion management test config
+
+check threshold value in MPPS
+for ci to pass
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I177da9c187326cb5501da5ea716c1caab2c56541
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99200
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../cnxk-tests/cman_test/cnxk_cman_test.sh    | 20 ++++++++++++++-----
+ marvell-ci/test/env/cn10k.env                 |  1 -
+ marvell-ci/test/env/cn9k.env                  |  4 ----
+ 3 files changed, 15 insertions(+), 10 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh b/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh
+index bd8792b0bb809..8feecfe20159e 100755
+--- a/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh
++++ b/marvell-ci/test/cnxk-tests/cman_test/cnxk_cman_test.sh
+@@ -295,6 +295,11 @@ function stop_testpmd()
+ 
+ function run_testpmd()
+ {
++	if [[ -d /sys/kernel/debug/cn10k ]]; then
++		mbufs=4096
++	else
++		mbufs=2048
++	fi
+ 	testpmd_launch $TXPRFX \
+         	"-l 0-10 -n 1 -a $TESTPMD_TXPORT" \
+         	"--no-flush-rx --nb-cores=8 --forward-mode=txonly --txq=8 --rxq=8"
+@@ -304,20 +309,20 @@ function run_testpmd()
+ 	if [ $1 == "mempool" ] ;then
+ 		testpmd_launch $RXPRFX \
+ 			"-l 11-20 -n 1 -a $TESTPMD_RXPORT" \
+-			"--no-flush-rx --nb-cores=8 --forward-mode=rxonly --txq=8 --rxq=8 --total-num-mbufs=4096"
++			"--no-flush-rx --nb-cores=4 --forward-mode=rxonly --txq=4 --rxq=4 --total-num-mbufs=$mbufs"
+ 	fi
+ 
+ 	if [ $1 == "queue" ] ;then
+ 		testpmd_launch $RXPRFX \
+ 			"-l 11-20 -n 1 -a $TESTPMD_RXPORT" \
+-			"--no-flush-rx --nb-cores=8 --forward-mode=rxonly --txq=8 --rxq=8"
++			"--no-flush-rx --nb-cores=4 --forward-mode=rxonly --txq=4 --rxq=4"
+ 	fi
+ 
+ }
+ 
+ function configure_mode()
+ {
+-	for i in 0 1 2 3 4 5 6 7
++	for i in 0 1 2 3
+ 	do
+ 		if [ $3 == "queue" ] ;then
+ 			testpmd_cmd $RXPRFX "set port cman config 0 $i obj queue mode red $1 $2 1"
+@@ -361,8 +366,13 @@ check_stats $RXPRFX 1 1
+ stop_testpmd
+ sleep 2
+ run_testpmd queue
+-configure_mode 40 60 queue
+-check_stats $RXPRFX 40 60
++if [[ -d /sys/kernel/debug/cn10k ]]; then
++	configure_mode 40 60 queue
++	check_stats $RXPRFX 40 60
++else
++	configure_mode 10 20 queue
++	check_stats $RXPRFX 10 20
++fi
+ stop_testpmd
+ sleep 2
+ run_testpmd queue
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index d585a9d8d5d0a..90616302c0336 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -69,7 +69,6 @@ PERF_STAGE=${PERF_STAGE:-}
+ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
+-	cnxk_cman_test_config
+ 	cnxk_mtr_test_config
+ "
+ 
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index 45a69988ef27f..5f559be7765a7 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -67,9 +67,6 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-1}
+ 
+-FIXME_SKIP_TESTS="
+-	cnxk_cman_test_config
+-"
+ 
+ DEFAULT_SKIP_TESTS="
+ 	distributor_autotest
+@@ -114,7 +111,6 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_multi_pool_pkt_tx_scalar
+ 	cnxk_multi_mempool
+ 	cnxk_hwpool_tests
+-	${FIXME_SKIP_TESTS}
+ "
+ 
+ # Tests to skipped.
+-- 
+2.25.1
+

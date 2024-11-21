@@ -1,0 +1,138 @@
+From 2e5a4ca98f858583c132b4b13ecdc975a0eed83a Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Wed, 11 Oct 2023 13:36:43 +0530
+Subject: [PATCH 02/12] cryptodev: add EDDSA asymmetric crypto algorithm
+
+Add support for asymmetric EDDSA in cryptodev, as referenced in RFC:
+https://datatracker.ietf.org/doc/html/rfc8032
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I6cbe1c265c4e2524922dff440ef959977d873f09
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134687
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ doc/guides/cryptodevs/features/default.ini |  1 +
+ doc/guides/prog_guide/cryptodev_lib.rst    |  2 +-
+ lib/cryptodev/rte_crypto_asym.h            | 47 ++++++++++++++++++++++
+ 3 files changed, 49 insertions(+), 1 deletion(-)
+
+diff --git a/doc/guides/cryptodevs/features/default.ini b/doc/guides/cryptodevs/features/default.ini
+index f411d4bab73d8..30737539110c1 100644
+--- a/doc/guides/cryptodevs/features/default.ini
++++ b/doc/guides/cryptodevs/features/default.ini
+@@ -130,6 +130,7 @@ ECDSA                   =
+ ECPM                    =
+ ECDH                    =
+ SM2                     =
++EDDSA                   =
+ 
+ ;
+ ; Supported Operating systems of a default crypto driver.
+diff --git a/doc/guides/prog_guide/cryptodev_lib.rst b/doc/guides/prog_guide/cryptodev_lib.rst
+index 2b513bbf822da..dd636ba5ef853 100644
+--- a/doc/guides/prog_guide/cryptodev_lib.rst
++++ b/doc/guides/prog_guide/cryptodev_lib.rst
+@@ -927,7 +927,7 @@ Asymmetric Cryptography
+ The cryptodev library currently provides support for the following asymmetric
+ Crypto operations; RSA, Modular exponentiation and inversion, Diffie-Hellman and
+ Elliptic Curve Diffie-Hellman public and/or private key generation and shared
+-secret compute, DSA Signature generation and verification.
++secret compute, DSA and EdDSA Signature generation and verification.
+ 
+ Session and Session Management
+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+diff --git a/lib/cryptodev/rte_crypto_asym.h b/lib/cryptodev/rte_crypto_asym.h
+index 39d3da3952908..fe4194c1840b5 100644
+--- a/lib/cryptodev/rte_crypto_asym.h
++++ b/lib/cryptodev/rte_crypto_asym.h
+@@ -49,6 +49,10 @@ rte_crypto_asym_op_strings[];
+  * and if the flag is not set, shared secret will be padded to the left with
+  * zeros to the size of the underlying algorithm (default)
+  */
++#define RTE_CRYPTO_ASYM_FLAG_PUB_KEY_COMPRESSED		RTE_BIT32(2)
++/**<
++ * Flag to denote public key will be returned in compressed form
++ */
+ 
+ /**
+  * List of elliptic curves. This enum aligns with
+@@ -65,9 +69,22 @@ enum rte_crypto_curve_id {
+ 	RTE_CRYPTO_EC_GROUP_SECP256R1 = 23,
+ 	RTE_CRYPTO_EC_GROUP_SECP384R1 = 24,
+ 	RTE_CRYPTO_EC_GROUP_SECP521R1 = 25,
++	RTE_CRYPTO_EC_GROUP_ED25519   = 29,
++	RTE_CRYPTO_EC_GROUP_ED448     = 30,
+ 	RTE_CRYPTO_EC_GROUP_SM2       = 41,
+ };
+ 
++/**
++ * List of Edwards curve instances as per RFC 8032 (Section 5).
++ */
++enum rte_crypto_edward_instance {
++	RTE_CRYPTO_EDCURVE_25519,
++	RTE_CRYPTO_EDCURVE_25519CTX,
++	RTE_CRYPTO_EDCURVE_25519PH,
++	RTE_CRYPTO_EDCURVE_448,
++	RTE_CRYPTO_EDCURVE_448PH
++};
++
+ /**
+  * Asymmetric crypto transformation types.
+  * Each xform type maps to one asymmetric algorithm
+@@ -119,6 +136,10 @@ enum rte_crypto_asym_xform_type {
+ 	 * Performs Encrypt, Decrypt, Sign and Verify.
+ 	 * Refer to rte_crypto_asym_op_type.
+ 	 */
++	RTE_CRYPTO_ASYM_XFORM_EDDSA,
++	/**< Edwards Curve Digital Signature Algorithm
++	 * Perform Signature Generation and Verification.
++	 */
+ 	RTE_CRYPTO_ASYM_XFORM_TYPE_LIST_END
+ 	/**< End of list */
+ };
+@@ -585,6 +606,31 @@ struct rte_crypto_ecdsa_op_param {
+ 	 */
+ };
+ 
++/**
++ * EdDSA operation params
++ */
++struct rte_crypto_eddsa_op_param {
++	enum rte_crypto_asym_op_type op_type;
++	/**< Signature generation or verification */
++
++	rte_crypto_param message;
++	/**< Input message digest to be signed or verified */
++
++	rte_crypto_param context;
++	/**< Context value for the sign op.
++	 *   Must not be empty for Ed25519ctx instance.
++	 */
++
++	enum rte_crypto_edward_instance instance;
++	/**< Type of Edwards curve. */
++
++	rte_crypto_uint sign;
++	/**< Edward curve signature
++	 *     output : for signature generation
++	 *     input  : for signature verification
++	 */
++};
++
+ /**
+  * Structure for EC point multiplication operation param
+  */
+@@ -720,6 +766,7 @@ struct rte_crypto_asym_op {
+ 		struct rte_crypto_ecdsa_op_param ecdsa;
+ 		struct rte_crypto_ecpm_op_param ecpm;
+ 		struct rte_crypto_sm2_op_param sm2;
++		struct rte_crypto_eddsa_op_param eddsa;
+ 	};
+ 	uint16_t flags;
+ 	/**<
+-- 
+2.25.1
+

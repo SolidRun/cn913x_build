@@ -1,0 +1,4769 @@
+From afeec79f50749139e64959a118bea1218ea13815 Mon Sep 17 00:00:00 2001
+From: Prasanthi Balaga <pbalaga@marvell.com>
+Date: Wed, 13 Dec 2023 15:37:40 +0530
+Subject: [PATCH 751/955] bbdev/octeon_ep: add fec offfload driver
+
+Initial support for fec offload driver
+
+Signed-off-by: Prasanthi Balaga <pbalaga@marvell.com>
+Change-Id: I67f40fedd2139b57331ac20695b7b05c639b5e25
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118314
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ doc/guides/bbdevs/index.rst                   |    1 +
+ doc/guides/bbdevs/octeon_ep.rst               |  124 ++
+ doc/guides/platform/cnxk.rst                  |   59 +-
+ drivers/baseband/meson.build                  |    1 +
+ .../baseband/octeon_ep/cnxk_ep_bb_common.h    |  647 +++++++++
+ drivers/baseband/octeon_ep/cnxk_ep_bb_dev.c   | 1187 +++++++++++++++++
+ drivers/baseband/octeon_ep/cnxk_ep_bb_ep.c    |  479 +++++++
+ drivers/baseband/octeon_ep/cnxk_ep_bb_irq.c   |  180 +++
+ drivers/baseband/octeon_ep/cnxk_ep_bb_msg.h   |  137 ++
+ drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.c  | 1135 ++++++++++++++++
+ drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.h  |   49 +
+ drivers/baseband/octeon_ep/cnxk_ep_bb_vf.c    |  435 ++++++
+ drivers/baseband/octeon_ep/cnxk_ep_bb_vf.h    |  175 +++
+ drivers/baseband/octeon_ep/meson.build        |   12 +
+ 14 files changed, 4594 insertions(+), 27 deletions(-)
+ create mode 100644 doc/guides/bbdevs/octeon_ep.rst
+ create mode 100644 drivers/baseband/octeon_ep/cnxk_ep_bb_common.h
+ create mode 100644 drivers/baseband/octeon_ep/cnxk_ep_bb_dev.c
+ create mode 100644 drivers/baseband/octeon_ep/cnxk_ep_bb_ep.c
+ create mode 100644 drivers/baseband/octeon_ep/cnxk_ep_bb_irq.c
+ create mode 100644 drivers/baseband/octeon_ep/cnxk_ep_bb_msg.h
+ create mode 100644 drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.c
+ create mode 100644 drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.h
+ create mode 100644 drivers/baseband/octeon_ep/cnxk_ep_bb_vf.c
+ create mode 100644 drivers/baseband/octeon_ep/cnxk_ep_bb_vf.h
+ create mode 100644 drivers/baseband/octeon_ep/meson.build
+
+diff --git a/doc/guides/bbdevs/index.rst b/doc/guides/bbdevs/index.rst
+index 4e9dea8e4ccd7..382c425ab58ee 100644
+--- a/doc/guides/bbdevs/index.rst
++++ b/doc/guides/bbdevs/index.rst
+@@ -16,3 +16,4 @@ Baseband Device Drivers
+     acc100
+     acc200
+     la12xx
++    octeon_ep
+diff --git a/doc/guides/bbdevs/octeon_ep.rst b/doc/guides/bbdevs/octeon_ep.rst
+new file mode 100644
+index 0000000000000..eb6d16fa886ba
+--- /dev/null
++++ b/doc/guides/bbdevs/octeon_ep.rst
+@@ -0,0 +1,124 @@
++.. SPDX-License-Identifier: BSD-3-Clause
++   Copyright(c) 2023 Marvell.
++
++Marvell octeon_ep_bb_vf Poll Mode Driver
++========================================
++
++octeon_ep_bb_vf BBDEV poll mode driver (PMD) offloads 4G/5G Phy processing functions
++(LDPC/TURBO Encode/Decode) to OCTEON CNXK based accelerator using SDP interface to
++transfer data between host and CNXK using Gen5x4 PCI interface.
++
++More information about OCTEON CNXK SoCs may be obtained from `<https://www.marvell.com>`_.
++
++Features
++--------
++
++octeon_ep_bb_vf BBDEV PMD currently supports the following features:
++
++- CN10XX SoC
++- Support for LDPC_DEC/LDPC_ENC/TURBO_ENC/TURBO_DEC operations
++- Up to 31 VFs
++- Up to 8 queue pairs per VF each supporting one operation.
++    (If no of VFs is 31 then max no of queues per each VF should be 4 since maximum 128 queues can only be mapped across all VFs 31*4=124<128)
++- PCIe Gen-5x4 Interface
++
++Installation
++------------
++
++octeon_ep_bb_vf BBDEV PMD is cross-compiled for host platform during DPDK build.
++
++.. note::
++
++   octeon_ep_bb_vf BBDEV PMD uses services from the kernel mode OCTEON EP
++   PF driver in linux. This driver is included in the OCTEON TX SDK.
++
++Initialization
++--------------
++
++List PF devices available on cn10k platform:
++
++.. code-block:: console
++
++    lspci -nnD | grep ef01
++
++``ef01`` is octeon_ep_bb_vf PF device id.  Output should be:
++
++.. code-block:: console
++
++    0000:0a:00.0 Processing accelerators: Cavium, Inc. Device ef01
++    0000:0a:00.1 Processing accelerators: Cavium, Inc. Device ef01
++
++Set ``sriov_numvfs`` on the PF device, to create a VF:
++
++.. code-block:: console
++
++    echo 1 > /sys/bus/pci/devices/0000:0a:00.0/sriov_numvfs
++
++The devices can be listed on the host console with:
++
++.. code-block:: console
++
++    lspci -nnD | grep ef0[1\|2]
++
++which should output:
++
++.. code-block:: console
++
++    0000:0a:00.0 Processing accelerators [1200]: Cavium, Inc. Device [177d:ef01]
++    0000:0a:00.1 Processing accelerators [1200]: Cavium, Inc. Device [177d:ef01]
++    0000:0a:00.2 Processing accelerators [1200]: Cavium, Inc. Device [177d:ef02]
++
++Bind octeon_ep_bb_vf VF device to the vfio_pci driver:
++
++.. code-block:: console
++
++    cd <dpdk directory>
++    ./usertools/dpdk-devbind.py -u 0000:0a:00.2
++    ./usertools/dpdk-devbind.py -b vfio-pci 0000:0a:00.2
++
++Test Application
++----------------
++
++BBDEV provides a test application, ``test-bbdev.py`` and range of test data for testing
++the functionality of octeon_ep_bb_vf FEC encode and decode, depending on the device
++capabilities. The test application is located under app->test-bbdev folder and has the
++following options:
++
++.. code-block:: console
++
++  "-p", "--testapp-path": specifies path to the bbdev test app.
++  "-e", "--eal-params"	: EAL arguments which are passed to the test app.
++  "-t", "--timeout"	: Timeout in seconds (default=300).
++  "-c", "--test-cases"	: Defines test cases to run. Run all if not specified.
++  "-v", "--test-vector"	: Test vector path (default=dpdk_path+/app/test-bbdev/test_vectors/bbdev_null.data).
++  "-n", "--num-ops"	: Number of operations to process on device (default=32).
++  "-b", "--burst-size"	: Operations enqueue/dequeue burst size (default=32).
++  "-s", "--snr"		: SNR in dB used when generating LLRs for bler tests.
++  "-s", "--iter_max"	: Number of iterations for LDPC decoder.
++  "-l", "--num-lcores"	: Number of lcores to run (default=16).
++  "-i", "--init-device" : Initialise PF device with default values.
++
++
++To execute the test application tool using simple decode or encode data,
++type one of the following:
++
++.. code-block:: console
++
++  cd dpdk/app/test-bbdev
++  ./test-bbdev.py -e="-l 0-1 0000:0a:00.2" -c validation -b 32 -v ldpc_dec_default.data
++  ./test-bbdev.py -e="-l 0-1 0000:0a:00.2" -c validation -b 32 -v ldpc_enc_default.data
++
++Test Vectors
++~~~~~~~~~~~~
++
++In addition to the simple LDPC decoder and LDPC encoder tests, bbdev also provides
++a range of additional tests under the test_vectors folder, which may be useful. The results
++of these tests will depend on octeon_ep_bb_vf FEC capabilities which may cause some
++testcases to be skipped, but no failure should be reported.
++
++.. code-block:: console
++
++  cd dpdk/app/test-bbdev
++  ./test-bbdev.py -e="-l 0-1 0000:0a:00.2" -c validation -b 32 -n 128 -v test_vectors/<supported_vector.data>
++  cd dpdk
++  ./build/app/dpdk-test-bbdev -l 0-1  0000:0a:00.2 -- -l 1 -v app/test-bbdev/test_vectors/<supported_vector.data>
+diff --git a/doc/guides/platform/cnxk.rst b/doc/guides/platform/cnxk.rst
+index aadd60b5d4e08..cb1f4bf4f5c54 100644
+--- a/doc/guides/platform/cnxk.rst
++++ b/doc/guides/platform/cnxk.rst
+@@ -49,33 +49,35 @@ DPDK subsystem.
+ 
+ .. table:: RVU managed functional blocks and its mapping to DPDK subsystem
+ 
+-   +---+-----+--------------------------------------------------------------+
+-   | # | LF  | DPDK subsystem mapping                                       |
+-   +===+=====+==============================================================+
+-   | 1 | NIX | rte_ethdev, rte_tm, rte_event_eth_[rt]x_adapter, rte_security|
+-   +---+-----+--------------------------------------------------------------+
+-   | 2 | NPA | rte_mempool                                                  |
+-   +---+-----+--------------------------------------------------------------+
+-   | 3 | NPC | rte_flow                                                     |
+-   +---+-----+--------------------------------------------------------------+
+-   | 4 | CPT | rte_cryptodev, rte_event_crypto_adapter                      |
+-   +---+-----+--------------------------------------------------------------+
+-   | 5 | SSO | rte_eventdev                                                 |
+-   +---+-----+--------------------------------------------------------------+
+-   | 6 | TIM | rte_event_timer_adapter                                      |
+-   +---+-----+--------------------------------------------------------------+
+-   | 7 | LBK | rte_ethdev                                                   |
+-   +---+-----+--------------------------------------------------------------+
+-   | 8 | DPI | rte_dmadev                                                   |
+-   +---+-----+--------------------------------------------------------------+
+-   | 9 | SDP | rte_ethdev                                                   |
+-   +---+-----+--------------------------------------------------------------+
+-   | 10| REE | rte_regexdev                                                 |
+-   +---+-----+--------------------------------------------------------------+
+-   | 11| BPHY| rte_rawdev                                                   |
+-   +---+-----+--------------------------------------------------------------+
+-   | 12| GPIO| rte_rawdev                                                   |
+-   +---+-----+--------------------------------------------------------------+
++   +---+------+--------------------------------------------------------------+
++   | # | LF   | DPDK subsystem mapping                                       |
++   +===+======+==============================================================+
++   | 1 | NIX  | rte_ethdev, rte_tm, rte_event_eth_[rt]x_adapter, rte_security|
++   +---+------+--------------------------------------------------------------+
++   | 2 | NPA  | rte_mempool                                                  |
++   +---+------+--------------------------------------------------------------+
++   | 3 | NPC  | rte_flow                                                     |
++   +---+------+--------------------------------------------------------------+
++   | 4 | CPT  | rte_cryptodev, rte_event_crypto_adapter                      |
++   +---+------+--------------------------------------------------------------+
++   | 5 | SSO  | rte_eventdev                                                 |
++   +---+------+--------------------------------------------------------------+
++   | 6 | TIM  | rte_event_timer_adapter                                      |
++   +---+------+--------------------------------------------------------------+
++   | 7 | LBK  | rte_ethdev                                                   |
++   +---+------+--------------------------------------------------------------+
++   | 8 | DPI  | rte_dmadev                                                   |
++   +---+------+--------------------------------------------------------------+
++   | 9 | SDP  | rte_ethdev                                                   |
++   +---+------+--------------------------------------------------------------+
++   | 10| REE  | rte_regexdev                                                 |
++   +---+------+--------------------------------------------------------------+
++   | 11| BPHY | rte_rawdev                                                   |
++   +---+------+--------------------------------------------------------------+
++   | 12| GPIO | rte_rawdev                                                   |
++   +---+------+--------------------------------------------------------------+
++   | 13| BBDEV| rte_bbdev                                                    |
++   +---+------+--------------------------------------------------------------+
+ 
+ PF0 is called the administrative / admin function (AF) and has exclusive
+ privileges to provision RVU functional block's LFs to each of the PF/VF.
+@@ -165,6 +167,9 @@ This section lists dataplane H/W block(s) available in cnxk SoC.
+ #. **Regex Device Driver**
+    See :doc:`../regexdevs/cn9k` for REE Regex device driver information.
+ 
++#. **BBdev Driver**
++   See :doc:`../bbdevs/octeon_ep` for BBdev driver information.
++
+ Procedure to Setup Platform
+ ---------------------------
+ 
+diff --git a/drivers/baseband/meson.build b/drivers/baseband/meson.build
+index 1d732da882257..6ab71a1b5b0f0 100644
+--- a/drivers/baseband/meson.build
++++ b/drivers/baseband/meson.build
+@@ -12,6 +12,7 @@ drivers = [
+         'la12xx',
+         'null',
+         'turbo_sw',
++        'octeon_ep',
+ ]
+ 
+ log_prefix = 'pmd.bb'
+diff --git a/drivers/baseband/octeon_ep/cnxk_ep_bb_common.h b/drivers/baseband/octeon_ep/cnxk_ep_bb_common.h
+new file mode 100644
+index 0000000000000..04d02a28cf94f
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/cnxk_ep_bb_common.h
+@@ -0,0 +1,647 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++#ifndef _CNXK_EP_BB_COMMON_H_
++#define _CNXK_EP_BB_COMMON_H_
++
++#include <rte_interrupts.h>
++#include <rte_bbdev.h>
++#include <bus_pci_driver.h>
++
++#include "cnxk_ep_bb_msg.h"
++
++#define DRIVER_NAME octeon_ep_bb_vf
++
++#define CNXK_EP_BB_NW_PKT_OP		0x1220
++#define CNXK_EP_BB_NW_CMD_OP		0x1221
++
++#define CNXK_EP_BB_MAX_RINGS_PER_VF	(8)
++#define CNXK_EP_BB_CFG_IO_QUEUES	CNXK_EP_BB_MAX_RINGS_PER_VF
++#define CNXK_EP_BB_64BYTE_INSTR		(64)
++
++#define EPDEV_RX_OFFLOAD_SCATTER	RTE_BIT64(0)
++#define EPDEV_TX_OFFLOAD_MULTI_SEGS	RTE_BIT64(0)
++
++/* this is a static value set by SLI PF driver in octeon
++ * No handshake is available
++ * Change this if changing the value in SLI PF driver
++ */
++/* TODO: Common for all platorms - copied from otx_ep_vf.h */
++#define SDP_GBL_WMARK 0x100
++
++/* TODO: some of these config parameters are not used */
++/*
++ * Backpressure for SDP is configured on Octeon, and the minimum queue sizes
++ * must be much larger than the backpressure watermark configured in the Octeon
++ * SDP driver.  IQ and OQ backpressure configurations are separate.
++ */
++#define CNXK_EP_BB_MIN_IQ_DESCRIPTORS	(2048)
++#define CNXK_EP_BB_MIN_OQ_DESCRIPTORS	(2048)
++#define CNXK_EP_BB_MAX_IQ_DESCRIPTORS	(8192)
++#define CNXK_EP_BB_MAX_OQ_DESCRIPTORS	(8192)
++#define CNXK_EP_BB_OQ_BUF_SIZE		(2048)
++#define CNXK_EP_BB_MIN_RX_BUF_SIZE	(64)
++
++#define CNXK_EP_BB_OQ_INFOPTR_MODE	(0)
++#define CNXK_EP_BB_OQ_REFIL_THRESHOLD	(16)
++
++/* IQ instruction req types */
++#define CNXK_EP_BB_REQTYPE_NONE             (0)
++#define CNXK_EP_BB_REQTYPE_NORESP_INSTR     (1)
++#define CNXK_EP_BB_REQTYPE_NORESP_NET_DIRECT       (2)
++#define CNXK_EP_BB_REQTYPE_NORESP_NET       CNXK_EP_BB_REQTYPE_NORESP_NET_DIRECT
++#define CNXK_EP_BB_REQTYPE_NORESP_GATHER    (3)
++#define CNXK_EP_BB_NORESP_OHSM_SEND     (4)
++#define CNXK_EP_BB_NORESP_LAST          (4)
++#define CNXK_EP_BB_PCI_RING_ALIGN   65536
++#define SDP_PKIND 40
++#define SDP_OTX2_PKIND_FS24 57	/* Front size 24, NIC mode */
++/* Use LBK PKIND */
++#define SDP_OTX2_PKIND_FS0  0	/* Front size 0, LOOP packet mode */
++
++/*
++ * Values for SDP packet mode
++ * NIC: Has 24 byte header Host-> Octeon, 8 byte header Octeon->Host,
++ *      application must handle these
++ * LOOP: No headers, standard DPDK apps work on both ends.
++ * The mode is selected by a parameter provided to the HOST DPDK driver
++ */
++#define SDP_PACKET_MODE_NIC	0x0
++#define SDP_PACKET_MODE_LOOP	0x1
++
++#define      ORDERED_TAG 0
++#define      ATOMIC_TAG  1
++#define      NULL_TAG  2
++#define      NULL_NULL_TAG  3
++
++#define CNXK_EP_BB_BUSY_LOOP_COUNT      (10000)
++#define CNXK_EP_BB_MAX_IOQS_PER_VF 8
++#define OTX_CUST_DATA_LEN 0
++
++#define cnxk_ep_bb_info(fmt, args...)				\
++	rte_log(RTE_LOG_INFO, octeon_ep_bbdev_logtype,		\
++		"%s():%u " fmt "\n",				\
++		__func__, __LINE__, ##args)
++
++#define cnxk_ep_bb_err(fmt, args...)				\
++	rte_log(RTE_LOG_ERR, octeon_ep_bbdev_logtype,		\
++		"%s():%u " fmt "\n",				\
++		__func__, __LINE__, ##args)
++
++#define cnxk_ep_bb_dbg(fmt, args...)				\
++	rte_log(RTE_LOG_DEBUG, octeon_ep_bbdev_logtype,		\
++		"%s():%u " fmt "\n",				\
++		__func__, __LINE__, ##args)
++
++/* IO Access */
++#define oct_ep_read64(addr) rte_read64_relaxed((void *)(addr))
++#define oct_ep_write64(val, addr) rte_write64_relaxed((val), (void *)(addr))
++
++
++/* Input Request Header format */
++union cnxk_ep_bb_instr_irh {
++	uint64_t u64;
++	struct {
++		/* Request ID  */
++		uint64_t rid:16;
++
++		/* PCIe port to use for response */
++		uint64_t pcie_port:3;
++
++		/* Scatter indicator  1=scatter */
++		uint64_t scatter:1;
++
++		/* Size of Expected result OR no. of entries in scatter list */
++		uint64_t rlenssz:14;
++
++		/* Desired destination port for result */
++		uint64_t dport:6;
++
++		/* Opcode Specific parameters */
++		uint64_t param:8;
++
++		/* Opcode for the return packet  */
++		uint64_t opcode:16;
++	} s;
++};
++
++#define cnxk_ep_bb_write64(value, base_addr, reg_off) \
++	{\
++	typeof(value) val = (value); \
++	typeof(reg_off) off = (reg_off); \
++	cnxk_ep_bb_dbg("octeon_write_csr64: reg: 0x%08lx val: 0x%016llx\n", \
++		   (unsigned long)off, (unsigned long long)val); \
++	rte_write64(val, ((base_addr) + off)); \
++	}
++
++/* Instruction Header - for OCTEON-TX models */
++typedef union cnxk_ep_bb_instr_ih {
++	uint64_t u64;
++	struct {
++	  /** Data Len */
++		uint64_t tlen:16;
++
++	  /** Reserved */
++		uint64_t rsvd:20;
++
++	  /** PKIND for OTX_EP */
++		uint64_t pkind:6;
++
++	  /** Front Data size */
++		uint64_t fsz:6;
++
++	  /** No. of entries in gather list */
++		uint64_t gsz:14;
++
++	  /** Gather indicator 1=gather*/
++		uint64_t gather:1;
++
++	  /** Reserved3 */
++		uint64_t reserved3:1;
++	} s;
++} cnxk_ep_bb_instr_ih_t;
++
++/* OTX_EP IQ request list */
++struct cnxk_ep_bb_instr_list {
++	void *buf;
++	uint32_t reqtype;
++};
++#define CNXK_EP_BB_IQREQ_LIST_SIZE	(sizeof(struct cnxk_ep_bb_instr_list))
++
++/* Input Queue statistics. Each input queue has four stats fields. */
++struct cnxk_ep_bb_iq_stats {
++	uint64_t instr_posted; /* Instructions posted to this queue. */
++	uint64_t instr_processed; /* Instructions processed in this queue. */
++	uint64_t instr_dropped; /* Instructions that could not be processed */
++	uint64_t tx_pkts;
++	uint64_t tx_bytes;
++};
++
++/* Structure to define the configuration attributes for each Input queue. */
++struct cnxk_ep_bb_iq_config {
++	/* Max number of IQs available */
++	uint16_t max_iqs;
++
++	/* Command size - 32 or 64 bytes */
++	uint16_t instr_type;
++
++	/* Pending list size, usually set to the sum of the size of all IQs */
++	uint32_t pending_list_size;
++};
++
++/** The instruction (input) queue.
++ *  The input queue is used to post raw (instruction) mode data or packet data
++ *  to OCTEON TX2 device from the host. Each IQ of a OTX_EP EP VF device has one
++ *  such structure to represent it.
++ */
++struct cnxk_ep_bb_instr_queue {
++	struct cnxk_ep_bb_device *cnxk_ep_bb_dev;
++
++	uint32_t q_no;
++	uint32_t pkt_in_done;
++
++	/* Flag for 64 byte commands. */
++	uint32_t iqcmd_64B:1;
++	uint32_t rsvd:17;
++	uint32_t status:8;
++
++	/* Number of  descriptors in this ring. */
++	uint32_t nb_desc;
++
++	/* Input ring index, where the driver should write the next packet */
++	uint32_t host_write_index;
++
++	/* Input ring index, where the OCTEON TX2 should read the next packet */
++	uint32_t otx_read_index;
++
++	uint32_t reset_instr_cnt;
++
++	/** This index aids in finding the window in the queue where OCTEON TX2
++	 *  has read the commands.
++	 */
++	uint32_t flush_index;
++	/* Free-running/wrapping instruction counter for IQ. */
++	uint32_t inst_cnt;
++
++	/* This keeps track of the instructions pending in this queue. */
++	uint64_t instr_pending;
++
++	/* Pointer to the Virtual Base addr of the input ring. */
++	uint8_t *base_addr;
++
++	/* This IQ request list */
++	struct cnxk_ep_bb_instr_list *req_list;
++
++	/* OTX_EP doorbell register for the ring. */
++	void *doorbell_reg;
++
++	/* OTX_EP instruction count register for this ring. */
++	void *inst_cnt_reg;
++
++	/* Number of instructions pending to be posted to OCTEON TX2. */
++	uint32_t fill_cnt;
++
++	/* Statistics for this input queue. */
++	struct cnxk_ep_bb_iq_stats stats;
++
++	/* DMA mapped base address of the input descriptor ring. */
++	uint64_t base_addr_dma;
++
++	/* Memory zone */
++	const struct rte_memzone *iq_mz;
++
++	/* Location in memory updated by SDP ISM */
++	uint32_t *inst_cnt_ism;
++	/* track inst count locally to consolidate HW counter updates */
++	uint32_t inst_cnt_ism_prev;
++};
++
++/** Descriptor format.
++ *  The descriptor ring is made of descriptors which have 2 64-bit values:
++ *  -# Physical (bus) address of the data buffer.
++ *  -# Physical (bus) address of a cnxk_ep_bb_droq_info structure.
++ *  The device DMA's incoming packets and its information at the address
++ *  given by these descriptor fields.
++ */
++struct cnxk_ep_bb_droq_desc {
++	/* The buffer pointer */
++	uint64_t buffer_ptr;
++
++	/* The Info pointer */
++	uint64_t info_ptr;
++};
++#define CNXK_EP_BB_DROQ_DESC_SIZE	(sizeof(struct cnxk_ep_bb_droq_desc))
++
++/* Receive Header, only present in NIC mode. */
++union cnxk_ep_bb_rh {
++	uint64_t rh64;
++};
++
++#define CNXK_EP_BB_RH_SIZE (sizeof(union cnxk_ep_bb_rh))
++#define CNXK_EP_BB_RH_SIZE_NIC (sizeof(union cnxk_ep_bb_rh))
++#define CNXK_EP_BB_RH_SIZE_LOOP 0  /* Nothing in LOOP mode */
++
++/** Information about packet DMA'ed by OCTEON TX2.
++ *  The format of the information available at Info Pointer after OCTEON TX2
++ *  has posted a packet. Not all descriptors have valid information. Only
++ *  the Info field of the first descriptor for a packet has information
++ *  about the packet.
++ */
++struct cnxk_ep_bb_droq_info {
++	/* The Length of the packet. */
++	uint64_t length;
++
++	/* The Output Receive Header, only present in NIC mode */
++	union cnxk_ep_bb_rh rh;
++};
++#define CNXK_EP_BB_DROQ_INFO_SIZE_NIC	(sizeof(struct cnxk_ep_bb_droq_info))
++#define CNXK_EP_BB_DROQ_INFO_SIZE_LOOP	(sizeof(struct cnxk_ep_bb_droq_info) + \
++						CNXK_EP_BB_RH_SIZE_LOOP - \
++						CNXK_EP_BB_RH_SIZE_NIC)
++
++/* DROQ statistics. Each output queue has four stats fields. */
++struct cnxk_ep_bb_droq_stats {
++	/* Number of packets received in this queue. */
++	uint64_t pkts_received;
++
++	/* Bytes received by this queue. */
++	uint64_t bytes_received;
++
++	/* Num of failures of rte_pktmbuf_alloc() */
++	uint64_t rx_alloc_failure;
++
++	/* Rx error */
++	uint64_t rx_err;
++
++	/* packets with data got ready after interrupt arrived */
++	uint64_t pkts_delayed_data;
++
++	/* packets dropped due to zero length */
++	uint64_t dropped_zlp;
++};
++
++/* Structure to define the configuration attributes for each Output queue. */
++struct cnxk_ep_bb_oq_config {
++	/* Max number of OQs available */
++	uint16_t max_oqs;
++
++	/* If set, the Output queue uses info-pointer mode. (Default: 1 ) */
++	uint16_t info_ptr;
++
++	/** The number of buffers that were consumed during packet processing by
++	 *  the driver on this Output queue before the driver attempts to
++	 *  replenish the descriptor ring with new buffers.
++	 */
++	uint32_t refill_threshold;
++};
++
++/* The Descriptor Ring Output Queue(DROQ) structure. */
++struct cnxk_ep_bb_droq {
++	struct cnxk_ep_bb_device *cnxk_ep_bb_dev;
++	/* The 8B aligned descriptor ring starts at this address. */
++	struct cnxk_ep_bb_droq_desc *desc_ring;
++
++	uint32_t q_no;
++	uint64_t last_pkt_count;
++
++	struct rte_mempool *mpool;
++
++	/* Driver should read the next packet at this index */
++	uint32_t read_idx;
++
++	/* OCTEON TX2 will write the next packet at this index */
++	uint32_t write_idx;
++
++	/* At this index, the driver will refill the descriptor's buffer */
++	uint32_t refill_idx;
++
++	/* Packets pending to be processed */
++	uint64_t pkts_pending;
++
++	/* Number of descriptors in this ring. */
++	uint32_t nb_desc;
++
++	/* The number of descriptors pending to refill. */
++	uint32_t refill_count;
++
++	uint32_t refill_threshold;
++
++	/* The 8B aligned info ptrs begin from this address. */
++	struct cnxk_ep_bb_droq_info *info_list;
++
++	/* receive buffer list contains mbuf ptr list */
++	struct rte_mbuf **recv_buf_list;
++
++	/* The size of each buffer pointed by the buffer pointer. */
++	uint32_t buffer_size;
++
++	/** Pointer to the mapped packet credit register.
++	 *  Host writes number of info/buffer ptrs available to this register
++	 */
++	void *pkts_credit_reg;
++
++	/** Pointer to the mapped packet sent register. OCTEON TX2 writes the
++	 *  number of packets DMA'ed to host memory in this register.
++	 */
++	void *pkts_sent_reg;
++
++	/** Fix for DMA incompletion during pkt reads.
++	 *  This variable is used to initiate a sent_reg_read
++	 *  that completes pending dma
++	 *  this variable is used as lvalue so compiler cannot optimize
++	 *  the reads
++	 */
++	uint32_t sent_reg_val;
++
++	/* Statistics for this DROQ. */
++	struct cnxk_ep_bb_droq_stats stats;
++
++	/* DMA mapped address of the DROQ descriptor ring. */
++	size_t desc_ring_dma;
++
++	/* Info_ptr list is allocated at this virtual address. */
++	size_t info_base_addr;
++
++	/* DMA mapped address of the info list */
++	size_t info_list_dma;
++
++	/* Allocated size of info list. */
++	uint32_t info_alloc_size;
++
++	/* Memory zone **/
++	const struct rte_memzone *desc_ring_mz;
++
++	const struct rte_memzone *info_mz;
++
++	/* Pointer to host memory copy of output packet count, set by ISM */
++	uint32_t *pkts_sent_ism;
++	uint32_t pkts_sent_ism_prev;
++};
++#define CNXK_EP_BB_DROQ_SIZE		(sizeof(struct cnxk_ep_bb_droq))
++
++/* IQ/OQ mask */
++struct cnxk_ep_bb_io_enable {
++	uint64_t iq;
++	uint64_t oq;
++	uint64_t iq64B;
++};
++
++/* Structure to define the configuration. */
++struct cnxk_ep_bb_config {
++	/* Input Queue attributes. */
++	struct cnxk_ep_bb_iq_config iq;
++
++	/* Output Queue attributes. */
++	struct cnxk_ep_bb_oq_config oq;
++
++	/* Num of desc for IQ rings */
++	uint32_t num_iqdef_descs;
++
++	/* Num of desc for OQ rings */
++	uint32_t num_oqdef_descs;
++
++	/* OQ buffer size */
++	uint32_t oqdef_buf_size;
++};
++
++/* SRIOV information */
++struct cnxk_ep_bb_sriov_info {
++	/* Number of rings assigned to VF */
++	uint32_t rings_per_vf;
++
++	/* Number of VF devices enabled */
++	uint32_t num_vfs;
++};
++
++/* Required functions for each VF device */
++struct cnxk_ep_bb_fn_list {
++	int (*setup_iq_regs)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no);
++
++	int (*setup_oq_regs)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no);
++
++	int (*setup_device_regs)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf);
++
++	int (*enable_io_queues)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf);
++	void (*disable_io_queues)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf);
++
++	int (*enable_iq)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no);
++	void (*disable_iq)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no);
++
++	int (*enable_oq)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no);
++	void (*disable_oq)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no);
++	int (*enable_rxq_intr)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint16_t q_no);
++	int (*disable_rxq_intr)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint16_t q_no);
++	int (*register_interrupt)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf,
++		rte_intr_callback_fn cb, void *data, unsigned int vec);
++	int (*unregister_interrupt)(struct cnxk_ep_bb_device *cnxk_ep_bb_vf,
++		rte_intr_callback_fn cb, void *data);
++};
++
++#define CNXK_BB_DEV_NAME(p)	((p)->device.name)
++#define CNXK_BB_DEV(bbdev)	((struct cnxk_ep_bb_device *)(bbdev->data->dev_private))
++#define Q_TO_BB_DEV(q)		(((struct cnxk_ep_bb_droq *)(q)->queue_private)->cnxk_ep_bb_dev)
++#define Q_TO_Q_NUM(q)		(((struct cnxk_ep_bb_droq *)(q)->queue_private)->q_no)
++
++typedef uint16_t (*cnxk_ep_bb_rx_burst_t)(void *rxq, struct rte_mbuf **rx_pkts,
++				uint16_t budget);
++typedef uint16_t (*cnxk_ep_bb_tx_burst_t)(void *txq, struct rte_mbuf **tx_pkts,
++				uint16_t nb_pkts);
++
++struct mbufq_s {
++	struct rte_mbuf *head, *tail;
++};
++
++struct mbuf_queues_s {
++	struct mbufq_s wait_ops, sv_mbufs;
++};
++
++#define	CNXK_EP_BB_Q0_IDLE		0
++#define	CNXK_EP_BB_Q0_CONFIGURED	1
++#define	CNXK_EP_BB_Q0_ACTIVE_DEFAULT	2
++#define	CNXK_EP_BB_Q0_ACTIVE		3
++
++/* CNXK EP BBDev VF device data structure */
++struct cnxk_ep_bb_device {
++	/* PCI device pointer */
++	struct rte_pci_device *pdev;
++
++	uint16_t chip_id;
++	uint16_t pf_num;
++	uint16_t vf_num;
++
++	uint32_t pkind;
++
++	struct rte_bbdev	*bbdev;
++	struct rte_mempool	*msg_pool;
++	cnxk_ep_bb_rx_burst_t	rx_pkt_burst;
++	cnxk_ep_bb_tx_burst_t	tx_pkt_burst;
++	struct mbuf_queues_s	mbuf_queues[CNXK_EP_BB_MAX_IOQS_PER_VF];
++	uint32_t		max_rx_pktlen;
++	struct oct_bbdev_info	bbdev_info;
++	uint32_t		status;
++
++	int port_id;
++
++	/* Memory mapped h/w address */
++	uint8_t *hw_addr;
++
++	struct cnxk_ep_bb_fn_list fn_list;
++
++	uint32_t max_tx_queues;
++
++	uint32_t max_rx_queues;
++
++	/* Num IQs */
++	uint32_t nb_tx_queues;
++
++	/* The input instruction queues */
++	struct cnxk_ep_bb_instr_queue *instr_queue[CNXK_EP_BB_MAX_IOQS_PER_VF];
++
++	/* Num OQs */
++	uint32_t nb_rx_queues;
++
++	/* The DROQ output queues  */
++	struct cnxk_ep_bb_droq *droq[CNXK_EP_BB_MAX_IOQS_PER_VF];
++
++	/* IOQ mask */
++	struct cnxk_ep_bb_io_enable io_qmask;
++
++	/* SR-IOV info */
++	struct cnxk_ep_bb_sriov_info sriov_info;
++
++	/* Device configuration */
++	const struct cnxk_ep_bb_config *conf;
++
++	uint64_t rx_offloads;
++
++	uint64_t tx_offloads;
++
++	/* Packet mode (LOOP vs NIC), set by parameter */
++	uint8_t sdp_packet_mode;
++
++	/* DMA buffer for SDP ISM messages */
++	const struct rte_memzone *ism_buffer_mz;
++};
++
++void cnxk_ep_bb_dmazone_free(const struct rte_memzone *mz);
++const struct rte_memzone *cnxk_ep_bb_dmazone_reserve(uint16_t dev_id, const char *ring_name,
++				uint16_t queue_id, size_t size, unsigned int align, int socket_id);
++int cnxk_ep_bb_setup_iqs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t iq_no,
++		     int num_descs, unsigned int socket_id);
++int cnxk_ep_bb_delete_iqs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t iq_no);
++
++int cnxk_ep_bb_setup_oqs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, int oq_no, int num_descs,
++		     int desc_size, struct rte_mempool *mpool,
++		     unsigned int socket_id);
++int cnxk_ep_bb_delete_oqs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t oq_no);
++int cnxk_ep_bb_register_irq(struct cnxk_ep_bb_device *cnxk_ep_bb_vf,
++			rte_intr_callback_fn cb, void *data, unsigned int vec);
++int cnxk_ep_bb_unregister_irq(struct cnxk_ep_bb_device *cnxk_ep_bb_vf,
++			rte_intr_callback_fn cb, void *data);
++int cnxk_ep_bb_dev_info_get(struct cnxk_ep_bb_device *cnxk_ep_bb_vf);
++int cnxk_ep_bb_dev_configure(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint16_t nb_queues);
++int cnxk_ep_bb_queue_setup(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint16_t q_no,
++		       const struct rte_bbdev_queue_conf *queue_conf);
++int cnxk_ep_bb_queue_release(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint16_t q_no);
++int cnxk_ep_bb_dev_start(struct cnxk_ep_bb_device *cnxk_ep_bb_vf);
++void cnxk_ep_bb_dev_stop_q0_skip(struct cnxk_ep_bb_device *cnxk_ep_bb_vf);
++int cnxk_ep_bb_dev_start_q0_chk(struct cnxk_ep_bb_device *cnxk_ep_bb_vf);
++int cnxk_ep_bb_dev_stop(struct cnxk_ep_bb_device *cnxk_ep_bb_vf);
++void restore_q0_config_start(struct rte_bbdev *bbdev);
++void *chk_q0_config_start(struct rte_bbdev *bbdev);
++int cnxk_ep_bb_sdp_init(struct rte_bbdev *bbdev);
++int cnxk_ep_bb_dev_exit(struct cnxk_ep_bb_device *cnxk_ep_bb_vf);
++int cnxk_ep_bb_dequeue_ops(void *rx_queue, struct rte_mbuf **ops, uint16_t budget);
++int cnxk_ep_bb_enqueue_ops(void *rx_queue, struct rte_mbuf **ops, uint16_t nb_ops);
++
++struct cnxk_ep_bb_sg_entry {
++	/** The first 64 bit gives the size of data in each dptr. */
++	union {
++		uint16_t size[4];
++		uint64_t size64;
++	} u;
++
++	/** The 4 dptr pointers for this entry. */
++	uint64_t ptr[4];
++};
++
++#define CNXK_EP_BB_SG_ENTRY_SIZE	(sizeof(struct cnxk_ep_bb_sg_entry))
++
++/** Structure of a node in list of gather components maintained by
++ *  driver for each network device.
++ */
++struct cnxk_ep_bb_gather {
++	/** number of gather entries. */
++	int num_sg;
++
++	/** Gather component that can accommodate max sized fragment list
++	 *  received from the IP layer.
++	 */
++	struct cnxk_ep_bb_sg_entry *sg;
++};
++
++struct cnxk_ep_bb_buf_free_info {
++	struct rte_mbuf *mbuf;
++	struct cnxk_ep_bb_gather g;
++};
++
++#define CNXK_EP_BB_MAX_PKT_SZ 65498U
++#define CNXK_EP_BB_MAX_MAC_ADDRS 1
++#define CNXK_EP_BB_SG_ALIGN 8
++#define CNXK_EP_BB_CLEAR_ISIZE_BSIZE 0x7FFFFFULL
++#define CNXK_EP_BB_CLEAR_OUT_INT_LVLS 0x3FFFFFFFFFFFFFULL
++#define CNXK_EP_BB_CLEAR_IN_INT_LVLS 0xFFFFFFFF
++#define CNXK_EP_BB_CLEAR_SDP_IN_INT_LVLS 0x3FFFFFFFFFFFFFUL
++#define CNXK_EP_BB_DROQ_BUFSZ_MASK 0xFFFF
++#define CNXK_EP_BB_CLEAR_SLIST_DBELL 0xFFFFFFFF
++#define CNXK_EP_BB_CLEAR_SDP_OUT_PKT_CNT 0xFFFFFFFFF
++
++#define CNXK_EP_BB_ETH_OVERHEAD \
++	(RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN + 8)
++#define CNXK_EP_BB_FRAME_SIZE_MAX       9000
++
++/* PCI IDs */
++#define PCI_VENDOR_ID_CAVIUM			0x177D
++
++extern int octeon_ep_bbdev_logtype;
++#endif  /* _CNXK_EP_BB_COMMON_H_ */
+diff --git a/drivers/baseband/octeon_ep/cnxk_ep_bb_dev.c b/drivers/baseband/octeon_ep/cnxk_ep_bb_dev.c
+new file mode 100644
+index 0000000000000..94e3b5168ed91
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/cnxk_ep_bb_dev.c
+@@ -0,0 +1,1187 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include <string.h>
++#include <time.h>
++
++#include <rte_malloc.h>
++#include <rte_kvargs.h>
++#include <rte_devargs.h>
++#include <rte_bbdev.h>
++#include <rte_bbdev_pmd.h>
++#include <rte_hexdump.h>
++#include <rte_log.h>
++
++#include "cnxk_ep_bb_common.h"
++#include "cnxk_ep_bb_vf.h"
++
++RTE_LOG_REGISTER_DEFAULT(bbdev_octeon_ep_logtype, NOTICE);
++
++/* Helper macro for logging */
++#define rte_bbdev_log(level, fmt, ...) \
++	rte_log(RTE_LOG_ ## level, bbdev_octeon_ep_logtype, fmt "\n", \
++		##__VA_ARGS__)
++
++#define rte_bbdev_log_debug(fmt, ...) \
++	rte_bbdev_log(DEBUG, RTE_STR(__LINE__) ":%s() " fmt, __func__, \
++		##__VA_ARGS__)
++
++#define bbdev_log_info(fmt, ...) \
++	rte_bbdev_log(INFO, RTE_STR(__LINE__) ":%s() " fmt, __func__, \
++		##__VA_ARGS__)
++
++/*  Initialisation params structure that can be used by octeon bbdev driver */
++struct octeon_ep_params {
++	int socket_id;  /*< device socket */
++};
++
++#ifdef TODO_ARG_PARSE
++/* Possible params */
++#define OCTEON_EP_SOCKET_ID_ARG      "socket_id"
++
++static const char * const octeon_ep_valid_params[] = {
++	OCTEON_EP_SOCKET_ID_ARG,
++	NULL
++};
++
++/* Parse 16bit integer from string argument */
++static inline int
++parse_u16_arg(const char *key, const char *value, void *extra_args)
++{
++	uint16_t *u16 = extra_args;
++	unsigned int long result;
++
++	if ((value == NULL) || (extra_args == NULL))
++		return -EINVAL;
++	errno = 0;
++	result = strtoul(value, NULL, 0);
++	if ((result >= (1 << 16)) || (errno != 0)) {
++		rte_bbdev_log(ERR, "Invalid value %" PRId64 " for %s", result, key);
++		return -ERANGE;
++	}
++	*u16 = (uint16_t)result;
++	return 0;
++}
++
++/* Parse parameters used to create device */
++static int
++parse_octeon_ep_params(struct octeon_ep_params *params, const char *input_args)
++{
++	struct rte_kvargs *kvlist = NULL;
++	int ret = 0;
++
++	if (params == NULL)
++		return -EINVAL;
++	if (input_args) {
++		kvlist = rte_kvargs_parse(input_args, octeon_ep_valid_params);
++		if (kvlist == NULL)
++			return -EFAULT;
++
++		ret = rte_kvargs_process(kvlist, octeon_ep_valid_params[0],
++					&parse_u16_arg, &params->socket_id);
++		if (ret < 0)
++			goto exit;
++		if (params->socket_id >= RTE_MAX_NUMA_NODES) {
++			rte_bbdev_log(ERR, "Invalid socket, must be < %u",
++					RTE_MAX_NUMA_NODES);
++			goto exit;
++		}
++	}
++
++exit:
++	rte_kvargs_free(kvlist);
++	return ret;
++}
++#endif
++
++static void
++add_to_mbufq(struct rte_mbuf **mbufs, int num, struct mbufq_s *mbufq)
++{
++	struct rte_mbuf *first, *last;
++	int i;
++
++	first = last = mbufs[0];
++	for (i = 1; i < num; ++i) {
++		last->next = mbufs[i];
++		last = mbufs[i];
++	}
++	last->next = NULL;
++	if (mbufq->tail)
++		mbufq->tail->next = first;
++	else
++		mbufq->head = first;
++	mbufq->tail = last;
++}
++
++/* Enqueue a config command and get response */
++static void
++send_cfg_get_resp(struct rte_bbdev *bbdev, enum oct_bbdev_cmd_type cmd, struct rte_mbuf **pmbuf)
++{
++	int i, q_no = 0;
++	struct rte_mbuf *mbuf = *pmbuf, *mbuf_rx;
++	struct timespec delay = { .tv_sec = 0, .tv_nsec = 100 };
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++	struct oct_bbdev_op_msg *msg = MBUF_TO_OCT_MSG(mbuf), *msg_rx;
++	void *q_priv;
++
++	/* Fill info common to all commands */
++	mbuf->data_len = sizeof(struct oct_bbdev_op_msg);
++	msg->vf_id = cnxk_ep_bb_vf->vf_num;
++	msg->q_no = q_no;
++	msg->tpid = rte_cpu_to_be_16(0x8100);
++	msg->msg_type = cmd;
++
++	/* Configure/start queue 0 if not already done */
++	q_priv = chk_q0_config_start(bbdev);
++	if (q_priv == NULL) {
++		msg->status = -OTX_BBDEV_CMD_FAIL_Q0_SETUP;
++		return;
++	}
++	/* Enqueue to device */
++	if (cnxk_ep_bb_enqueue_ops(q_priv, &mbuf, 1) == 0) {
++		msg->status = -OTX_BBDEV_CMD_FAIL_ENQUE;
++		return;
++	}
++	/* Dequeue response; poll for 0.1 sec */
++	for (i = 1000000; i > 0; --i) {
++		/* Receive a response */
++		nanosleep(&delay, NULL);
++		if (cnxk_ep_bb_dequeue_ops(q_priv, &mbuf_rx, 1)) {
++			msg_rx = MBUF_TO_OCT_MSG(mbuf_rx);
++			/* Check if it is expected config response */
++			if (msg_rx->msg_type == cmd)
++				break;
++			if (msg_rx->msg_type >= OTX_BBDEV_CMD_INFO_GET) {
++				/* Unexpected config; drop with error log */
++				rte_bbdev_log(ERR, "Drop response with unexp config cmd, "
++					"BBDev %u exp cmd %u got %u", bbdev->data->dev_id,
++					cmd, msg_rx->msg_type);
++				rte_pktmbuf_free(mbuf_rx);
++			} else
++				/* OP response; save for later dequeue processing */
++				add_to_mbufq(&mbuf_rx, 1,
++					&cnxk_ep_bb_vf->mbuf_queues[q_no].sv_mbufs);
++		}
++	}
++	/* Restore queue 0 to its previous state */
++	restore_q0_config_start(bbdev);
++	/* Check for timeout */
++	if (i == 0) {
++		msg->status = -OTX_BBDEV_CMD_FAIL_TMOUT;
++		return;
++	}
++	/* Replace input mbuf with response mbuf */
++	rte_pktmbuf_free(mbuf);
++	*pmbuf = mbuf_rx;
++}
++
++/* Parameters expected to be specified by device */
++/* TODO: remove this call if target supplies these always */
++static void
++default_info_get(struct oct_bbdev_info *bbdev_info)
++{
++	struct rte_bbdev_driver_info *rte_info = &bbdev_info->rte_info;
++	struct rte_bbdev_op_cap turbo_dec_cap = {
++		.type = RTE_BBDEV_OP_TURBO_DEC,
++		.cap.turbo_dec = {
++			.capability_flags =
++				RTE_BBDEV_TURBO_SUBBLOCK_DEINTERLEAVE |
++				RTE_BBDEV_TURBO_POS_LLR_1_BIT_IN |
++				RTE_BBDEV_TURBO_NEG_LLR_1_BIT_IN |
++				RTE_BBDEV_TURBO_CRC_TYPE_24B |
++				RTE_BBDEV_TURBO_DEC_TB_CRC_24B_KEEP |
++				RTE_BBDEV_TURBO_EARLY_TERMINATION,
++			.max_llr_modulus = 16,
++			.num_buffers_src =
++					RTE_BBDEV_TURBO_MAX_CODE_BLOCKS,
++			.num_buffers_hard_out =
++					RTE_BBDEV_TURBO_MAX_CODE_BLOCKS,
++			.num_buffers_soft_out = 0,
++		}
++	};
++	struct rte_bbdev_op_cap turbo_enc_cap = {
++		.type   = RTE_BBDEV_OP_TURBO_ENC,
++		.cap.turbo_enc = {
++			.capability_flags =
++					RTE_BBDEV_TURBO_CRC_24B_ATTACH |
++					RTE_BBDEV_TURBO_CRC_24A_ATTACH |
++					RTE_BBDEV_TURBO_RATE_MATCH |
++					RTE_BBDEV_TURBO_RV_INDEX_BYPASS,
++			.num_buffers_src =
++					RTE_BBDEV_TURBO_MAX_CODE_BLOCKS,
++			.num_buffers_dst =
++					RTE_BBDEV_TURBO_MAX_CODE_BLOCKS,
++		}
++	};
++	struct rte_bbdev_op_cap ldpc_enc_cap = {
++		.type   = RTE_BBDEV_OP_LDPC_ENC,
++		.cap.ldpc_enc = {
++			.capability_flags =
++					RTE_BBDEV_LDPC_RATE_MATCH |
++					RTE_BBDEV_LDPC_CRC_16_ATTACH |
++					RTE_BBDEV_LDPC_CRC_24A_ATTACH |
++					RTE_BBDEV_LDPC_ENC_SCATTER_GATHER |
++					RTE_BBDEV_LDPC_CRC_24B_ATTACH,
++			.num_buffers_src =
++					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
++			.num_buffers_dst =
++					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
++		}
++	};
++	struct rte_bbdev_op_cap ldpc_dec_cap = {
++		.type   = RTE_BBDEV_OP_LDPC_DEC,
++		.cap.ldpc_dec = {
++			.capability_flags =
++					RTE_BBDEV_LDPC_CRC_TYPE_16_CHECK |
++					RTE_BBDEV_LDPC_CRC_TYPE_24B_CHECK |
++					RTE_BBDEV_LDPC_CRC_TYPE_24A_CHECK |
++					RTE_BBDEV_LDPC_CRC_TYPE_24B_DROP |
++					RTE_BBDEV_LDPC_HQ_COMBINE_IN_ENABLE |
++					RTE_BBDEV_LDPC_HQ_COMBINE_OUT_ENABLE |
++					RTE_BBDEV_LDPC_DEC_SCATTER_GATHER |
++					RTE_BBDEV_LDPC_ITERATION_STOP_ENABLE,
++			.llr_size = 8,
++			.llr_decimals = 4,
++			.num_buffers_src =
++					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
++			.num_buffers_hard_out =
++					RTE_BBDEV_LDPC_MAX_CODE_BLOCKS,
++			.num_buffers_soft_out = 0,
++		}
++	};
++	struct rte_bbdev_op_cap end_cap = RTE_BBDEV_END_OF_CAPABILITIES_LIST();
++
++	/* Target can set bbdev_info->cpu_flag_reqs or set rte_info->cpu_flag_reqs to NULL */
++	rte_info->cpu_flag_reqs = &bbdev_info->cpu_flag_reqs;
++#ifdef RTE_BBDEV_SDK_AVX2
++	bbdev_info->cpu_flag_reqs = RTE_CPUFLAG_SSE4_2;
++#else
++	rte_info->cpu_flag_reqs = NULL;
++#endif
++	rte_info->max_dl_queue_priority = 0;
++	rte_info->max_ul_queue_priority = 0;
++	bbdev_info->capabilities[0] = turbo_dec_cap;
++	bbdev_info->capabilities[1] = turbo_enc_cap;
++	bbdev_info->capabilities[2] = ldpc_enc_cap;
++	bbdev_info->capabilities[3] = ldpc_dec_cap;
++	bbdev_info->capabilities[4] = end_cap;
++	rte_info->min_alignment = 64;
++	rte_info->harq_buffer_size = 0;
++	rte_info->data_endianness = RTE_LITTLE_ENDIAN;
++}
++
++/* Get device info */
++static void
++info_get(struct rte_bbdev *bbdev, struct rte_bbdev_driver_info *dev_info_out)
++{
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++	struct oct_bbdev_info *bbdev_info;
++	struct rte_bbdev_driver_info *rte_info;
++	struct rte_mbuf *mbuf;
++	struct oct_bbdev_op_msg *msg;
++
++	/* Allocate message buffer */
++	mbuf = rte_pktmbuf_alloc(cnxk_ep_bb_vf->msg_pool);
++	if (mbuf == NULL)
++		goto exit1;
++	msg = MBUF_TO_OCT_MSG(mbuf);
++	bbdev_info = &msg->dev_info;
++	rte_info = &bbdev_info->rte_info;
++
++	/* TODO: may be unnecessary; get default values for target parameters */
++	default_info_get(bbdev_info);
++
++	/* Fill in PMD related info */
++	cnxk_ep_bb_dev_info_get(cnxk_ep_bb_vf);
++
++	memset(&rte_info->default_queue_conf, 0, sizeof(struct rte_bbdev_queue_conf));
++	rte_info->default_queue_conf.socket = bbdev->data->socket_id;
++
++	/* Use EP queue sizes */
++	rte_info->queue_size_lim = RTE_MIN(cnxk_ep_bb_vf->conf->num_iqdef_descs,
++					cnxk_ep_bb_vf->conf->num_oqdef_descs);
++	rte_info->default_queue_conf.queue_size = rte_info->queue_size_lim;
++
++	rte_strscpy(bbdev_info->driver_name, RTE_STR(DRIVER_NAME), sizeof(bbdev_info->driver_name));
++	rte_info->max_num_queues = RTE_MIN(cnxk_ep_bb_vf->max_rx_queues,
++					cnxk_ep_bb_vf->max_tx_queues);
++	rte_info->hardware_accelerated = true;
++
++	/* Get updated dev_info from EP */
++	send_cfg_get_resp(bbdev, OTX_BBDEV_CMD_INFO_GET, &mbuf);
++	msg = MBUF_TO_OCT_MSG(mbuf);
++	/* Exit on error */
++	if (msg->status)
++		goto exit;
++	/* TODO: match EP rev # */
++
++	/* Cache dev info in local EP structure */
++	cnxk_ep_bb_vf->bbdev_info = msg->dev_info;
++	bbdev_info = &cnxk_ep_bb_vf->bbdev_info;
++	/* Set dev_info pointers to actual values */
++	rte_info = &bbdev_info->rte_info;
++	rte_info->driver_name = bbdev_info->driver_name;
++	rte_info->capabilities = bbdev_info->capabilities;
++	/* Keep this ptr set to NULL if target has set it to NULL */
++	if (rte_info->cpu_flag_reqs)
++		rte_info->cpu_flag_reqs = &bbdev_info->cpu_flag_reqs;
++
++	/* copy dev_info into output */
++	*dev_info_out = *rte_info;
++	rte_bbdev_log_debug("got device info from %u", bbdev->data->dev_id);
++	return;
++
++exit:
++	rte_bbdev_log(ERR, "device %u %s error %i\n", bbdev->data->dev_id, __func__, msg->status);
++	rte_pktmbuf_free(mbuf);
++exit1:
++	/* info_get does not support return value; hopefully, this is sufficient */
++	memset(dev_info_out, 0, sizeof(struct rte_bbdev_driver_info));
++}
++
++/* Configure device */
++/* ignoring socket_id because it is already present in bbdev->private_data;
++ * app is passing the same value
++ */
++static int
++dev_config(struct rte_bbdev *bbdev, uint16_t num_queues, int socket_id __rte_unused)
++{
++	int ret;
++	struct rte_mbuf *mbuf;
++	struct oct_bbdev_op_msg *msg;
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++
++	/* Do local init */
++	ret = cnxk_ep_bb_dev_configure(cnxk_ep_bb_vf, num_queues);
++	if (ret)
++		goto err;
++	/* Prepare config message */
++	mbuf = rte_pktmbuf_alloc(cnxk_ep_bb_vf->msg_pool);
++	if (mbuf == NULL) {
++		ret = -OTX_BBDEV_CMD_FAIL_NOMBUF;
++		goto err;
++	}
++	msg = MBUF_TO_OCT_MSG(mbuf);
++	msg->dev_config.num_queues = num_queues;
++	/* Send config & get response */
++	send_cfg_get_resp(bbdev, OTX_BBDEV_CMD_DEV_CONFIG, &mbuf);
++	msg = MBUF_TO_OCT_MSG(mbuf);
++	/* Return status */
++	ret = msg->status;
++	rte_pktmbuf_free(mbuf);
++
++err:
++	if (ret)
++		rte_bbdev_log(ERR, "BBDev %u config error %i\n", bbdev->data->dev_id, ret);
++	return ret;
++}
++
++/* Release queue */
++static int
++q_release(struct rte_bbdev *bbdev, uint16_t q_no)
++{
++	int ret;
++	struct rte_mbuf *mbuf;
++	struct oct_bbdev_op_msg *msg;
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++
++	/* Do local q release */
++	if (q_no == 0) {
++		/* Stop q0 because we keep it active in dev_stop */
++		cnxk_ep_bb_vf->fn_list.disable_iq(cnxk_ep_bb_vf, 0);
++		cnxk_ep_bb_vf->fn_list.disable_oq(cnxk_ep_bb_vf, 0);
++		cnxk_ep_bb_vf->status = CNXK_EP_BB_Q0_IDLE;
++	}
++	ret = cnxk_ep_bb_queue_release(cnxk_ep_bb_vf, q_no);
++	bbdev->data->queues[q_no].queue_private = NULL;
++	if (ret)
++		goto err;
++	/* Prepare config message */
++	mbuf = rte_pktmbuf_alloc(cnxk_ep_bb_vf->msg_pool);
++	if (mbuf == NULL) {
++		ret = -OTX_BBDEV_CMD_FAIL_NOMBUF;
++		goto err;
++	}
++	msg = MBUF_TO_OCT_MSG(mbuf);
++	msg->queue_release.q_no = q_no;
++	/* Send config & get response */
++	send_cfg_get_resp(bbdev, OTX_BBDEV_CMD_QUE_RELEASE, &mbuf);
++	msg = MBUF_TO_OCT_MSG(mbuf);
++	ret = msg->status;
++	rte_pktmbuf_free(mbuf);
++
++err:
++	if (ret)
++		rte_bbdev_log(ERR, "BBDev %u q%u release error %i\n", bbdev->data->dev_id,
++			      q_no, ret);
++	return ret;
++}
++
++/* Setup a queue */
++static int
++q_setup(struct rte_bbdev *bbdev, uint16_t q_no,
++		const struct rte_bbdev_queue_conf *queue_conf)
++{
++	int ret;
++	struct rte_mbuf *mbuf;
++	struct oct_bbdev_op_msg *msg;
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++
++	/* Do local q setup */
++	ret = cnxk_ep_bb_queue_setup(cnxk_ep_bb_vf, q_no, queue_conf);
++	if (ret)
++		goto err;
++	/* Prepare config message */
++	mbuf = rte_pktmbuf_alloc(cnxk_ep_bb_vf->msg_pool);
++	if (mbuf == NULL) {
++		ret = -OTX_BBDEV_CMD_FAIL_NOMBUF;
++		goto err1;
++	}
++	if (q_no == 0)
++		cnxk_ep_bb_vf->status = CNXK_EP_BB_Q0_CONFIGURED;
++	msg = MBUF_TO_OCT_MSG(mbuf);
++	msg->queue_setup.q_no = q_no;
++	msg->queue_setup.q_conf = *queue_conf;
++	/* Send config & get response */
++	send_cfg_get_resp(bbdev, OTX_BBDEV_CMD_QUE_SETUP, &mbuf);
++	msg = MBUF_TO_OCT_MSG(mbuf);
++	ret = msg->status;
++	rte_pktmbuf_free(mbuf);
++	/* Update status */
++	if (ret) {
++		/* Stop q0 which was started to send this config */
++		if (q_no == 0) {
++			cnxk_ep_bb_vf->status = CNXK_EP_BB_Q0_IDLE;
++			cnxk_ep_bb_vf->fn_list.disable_iq(cnxk_ep_bb_vf, 0);
++			cnxk_ep_bb_vf->fn_list.disable_oq(cnxk_ep_bb_vf, 0);
++		}
++err1:		/* Release queue as config failed at target */
++		ret = cnxk_ep_bb_queue_release(cnxk_ep_bb_vf, q_no);
++err:		rte_bbdev_log(ERR, "BBDev %u q%u config error %i\n", bbdev->data->dev_id,
++				q_no, ret);
++	} else
++		bbdev->data->queues[q_no].queue_private = cnxk_ep_bb_vf->droq[q_no];
++	return ret;
++}
++
++/* Start device */
++static int
++dev_start(struct rte_bbdev *bbdev)
++{
++	int ret;
++	struct rte_mbuf *mbuf;
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++
++	/* Do local dev_start */
++	ret = cnxk_ep_bb_dev_start_q0_chk(cnxk_ep_bb_vf);
++	cnxk_ep_bb_vf->status = CNXK_EP_BB_Q0_ACTIVE;
++	if (ret)
++		goto err;
++	/* Prepare config message */
++	mbuf = rte_pktmbuf_alloc(cnxk_ep_bb_vf->msg_pool);
++	if (mbuf == NULL) {
++		ret = -OTX_BBDEV_CMD_FAIL_NOMBUF;
++		goto err;
++	}
++	/* Send config & get response */
++	send_cfg_get_resp(bbdev, OTX_BBDEV_CMD_DEV_START, &mbuf);
++	ret = MBUF_TO_OCT_MSG(mbuf)->status;
++	rte_pktmbuf_free(mbuf);
++
++err:
++	if (ret)
++		rte_bbdev_log(ERR, "BBDev %u start error %i", bbdev->data->dev_id, ret);
++	return ret;
++}
++
++/* Stop device */
++static void
++dev_stop(struct rte_bbdev *bbdev)
++{
++	int ret;
++	struct rte_mbuf *mbuf;
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++
++	/* Do local dev_stop; do not stop q0 */
++	cnxk_ep_bb_dev_stop_q0_skip(cnxk_ep_bb_vf);
++	/* Prepare config message */
++	mbuf = rte_pktmbuf_alloc(cnxk_ep_bb_vf->msg_pool);
++	if (mbuf == NULL) {
++		ret = -OTX_BBDEV_CMD_FAIL_NOMBUF;
++		goto err;
++	}
++	/* Send config & get response */
++	send_cfg_get_resp(bbdev, OTX_BBDEV_CMD_DEV_STOP, &mbuf);
++	ret = MBUF_TO_OCT_MSG(mbuf)->status;
++	rte_pktmbuf_free(mbuf);
++
++err:
++	if (ret)
++		rte_bbdev_log(ERR, "BBDev %u stop error %i", bbdev->data->dev_id, ret);
++}
++
++static const struct rte_bbdev_ops pmd_ops = {
++	.info_get = info_get,
++	.setup_queues = dev_config,
++	.queue_setup = q_setup,
++	.start = dev_start,
++	.stop = dev_stop,
++	.queue_release = q_release
++};
++
++#define	MBUF_IOVA_CHK(m)	((m) ? rte_pktmbuf_iova(m) : 0)
++
++#define	MBUF_IN_SEG_IOVA(m, s)	do {	\
++	(s)->data = rte_pktmbuf_iova(m);\
++	(s)->length = (m)->data_len;	\
++} while (0)
++
++static int
++fill_in_sg_list(struct rte_bbdev_op_data *input, struct oct_bbdev_op_sg_list *sg_list)
++{
++	struct rte_mbuf *mbuf = input->data;
++	struct oct_bbdev_seg_data *seg = sg_list->seg_data;
++
++	/* Check if segments exceed max limit */
++	if (unlikely(mbuf->nb_segs > OCTEON_EP_MAX_SG_ENTRIES))
++		return -1;
++	/* Set segment count, total length */
++	sg_list->num_segs = mbuf->nb_segs;
++	/* Translate each segment */
++	do {
++		MBUF_IN_SEG_IOVA(mbuf, seg);
++		++seg;
++		mbuf = mbuf->next;
++	} while (mbuf);
++	/* already set: input->data->pkt_len = input->length = totlen; */
++	return 0;
++}
++
++
++#define	MBUF_OUT_SEG_IOVA(m, s)	do {		\
++	(s)->data = rte_pktmbuf_iova(m);	\
++	(s)->length = rte_pktmbuf_tailroom(m);	\
++} while (0)
++
++static int
++fill_out_sg_list(struct rte_bbdev_op_data *output, struct oct_bbdev_op_sg_list *sg_list)
++{
++	struct rte_mbuf *mbuf = output->data;
++	struct oct_bbdev_seg_data *seg = sg_list->seg_data;
++
++	/* Check if segments exceed max limit */
++	if (unlikely(mbuf->nb_segs > OCTEON_EP_MAX_SG_ENTRIES))
++		return -1;
++	/* Set segment count, total length */
++	sg_list->num_segs = mbuf->nb_segs;
++	/* Translate each segment */
++	do {
++		MBUF_OUT_SEG_IOVA(mbuf, seg);
++		++seg;
++		mbuf = mbuf->next;
++	} while (mbuf);
++	/* output->data->pkt_len, output->length are 0 here */
++	return 0;
++}
++
++/* Enqueue limited single burst of command/operation messages */
++static uint16_t
++enqueue_burst(struct rte_bbdev_queue_data *q_data, void *ops[], uint16_t nb_ops)
++{
++	int i = 0, nb_enq, err, q_no = Q_TO_Q_NUM(q_data);
++	struct rte_mbuf *mbufs[OCTEON_EP_MAX_BURST_SIZE];
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = Q_TO_BB_DEV(q_data);
++	struct oct_bbdev_op_msg *msg;
++
++	/* Allocate message buffers */
++	if (unlikely(rte_pktmbuf_alloc_bulk(cnxk_ep_bb_vf->msg_pool, mbufs, nb_ops)))
++		return 0;
++
++	/* Prepare op_type specific message for each op */
++	switch (q_data->conf.op_type) {
++	case RTE_BBDEV_OP_TURBO_DEC: {
++		struct oct_bbdev_op_turbo_dec *req;
++		struct rte_bbdev_dec_op *op;
++		for (i = 0; i < nb_ops; ++i) {
++			/* Populate turbo_dec message */
++			msg = MBUF_TO_OCT_MSG(mbufs[i]);
++			mbufs[i]->data_len = sizeof(struct oct_bbdev_op_msg);
++			msg->vf_id = cnxk_ep_bb_vf->vf_num;
++			msg->q_no = q_no;
++			msg->tpid = rte_cpu_to_be_16(0x8100);
++			msg->msg_type = RTE_BBDEV_OP_TURBO_DEC;
++			req = &msg->turbo_dec;
++			op = ops[i];
++			err = fill_in_sg_list(&op->turbo_dec.input, &req->in_sg_list);
++			err |= fill_out_sg_list(&op->turbo_dec.hard_output, &req->out_sg_list);
++			/* Stop further enqueue if sg_list overflow */
++			if (unlikely(err))
++				goto exit;
++			req->op = *op;
++			msg->op_ptr = op;
++			req->soft_out_buf = MBUF_IOVA_CHK(op->turbo_dec.soft_output.data);
++			/* input length is already set; output lengths are 0; set if required */
++		}
++		break;
++	}
++	case RTE_BBDEV_OP_TURBO_ENC: {
++		struct oct_bbdev_op_turbo_enc *req;
++		struct rte_bbdev_enc_op *op;
++		for (i = 0; i < nb_ops; ++i) {
++			/* Populate turbo_enc message */
++			msg = MBUF_TO_OCT_MSG(mbufs[i]);
++			mbufs[i]->data_len = sizeof(struct oct_bbdev_op_msg);
++			msg->vf_id = cnxk_ep_bb_vf->vf_num;
++			msg->q_no = q_no;
++			msg->tpid = rte_cpu_to_be_16(0x8100);
++			msg->msg_type = RTE_BBDEV_OP_TURBO_ENC;
++			req = &msg->turbo_enc;
++			op = ops[i];
++			err = fill_in_sg_list(&op->turbo_enc.input, &req->in_sg_list);
++			err |= fill_out_sg_list(&op->turbo_enc.output, &req->out_sg_list);
++			/* Stop further enqueue if sg_list overflow */
++			if (unlikely(err))
++				goto exit;
++			req->op = *op;
++			msg->op_ptr = op;
++			/* input length is already set; output lengths are 0; set if required */
++		}
++		break;
++	}
++	case RTE_BBDEV_OP_LDPC_DEC: {
++		struct oct_bbdev_op_ldpc_dec *req;
++		struct rte_bbdev_dec_op *op;
++		for (i = 0; i < nb_ops; ++i) {
++			/* Populate ldpc_dec message */
++			msg = MBUF_TO_OCT_MSG(mbufs[i]);
++			mbufs[i]->data_len = sizeof(struct oct_bbdev_op_msg);
++			msg->vf_id = cnxk_ep_bb_vf->vf_num;
++			msg->q_no = q_no;
++			msg->tpid = rte_cpu_to_be_16(0x8100);
++			msg->msg_type = RTE_BBDEV_OP_LDPC_DEC;
++			req = &msg->ldpc_dec;
++			op = ops[i];
++			err = fill_in_sg_list(&op->ldpc_dec.input, &req->in_sg_list);
++			err |= fill_out_sg_list(&op->ldpc_dec.hard_output, &req->out_sg_list);
++			/* Stop further enqueue if sg_list overflow */
++			if (unlikely(err))
++				goto exit;
++			req->op = *op;
++			msg->op_ptr = op;
++			req->soft_out_buf = MBUF_IOVA_CHK(op->ldpc_dec.soft_output.data);
++			req->harq_cmb_in_buf = MBUF_IOVA_CHK(op->ldpc_dec.harq_combined_input.data);
++			req->harq_cmb_out_buf =
++				MBUF_IOVA_CHK(op->ldpc_dec.harq_combined_output.data);
++			/* input length is already set; output lengths are 0; set if required */
++		}
++		break;
++	}
++	case RTE_BBDEV_OP_LDPC_ENC: {
++		struct oct_bbdev_op_ldpc_enc *req;
++		struct rte_bbdev_enc_op *op;
++		for (i = 0; i < nb_ops; ++i) {
++			/* Populate ldpc_enc message */
++			msg = MBUF_TO_OCT_MSG(mbufs[i]);
++			mbufs[i]->data_len = sizeof(struct oct_bbdev_op_msg);
++			msg->vf_id = cnxk_ep_bb_vf->vf_num;
++			msg->q_no = q_no;
++			msg->tpid = rte_cpu_to_be_16(0x8100);
++			msg->msg_type = RTE_BBDEV_OP_LDPC_ENC;
++			req = &msg->ldpc_enc;
++			op = ops[i];
++			err = fill_in_sg_list(&op->ldpc_enc.input, &req->in_sg_list);
++			err |= fill_out_sg_list(&op->ldpc_enc.output, &req->out_sg_list);
++			/* Stop further enqueue if sg_list overflow */
++			if (unlikely(err))
++				goto exit;
++			req->op = *op;
++			msg->op_ptr = op;
++		}
++		break;
++	}
++	default:
++		rte_bbdev_log(ERR, "Invalid queue op_type %d",
++				q_data->conf.op_type);
++		goto exit;
++	}
++exit:
++	/* Enqueue to TX queue; skipping 0 check on i as it results in nop */
++	nb_enq = cnxk_ep_bb_enqueue_ops(q_data->queue_private, mbufs, i);
++	/* Add processed ops to wait list; include those that could not be queued */
++	if (likely(nb_enq))
++		add_to_mbufq(mbufs, nb_enq, &cnxk_ep_bb_vf->mbuf_queues[q_no].wait_ops);
++	/* Free unused mbufs */
++	if (unlikely(nb_enq < nb_ops))
++		rte_pktmbuf_free_bulk(&mbufs[nb_enq], nb_ops - nb_enq);
++	return nb_enq;
++}
++
++/* enqueue_dec_ops and enqueue_enc_ops differ only in type of
++ * ops argument.  Using same routine enqueue_ops() by defining
++ * ops type to be (void **).  Within enqueue_ops(), actual op_type is
++ * determined using q_data->conf.op_type
++ */
++static uint16_t
++enqueue_ops(struct rte_bbdev_queue_data *q_data, void **ops, uint16_t nb_ops)
++{
++	uint16_t nb_enq = 0, in_cnt, cnt, left = nb_ops;
++
++	while (left != 0) {
++		/* Send one burst of min(left, OCTEON_EP_MAX_BURST_SIZE) */
++		in_cnt = RTE_MIN(left, OCTEON_EP_MAX_BURST_SIZE);
++		cnt = enqueue_burst(q_data, &ops[nb_enq], in_cnt);
++		nb_enq += cnt;
++		/* Stop if all were not processed */
++		if (cnt < in_cnt)
++			break;
++		/* Send next burst until done */
++		left -= cnt;
++	}
++
++	/* TODO: optional q_data->queue_stats.acc_offload_cycles stats */
++	q_data->queue_stats.enqueue_err_count += nb_ops - nb_enq;
++	q_data->queue_stats.enqueued_count += nb_enq;
++	if (nb_enq)
++		rte_bbdev_log_debug("TX: %d/%d ops type %d q %d lcore %d total %" PRId64,
++				nb_enq, nb_ops, q_data->conf.op_type, Q_TO_Q_NUM(q_data),
++				rte_lcore_id(), q_data->queue_stats.enqueued_count);
++	return nb_enq;
++}
++
++/* Enqueue encode operations */
++static uint16_t
++enqueue_enc_ops(struct rte_bbdev_queue_data *q_data,
++		struct rte_bbdev_enc_op **ops, uint16_t nb_ops)
++{
++	return enqueue_ops(q_data, (void **)ops, nb_ops);
++}
++
++/* Enqueue decode operations */
++static uint16_t
++enqueue_dec_ops(struct rte_bbdev_queue_data *q_data,
++		 struct rte_bbdev_dec_op **ops, uint16_t nb_ops)
++{
++	return enqueue_ops(q_data, (void **)ops, nb_ops);
++}
++
++/* Locate matching req cmd/op in waiting list and get skip count
++ * Returns number of cmd/ops skipped for match, 0 if cmd/op not found
++ * TODO_LATER: differentiate between cmd & op messages on queue 0
++ */
++#define	FIND_OP()	({						\
++	struct rte_mbuf *mbuf;						\
++	int cnt = 0;							\
++	/* mbuf at wait queue head is already checked */		\
++	for (mbuf = wait_head->next; mbuf; mbuf = mbuf->next) {		\
++		/* Update skip count */					\
++		++cnt;							\
++		req = MBUF_TO_OCT_MSG(mbuf);				\
++		if (req->op_ptr == resp->op_ptr)			\
++			break;						\
++	}								\
++	/* Indicate if we did not get req cmd/op */			\
++	if (!mbuf)							\
++		cnt = 0;						\
++	cnt;								\
++})
++
++static void
++upd_out_sg_len(struct rte_bbdev_op_data *output, struct oct_bbdev_op_sg_list *sg_list)
++{
++	struct oct_bbdev_seg_data *seg = sg_list->seg_data;
++	struct rte_mbuf *mbuf = output->data;
++
++	/* Set total packet length */
++	mbuf->pkt_len = output->length;
++	/* Set each segment length */
++	while (mbuf) {
++		mbuf->data_len = seg->length;
++		++seg;
++		mbuf = mbuf->next;
++	}
++	/* Not validating num_segs or sum of segment length vs total length */
++}
++
++#define UPD_MBUF_LEN_CHK(buf)	do {			\
++	if ((buf)->data)				\
++		(buf)->data->data_len = (buf)->length;	\
++} while (0)
++
++/* Copy response into original request */
++#define	COPY_RESP()	do {		\
++	switch (q_data->conf.op_type) {	\
++	case RTE_BBDEV_OP_TURBO_DEC: {	\
++		struct rte_bbdev_dec_op *op1 = req->op_ptr, *op2 = &resp->turbo_dec.op;		\
++		*op1 = *op2;		\
++		upd_out_sg_len(&op1->turbo_dec.hard_output, &resp->turbo_dec.out_sg_list);	\
++		UPD_MBUF_LEN_CHK(&op1->turbo_dec.soft_output);					\
++		break;			\
++	}				\
++	case RTE_BBDEV_OP_LDPC_DEC: {	\
++		struct rte_bbdev_dec_op *op1 = req->op_ptr, *op2 = &resp->ldpc_dec.op;		\
++		*op1 = *op2;		\
++		upd_out_sg_len(&op1->ldpc_dec.hard_output, &resp->ldpc_dec.out_sg_list);	\
++		UPD_MBUF_LEN_CHK(&op1->ldpc_dec.soft_output);					\
++		UPD_MBUF_LEN_CHK(&op1->ldpc_dec.harq_combined_output);				\
++		break;			\
++	}				\
++	case RTE_BBDEV_OP_TURBO_ENC: {	\
++		struct rte_bbdev_enc_op *op1 = req->op_ptr, *op2 = &resp->turbo_enc.op;		\
++		*op1 = *op2;		\
++		upd_out_sg_len(&op1->turbo_enc.output, &resp->turbo_enc.out_sg_list);		\
++		break;			\
++	}				\
++	case RTE_BBDEV_OP_LDPC_ENC: {	\
++		struct rte_bbdev_enc_op *op1 = req->op_ptr, *op2 = &resp->ldpc_enc.op;		\
++		*op1 = *op2;		\
++		upd_out_sg_len(&op1->ldpc_enc.output, &resp->ldpc_enc.out_sg_list);		\
++		break;			\
++	}				\
++	default:			\
++		break;			\
++	}				\
++} while (0)
++
++/* Move wait list head to output */
++#define	MOVE_OP()	do {		\
++	*ops++ = req->op_ptr;		\
++	next = wait_head->next;		\
++	wait_head->next = NULL;		\
++	rte_pktmbuf_free(wait_head);	\
++	wait_head = next;		\
++} while (0)
++
++/* Set error status for cmd/op with no response */
++#define	SET_ERR_STATUS()	do {			\
++	switch (req->msg_type) {			\
++	case RTE_BBDEV_OP_TURBO_DEC:			\
++	case RTE_BBDEV_OP_LDPC_DEC:			\
++		((struct rte_bbdev_dec_op *)req->op_ptr)->status =	\
++			1 << RTE_BBDEV_DRV_ERROR;	\
++		break;					\
++	case RTE_BBDEV_OP_TURBO_ENC:			\
++	case RTE_BBDEV_OP_LDPC_ENC:			\
++		((struct rte_bbdev_enc_op *)req->op_ptr)->status =	\
++			1 << RTE_BBDEV_DRV_ERROR;	\
++		break;					\
++	}						\
++} while (0)
++
++/* Move given number of command/operation messages from wait list to output queue
++ *	qhead		Wait list queue head
++ *	ops		Output ops array
++ *	cnt		Number of command/operation messages to move
++ *	left		Space left in ops array
++ */
++#define	MOVE_FAILED_OPS()	do {	\
++	/* Num of failed cmd/ops to move */		\
++	int num = RTE_MIN(skip, left);	\
++	do {				\
++		req = MBUF_TO_OCT_MSG(wait_head);	\
++		SET_ERR_STATUS();	\
++		MOVE_OP();		\
++	} while (--num);		\
++	if (likely(skip < left)) {	\
++		COPY_RESP();		\
++		MOVE_OP();		\
++	}				\
++} while (0)
++
++#define MSG_TO_OPAQUE(msg)	({	\
++	void *opaque;			\
++	switch (rte_be_to_cpu_16((msg)->msg_type)) {		\
++	case RTE_BBDEV_OP_TURBO_DEC:	\
++		opaque = (msg)->turbo_dec.op.opaque_data;	\
++		break;			\
++	case RTE_BBDEV_OP_LDPC_DEC:	\
++		opaque = (msg)->ldpc_dec.op.opaque_data;	\
++		break;			\
++	case RTE_BBDEV_OP_TURBO_ENC:	\
++		opaque = (msg)->turbo_dec.op.opaque_data;	\
++		break;			\
++	case RTE_BBDEV_OP_LDPC_ENC:	\
++		opaque = (msg)->ldpc_dec.op.opaque_data;	\
++		break;			\
++	default:			\
++		opaque = NULL;		\
++		break;			\
++	}				\
++	opaque;				\
++})
++
++#define PRT_INFO()							\
++	rte_bbdev_log(ERR, "expected req: q=%d msg_type=%d opq=0x%p,"	\
++		"got resp: q=%d msg_type=%d opq=0x%p",			\
++		req->q_no, rte_be_to_cpu_16(req->msg_type),		\
++		MSG_TO_OPAQUE(req), resp->q_no,				\
++		rte_be_to_cpu_16(resp->msg_type), MSG_TO_OPAQUE(resp))
++
++/* Scenarios				  left	    err_cnt	mb_done
++ *   response matched wait queue head	  -= 1	    no-chg	no-chg
++ *   response did not match any request   no-chg    +1		no-chg
++ *   response matched after n cmd/op &
++ *     move all to output		  -= (n+1)  +n		no-chg
++ *     moved only k failed cmd/op	  -= k      +k		false
++ */
++#define RX_ONE(rx_mbuf)	do {			\
++	struct oct_bbdev_op_msg *req, *resp;	\
++	int skip;				\
++						\
++	/* Check if response is for first cmd/op */	\
++	resp = MBUF_TO_OCT_MSG(rx_mbuf);		\
++	req = MBUF_TO_OCT_MSG(wait_head);		\
++	if (likely(req->op_ptr == resp->op_ptr)) {	\
++		/* Update status & move to output */	\
++		COPY_RESP();			\
++		MOVE_OP();			\
++		rte_pktmbuf_free(rx_mbuf);	\
++		--left;				\
++		break;				\
++	}					\
++	/* Search for matching request cmd/op */\
++	skip = FIND_OP();			\
++	/* If not found, then drop this unexpected response */			\
++	if (unlikely(skip == 0)) {		\
++		PRT_INFO();			\
++		rte_pktmbuf_free(rx_mbuf);	\
++		++err_cnt;			\
++		break;				\
++	}					\
++	/* Move all till matching request from waiting list to output */	\
++	MOVE_FAILED_OPS();			\
++	/* If successful cmd/op was added to output, free response mbuf */	\
++	if (likely(skip < left)) {		\
++		left -= skip + 1;		\
++		err_cnt += skip;		\
++		rte_pktmbuf_free(rx_mbuf);	\
++	} else {				\
++		err_cnt += left;		\
++		left = 0;			\
++		mb_done = 0;			\
++	}					\
++	break;					\
++} while (0)
++
++/* Dequeue limited single burst of command/operation responses */
++static uint16_t
++dequeue_burst(struct rte_bbdev_queue_data *q_data, void *ops[], uint16_t nb_ops)
++{
++	int i, err_cnt = 0, mb_done, left = nb_ops, nb_deq, q_no = Q_TO_Q_NUM(q_data);
++	struct rte_mbuf *saved, *next, *mbufs[OCTEON_EP_MAX_BURST_SIZE];
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = Q_TO_BB_DEV(q_data);
++	struct mbufq_s *sv_mbufs = &cnxk_ep_bb_vf->mbuf_queues[q_no].sv_mbufs;
++	struct mbufq_s *wait_ops = &cnxk_ep_bb_vf->mbuf_queues[q_no].wait_ops;
++	struct rte_mbuf *wait_head = wait_ops->head;
++
++	/* Process saved mbufs */
++	if (unlikely(sv_mbufs->head)) {
++		mb_done = 1;
++		saved = sv_mbufs->head;
++		do {
++			next = saved->next;
++			RX_ONE(saved);
++			if (unlikely(!mb_done))
++				break;
++			saved = next;
++		} while (saved && left > 0);
++		sv_mbufs->head = saved;
++		if (likely(saved == NULL))
++			sv_mbufs->tail = NULL;
++	}
++
++	/* Burst dequeue responses into provided ops array */
++	nb_deq = cnxk_ep_bb_dequeue_ops(q_data->queue_private, mbufs, left);
++	/* Process each response */
++	mb_done = 1;
++	for (i = 0; (i < nb_deq) && (left > 0); ++i) {
++		RX_ONE(mbufs[i]);
++		if (unlikely(!mb_done))
++			break;
++	}
++	/* Update wait queue */
++	wait_ops->head = wait_head;
++	if (unlikely(wait_head == NULL))
++		wait_ops->tail = NULL;
++
++	/* Update stats */
++	q_data->queue_stats.dequeued_count += nb_ops - left;
++	q_data->queue_stats.dequeue_err_count += err_cnt;
++	/* Save mbufs which could not be processed for next time */
++	if (unlikely(i < nb_deq))
++		add_to_mbufq(&mbufs[i], nb_deq - i, sv_mbufs);
++
++	return nb_ops - left;
++}
++
++/* dequeue_dec_ops and dequeue_enc_ops differ only in type of
++ * ops argument.  Using same routine enqueue_ops() by defining
++ * ops type to be (void **).  Within enqueue_ops(), actual op_type is
++ * determined using q_data->conf.op_type
++ */
++static uint16_t
++dequeue_ops(struct rte_bbdev_queue_data *q_data, void **ops, uint16_t nb_ops)
++{
++	uint16_t nb_deq = 0, in_cnt, cnt, left = nb_ops;
++
++	while (left != 0) {
++		/* Receive one burst of min(left, OCTEON_EP_MAX_BURST_SIZE) */
++		in_cnt = RTE_MIN(left, OCTEON_EP_MAX_BURST_SIZE);
++		cnt = dequeue_burst(q_data, &ops[nb_deq], in_cnt);
++		nb_deq += cnt;
++		/* Stop if all were not received */
++		if (cnt < in_cnt)
++			break;
++		/* Receive next burst until done */
++		left -= cnt;
++	}
++	/* stats is already updated in dequeue_burst */
++	/* TODO: optional q_data->queue_stats.acc_offload_cycles stats */
++	if (nb_deq)
++		rte_bbdev_log_debug("RX: %d/%d ops type %d q %d lcore %d total %" PRId64,
++				nb_deq, nb_ops, q_data->conf.op_type, Q_TO_Q_NUM(q_data),
++				rte_lcore_id(), q_data->queue_stats.dequeued_count);
++	return nb_deq;
++}
++
++/* Dequeue encode responses */
++static uint16_t
++dequeue_enc_ops(struct rte_bbdev_queue_data *q_data,
++		struct rte_bbdev_enc_op **ops, uint16_t nb_ops)
++{
++	return dequeue_ops(q_data, (void **)ops, nb_ops);
++}
++
++/* Dequeue decode responses */
++static uint16_t
++dequeue_dec_ops(struct rte_bbdev_queue_data *q_data,
++		 struct rte_bbdev_dec_op **ops, uint16_t nb_ops)
++{
++	return dequeue_ops(q_data, (void **)ops, nb_ops);
++}
++
++/* Create device */
++static int
++octeon_ep_bbdev_create(struct rte_pci_device *pci_dev,
++		struct octeon_ep_params *init_params,
++		struct rte_bbdev **bbdev_out)
++{
++	struct rte_bbdev *bbdev;
++	const char *name = CNXK_BB_DEV_NAME(pci_dev);
++
++	bbdev = rte_bbdev_allocate(name);
++	if (bbdev == NULL)
++		return -ENODEV;
++
++	bbdev->data->dev_private = rte_zmalloc_socket(name,
++			sizeof(struct cnxk_ep_bb_device), RTE_CACHE_LINE_SIZE,
++			init_params->socket_id);
++	if (bbdev->data->dev_private == NULL) {
++		rte_bbdev_release(bbdev);
++		return -ENOMEM;
++	}
++
++	bbdev->dev_ops = &pmd_ops;
++	bbdev->device = &pci_dev->device;
++	bbdev->data->socket_id = init_params->socket_id;
++	bbdev->intr_handle = NULL;
++
++	/* register rx/tx burst functions for data path */
++	bbdev->dequeue_enc_ops = dequeue_enc_ops;
++	bbdev->dequeue_dec_ops = dequeue_dec_ops;
++	bbdev->enqueue_enc_ops = enqueue_enc_ops;
++	bbdev->enqueue_dec_ops = enqueue_dec_ops;
++	bbdev->dequeue_ldpc_enc_ops = dequeue_enc_ops;
++	bbdev->dequeue_ldpc_dec_ops = dequeue_dec_ops;
++	bbdev->enqueue_ldpc_enc_ops = enqueue_enc_ops;
++	bbdev->enqueue_ldpc_dec_ops = enqueue_dec_ops;
++	*bbdev_out = bbdev;
++
++	return 0;
++}
++
++static int
++octeon_ep_bbdev_exit(struct rte_bbdev *bbdev)
++{
++	rte_free(bbdev->data->dev_private);
++	return rte_bbdev_release(bbdev);
++}
++
++/* Initialise device */
++static int
++octeon_ep_bbdev_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
++		      struct rte_pci_device *pci_dev)
++{
++	int ret;
++	struct octeon_ep_params init_params = {
++		rte_socket_id(),
++	};
++	const char *name;
++	struct rte_bbdev *bbdev;
++
++	if (pci_dev == NULL)
++		return -EINVAL;
++	name = CNXK_BB_DEV_NAME(pci_dev);
++	if (name == NULL)
++		return -EINVAL;
++#ifdef TODO_ARG_PARSE
++	/* pci_dev->device.devargs is NULL
++	 * parse_octeon_ep_params() - found none
++	 */
++	bbdev_log_info("here, devargs=%p", pci_dev->device.devargs);
++	parse_octeon_ep_params(&init_params, pci_dev->device.devargs->args);
++#endif
++	ret = octeon_ep_bbdev_create(pci_dev, &init_params, &bbdev);
++	if (ret)
++		return ret;
++
++	ret = cnxk_ep_bb_sdp_init(bbdev);
++	if (ret) {
++		octeon_ep_bbdev_exit(bbdev);
++		return ret;
++	}
++	rte_bbdev_log_debug("Initialized %s on NUMA node %d pkt_mode=loop",
++		name, init_params.socket_id);
++	return 0;
++}
++
++/* Uninitialise device */
++static int
++octeon_ep_bbdev_pci_remove(struct rte_pci_device *pci_dev)
++{
++	struct rte_bbdev *bbdev;
++	const char *name;
++
++	if (pci_dev == NULL)
++		return -EINVAL;
++
++	name = CNXK_BB_DEV_NAME(pci_dev);
++	if (name == NULL)
++		return -EINVAL;
++
++	bbdev = rte_bbdev_get_named_dev(name);
++	if (bbdev == NULL)
++		return -EINVAL;
++
++	cnxk_ep_bb_dev_exit(CNXK_BB_DEV(bbdev));
++
++	return octeon_ep_bbdev_exit(bbdev);
++}
++
++/* Set of PCI devices this driver supports */
++static const struct rte_pci_id pci_id_octeon_ep_map[] = {
++	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNF10KA_EP_BBDEV_VF) },
++	{ .vendor_id = 0, /* sentinel */ }
++};
++
++static struct rte_pci_driver bbdev_octeon_ep_pmd = {
++	.id_table	= pci_id_octeon_ep_map,
++	.drv_flags	= RTE_PCI_DRV_NEED_MAPPING,
++	.probe		= octeon_ep_bbdev_pci_probe,
++	.remove		= octeon_ep_bbdev_pci_remove
++};
++
++RTE_PMD_REGISTER_PCI(bbdev_octeon_ep, bbdev_octeon_ep_pmd);
++RTE_PMD_REGISTER_PCI_TABLE(bbdev_octeon_ep, pci_id_octeon_ep_map);
++RTE_PMD_REGISTER_KMOD_DEP(bbdev_octeon_ep, "vfio-pci");
++RTE_LOG_REGISTER_DEFAULT(octeon_ep_bbdev_logtype, NOTICE);
+diff --git a/drivers/baseband/octeon_ep/cnxk_ep_bb_ep.c b/drivers/baseband/octeon_ep/cnxk_ep_bb_ep.c
+new file mode 100644
+index 0000000000000..7e8a26b3539a4
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/cnxk_ep_bb_ep.c
+@@ -0,0 +1,479 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "cnxk_ep_bb_common.h"
++#include "cnxk_ep_bb_vf.h"
++#include "cnxk_ep_bb_rxtx.h"
++
++#ifdef TODO_STATS
++static int cnxk_ep_bb_dev_stats_reset(struct rte_eth_dev *dev)
++{
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(dev);
++	uint32_t i;
++
++	for (i = 0; i < cnxk_ep_bb_vf->nb_tx_queues; i++)
++		memset(&cnxk_ep_bb_vf->instr_queue[i]->stats, 0,
++		       sizeof(struct cnxk_ep_bb_iq_stats));
++
++	for (i = 0; i < cnxk_ep_bb_vf->nb_rx_queues; i++)
++		memset(&cnxk_ep_bb_vf->droq[i]->stats, 0,
++		       sizeof(struct cnxk_ep_bb_droq_stats));
++
++	return 0;
++}
++
++static int cnxk_ep_bb_dev_stats_get(struct rte_eth_dev *eth_dev,
++				struct rte_eth_stats *stats)
++{
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(eth_dev);
++	struct cnxk_ep_bb_iq_stats *ostats;
++	struct cnxk_ep_bb_droq_stats *istats;
++	uint32_t i;
++
++	memset(stats, 0, sizeof(struct rte_eth_stats));
++
++	for (i = 0; i < cnxk_ep_bb_vf->nb_tx_queues; i++) {
++		ostats = &cnxk_ep_bb_vf->instr_queue[i]->stats;
++		stats->q_opackets[i] = ostats->tx_pkts;
++		stats->q_obytes[i] = ostats->tx_bytes;
++		stats->opackets += ostats->tx_pkts;
++		stats->obytes += ostats->tx_bytes;
++		stats->oerrors += ostats->instr_dropped;
++	}
++	for (i = 0; i < cnxk_ep_bb_vf->nb_rx_queues; i++) {
++		istats = &cnxk_ep_bb_vf->droq[i]->stats;
++		stats->q_ipackets[i] = istats->pkts_received;
++		stats->q_ibytes[i] = istats->bytes_received;
++		stats->q_errors[i] = istats->rx_err;
++		stats->ipackets += istats->pkts_received;
++		stats->ibytes += istats->bytes_received;
++		stats->imissed += istats->rx_alloc_failure;
++		stats->ierrors += istats->rx_err;
++		stats->rx_nombuf += istats->rx_alloc_failure;
++	}
++	return 0;
++}
++#endif
++
++int
++cnxk_ep_bb_dev_info_get(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	cnxk_ep_bb_vf->max_rx_pktlen = CNXK_EP_BB_MAX_PKT_SZ;
++	cnxk_ep_bb_vf->rx_offloads |= EPDEV_RX_OFFLOAD_SCATTER;
++	cnxk_ep_bb_vf->tx_offloads |= EPDEV_TX_OFFLOAD_MULTI_SEGS;
++	return 0;
++}
++
++int
++cnxk_ep_bb_dev_start(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	unsigned int q;
++	int ret;
++
++	/* Enable IQ/OQ for this device */
++	ret = cnxk_ep_bb_vf->fn_list.enable_io_queues(cnxk_ep_bb_vf);
++	if (ret) {
++		cnxk_ep_bb_err("IOQ enable failed\n");
++		return ret;
++	}
++
++	for (q = 0; q < cnxk_ep_bb_vf->nb_rx_queues; q++) {
++		rte_write32(cnxk_ep_bb_vf->droq[q]->nb_desc,
++			cnxk_ep_bb_vf->droq[q]->pkts_credit_reg);
++		rte_wmb();
++		cnxk_ep_bb_info("OQ[%d] dbells [%d]", q,
++			rte_read32(cnxk_ep_bb_vf->droq[q]->pkts_credit_reg));
++	}
++	cnxk_ep_bb_info("dev started");
++	return 0;
++}
++
++/* Stop device and disable input/output functions */
++int
++cnxk_ep_bb_dev_stop(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	cnxk_ep_bb_vf->fn_list.disable_io_queues(cnxk_ep_bb_vf);
++	return 0;
++}
++
++void
++cnxk_ep_bb_dev_stop_q0_skip(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	uint32_t q_no;
++
++	for (q_no = 1; q_no < cnxk_ep_bb_vf->sriov_info.rings_per_vf; q_no++) {
++		cnxk_ep_bb_vf->fn_list.disable_iq(cnxk_ep_bb_vf, q_no);
++		cnxk_ep_bb_vf->fn_list.disable_oq(cnxk_ep_bb_vf, q_no);
++	}
++}
++
++/* Same as cnxk_ep_bb_dev_start, skips q0 if it is already started */
++int
++cnxk_ep_bb_dev_start_q0_chk(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	unsigned int q = cnxk_ep_bb_vf->status == CNXK_EP_BB_Q0_ACTIVE ? 1 : 0;
++	int ret;
++
++	for (; q < cnxk_ep_bb_vf->nb_rx_queues; q++) {
++		/* Enable IQ/OQ for this device */
++		ret = cnxk_ep_bb_vf->fn_list.enable_iq(cnxk_ep_bb_vf, q);
++		ret |= cnxk_ep_bb_vf->fn_list.enable_oq(cnxk_ep_bb_vf, q);
++		if (ret) {
++			cnxk_ep_bb_err("queue %u IOQ enable failed", q);
++			return ret;
++		}
++		/* Set input queue credit */
++		rte_write32(cnxk_ep_bb_vf->droq[q]->nb_desc,
++			cnxk_ep_bb_vf->droq[q]->pkts_credit_reg);
++		rte_wmb();
++	}
++	cnxk_ep_bb_info("dev started");
++	return 0;
++}
++
++/* Undo default config/start on q0 */
++void
++restore_q0_config_start(struct rte_bbdev *bbdev)
++{
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++
++	/* Stop/release q0 if it was default configured */
++	if (cnxk_ep_bb_vf->status == CNXK_EP_BB_Q0_ACTIVE_DEFAULT) {
++		cnxk_ep_bb_vf->fn_list.disable_iq(cnxk_ep_bb_vf, 0);
++		cnxk_ep_bb_vf->fn_list.disable_oq(cnxk_ep_bb_vf, 0);
++		cnxk_ep_bb_queue_release(cnxk_ep_bb_vf, 0);
++		cnxk_ep_bb_vf->status = CNXK_EP_BB_Q0_IDLE;
++	}
++}
++
++/* Configure/start queue 0 if not already done */
++void *
++chk_q0_config_start(struct rte_bbdev *bbdev)
++{
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++	int ret;
++
++	switch (cnxk_ep_bb_vf->status) {
++	case CNXK_EP_BB_Q0_ACTIVE:
++	case CNXK_EP_BB_Q0_ACTIVE_DEFAULT:
++		/* Nothing to do if q0 is already active */
++		break;
++	case CNXK_EP_BB_Q0_IDLE: {
++		/* Configure with default config if not already configured */
++		const struct rte_bbdev_queue_conf queue_conf = {
++			.socket = bbdev->data->socket_id,
++			.queue_size = RTE_MIN(cnxk_ep_bb_vf->conf->num_iqdef_descs,
++					cnxk_ep_bb_vf->conf->num_oqdef_descs)
++		};
++		ret = cnxk_ep_bb_queue_setup(cnxk_ep_bb_vf, 0, &queue_conf);
++		if (ret)
++			return NULL;
++		cnxk_ep_bb_vf->status = CNXK_EP_BB_Q0_ACTIVE_DEFAULT;
++		goto start;
++	}
++	case CNXK_EP_BB_Q0_CONFIGURED:
++		/* Start if already configured */
++		cnxk_ep_bb_vf->status = CNXK_EP_BB_Q0_ACTIVE;
++start:		ret = cnxk_ep_bb_vf->fn_list.enable_iq(cnxk_ep_bb_vf, 0);
++		ret |= cnxk_ep_bb_vf->fn_list.enable_oq(cnxk_ep_bb_vf, 0);
++		if (ret) {
++			cnxk_ep_bb_vf->status = CNXK_EP_BB_Q0_IDLE;
++			return NULL;
++		}
++		rte_write32(cnxk_ep_bb_vf->droq[0]->nb_desc,
++			cnxk_ep_bb_vf->droq[0]->pkts_credit_reg);
++		rte_wmb();
++	}
++	return cnxk_ep_bb_vf->droq[0];
++}
++
++/*
++ * We only need 2 uint32_t locations per IOQ, but separate these so
++ * each IOQ has the variables on its own cache line.
++ */
++#define CNXK_EP_BB_ISM_BUFFER_SIZE	(CNXK_EP_BB_MAX_IOQS_PER_VF * RTE_CACHE_LINE_SIZE)
++static int
++cnxk_ep_bb_ism_setup(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	cnxk_ep_bb_vf->ism_buffer_mz = cnxk_ep_bb_dmazone_reserve(
++							cnxk_ep_bb_vf->bbdev->data->dev_id,
++							"ism", 0, CNXK_EP_BB_ISM_BUFFER_SIZE,
++							CNXK_EP_BB_PCI_RING_ALIGN, 0);
++	if (cnxk_ep_bb_vf->ism_buffer_mz == NULL) {
++		cnxk_ep_bb_err("Failed to allocate ISM buffer\n");
++		return(-1);
++	}
++	/* Same DMA buffer is shared by OQ and IQ, clear it at start */
++	memset(cnxk_ep_bb_vf->ism_buffer_mz->addr, 0, CNXK_EP_BB_ISM_BUFFER_SIZE);
++	cnxk_ep_bb_dbg("ISM: virt: 0x%p, dma: %p",
++		    (void *)cnxk_ep_bb_vf->ism_buffer_mz->addr,
++		   (void *)cnxk_ep_bb_vf->ism_buffer_mz->iova);
++
++	return 0;
++}
++static int
++cnxk_ep_bb_chip_specific_setup(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	struct rte_pci_device *pdev = cnxk_ep_bb_vf->pdev;
++	uint32_t dev_id = pdev->id.device_id;
++	int ret = 0;
++
++	switch (dev_id) {
++	case PCI_DEVID_CNF10KA_EP_BBDEV_VF:
++		cnxk_ep_bb_vf->chip_id = dev_id;
++		cnxk_ep_bb_vf->pf_num = pdev->addr.bus;
++		cnxk_ep_bb_vf->vf_num = (((pdev->addr.devid & 0x1F) << 3) |
++					(pdev->addr.function & 0x7)) - 1;
++		ret = cnxk_ep_bb_vf_setup_device(cnxk_ep_bb_vf);
++		cnxk_ep_bb_vf->fn_list.disable_io_queues(cnxk_ep_bb_vf);
++		if (cnxk_ep_bb_ism_setup(cnxk_ep_bb_vf))
++			ret = -EINVAL;
++		break;
++	default:
++		cnxk_ep_bb_err("Unsupported device\n");
++		ret = -EINVAL;
++	}
++
++	if (!ret)
++		cnxk_ep_bb_info("OTX_EP dev_id[%X] PF[%d] VF[%d]", dev_id, cnxk_ep_bb_vf->pf_num,
++				cnxk_ep_bb_vf->vf_num);
++
++	return ret;
++}
++
++static void
++cnxk_ep_bb_interrupt_handler(void *param)
++{
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = (struct cnxk_ep_bb_device *)param;
++	uint64_t reg_val;
++	if (cnxk_ep_bb_vf) {
++		/* Clear Mbox interrupts */
++		reg_val = rte_read64((uint8_t *)cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_BB_R_MBOX_PF_VF_INT(0));
++		rte_write64(reg_val, (uint8_t *)cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_BB_R_MBOX_PF_VF_INT(0));
++		cnxk_ep_bb_info("cnxk_ep_bb_dev_interrupt_handler: pf %d vf %d port %d\n",
++			cnxk_ep_bb_vf->pf_num, cnxk_ep_bb_vf->vf_num, cnxk_ep_bb_vf->port_id);
++	} else {
++		cnxk_ep_bb_err("cnxk_ep_bb_dev_interrupt_handler is called with dev NULL\n");
++	}
++}
++
++/* OTX_EP VF device initialization */
++static int
++cnxk_ep_bb_dev_init(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	uint32_t ethdev_queues;
++	int ret = 0;
++	uint32_t vec = 0;
++
++	ret = cnxk_ep_bb_chip_specific_setup(cnxk_ep_bb_vf);
++	if (ret) {
++		cnxk_ep_bb_err("Chip specific setup failed\n");
++		goto setup_fail;
++	}
++
++	cnxk_ep_bb_vf->fn_list.setup_device_regs(cnxk_ep_bb_vf);
++
++	cnxk_ep_bb_vf->rx_pkt_burst = &cnxk_ep_bb_recv_pkts;
++	if (cnxk_ep_bb_vf->chip_id == PCI_DEVID_CNF10KA_EP_BBDEV_VF)
++		cnxk_ep_bb_vf->tx_pkt_burst = &cnxk_ep_bb_xmit_pkts;
++	else {
++		cnxk_ep_bb_err("Invalid chip_id\n");
++		ret = -EINVAL;
++		goto setup_fail;
++	}
++	ethdev_queues = (uint32_t)(cnxk_ep_bb_vf->sriov_info.rings_per_vf);
++	cnxk_ep_bb_vf->max_rx_queues = ethdev_queues;
++	cnxk_ep_bb_vf->max_tx_queues = ethdev_queues;
++	cnxk_ep_bb_vf->fn_list.register_interrupt(cnxk_ep_bb_vf, cnxk_ep_bb_interrupt_handler,
++						(void *)cnxk_ep_bb_vf, vec);
++	cnxk_ep_bb_info("OTX_EP Device is Ready");
++setup_fail:
++	return ret;
++}
++
++int
++cnxk_ep_bb_dev_configure(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint16_t nb_queues)
++{
++	if (nb_queues > cnxk_ep_bb_vf->max_rx_queues) {
++		cnxk_ep_bb_err("invalid num queues\n");
++		return -EINVAL;
++	}
++	cnxk_ep_bb_info("CNX_BBDEV configured with %d of %d available queue pairs",
++			nb_queues, cnxk_ep_bb_vf->max_rx_queues);
++	return 0;
++}
++
++/**
++ * Allocate and initialize given RX & TX queue.  Populate the receive
++ * queue with buffers from bbdev message mempool.
++ *
++ * @param cnxk_ep_bb_vf
++ *   Pointer to structure cnxk_ep_bb_device
++ * @param q_no
++ *   Queue number
++ * @param queue_conf
++ *   Pointer to the structure rte_bbdev_queue_conf
++ *
++ * @return
++ *    - On success, return 0
++ *    - On failure, return -1
++ */
++int
++cnxk_ep_bb_queue_setup(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint16_t q_no,
++		       const struct rte_bbdev_queue_conf *queue_conf)
++{
++	struct rte_pktmbuf_pool_private *mbp_priv;
++	uint16_t buf_size;
++	int ret;
++
++	/* TODO: assuming that max_rx_queues == max_tx_queues */
++	if (q_no >= cnxk_ep_bb_vf->max_rx_queues) {
++		cnxk_ep_bb_err("Invalid rx queue number %u\n", q_no);
++		return -EINVAL;
++	}
++
++	if (queue_conf->queue_size & (queue_conf->queue_size - 1)) {
++		cnxk_ep_bb_err("Invalid rx desc number(%u) This must be a power of 2\n",
++			   queue_conf->queue_size);
++		return -EINVAL;
++	}
++	if (queue_conf->queue_size < (SDP_GBL_WMARK * 8)) {
++		cnxk_ep_bb_err("Invalid rx desc number(%u) should at least be 8*wmark(%u)\n",
++			   queue_conf->queue_size, (SDP_GBL_WMARK * 8));
++		return -EINVAL;
++	}
++
++	cnxk_ep_bb_dbg("setting up rx queue %u", q_no);
++	mbp_priv = rte_mempool_get_priv(cnxk_ep_bb_vf->msg_pool);
++	buf_size = mbp_priv->mbuf_data_room_size - RTE_PKTMBUF_HEADROOM;
++	ret = cnxk_ep_bb_setup_oqs(cnxk_ep_bb_vf, q_no, queue_conf->queue_size, buf_size,
++				cnxk_ep_bb_vf->msg_pool, queue_conf->socket);
++	if (ret) {
++		cnxk_ep_bb_err("droq allocation failed\n");
++		return ret;
++	}
++
++	cnxk_ep_bb_dbg("setting up tx queue %d", q_no);
++	ret = cnxk_ep_bb_setup_iqs(cnxk_ep_bb_vf, q_no, queue_conf->queue_size,
++				queue_conf->socket);
++	if (ret) {
++		cnxk_ep_bb_err("IQ(TxQ) creation failed.\n");
++		cnxk_ep_bb_delete_oqs(cnxk_ep_bb_vf, q_no);
++		return ret;
++	}
++	return 0;
++}
++
++/**
++ * Release given RX & TX queue.
++ *
++ * @param cnxk_ep_bb_vf
++ *   Pointer to cnxk_bb device structure.
++ * @param q_no
++ *   RX & TX queue index.
++ *
++ * @return
++ *    - On success, return 0
++ *    - On failure, return non-zero error code
++ */
++int
++cnxk_ep_bb_queue_release(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint16_t q_no)
++{
++	int ret = 0, ret1;
++
++	ret1 = cnxk_ep_bb_delete_oqs(cnxk_ep_bb_vf, q_no);
++	if (ret1) {
++		cnxk_ep_bb_err("Failed to delete OQ:%d\n", q_no);
++		ret = ret1;
++	}
++	ret1 = cnxk_ep_bb_delete_iqs(cnxk_ep_bb_vf, q_no);
++	if (ret1) {
++		cnxk_ep_bb_err("Failed to delete IQ:%d\n", q_no);
++		ret = ret1;
++	}
++	return ret;
++}
++
++int
++cnxk_ep_bb_dev_exit(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	int ret = 0, ret1;
++	uint32_t q;
++
++	cnxk_ep_bb_vf->fn_list.unregister_interrupt(cnxk_ep_bb_vf, cnxk_ep_bb_interrupt_handler,
++						(void *)cnxk_ep_bb_vf);
++	cnxk_ep_bb_vf->fn_list.disable_io_queues(cnxk_ep_bb_vf);
++
++	for (q = 0; q < cnxk_ep_bb_vf->nb_rx_queues; q++) {
++		ret1 = cnxk_ep_bb_queue_release(cnxk_ep_bb_vf, q);
++		if (unlikely(ret1))
++			ret = ret1;
++	}
++	cnxk_ep_bb_info("Num OQs/IQs:%d freed\n", cnxk_ep_bb_vf->nb_rx_queues);
++
++	cnxk_ep_bb_dmazone_free(cnxk_ep_bb_vf->ism_buffer_mz);
++	return ret;
++}
++
++int
++cnxk_ep_bb_sdp_init(struct rte_bbdev *bbdev)
++{
++	struct rte_pci_device *pdev = RTE_DEV_TO_PCI(bbdev->device);
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf = CNXK_BB_DEV(bbdev);
++	int ret;
++
++	/* Single process support */
++	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
++		return 0;
++
++	cnxk_ep_bb_vf->bbdev = bbdev;
++	cnxk_ep_bb_vf->sdp_packet_mode = SDP_PACKET_MODE_LOOP;
++	cnxk_ep_bb_vf->port_id = bbdev->data->dev_id;
++	cnxk_ep_bb_vf->hw_addr = pdev->mem_resource[0].addr;
++	cnxk_ep_bb_vf->pdev = pdev;
++
++	if (cnxk_ep_bb_dev_init(cnxk_ep_bb_vf))
++		return -ENOMEM;
++	if (cnxk_ep_bb_vf->chip_id == PCI_DEVID_CNF10KA_EP_BBDEV_VF) {
++		if (cnxk_ep_bb_vf->sdp_packet_mode == SDP_PACKET_MODE_NIC) {
++			cnxk_ep_bb_vf->pkind = SDP_OTX2_PKIND_FS24;
++			cnxk_ep_bb_info("Using pkind %d for NIC packet mode",
++				  cnxk_ep_bb_vf->pkind);
++		} else {
++			cnxk_ep_bb_vf->pkind = SDP_OTX2_PKIND_FS0;
++			cnxk_ep_bb_info("Using pkind %d for LOOP packet mode",
++				  cnxk_ep_bb_vf->pkind);
++		}
++	}
++#ifdef TODO_OTHER_DEVIDS_NOT_TESTED
++	else if (cnxk_ep_bb_vf->chip_id == PCI_DEVID_OCTEONTX_EP_VF) {
++		cnxk_ep_bb_vf->pkind = SDP_PKIND;
++		cnxk_ep_bb_info("Using pkind %d.\n", cnxk_ep_bb_vf->pkind);
++	}
++#endif
++	else {
++		cnxk_ep_bb_err("Invalid chip id\n");
++		ret = -EINVAL;
++		goto exit;
++	}
++
++	/* Create mempool for RX/TX messages with EP */
++	/* TODO_LATER: use common mempool for multiple bbdevs */
++	/* TODO_NOW: calculate optimal elt_size; set to 512 */
++	cnxk_ep_bb_vf->msg_pool = rte_pktmbuf_pool_create(RTE_STR(DRIVER_NAME)RTE_STR(_msg_pool),
++						4*cnxk_ep_bb_vf->conf->num_oqdef_descs +
++						4*cnxk_ep_bb_vf->conf->num_iqdef_descs,
++						128, 0, 512, bbdev->data->socket_id);
++	if (!cnxk_ep_bb_vf->msg_pool) {
++		cnxk_ep_bb_err("msg_mpool create failed\n");
++		ret = -ENOMEM;
++		goto exit;
++	}
++	return 0;
++
++exit:	cnxk_ep_bb_dev_exit(cnxk_ep_bb_vf);
++	return ret;
++}
+diff --git a/drivers/baseband/octeon_ep/cnxk_ep_bb_irq.c b/drivers/baseband/octeon_ep/cnxk_ep_bb_irq.c
+new file mode 100644
+index 0000000000000..5f2c6ad2ab854
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/cnxk_ep_bb_irq.c
+@@ -0,0 +1,180 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include <rte_interrupts.h>
++#include <eal_interrupts.h>
++#include <linux/vfio.h>
++#include <sys/eventfd.h>
++#include <sys/ioctl.h>
++
++#include "cnxk_ep_bb_common.h"
++
++#define MAX_INTR_VEC_ID RTE_MAX_RXTX_INTR_VEC_ID
++#define MSIX_IRQ_SET_BUF_LEN (sizeof(struct vfio_irq_set) + \
++			      sizeof(int) * (MAX_INTR_VEC_ID))
++static int
++cnxk_ep_bb_irq_get_info(struct rte_intr_handle *intr_handle)
++{
++	struct vfio_irq_info irq = { .argsz = sizeof(irq) };
++	int rc;
++
++	irq.index = VFIO_PCI_MSIX_IRQ_INDEX;
++
++	rc = ioctl(intr_handle->dev_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq);
++	if (rc < 0) {
++		cnxk_ep_bb_err("Failed to get IRQ info rc=%d errno=%d", rc, errno);
++		return rc;
++	}
++
++	cnxk_ep_bb_dbg("Flags=0x%x index=0x%x count=0x%x max_intr_vec_id=0x%x",
++			irq.flags, irq.index, irq.count, MAX_INTR_VEC_ID);
++
++	if (irq.count > MAX_INTR_VEC_ID) {
++		cnxk_ep_bb_err("HW max=%d > MAX_INTR_VEC_ID: %d",
++				intr_handle->max_intr, MAX_INTR_VEC_ID);
++		intr_handle->max_intr = MAX_INTR_VEC_ID;
++	} else {
++		intr_handle->max_intr = irq.count;
++	}
++	cnxk_ep_bb_info("Flags=0x%x index=0x%x count=0x%x max_intr_vec_id=0x%x intr_handle->max_intr+0x%x",
++			irq.flags, irq.index, irq.count, MAX_INTR_VEC_ID, intr_handle->max_intr);
++
++	return 0;
++}
++
++static int
++cnxk_ep_bb_irq_init(struct rte_intr_handle *intr_handle)
++{
++	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
++	struct vfio_irq_set *irq_set;
++	int32_t *fd_ptr;
++	int len, rc;
++	uint32_t i;
++
++	if (intr_handle->max_intr > MAX_INTR_VEC_ID) {
++		cnxk_ep_bb_err("Max_intr=%d greater than MAX_INTR_VEC_ID=%d",
++				intr_handle->max_intr, MAX_INTR_VEC_ID);
++		return -ERANGE;
++	}
++
++	len = sizeof(struct vfio_irq_set) +
++		sizeof(int32_t) * intr_handle->max_intr;
++
++	irq_set = (struct vfio_irq_set *)irq_set_buf;
++	irq_set->argsz = len;
++	irq_set->start = 0;
++	irq_set->count = intr_handle->max_intr;
++	irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD |
++			VFIO_IRQ_SET_ACTION_TRIGGER;
++	irq_set->index = VFIO_PCI_MSIX_IRQ_INDEX;
++
++	fd_ptr = (int32_t *)&irq_set->data[0];
++	for (i = 0; i < irq_set->count; i++)
++		fd_ptr[i] = -1;
++
++	rc = ioctl(intr_handle->dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
++	if (rc)
++		cnxk_ep_bb_err("Failed to set irqs vector rc=%d", rc);
++
++	return rc;
++}
++
++static int
++cnxk_ep_bb_irq_config(struct rte_intr_handle *intr_handle, unsigned int vec)
++{
++	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
++	struct vfio_irq_set *irq_set;
++	int32_t *fd_ptr;
++	int len, rc;
++
++	if (vec > intr_handle->max_intr) {
++		cnxk_ep_bb_err("vector=%d greater than max_intr=%d", vec,
++				intr_handle->max_intr);
++		return -EINVAL;
++	}
++
++	len = sizeof(struct vfio_irq_set) + sizeof(int32_t);
++
++	irq_set = (struct vfio_irq_set *)irq_set_buf;
++	irq_set->argsz = len;
++
++	irq_set->start = vec;
++	irq_set->count = 1;
++	irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD |
++			VFIO_IRQ_SET_ACTION_TRIGGER;
++	irq_set->index = VFIO_PCI_MSIX_IRQ_INDEX;
++
++	/* Use vec fd to set interrupt vectors */
++	fd_ptr = (int32_t *)&irq_set->data[0];
++	fd_ptr[0] = intr_handle->efds[vec];
++
++	rc = ioctl(intr_handle->dev_fd, VFIO_DEVICE_SET_IRQS, irq_set);
++	if (rc)
++		cnxk_ep_bb_err("Failed to set_irqs vector=0x%x rc=%d", vec, rc);
++
++	return rc;
++}
++
++int
++cnxk_ep_bb_register_irq(struct cnxk_ep_bb_device *cnxk_ep_bb_vf,
++			rte_intr_callback_fn cb, void *data, unsigned int vec)
++{
++	struct rte_pci_device *pci_dev      = cnxk_ep_bb_vf->pdev;
++	struct rte_intr_handle *intr_handle = pci_dev->intr_handle;
++	struct rte_intr_handle tmp_handle;
++	int rc = -1;
++
++	/* If no max_intr read from VFIO */
++	if (intr_handle->max_intr == 0) {
++		cnxk_ep_bb_irq_get_info(intr_handle);
++		cnxk_ep_bb_irq_init(intr_handle);
++	}
++
++	if (vec > intr_handle->max_intr) {
++		cnxk_ep_bb_err("Vector=%d greater than max_intr=%d", vec,
++				intr_handle->max_intr);
++		return -EINVAL;
++	}
++
++	tmp_handle = *intr_handle;
++	/* Create new eventfd for interrupt vector */
++	tmp_handle.fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
++	if (tmp_handle.fd == -1)
++		return -ENODEV;
++
++	/* Register vector interrupt callback */
++	rc = rte_intr_callback_register(&tmp_handle, cb, data);
++	if (rc) {
++		cnxk_ep_bb_err("Failed to register vector:0x%x irq callback.", vec);
++		return rc;
++	}
++
++	intr_handle->efds[vec] = tmp_handle.fd;
++	intr_handle->nb_efd = (vec > intr_handle->nb_efd) ?
++			vec : intr_handle->nb_efd;
++	if ((intr_handle->nb_efd + 1) > intr_handle->max_intr)
++		intr_handle->max_intr = intr_handle->nb_efd + 1;
++	cnxk_ep_bb_info("Enable vector:0x%x for vfio (efds: %d, max:%d) type: %x dev_fd: %x",
++			vec, intr_handle->nb_efd, intr_handle->max_intr, intr_handle->type,
++			intr_handle->dev_fd);
++
++	/* Enable MSIX vectors to VFIO */
++	return cnxk_ep_bb_irq_config(intr_handle, vec);
++}
++
++int
++cnxk_ep_bb_unregister_irq(struct cnxk_ep_bb_device *cnxk_ep_bb_vf,
++			rte_intr_callback_fn cb, void *data)
++{
++	struct rte_pci_device *pci_dev = cnxk_ep_bb_vf->pdev;
++	struct rte_intr_handle *intr_handle = pci_dev->intr_handle;
++	int rc = -1;
++
++	rc = rte_intr_callback_unregister(intr_handle, cb, data);
++	if (rc) {
++		cnxk_ep_bb_err("Failed to unregister irq callback.\n");
++		return rc;
++	}
++	return 0;
++}
+diff --git a/drivers/baseband/octeon_ep/cnxk_ep_bb_msg.h b/drivers/baseband/octeon_ep/cnxk_ep_bb_msg.h
+new file mode 100644
+index 0000000000000..08ca7b1dca755
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/cnxk_ep_bb_msg.h
+@@ -0,0 +1,137 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++#ifndef _CNXK_EP_BB_MSG_H_
++#define _CNXK_EP_BB_MSG_H_
++
++#include <rte_bbdev.h>
++
++#define	OCTEON_EP_MAX_SG_ENTRIES	8
++#define	OCTEON_EP_MAX_BURST_SIZE	64
++#define	OCTEON_EP_MAX_CAPA_ENTRIES	8
++
++/** Different command types supported by the device */
++enum oct_bbdev_cmd_type {
++	OTX_BBDEV_CMD_INFO_GET = 0x80,	/* info_get */
++	OTX_BBDEV_CMD_DEV_CONFIG,	/* device config */
++	OTX_BBDEV_CMD_QUE_SETUP,	/* queue setup */
++	OTX_BBDEV_CMD_QUE_RELEASE,	/* queue release */
++	OTX_BBDEV_CMD_DEV_START,	/* device start */
++	OTX_BBDEV_CMD_DEV_STOP,		/* device stop */
++};
++
++/* Config command status values */
++enum oct_bbdev_cmd_err {
++	OTX_BBDEV_CMD_NO_ERR = 0,	/* No error */
++	OTX_BBDEV_CMD_FAIL_Q0_SETUP,	/* Queue 0 setup failed */
++	OTX_BBDEV_CMD_FAIL_ENQUE,	/* Command enqueue failed */
++	OTX_BBDEV_CMD_FAIL_TMOUT,	/* Response timeout */
++	OTX_BBDEV_CMD_FAIL_NOMBUF,	/* Command mbuf alloc failed */
++};
++
++/* Get device info message payload */
++struct oct_bbdev_info {
++	struct rte_bbdev_driver_info	rte_info;	/* rte lib structure, pmd <==> dev */
++	/* Storage for pointer objects in drv_info */
++	char				driver_name[32];/* pmd <==> dev */
++	enum rte_cpu_flag_t		cpu_flag_reqs;	/* pmd <==> dev */
++	struct rte_bbdev_op_cap		capabilities[OCTEON_EP_MAX_CAPA_ENTRIES+1];
++							/* pmd <==> dev */
++};
++/* Device configure message payload */
++struct oct_bbdev_config {
++	uint16_t	num_queues;	/* pmd ==> dev */
++};
++/* Device queue setup message payload */
++struct oct_bbdev_queue_setup {
++	uint16_t	q_no;			/* pmd ==> dev */
++	struct rte_bbdev_queue_conf q_conf;	/* pmd ==> dev */
++};
++/* Device queue release message payload */
++struct oct_bbdev_queue_release {
++	uint16_t	q_no;		/* pmd ==> dev */
++};
++
++union oct_bbdev_msg_type {
++	enum rte_bbdev_op_type	op_type;
++	enum oct_bbdev_cmd_type	cmd_type;
++};
++
++struct oct_bbdev_seg_data {
++	rte_iova_t	data;		/* IOVA of segment mbuf buf_head */
++	uint32_t	length;		/* Segment data_len */
++};
++struct oct_bbdev_op_sg_list {
++	uint16_t			num_segs;	/* Number of segments */
++	struct oct_bbdev_seg_data	seg_data[OCTEON_EP_MAX_SG_ENTRIES]; /* Translated addr */
++};
++
++struct oct_bbdev_op_turbo_enc {
++	struct rte_bbdev_enc_op		op;		/* Operation payload input by library */
++	struct oct_bbdev_op_sg_list	in_sg_list;	/* Input scatter-gather list */
++	struct oct_bbdev_op_sg_list	out_sg_list;	/* Output scatter-gather list */
++};
++
++struct oct_bbdev_op_ldpc_enc {
++	struct rte_bbdev_enc_op		op;		/* Operation payload input by library */
++	struct oct_bbdev_op_sg_list	in_sg_list;	/* Input scatter-gather list */
++	struct oct_bbdev_op_sg_list	out_sg_list;	/* Output scatter-gather list */
++};
++
++struct oct_bbdev_op_turbo_dec {
++	struct rte_bbdev_dec_op		op;		/* Operation payload input by library */
++	rte_iova_t			soft_out_buf;	/* Soft output buffer address */
++	struct oct_bbdev_op_sg_list	in_sg_list;	/* Input scatter-gather list */
++	struct oct_bbdev_op_sg_list	out_sg_list;	/* Output scatter-gather list */
++};
++
++struct oct_bbdev_op_ldpc_dec {
++	struct rte_bbdev_dec_op		op;		/* Operation payload input by library */
++	rte_iova_t			soft_out_buf;	/* Soft output address */
++	rte_iova_t			harq_cmb_in_buf;/* Hard combined input address */
++	rte_iova_t			harq_cmb_out_buf;/* Hard combined output address */
++	struct oct_bbdev_op_sg_list	in_sg_list;	/* Input scatter-gather list */
++	struct oct_bbdev_op_sg_list	out_sg_list;	/* Output scatter-gather list */
++};
++
++/* TX SDP message format for config/operation commands */
++struct oct_bbdev_op_msg {
++	/* Fake ethernet header to aid NIX parsing */
++	uint8_t		rsvd[12];
++	uint16_t	tpid;		/* 0x8100 */
++	/* vf_id, q_no form vlan ID */
++	uint8_t		vf_id;
++	uint8_t		q_no;
++	/* msg_type forms ether_type */
++	uint8_t		msg_type;	/* cmd/op (union oct_bbdev_msg_type) */
++	uint8_t		unused;
++
++	/* Followed by bbdev config/operation payload */
++	union {
++		/* Config commands */
++		struct {
++			int	status;		/* Operation status, pmd <== dev */
++			union {
++				struct oct_bbdev_info		dev_info;	/* info_get */
++				struct oct_bbdev_config		dev_config;	/* device config */
++				struct oct_bbdev_queue_setup	queue_setup;	/* queue setup */
++				struct oct_bbdev_queue_release	queue_release;	/* queue release */
++				/* OTX_BBDEV_CMD_DEV_START/STOP have no args */
++			};
++		};
++		/* Operational commands */
++		struct {
++			void	*op_ptr;	/* rte_bbdev input op ptr save location */
++			union {
++				struct oct_bbdev_op_turbo_enc	turbo_enc;	/* turbo enc */
++				struct oct_bbdev_op_turbo_dec	turbo_dec;	/* turbo dec */
++				struct oct_bbdev_op_ldpc_enc	ldpc_enc;	/* ldpc enc */
++				struct oct_bbdev_op_ldpc_dec	ldpc_dec;	/* ldpc dec */
++			};
++		};
++	};
++};
++
++#define MBUF_TO_OCT_MSG(mbuf)		rte_pktmbuf_mtod(mbuf, struct oct_bbdev_op_msg *)
++
++#endif  /* _CNXK_EP_BB_MSG_H_ */
+diff --git a/drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.c b/drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.c
+new file mode 100644
+index 0000000000000..6f5926e1e3ccd
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.c
+@@ -0,0 +1,1135 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#include "rte_malloc.h"
++
++#include "cnxk_ep_bb_common.h"
++#include "cnxk_ep_bb_vf.h"
++#include "cnxk_ep_bb_rxtx.h"
++
++/* SDP_LENGTH_S specifies packet length and is of 8-byte size */
++#define INFO_SIZE 8
++#define DROQ_REFILL_THRESHOLD 16
++#define OTX2_SDP_REQUEST_ISM	(0x1ULL << 63)
++
++/* These arrays indexed by cnxk_ep_bb_device->sdp_packet_mode */
++static uint8_t front_size[2] = {OTX2_EP_FSZ_NIC, OTX2_EP_FSZ_LOOP};
++static uint8_t rh_size[2] = {CNXK_EP_BB_RH_SIZE_NIC, CNXK_EP_BB_RH_SIZE_LOOP};
++static uint8_t droq_info_size[2] = {CNXK_EP_BB_DROQ_INFO_SIZE_NIC,
++				    CNXK_EP_BB_DROQ_INFO_SIZE_LOOP};
++
++const struct rte_memzone *
++cnxk_ep_bb_dmazone_reserve(uint16_t dev_id, const char *ring_name, uint16_t queue_id,
++				size_t size, unsigned int align, int socket_id)
++{
++	char z_name[RTE_MEMZONE_NAMESIZE];
++	const struct rte_memzone *mz;
++	int rc;
++
++	rc = snprintf(z_name, RTE_MEMZONE_NAMESIZE, "bbdev_%d_q%d_%s",
++			dev_id, queue_id, ring_name);
++	if (rc >= RTE_MEMZONE_NAMESIZE) {
++		cnxk_ep_bb_err("memzone name too long\n");
++		return NULL;
++	}
++	mz = rte_memzone_lookup(z_name);
++	if (mz) {
++		if ((socket_id != SOCKET_ID_ANY && socket_id != mz->socket_id) ||
++				size > mz->len ||
++				((uintptr_t)mz->addr & (align - 1)) != 0) {
++			cnxk_ep_bb_err("existing memzone %s has different attributes\n",
++				mz->name);
++			return NULL;
++		}
++		return mz;
++	}
++	return rte_memzone_reserve_aligned(z_name, size, socket_id,
++					RTE_MEMZONE_IOVA_CONTIG, align);
++}
++
++void
++cnxk_ep_bb_dmazone_free(const struct rte_memzone *mz)
++{
++	const struct rte_memzone *mz_tmp;
++	int ret = 0;
++
++	if (mz == NULL) {
++		cnxk_ep_bb_err("Memzone: NULL\n");
++		return;
++	}
++
++	mz_tmp = rte_memzone_lookup(mz->name);
++	if (mz_tmp == NULL) {
++		cnxk_ep_bb_err("Memzone %s Not Found\n", mz->name);
++		return;
++	}
++
++	ret = rte_memzone_free(mz);
++	if (ret)
++		cnxk_ep_bb_err("Memzone free failed : ret = %d\n", ret);
++}
++
++/* Free IQ resources */
++int
++cnxk_ep_bb_delete_iqs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t iq_no)
++{
++	struct cnxk_ep_bb_instr_queue *iq;
++
++	iq = cnxk_ep_bb_vf->instr_queue[iq_no];
++	if (iq == NULL) {
++		cnxk_ep_bb_err("Invalid IQ[%d]\n", iq_no);
++		return -EINVAL;
++	}
++
++	rte_free(iq->req_list);
++	iq->req_list = NULL;
++
++	if (iq->iq_mz) {
++		cnxk_ep_bb_dmazone_free(iq->iq_mz);
++		iq->iq_mz = NULL;
++	}
++
++	rte_free(cnxk_ep_bb_vf->instr_queue[iq_no]);
++	cnxk_ep_bb_vf->instr_queue[iq_no] = NULL;
++
++	cnxk_ep_bb_vf->nb_tx_queues--;
++
++	cnxk_ep_bb_info("IQ[%d] is deleted", iq_no);
++
++	return 0;
++}
++
++/* IQ initialization */
++static int
++cnxk_ep_bb_init_instr_queue(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, int iq_no, int num_descs,
++		     unsigned int socket_id)
++{
++	const struct cnxk_ep_bb_config *conf;
++	struct cnxk_ep_bb_instr_queue *iq;
++	uint32_t q_size;
++	int ret;
++
++	conf = cnxk_ep_bb_vf->conf;
++	iq = cnxk_ep_bb_vf->instr_queue[iq_no];
++	q_size = conf->iq.instr_type * num_descs;
++
++	/* IQ memory creation for Instruction submission to OCTEON TX2 */
++	iq->iq_mz = cnxk_ep_bb_dmazone_reserve(cnxk_ep_bb_vf->bbdev->data->dev_id, "instr_queue",
++					iq_no, q_size, CNXK_EP_BB_PCI_RING_ALIGN, socket_id);
++	if (iq->iq_mz == NULL) {
++		cnxk_ep_bb_err("IQ[%d] memzone alloc failed\n", iq_no);
++		goto iq_init_fail;
++	}
++	iq->base_addr_dma = iq->iq_mz->iova;
++	iq->base_addr = (uint8_t *)iq->iq_mz->addr;
++
++	if (num_descs & (num_descs - 1)) {
++		cnxk_ep_bb_err("IQ[%d] descs not in power of 2\n", iq_no);
++		goto iq_init_fail;
++	}
++
++	iq->nb_desc = num_descs;
++
++	/* Create a IQ request list to hold requests that have been
++	 * posted to OCTEON TX2. This list will be used for freeing the IQ
++	 * data buffer(s) later once the OCTEON TX2 fetched the requests.
++	 */
++	iq->req_list = rte_zmalloc_socket("request_list",
++			(iq->nb_desc * CNXK_EP_BB_IQREQ_LIST_SIZE),
++			RTE_CACHE_LINE_SIZE,
++			rte_socket_id());
++	if (iq->req_list == NULL) {
++		cnxk_ep_bb_err("IQ[%d] req_list alloc failed\n", iq_no);
++		goto iq_init_fail;
++	}
++
++	cnxk_ep_bb_info("IQ[%d]: base: %p basedma: %" PRIx64 " count: %d",
++		     iq_no, iq->base_addr, (unsigned long)iq->base_addr_dma,
++		     iq->nb_desc);
++
++	iq->cnxk_ep_bb_dev = cnxk_ep_bb_vf;
++	iq->q_no = iq_no;
++	iq->fill_cnt = 0;
++	iq->host_write_index = 0;
++	iq->otx_read_index = 0;
++	iq->flush_index = 0;
++	iq->instr_pending = 0;
++
++	cnxk_ep_bb_vf->io_qmask.iq |= (1ull << iq_no);
++
++	/* Set 32B/64B mode for each input queue */
++	if (conf->iq.instr_type == 64)
++		cnxk_ep_bb_vf->io_qmask.iq64B |= (1ull << iq_no);
++
++	iq->iqcmd_64B = (conf->iq.instr_type == 64);
++
++	/* Set up IQ registers */
++	ret = cnxk_ep_bb_vf->fn_list.setup_iq_regs(cnxk_ep_bb_vf, iq_no);
++	if (ret)
++		return ret;
++
++	return 0;
++
++iq_init_fail:
++	return -ENOMEM;
++}
++
++int
++cnxk_ep_bb_setup_iqs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t iq_no, int num_descs,
++		 unsigned int socket_id)
++{
++	struct cnxk_ep_bb_instr_queue *iq;
++
++	iq = (struct cnxk_ep_bb_instr_queue *)rte_zmalloc("cnxk_ep_bb_IQ", sizeof(*iq),
++						RTE_CACHE_LINE_SIZE);
++	if (iq == NULL)
++		return -ENOMEM;
++
++	cnxk_ep_bb_vf->instr_queue[iq_no] = iq;
++
++	cnxk_ep_bb_vf->nb_tx_queues++;
++	if (cnxk_ep_bb_init_instr_queue(cnxk_ep_bb_vf, iq_no, num_descs, socket_id)) {
++		cnxk_ep_bb_err("IQ init is failed\n");
++		goto delete_IQ;
++	}
++	cnxk_ep_bb_info("IQ[%d] is created", iq_no);
++	return 0;
++
++delete_IQ:
++	cnxk_ep_bb_delete_iqs(cnxk_ep_bb_vf, iq_no);
++	return -ENOMEM;
++}
++
++static void
++cnxk_ep_bb_droq_reset_indices(struct cnxk_ep_bb_droq *droq)
++{
++	droq->read_idx  = 0;
++	droq->write_idx = 0;
++	droq->refill_idx = 0;
++	droq->refill_count = 0;
++	droq->last_pkt_count = 0;
++	droq->pkts_pending = 0;
++}
++
++static void
++cnxk_ep_bb_droq_destroy_ring_buffers(struct cnxk_ep_bb_droq *droq)
++{
++	uint32_t idx;
++
++	for (idx = 0; idx < droq->nb_desc; idx++) {
++		if (droq->recv_buf_list[idx]) {
++			rte_pktmbuf_free(droq->recv_buf_list[idx]);
++			droq->recv_buf_list[idx] = NULL;
++		}
++	}
++
++	cnxk_ep_bb_droq_reset_indices(droq);
++}
++
++/* Free OQs resources */
++int
++cnxk_ep_bb_delete_oqs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t oq_no)
++{
++	struct cnxk_ep_bb_droq *droq;
++
++	droq = cnxk_ep_bb_vf->droq[oq_no];
++	if (droq == NULL) {
++		cnxk_ep_bb_err("Invalid droq[%d]\n", oq_no);
++		return -EINVAL;
++	}
++
++	cnxk_ep_bb_droq_destroy_ring_buffers(droq);
++	rte_free(droq->recv_buf_list);
++	droq->recv_buf_list = NULL;
++
++	if (droq->desc_ring_mz) {
++		cnxk_ep_bb_dmazone_free(droq->desc_ring_mz);
++		droq->desc_ring_mz = NULL;
++	}
++
++	memset(droq, 0, CNXK_EP_BB_DROQ_SIZE);
++
++	rte_free(cnxk_ep_bb_vf->droq[oq_no]);
++	cnxk_ep_bb_vf->droq[oq_no] = NULL;
++
++	cnxk_ep_bb_vf->nb_rx_queues--;
++
++	cnxk_ep_bb_info("OQ[%d] is deleted", oq_no);
++	return 0;
++}
++
++static int
++cnxk_ep_bb_droq_setup_ring_buffers(struct cnxk_ep_bb_droq *droq)
++{
++	struct cnxk_ep_bb_droq_desc *desc_ring = droq->desc_ring;
++	struct cnxk_ep_bb_droq_info *info;
++	struct rte_mbuf *buf;
++	uint32_t idx;
++
++	for (idx = 0; idx < droq->nb_desc; idx++) {
++		buf = rte_pktmbuf_alloc(droq->mpool);
++		if (buf == NULL) {
++			cnxk_ep_bb_err("OQ buffer alloc failed\n");
++			droq->stats.rx_alloc_failure++;
++			return -ENOMEM;
++		}
++
++		droq->recv_buf_list[idx] = buf;
++		info = rte_pktmbuf_mtod(buf, struct cnxk_ep_bb_droq_info *);
++		memset(info, 0, sizeof(*info));
++		desc_ring[idx].buffer_ptr = rte_mbuf_data_iova_default(buf);
++	}
++
++	cnxk_ep_bb_droq_reset_indices(droq);
++
++	return 0;
++}
++
++/* OQ initialization */
++static int
++cnxk_ep_bb_init_droq(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no,
++	      uint32_t num_descs, uint32_t desc_size,
++	      struct rte_mempool *mpool, unsigned int socket_id)
++{
++	const struct cnxk_ep_bb_config *conf = cnxk_ep_bb_vf->conf;
++	uint32_t c_refill_threshold;
++	struct cnxk_ep_bb_droq *droq;
++	uint32_t desc_ring_size;
++	int ret;
++
++	cnxk_ep_bb_info("OQ[%d] Init start", q_no);
++
++	droq = cnxk_ep_bb_vf->droq[q_no];
++	droq->cnxk_ep_bb_dev = cnxk_ep_bb_vf;
++	droq->q_no = q_no;
++	droq->mpool = mpool;
++
++	droq->nb_desc      = num_descs;
++	droq->buffer_size  = desc_size;
++	c_refill_threshold = RTE_MAX(conf->oq.refill_threshold,
++				     droq->nb_desc / 2);
++
++	/* OQ desc_ring set up */
++	desc_ring_size = droq->nb_desc * CNXK_EP_BB_DROQ_DESC_SIZE;
++	droq->desc_ring_mz = cnxk_ep_bb_dmazone_reserve(cnxk_ep_bb_vf->bbdev->data->dev_id, "droq",
++					q_no, desc_ring_size, CNXK_EP_BB_PCI_RING_ALIGN, socket_id);
++
++	if (droq->desc_ring_mz == NULL) {
++		cnxk_ep_bb_err("OQ:%d desc_ring allocation failed\n", q_no);
++		goto init_droq_fail;
++	}
++	droq->desc_ring_dma = droq->desc_ring_mz->iova;
++	droq->desc_ring = (struct cnxk_ep_bb_droq_desc *)droq->desc_ring_mz->addr;
++
++	cnxk_ep_bb_dbg("OQ[%d]: desc_ring: virt: 0x%p, dma: %" PRIx64,
++		    q_no, droq->desc_ring, (unsigned long)droq->desc_ring_dma);
++	cnxk_ep_bb_dbg("OQ[%d]: num_desc: %d", q_no, droq->nb_desc);
++
++	/* OQ buf_list set up */
++	droq->recv_buf_list = rte_zmalloc_socket("recv_buf_list",
++				(droq->nb_desc * sizeof(struct rte_mbuf *)),
++				 RTE_CACHE_LINE_SIZE, socket_id);
++	if (droq->recv_buf_list == NULL) {
++		cnxk_ep_bb_err("OQ recv_buf_list alloc failed\n");
++		goto init_droq_fail;
++	}
++
++	if (cnxk_ep_bb_droq_setup_ring_buffers(droq))
++		goto init_droq_fail;
++
++	droq->refill_threshold = c_refill_threshold;
++
++	/* Set up OQ registers */
++	ret = cnxk_ep_bb_vf->fn_list.setup_oq_regs(cnxk_ep_bb_vf, q_no);
++	if (ret)
++		return ret;
++
++	cnxk_ep_bb_vf->io_qmask.oq |= (1ull << q_no);
++
++	return 0;
++
++init_droq_fail:
++	return -ENOMEM;
++}
++
++/* OQ configuration and setup */
++int
++cnxk_ep_bb_setup_oqs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, int oq_no, int num_descs,
++		 int desc_size, struct rte_mempool *mpool,
++		 unsigned int socket_id)
++{
++	struct cnxk_ep_bb_droq *droq;
++
++	/* Allocate new droq. */
++	droq = (struct cnxk_ep_bb_droq *)rte_zmalloc("cnxk_ep_bb_OQ",
++				sizeof(*droq), RTE_CACHE_LINE_SIZE);
++	if (droq == NULL) {
++		cnxk_ep_bb_err("Droq[%d] Creation Failed\n", oq_no);
++		return -ENOMEM;
++	}
++	cnxk_ep_bb_vf->droq[oq_no] = droq;
++
++	cnxk_ep_bb_vf->nb_rx_queues++;
++	if (cnxk_ep_bb_init_droq(cnxk_ep_bb_vf, oq_no, num_descs, desc_size, mpool,
++			     socket_id)) {
++		cnxk_ep_bb_err("Droq[%d] Initialization failed\n", oq_no);
++		goto delete_OQ;
++	}
++	cnxk_ep_bb_info("OQ[%d] is created", oq_no);
++	return 0;
++
++delete_OQ:
++	cnxk_ep_bb_delete_oqs(cnxk_ep_bb_vf, oq_no);
++	return -ENOMEM;
++}
++
++static inline void
++cnxk_ep_bb_iqreq_delete(struct cnxk_ep_bb_instr_queue *iq, uint32_t idx)
++{
++	uint32_t reqtype;
++	void *buf;
++	struct cnxk_ep_bb_buf_free_info *finfo;
++
++	buf     = iq->req_list[idx].buf;
++	reqtype = iq->req_list[idx].reqtype;
++
++	switch (reqtype) {
++	case CNXK_EP_BB_REQTYPE_NORESP_NET:
++		/* These mbufs will be freed after response arrives
++		 * rte_pktmbuf_free((struct rte_mbuf *)buf);
++		 * cnxk_ep_bb_dbg("IQ buffer freed at idx[%d]\n", idx);
++		 */
++		break;
++
++	case CNXK_EP_BB_REQTYPE_NORESP_GATHER:
++		finfo = (struct  cnxk_ep_bb_buf_free_info *)buf;
++		/* This will take care of multiple segments also */
++		cnxk_ep_bb_err("error: bbdev cmd/op IQ should not free scatter buffer\n");
++		rte_pktmbuf_free(finfo->mbuf);
++		rte_free(finfo->g.sg);
++		rte_free(finfo);
++		break;
++
++	case CNXK_EP_BB_REQTYPE_NONE:
++	default:
++		cnxk_ep_bb_info("This iqreq mode is not supported:%d\n", reqtype);
++	}
++
++	/* Reset the request list at this index */
++	iq->req_list[idx].buf = NULL;
++	iq->req_list[idx].reqtype = 0;
++}
++
++static inline void
++cnxk_ep_bb_iqreq_add(struct cnxk_ep_bb_instr_queue *iq, void *buf,
++		uint32_t reqtype, int index)
++{
++	iq->req_list[index].buf = buf;
++	iq->req_list[index].reqtype = reqtype;
++}
++
++static uint32_t
++otx_vf_update_read_index(struct cnxk_ep_bb_instr_queue *iq)
++{
++	uint32_t val;
++
++	/*
++	 * Batch subtractions from the HW counter to reduce PCIe traffic
++	 * This adds an extra local variable, but almost halves the
++	 * number of PCIe writes.
++	 */
++	val = *iq->inst_cnt_ism;
++	iq->inst_cnt += val - iq->inst_cnt_ism_prev;
++	iq->inst_cnt_ism_prev = val;
++
++	if (val > (uint32_t)(1 << 31)) {
++		/*
++		 * Only subtract the packet count in the HW counter
++		 * when count above halfway to saturation.
++		 */
++		rte_write32(val, iq->inst_cnt_reg);
++		*iq->inst_cnt_ism = 0;
++		iq->inst_cnt_ism_prev = 0;
++	}
++	rte_write64(OTX2_SDP_REQUEST_ISM, iq->inst_cnt_reg);
++
++	/* Modulo of the new index with the IQ size will give us
++	 * the new index.
++	 */
++	return iq->inst_cnt & (iq->nb_desc - 1);
++}
++
++static void
++cnxk_ep_bb_flush_iq(struct cnxk_ep_bb_instr_queue *iq)
++{
++	uint32_t instr_processed = 0;
++
++	iq->otx_read_index = otx_vf_update_read_index(iq);
++	while (iq->flush_index != iq->otx_read_index) {
++		/* Free the IQ data buffer to the pool */
++		cnxk_ep_bb_iqreq_delete(iq, iq->flush_index);
++		iq->flush_index =
++			cnxk_ep_bb_incr_index(iq->flush_index, 1, iq->nb_desc);
++
++		instr_processed++;
++	}
++
++	iq->stats.instr_processed = instr_processed;
++	iq->instr_pending -= instr_processed;
++}
++
++static inline void
++cnxk_ep_bb_ring_doorbell(struct cnxk_ep_bb_device *cnxk_ep_bb_vf __rte_unused,
++		struct cnxk_ep_bb_instr_queue *iq)
++{
++	rte_wmb();
++	rte_write64(iq->fill_cnt, iq->doorbell_reg);
++	iq->fill_cnt = 0;
++}
++
++static inline int
++post_iqcmd(struct cnxk_ep_bb_instr_queue *iq, uint8_t *iqcmd)
++{
++	uint8_t *iqptr, cmdsize;
++
++	/* This ensures that the read index does not wrap around to
++	 * the same position if queue gets full before OCTEON TX2 could
++	 * fetch any instr.
++	 */
++	if (iq->instr_pending > (iq->nb_desc - 1))
++		return CNXK_EP_BB_IQ_SEND_FAILED;
++
++	/* Copy cmd into iq */
++	cmdsize = 64;
++	iqptr   = iq->base_addr + (iq->host_write_index << 6);
++
++	rte_memcpy(iqptr, iqcmd, cmdsize);
++
++	/* Increment the host write index */
++	iq->host_write_index =
++		cnxk_ep_bb_incr_index(iq->host_write_index, 1, iq->nb_desc);
++
++	iq->fill_cnt++;
++
++	/* Flush the command into memory. We need to be sure the data
++	 * is in memory before indicating that the instruction is
++	 * pending.
++	 */
++	iq->instr_pending++;
++	/* CNXK_EP_BB_IQ_SEND_SUCCESS */
++	return 0;
++}
++
++
++static int
++cnxk_ep_bb_send_data(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, struct cnxk_ep_bb_instr_queue *iq,
++		 void *cmd, int dbell)
++{
++	uint32_t ret;
++
++	/* Submit IQ command */
++	ret = post_iqcmd(iq, cmd);
++
++	if (ret == CNXK_EP_BB_IQ_SEND_SUCCESS) {
++		if (dbell)
++			cnxk_ep_bb_ring_doorbell(cnxk_ep_bb_vf, iq);
++		iq->stats.instr_posted++;
++
++	} else {
++		iq->stats.instr_dropped++;
++		if (iq->fill_cnt)
++			cnxk_ep_bb_ring_doorbell(cnxk_ep_bb_vf, iq);
++	}
++	return ret;
++}
++
++static inline void
++set_sg_size(struct cnxk_ep_bb_sg_entry *sg_entry, uint16_t size, uint32_t pos)
++{
++#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
++	sg_entry->u.size[pos] = size;
++#elif RTE_BYTE_ORDER == RTE_LITTLE_ENDIAN
++	sg_entry->u.size[3 - pos] = size;
++#endif
++}
++
++#ifdef TODO_ADD_FOR_OTX
++/* Enqueue requests/packets to OTX_EP IQ queue.
++ * returns number of requests enqueued successfully
++ */
++uint16_t
++otx_bb_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
++{
++	struct cnxk_ep_bb_instr_64B iqcmd;
++	struct cnxk_ep_bb_instr_queue *iq;
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf;
++	struct rte_mbuf *m;
++
++	uint32_t iqreq_type, sgbuf_sz;
++	int dbell, index, count = 0;
++	unsigned int pkt_len, i;
++	int gather, gsz;
++	void *iqreq_buf;
++	uint64_t dptr;
++
++	iq = (struct cnxk_ep_bb_instr_queue *)tx_queue;
++	cnxk_ep_bb_vf = iq->cnxk_ep_bb_dev;
++
++	iqcmd.ih.u64 = 0;
++	iqcmd.pki_ih3.u64 = 0;
++	iqcmd.irh.u64 = 0;
++
++	/* ih invars */
++	iqcmd.ih.s.fsz = CNXK_EP_BB_FSZ;
++	iqcmd.ih.s.pkind = cnxk_ep_bb_vf->pkind; /* The SDK decided PKIND value */
++
++	/* pki ih3 invars */
++	iqcmd.pki_ih3.s.w = 1;
++	iqcmd.pki_ih3.s.utt = 1;
++	iqcmd.pki_ih3.s.tagtype = ORDERED_TAG;
++	/* sl will be sizeof(pki_ih3) */
++	iqcmd.pki_ih3.s.sl = CNXK_EP_BB_FSZ + OTX_CUST_DATA_LEN;
++
++	/* irh invars */
++	iqcmd.irh.s.opcode = CNXK_EP_BB_NW_PKT_OP;
++
++	for (i = 0; i < nb_pkts; i++) {
++		m = pkts[i];
++		if (m->nb_segs == 1) {
++			/* dptr */
++			dptr = rte_mbuf_data_iova(m);
++			pkt_len = rte_pktmbuf_data_len(m);
++			iqreq_buf = m;
++			iqreq_type = CNXK_EP_BB_REQTYPE_NORESP_NET;
++			gather = 0;
++			gsz = 0;
++		} else {
++			struct cnxk_ep_bb_buf_free_info *finfo;
++			int j, frags, num_sg;
++
++			if (!(cnxk_ep_bb_vf->tx_offloads & RTE_ETH_TX_OFFLOAD_MULTI_SEGS))
++				goto xmit_fail;
++
++			finfo = (struct cnxk_ep_bb_buf_free_info *)rte_malloc(NULL,
++							sizeof(*finfo), 0);
++			if (finfo == NULL) {
++				cnxk_ep_bb_err("free buffer alloc failed\n");
++				goto xmit_fail;
++			}
++			num_sg = (m->nb_segs + 3) / 4;
++			sgbuf_sz = sizeof(struct cnxk_ep_bb_sg_entry) * num_sg;
++			finfo->g.sg =
++				rte_zmalloc(NULL, sgbuf_sz, CNXK_EP_BB_SG_ALIGN);
++			if (finfo->g.sg == NULL) {
++				rte_free(finfo);
++				cnxk_ep_bb_err("sg entry alloc failed\n");
++				goto xmit_fail;
++			}
++			gather = 1;
++			gsz = m->nb_segs;
++			finfo->g.num_sg = num_sg;
++			finfo->g.sg[0].ptr[0] = rte_mbuf_data_iova(m);
++			set_sg_size(&finfo->g.sg[0], m->data_len, 0);
++			pkt_len = m->data_len;
++			finfo->mbuf = m;
++
++			frags = m->nb_segs - 1;
++			j = 1;
++			m = m->next;
++			while (frags--) {
++				finfo->g.sg[(j >> 2)].ptr[(j & 3)] =
++						rte_mbuf_data_iova(m);
++				set_sg_size(&finfo->g.sg[(j >> 2)],
++						m->data_len, (j & 3));
++				pkt_len += m->data_len;
++				j++;
++				m = m->next;
++			}
++			dptr = rte_mem_virt2iova(finfo->g.sg);
++			iqreq_buf = finfo;
++			iqreq_type = CNXK_EP_BB_REQTYPE_NORESP_GATHER;
++			if (pkt_len > CNXK_EP_BB_MAX_PKT_SZ) {
++				rte_free(finfo->g.sg);
++				rte_free(finfo);
++				cnxk_ep_bb_err("failed\n");
++				goto xmit_fail;
++			}
++		}
++		/* ih vars */
++		iqcmd.ih.s.tlen = pkt_len + iqcmd.ih.s.fsz;
++		iqcmd.ih.s.gather = gather;
++		iqcmd.ih.s.gsz = gsz;
++
++		iqcmd.dptr = dptr;
++		cnxk_ep_bb_swap_8B_data(&iqcmd.irh.u64, 1);
++
++#ifdef CNXK_EP_BB_IO_DEBUG
++		cnxk_ep_bb_dbg("After swapping\n");
++		cnxk_ep_bb_dbg("Word0 [dptr]: 0x%016lx\n",
++			   (unsigned long)iqcmd.dptr);
++		cnxk_ep_bb_dbg("Word1 [ihtx]: 0x%016lx\n", (unsigned long)iqcmd.ih);
++		cnxk_ep_bb_dbg("Word2 [pki_ih3]: 0x%016lx\n",
++			   (unsigned long)iqcmd.pki_ih3);
++		cnxk_ep_bb_dbg("Word3 [rptr]: 0x%016lx\n",
++			   (unsigned long)iqcmd.rptr);
++		cnxk_ep_bb_dbg("Word4 [irh]: 0x%016lx\n", (unsigned long)iqcmd.irh);
++		cnxk_ep_bb_dbg("Word5 [exhdr[0]]: 0x%016lx\n",
++				(unsigned long)iqcmd.exhdr[0]);
++		rte_pktmbuf_dump(stdout, m, rte_pktmbuf_pkt_len(m));
++#endif
++		dbell = (i == (unsigned int)(nb_pkts - 1)) ? 1 : 0;
++		index = iq->host_write_index;
++		if (cnxk_ep_bb_send_data(cnxk_ep_bb_vf, iq, &iqcmd, dbell))
++			goto xmit_fail;
++		cnxk_ep_bb_iqreq_add(iq, iqreq_buf, iqreq_type, index);
++		iq->stats.tx_pkts++;
++		iq->stats.tx_bytes += pkt_len;
++		count++;
++	}
++
++xmit_fail:
++	if (iq->instr_pending >= CNXK_EP_BB_MAX_INSTR)
++		cnxk_ep_bb_flush_iq(iq);
++
++	/* Return no# of instructions posted successfully. */
++	return count;
++}
++#endif
++
++/* Enqueue requests/packets to OTX_EP IQ queue.
++ * returns number of requests enqueued successfully
++ */
++uint16_t
++cnxk_ep_bb_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
++{
++	struct cnxk_ep_bb_instr_64B iqcmd2;
++	struct cnxk_ep_bb_instr_queue *iq;
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf;
++	uint64_t dptr;
++	int count = 0;
++	unsigned int i;
++	struct rte_mbuf *m;
++	unsigned int pkt_len;
++	void *iqreq_buf;
++	uint32_t iqreq_type, sgbuf_sz;
++	int gather, gsz;
++	int dbell;
++	int index;
++
++	iq = (struct cnxk_ep_bb_instr_queue *)tx_queue;
++	cnxk_ep_bb_vf = iq->cnxk_ep_bb_dev;
++
++	iqcmd2.ih.u64 = 0;
++	iqcmd2.irh.u64 = 0;
++
++	/* ih invars */
++	iqcmd2.ih.s.fsz = front_size[cnxk_ep_bb_vf->sdp_packet_mode];
++	iqcmd2.ih.s.pkind = cnxk_ep_bb_vf->pkind; /* The SDK decided PKIND value */
++	/* irh invars, ignored in LOOP mode */
++	iqcmd2.irh.s.opcode = CNXK_EP_BB_NW_PKT_OP;
++
++	for (i = 0; i < nb_pkts; i++) {
++		m = pkts[i];
++		if (m->nb_segs == 1) {
++			/* dptr */
++			dptr = rte_mbuf_data_iova(m);
++			pkt_len = rte_pktmbuf_data_len(m);
++			iqreq_buf = m;
++			iqreq_type = CNXK_EP_BB_REQTYPE_NORESP_NET;
++			gather = 0;
++			gsz = 0;
++		} else {
++			struct cnxk_ep_bb_buf_free_info *finfo;
++			int j, frags, num_sg;
++			if (!(cnxk_ep_bb_vf->tx_offloads & EPDEV_TX_OFFLOAD_MULTI_SEGS))
++				goto xmit_fail;
++			finfo = (struct cnxk_ep_bb_buf_free_info *)
++					rte_malloc(NULL, sizeof(*finfo), 0);
++			if (finfo == NULL) {
++				cnxk_ep_bb_err("free buffer alloc failed\n");
++				goto xmit_fail;
++			}
++			num_sg = (m->nb_segs + 3) / 4;
++			sgbuf_sz = sizeof(struct cnxk_ep_bb_sg_entry) * num_sg;
++			finfo->g.sg =
++				rte_zmalloc(NULL, sgbuf_sz, CNXK_EP_BB_SG_ALIGN);
++			if (finfo->g.sg == NULL) {
++				rte_free(finfo);
++				cnxk_ep_bb_err("sg entry alloc failed\n");
++				goto xmit_fail;
++			}
++			gather = 1;
++			gsz = m->nb_segs;
++			finfo->g.num_sg = num_sg;
++			finfo->g.sg[0].ptr[0] = rte_mbuf_data_iova(m);
++			set_sg_size(&finfo->g.sg[0], m->data_len, 0);
++			pkt_len = m->data_len;
++			finfo->mbuf = m;
++
++			frags = m->nb_segs - 1;
++			j = 1;
++			m = m->next;
++			while (frags--) {
++				finfo->g.sg[(j >> 2)].ptr[(j & 3)] =
++						rte_mbuf_data_iova(m);
++				set_sg_size(&finfo->g.sg[(j >> 2)],
++						m->data_len, (j & 3));
++				pkt_len += m->data_len;
++				j++;
++				m = m->next;
++			}
++			dptr = rte_mem_virt2iova(finfo->g.sg);
++			iqreq_buf = finfo;
++			iqreq_type = CNXK_EP_BB_REQTYPE_NORESP_GATHER;
++			if (pkt_len > CNXK_EP_BB_MAX_PKT_SZ) {
++				rte_free(finfo->g.sg);
++				rte_free(finfo);
++				cnxk_ep_bb_err("failed\n");
++				goto xmit_fail;
++			}
++		}
++		/* ih vars */
++		iqcmd2.ih.s.tlen = pkt_len + iqcmd2.ih.s.fsz;
++		iqcmd2.ih.s.gather = gather;
++		iqcmd2.ih.s.gsz = gsz;
++		iqcmd2.dptr = dptr;
++		cnxk_ep_bb_swap_8B_data(&iqcmd2.irh.u64, 1);
++
++#ifdef CNXK_EP_BB_IO_DEBUG
++		cnxk_ep_bb_dbg("After swapping\n");
++		cnxk_ep_bb_dbg("Word0 [dptr]: 0x%016lx\n",
++			   (unsigned long)iqcmd.dptr);
++		cnxk_ep_bb_dbg("Word1 [ihtx]: 0x%016lx\n", (unsigned long)iqcmd.ih);
++		cnxk_ep_bb_dbg("Word2 [pki_ih3]: 0x%016lx\n",
++			   (unsigned long)iqcmd.pki_ih3);
++		cnxk_ep_bb_dbg("Word3 [rptr]: 0x%016lx\n",
++			   (unsigned long)iqcmd.rptr);
++		cnxk_ep_bb_dbg("Word4 [irh]: 0x%016lx\n", (unsigned long)iqcmd.irh);
++		cnxk_ep_bb_dbg("Word5 [exhdr[0]]: 0x%016lx\n",
++			   (unsigned long)iqcmd.exhdr[0]);
++#endif
++		index = iq->host_write_index;
++		dbell = (i == (unsigned int)(nb_pkts - 1)) ? 1 : 0;
++		if (cnxk_ep_bb_send_data(cnxk_ep_bb_vf, iq, &iqcmd2, dbell))
++			goto xmit_fail;
++		cnxk_ep_bb_iqreq_add(iq, iqreq_buf, iqreq_type, index);
++		iq->stats.tx_pkts++;
++		iq->stats.tx_bytes += pkt_len;
++		count++;
++	}
++
++xmit_fail:
++	if (iq->instr_pending >= CNXK_EP_BB_MAX_INSTR)
++		cnxk_ep_bb_flush_iq(iq);
++
++	/* Return no# of instructions posted successfully. */
++	return count;
++}
++
++static uint32_t
++cnxk_ep_bb_droq_refill(struct cnxk_ep_bb_droq *droq)
++{
++	struct cnxk_ep_bb_droq_desc *desc_ring;
++	struct cnxk_ep_bb_droq_info *info;
++	struct rte_mbuf *buf = NULL;
++	uint32_t desc_refilled = 0;
++
++	desc_ring = droq->desc_ring;
++
++	while (droq->refill_count && (desc_refilled < droq->nb_desc)) {
++		/* If a valid buffer exists (happens if there is no dispatch),
++		 * reuse the buffer, else allocate.
++		 */
++		if (droq->recv_buf_list[droq->refill_idx] != NULL)
++			break;
++
++		buf = rte_pktmbuf_alloc(droq->mpool);
++		/* If a buffer could not be allocated, no point in
++		 * continuing
++		 */
++		if (buf == NULL) {
++			droq->stats.rx_alloc_failure++;
++			break;
++		}
++		info = rte_pktmbuf_mtod(buf, struct cnxk_ep_bb_droq_info *);
++		memset(info, 0, sizeof(*info));
++
++		droq->recv_buf_list[droq->refill_idx] = buf;
++		desc_ring[droq->refill_idx].buffer_ptr =
++					rte_mbuf_data_iova_default(buf);
++
++
++		droq->refill_idx = cnxk_ep_bb_incr_index(droq->refill_idx, 1,
++				droq->nb_desc);
++
++		desc_refilled++;
++		droq->refill_count--;
++	}
++
++	return desc_refilled;
++}
++
++static struct rte_mbuf *
++cnxk_ep_bb_droq_read_packet(struct cnxk_ep_bb_device *cnxk_ep_bb_vf,
++			struct cnxk_ep_bb_droq *droq, int next_fetch)
++{
++	volatile struct cnxk_ep_bb_droq_info *info;
++	struct rte_mbuf *droq_pkt2 = NULL;
++	struct rte_mbuf *droq_pkt = NULL;
++	struct cnxk_ep_bb_droq_info *info2;
++	uint64_t total_pkt_len;
++	uint32_t pkt_len = 0;
++	int next_idx;
++	int info_size;
++
++	info_size = droq_info_size[cnxk_ep_bb_vf->sdp_packet_mode];
++	droq_pkt  = droq->recv_buf_list[droq->read_idx];
++	droq_pkt2  = droq->recv_buf_list[droq->read_idx];
++	info = rte_pktmbuf_mtod(droq_pkt, struct cnxk_ep_bb_droq_info *);
++	/* make sure info is available */
++	rte_rmb();
++	if (unlikely(!info->length)) {
++		int retry = CNXK_EP_BB_MAX_DELAYED_PKT_RETRIES;
++		/* cnxk_ep_bb_dbg("OCTEON DROQ[%d]: read_idx: %d; Data not ready "
++		 * "yet, Retry; pending=%" PRId64, droq->q_no, droq->read_idx,
++		 * droq->pkts_pending);
++		 */
++		droq->stats.pkts_delayed_data++;
++		while (retry && !info->length) {
++			retry--;
++			rte_delay_us_block(50);
++		}
++		if (!retry && !info->length) {
++			cnxk_ep_bb_err("OCTEON DROQ[%d]: read_idx: %d; Retry failed !!\n",
++				   droq->q_no, droq->read_idx);
++			assert(0);
++		}
++	}
++	if (next_fetch) {
++		next_idx = cnxk_ep_bb_incr_index(droq->read_idx, 1, droq->nb_desc);
++		droq_pkt2  = droq->recv_buf_list[next_idx];
++		info2 = rte_pktmbuf_mtod(droq_pkt2, struct cnxk_ep_bb_droq_info *);
++		rte_prefetch_non_temporal((const void *)info2);
++	}
++
++	info->length = rte_bswap64(info->length);
++	/* Deduce the actual data size */
++	total_pkt_len = info->length + INFO_SIZE;
++	if (total_pkt_len <= droq->buffer_size) {
++		info->length -=  rh_size[cnxk_ep_bb_vf->sdp_packet_mode];
++		droq_pkt  = droq->recv_buf_list[droq->read_idx];
++		if (likely(droq_pkt != NULL)) {
++			droq_pkt->data_off += info_size;
++			/* cnxk_ep_bb_dbg("OQ: pkt_len[%" PRId64 "], buffer_size %d\n",
++			 * (long)info->length, droq->buffer_size);
++			 */
++			pkt_len = (uint32_t)info->length;
++			droq_pkt->pkt_len  = pkt_len;
++			droq_pkt->data_len  = pkt_len;
++			droq_pkt->port = cnxk_ep_bb_vf->port_id;
++			droq->recv_buf_list[droq->read_idx] = NULL;
++			droq->read_idx = cnxk_ep_bb_incr_index(droq->read_idx, 1,
++							   droq->nb_desc);
++			droq->refill_count++;
++		}
++	} else {
++		struct rte_mbuf *first_buf = NULL;
++		struct rte_mbuf *last_buf = NULL;
++
++		/* initiating a csr read helps to flush pending dma */
++		droq->sent_reg_val = rte_read32(droq->pkts_sent_reg);
++		rte_rmb();
++		while (pkt_len < total_pkt_len) {
++			int cpy_len = 0;
++
++			cpy_len = ((pkt_len + droq->buffer_size) >
++					total_pkt_len)
++					? ((uint32_t)total_pkt_len -
++						pkt_len)
++					: droq->buffer_size;
++
++			droq_pkt = droq->recv_buf_list[droq->read_idx];
++			droq->recv_buf_list[droq->read_idx] = NULL;
++
++			if (likely(droq_pkt != NULL)) {
++				/* Note the first seg */
++				if (!pkt_len)
++					first_buf = droq_pkt;
++
++				droq_pkt->port = cnxk_ep_bb_vf->port_id;
++				if (!pkt_len) {
++					droq_pkt->data_off +=
++						info_size;
++					droq_pkt->pkt_len =
++						cpy_len - info_size;
++					droq_pkt->data_len =
++						cpy_len - info_size;
++				} else {
++					droq_pkt->pkt_len = cpy_len;
++					droq_pkt->data_len = cpy_len;
++				}
++
++				if (pkt_len) {
++					first_buf->nb_segs++;
++					first_buf->pkt_len += droq_pkt->pkt_len;
++				}
++
++				if (last_buf)
++					last_buf->next = droq_pkt;
++
++				last_buf = droq_pkt;
++			} else {
++				cnxk_ep_bb_err("no recvbuf in jumbo processing\n");
++				assert(0);
++			}
++
++			pkt_len += cpy_len;
++			droq->read_idx = cnxk_ep_bb_incr_index(droq->read_idx, 1,
++							   droq->nb_desc);
++			droq->refill_count++;
++		}
++		droq_pkt = first_buf;
++	}
++	if (droq_pkt->pkt_len > cnxk_ep_bb_vf->max_rx_pktlen) {
++		rte_pktmbuf_free(droq_pkt);
++		goto oq_read_fail;
++	}
++	if (droq_pkt->nb_segs > 1 &&
++	    !(cnxk_ep_bb_vf->rx_offloads & EPDEV_RX_OFFLOAD_SCATTER)) {
++		rte_pktmbuf_free(droq_pkt);
++		goto oq_read_fail;
++	}
++	return droq_pkt;
++oq_read_fail:
++	return NULL;
++}
++
++static inline uint32_t
++cnxk_ep_bb_check_droq_pkts(struct cnxk_ep_bb_droq *droq)
++{
++	uint32_t new_pkts;
++	uint32_t val;
++
++	/*
++	 * Batch subtractions from the HW counter to reduce PCIe traffic
++	 * This adds an extra local variable, but almost halves the
++	 * number of PCIe writes.
++	 */
++	val = *droq->pkts_sent_ism;
++	new_pkts = val - droq->pkts_sent_ism_prev;
++	droq->pkts_sent_ism_prev = val;
++
++	if (val > (uint32_t)(1 << 31)) {
++		/*
++		 * Only subtract the packet count in the HW counter
++		 * when count above halfway to saturation.
++		 */
++		rte_write32(val, droq->pkts_sent_reg);
++		*droq->pkts_sent_ism = 0;
++		droq->pkts_sent_ism_prev = 0;
++	}
++	rte_write64(OTX2_SDP_REQUEST_ISM, droq->pkts_sent_reg);
++
++	droq->pkts_pending += new_pkts;
++	return new_pkts;
++}
++
++/* Check for response arrival from OCTEON TX2
++ * returns number of requests completed
++ */
++uint16_t
++cnxk_ep_bb_recv_pkts(void *rx_queue,
++		  struct rte_mbuf **rx_pkts,
++		  uint16_t budget)
++{
++	struct cnxk_ep_bb_droq *droq = rx_queue;
++	struct cnxk_ep_bb_device *cnxk_ep_bb_vf;
++	struct rte_mbuf *oq_pkt;
++
++	uint32_t pkts = 0;
++	uint32_t valid_pkts = 0;
++	uint32_t new_pkts = 0;
++	int next_fetch;
++
++	cnxk_ep_bb_vf = droq->cnxk_ep_bb_dev;
++
++	if (droq->pkts_pending > budget) {
++		new_pkts = budget;
++	} else {
++		new_pkts = droq->pkts_pending;
++		new_pkts += cnxk_ep_bb_check_droq_pkts(droq);
++		if (new_pkts > budget)
++			new_pkts = budget;
++	}
++
++	if (!new_pkts)
++		goto update_credit; /* No pkts at this moment */
++
++	for (pkts = 0; pkts < new_pkts; pkts++) {
++		/* Push the received pkt to application */
++		next_fetch = (pkts == new_pkts - 1) ? 0 : 1;
++		oq_pkt = cnxk_ep_bb_droq_read_packet(cnxk_ep_bb_vf, droq, next_fetch);
++		if (!oq_pkt) {
++			RTE_LOG_DP(ERR, PMD,
++				   "DROQ read pkt failed pending %" PRIu64
++				    "last_pkt_count %" PRIu64 "new_pkts %d.\n",
++				   droq->pkts_pending, droq->last_pkt_count,
++				   new_pkts);
++			droq->stats.rx_err++;
++			continue;
++		} else {
++			rx_pkts[valid_pkts] = oq_pkt;
++			valid_pkts++;
++			/* Stats */
++			droq->stats.pkts_received++;
++			droq->stats.bytes_received += oq_pkt->pkt_len;
++		}
++	}
++	droq->pkts_pending -= pkts;
++
++	/* Refill DROQ buffers */
++update_credit:
++	if (droq->refill_count >= DROQ_REFILL_THRESHOLD) {
++		int desc_refilled = cnxk_ep_bb_droq_refill(droq);
++
++		/* Flush the droq descriptor data to memory to be sure
++		 * that when we update the credits the data in memory is
++		 * accurate.
++		 */
++		rte_wmb();
++		rte_write32(desc_refilled, droq->pkts_credit_reg);
++	} else {
++		/*
++		 * SDP output goes into DROP state when output doorbell count
++		 * goes below drop count. When door bell count is written with
++		 * a value greater than drop count SDP output should come out
++		 * of DROP state. Due to a race condition this is not happening.
++		 * Writing doorbell register with 0 again may make SDP output
++		 * come out of this state.
++		 */
++
++		rte_write32(0, droq->pkts_credit_reg);
++	}
++	return valid_pkts;
++}
++
++int
++cnxk_ep_bb_dequeue_ops(void *rx_queue, struct rte_mbuf **ops,
++				uint16_t budget)
++{
++	struct cnxk_ep_bb_droq *droq = (struct cnxk_ep_bb_droq *)rx_queue;
++
++	return droq->cnxk_ep_bb_dev->rx_pkt_burst(rx_queue, ops, budget);
++}
++
++int
++cnxk_ep_bb_enqueue_ops(void *rx_queue, struct rte_mbuf **ops,
++				uint16_t nb_ops)
++{
++	struct cnxk_ep_bb_droq *droq = (struct cnxk_ep_bb_droq *)rx_queue;
++	struct cnxk_ep_bb_instr_queue *iq =
++		droq->cnxk_ep_bb_dev->instr_queue[droq->q_no];
++
++	return droq->cnxk_ep_bb_dev->tx_pkt_burst(iq, ops, nb_ops);
++}
+diff --git a/drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.h b/drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.h
+new file mode 100644
+index 0000000000000..024ba24ef4be0
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/cnxk_ep_bb_rxtx.h
+@@ -0,0 +1,49 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#ifndef _CNXK_EP_BB_RXTX_H_
++#define _CNXK_EP_BB_RXTX_H_
++
++#include <rte_byteorder.h>
++
++#define CNXK_EP_BB_RXD_ALIGN 2
++#define CNXK_EP_BB_TXD_ALIGN 2
++
++#define CNXK_EP_BB_IQ_SEND_FAILED      (-1)
++#define CNXK_EP_BB_IQ_SEND_SUCCESS     (0)
++
++#define CNXK_EP_BB_MAX_DELAYED_PKT_RETRIES 10000
++
++#define CNXK_EP_BB_FSZ 28
++#define OTX2_EP_FSZ_LOOP 0
++#define OTX2_EP_FSZ_NIC 24
++#define CNXK_EP_BB_MAX_INSTR 16
++
++static inline void
++cnxk_ep_bb_swap_8B_data(uint64_t *data, uint32_t blocks)
++{
++	/* Swap 8B blocks */
++	while (blocks) {
++		*data = rte_bswap64(*data);
++		blocks--;
++		data++;
++	}
++}
++
++static inline uint32_t
++cnxk_ep_bb_incr_index(uint32_t index, uint32_t count, uint32_t max)
++{
++	return ((index + count) & (max - 1));
++}
++#ifdef TODO_ADD_FOR_OTX
++uint16_t
++otx_bb_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts);
++#endif
++uint16_t
++cnxk_ep_bb_xmit_pkts(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts);
++uint16_t
++cnxk_ep_bb_recv_pkts(void *rx_queue,
++		  struct rte_mbuf **rx_pkts,
++		  uint16_t budget);
++#endif /* _CNXK_EP_BB_RXTX_H_ */
+diff --git a/drivers/baseband/octeon_ep/cnxk_ep_bb_vf.c b/drivers/baseband/octeon_ep/cnxk_ep_bb_vf.c
+new file mode 100644
+index 0000000000000..0095922a6695c
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/cnxk_ep_bb_vf.c
+@@ -0,0 +1,435 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2021 Marvell.
++ */
++
++#include <rte_common.h>
++
++#include "cnxk_ep_bb_common.h"
++#include "cnxk_ep_bb_vf.h"
++
++static void
++cnxk_ep_bb_vf_setup_global_iq_reg(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, int q_no)
++{
++	volatile uint64_t reg_val = 0ull;
++
++	/* Select ES, RO, NS, RDSIZE,DPTR Format#0 for IQs
++	 * IS_64B is by default enabled.
++	 */
++	reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_R_IN_CONTROL(q_no));
++
++	reg_val |= CNXK_EP_R_IN_CTL_RDSIZE;
++	reg_val |= CNXK_EP_R_IN_CTL_IS_64B;
++	reg_val |= CNXK_EP_R_IN_CTL_ESR;
++
++	oct_ep_write64(reg_val, cnxk_ep_bb_vf->hw_addr +
++		       CNXK_EP_R_IN_CONTROL(q_no));
++}
++
++static void
++cnxk_ep_bb_vf_setup_global_oq_reg(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, int q_no)
++{
++	volatile uint64_t reg_val = 0ull;
++
++	reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_R_OUT_CONTROL(q_no));
++
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_IMODE);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_ROR_P);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_NSR_P);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_ROR_I);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_NSR_I);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_ROR_D);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_NSR_D);
++	reg_val &= ~(CNXK_EP_R_OUT_CTL_ES_I | CNXK_EP_R_OUT_CTL_ES_D);
++
++	/* INFO/DATA ptr swap is required  */
++	reg_val |= (CNXK_EP_R_OUT_CTL_ES_P);
++	oct_ep_write64(reg_val, cnxk_ep_bb_vf->hw_addr +
++		       CNXK_EP_R_OUT_CONTROL(q_no));
++}
++
++static int
++cnxk_ep_bb_vf_setup_global_input_regs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	uint64_t q_no = 0ull;
++	int ret = 0;
++
++	for (q_no = 0; q_no < (cnxk_ep_bb_vf->sriov_info.rings_per_vf); q_no++)
++		cnxk_ep_bb_vf_setup_global_iq_reg(cnxk_ep_bb_vf, q_no);
++
++	return ret;
++}
++
++static int
++cnxk_ep_bb_vf_setup_global_output_regs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	uint32_t q_no;
++	int ret = 0;
++
++	for (q_no = 0; q_no < (cnxk_ep_bb_vf->sriov_info.rings_per_vf); q_no++)
++		cnxk_ep_bb_vf_setup_global_oq_reg(cnxk_ep_bb_vf, q_no);
++
++	return ret;
++}
++
++static int
++cnxk_ep_bb_vf_setup_device_regs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	int ret;
++	ret = cnxk_ep_bb_vf_setup_global_input_regs(cnxk_ep_bb_vf);
++	if (ret)
++		return ret;
++	ret = cnxk_ep_bb_vf_setup_global_output_regs(cnxk_ep_bb_vf);
++
++	return ret;
++}
++
++static int
++cnxk_ep_bb_vf_setup_iq_regs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t iq_no)
++{
++	struct cnxk_ep_bb_instr_queue *iq = cnxk_ep_bb_vf->instr_queue[iq_no];
++	volatile uint64_t reg_val = 0ull;
++	uint64_t ism_addr;
++
++	reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_R_IN_CONTROL(iq_no));
++
++	/* Wait till IDLE to set to 1, not supposed to configure BADDR
++	 * as long as IDLE is 0
++	 */
++	if (!(reg_val & CNXK_EP_R_IN_CTL_IDLE)) {
++		do {
++			reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++					      CNXK_EP_R_IN_CONTROL(iq_no));
++		} while (!(reg_val & CNXK_EP_R_IN_CTL_IDLE));
++	}
++
++	/* Write the start of the input queue's ring and its size  */
++	oct_ep_write64(iq->base_addr_dma, cnxk_ep_bb_vf->hw_addr +
++		     CNXK_EP_R_IN_INSTR_BADDR(iq_no));
++	oct_ep_write64(iq->nb_desc, cnxk_ep_bb_vf->hw_addr +
++		     CNXK_EP_R_IN_INSTR_RSIZE(iq_no));
++
++	/* Remember the doorbell & instruction count register addr
++	 * for this queue
++	 */
++	iq->doorbell_reg = (uint8_t *)cnxk_ep_bb_vf->hw_addr +
++			   CNXK_EP_R_IN_INSTR_DBELL(iq_no);
++	iq->inst_cnt_reg = (uint8_t *)cnxk_ep_bb_vf->hw_addr +
++			   CNXK_EP_R_IN_CNTS(iq_no);
++
++	cnxk_ep_bb_dbg("InstQ[%d]:dbell reg @ 0x%p instcnt_reg @ 0x%p",
++		   iq_no, iq->doorbell_reg, iq->inst_cnt_reg);
++
++	do {
++		reg_val = rte_read32(iq->inst_cnt_reg);
++		rte_write32(reg_val, iq->inst_cnt_reg);
++	} while (reg_val != 0);
++
++	/* IN INTR_THRESHOLD is set to max(FFFFFFFF) which disable the IN INTR
++	 * to raise
++	 */
++	oct_ep_write64(CNXK_EP_BB_CLEAR_SDP_IN_INT_LVLS,
++		     cnxk_ep_bb_vf->hw_addr + CNXK_EP_R_IN_INT_LEVELS(iq_no));
++	/* Set up IQ ISM registers and structures */
++	ism_addr = (cnxk_ep_bb_vf->ism_buffer_mz->iova | CNXK_EP_ISM_EN
++		    | CNXK_EP_ISM_MSIX_DIS)
++		    + CNXK_EP_IQ_ISM_OFFSET(iq_no);
++	rte_write64(ism_addr, (uint8_t *)cnxk_ep_bb_vf->hw_addr +
++		    CNXK_EP_R_IN_CNTS_ISM(iq_no));
++	iq->inst_cnt_ism =
++		(uint32_t *)((uint8_t *)cnxk_ep_bb_vf->ism_buffer_mz->addr
++			     + CNXK_EP_IQ_ISM_OFFSET(iq_no));
++	cnxk_ep_bb_err("SDP_R[%d] INST Q ISM virt: %p, dma: %p", iq_no,
++		   (void *)iq->inst_cnt_ism, (void *)ism_addr);
++	*iq->inst_cnt_ism = 0;
++	iq->inst_cnt_ism_prev = 0;
++
++	return 0;
++}
++
++static int
++cnxk_ep_bb_vf_setup_oq_regs(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t oq_no)
++{
++	volatile uint64_t reg_val = 0ull;
++	uint64_t oq_ctl = 0ull;
++	struct cnxk_ep_bb_droq *droq = cnxk_ep_bb_vf->droq[oq_no];
++	uint64_t ism_addr;
++
++	/* Wait on IDLE to set to 1, supposed to configure BADDR
++	 * as log as IDLE is 0
++	 */
++	reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_R_OUT_CONTROL(oq_no));
++
++	while (!(reg_val & CNXK_EP_R_OUT_CTL_IDLE)) {
++		reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_R_OUT_CONTROL(oq_no));
++	}
++
++	oct_ep_write64(droq->desc_ring_dma, cnxk_ep_bb_vf->hw_addr +
++			CNXK_EP_R_OUT_SLIST_BADDR(oq_no));
++	oct_ep_write64(droq->nb_desc, cnxk_ep_bb_vf->hw_addr +
++			CNXK_EP_R_OUT_SLIST_RSIZE(oq_no));
++
++	oq_ctl = oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++			CNXK_EP_R_OUT_CONTROL(oq_no));
++
++	/* Clear the ISIZE and BSIZE (22-0) */
++	oq_ctl &= ~(CNXK_EP_BB_CLEAR_ISIZE_BSIZE);
++
++	/* Populate the BSIZE (15-0) */
++	oq_ctl |= (droq->buffer_size & CNXK_EP_BB_DROQ_BUFSZ_MASK);
++
++	oct_ep_write64(oq_ctl, cnxk_ep_bb_vf->hw_addr +
++			CNXK_EP_R_OUT_CONTROL(oq_no));
++
++	/* Mapped address of the pkt_sent and pkts_credit regs */
++	droq->pkts_sent_reg = (uint8_t *)cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_R_OUT_CNTS(oq_no);
++	droq->pkts_credit_reg = (uint8_t *)cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_R_OUT_SLIST_DBELL(oq_no);
++
++	rte_write64(CNXK_EP_BB_CLEAR_OUT_INT_LVLS,
++			cnxk_ep_bb_vf->hw_addr + CNXK_EP_R_OUT_INT_LEVELS(oq_no));
++
++	/* Clear PKT_CNT register */
++	rte_write64(CNXK_EP_BB_CLEAR_SDP_OUT_PKT_CNT, (uint8_t *)cnxk_ep_bb_vf->hw_addr +
++			CNXK_EP_R_OUT_PKT_CNT(oq_no));
++
++	/* Clear the OQ doorbell  */
++	rte_write32(CNXK_EP_BB_CLEAR_SLIST_DBELL, droq->pkts_credit_reg);
++	while ((rte_read32(droq->pkts_credit_reg) != 0ull)) {
++		rte_write32(CNXK_EP_BB_CLEAR_SLIST_DBELL, droq->pkts_credit_reg);
++		rte_delay_ms(1);
++	}
++	cnxk_ep_bb_dbg("SDP_R[%d]_credit:%x", oq_no,
++			rte_read32(droq->pkts_credit_reg));
++
++	/* Clear the OQ_OUT_CNTS doorbell  */
++	reg_val = rte_read32(droq->pkts_sent_reg);
++	rte_write32((uint32_t)reg_val, droq->pkts_sent_reg);
++
++	cnxk_ep_bb_dbg("SDP_R[%d]_sent: %x", oq_no,
++			rte_read32(droq->pkts_sent_reg));
++	/* Set up ISM registers and structures */
++	ism_addr = (cnxk_ep_bb_vf->ism_buffer_mz->iova | CNXK_EP_ISM_EN
++			| CNXK_EP_ISM_MSIX_DIS)
++			+ CNXK_EP_OQ_ISM_OFFSET(oq_no);
++	rte_write64(ism_addr, (uint8_t *)cnxk_ep_bb_vf->hw_addr +
++			CNXK_EP_R_OUT_CNTS_ISM(oq_no));
++	droq->pkts_sent_ism =
++			(uint32_t *)((uint8_t *)cnxk_ep_bb_vf->ism_buffer_mz->addr
++			+ CNXK_EP_OQ_ISM_OFFSET(oq_no));
++	cnxk_ep_bb_err("SDP_R[%d] OQ ISM virt: %p, dma: %p", oq_no,
++		(void *)droq->pkts_sent_ism, (void *)ism_addr);
++	*droq->pkts_sent_ism = 0;
++	droq->pkts_sent_ism_prev = 0;
++
++	while (((rte_read32(droq->pkts_sent_reg)) != 0ull)) {
++		reg_val = rte_read32(droq->pkts_sent_reg);
++		rte_write32((uint32_t)reg_val, droq->pkts_sent_reg);
++		rte_delay_ms(1);
++	}
++	cnxk_ep_bb_dbg("SDP_R[%d]_sent: %x", oq_no,
++			rte_read32(droq->pkts_sent_reg));
++
++	return 0;
++}
++
++static int
++cnxk_ep_bb_vf_enable_iq(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no)
++{
++	uint64_t loop = CNXK_EP_BB_BUSY_LOOP_COUNT;
++	uint64_t reg_val = 0ull;
++
++	/* Resetting doorbells during IQ enabling also to handle abrupt
++	 * guest reboot. IQ reset does not clear the doorbells.
++	 */
++	oct_ep_write64(0xFFFFFFFF, cnxk_ep_bb_vf->hw_addr +
++		     CNXK_EP_R_IN_INSTR_DBELL(q_no));
++
++	while (((oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++		 CNXK_EP_R_IN_INSTR_DBELL(q_no))) != 0ull) && loop--) {
++		rte_delay_ms(1);
++	}
++
++	if (!loop) {
++		cnxk_ep_bb_err("INSTR DBELL not coming back to 0\n");
++		return -EIO;
++	}
++
++	reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr + CNXK_EP_R_IN_ENABLE(q_no));
++	reg_val |= 0x1ull;
++
++	oct_ep_write64(reg_val, cnxk_ep_bb_vf->hw_addr + CNXK_EP_R_IN_ENABLE(q_no));
++
++	cnxk_ep_bb_info("IQ[%d] enable done", q_no);
++
++	return 0;
++}
++
++static int
++cnxk_ep_bb_vf_enable_oq(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no)
++{
++	uint64_t reg_val = 0ull;
++
++	reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_R_OUT_ENABLE(q_no));
++	reg_val |= 0x1ull;
++	oct_ep_write64(reg_val, cnxk_ep_bb_vf->hw_addr +
++		       CNXK_EP_R_OUT_ENABLE(q_no));
++
++	cnxk_ep_bb_info("OQ[%d] enable done", q_no);
++
++	return 0;
++}
++
++static int
++cnxk_ep_bb_vf_enable_io_queues(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	uint32_t q_no = 0;
++	int ret;
++
++	for (q_no = 0; q_no < cnxk_ep_bb_vf->nb_tx_queues; q_no++) {
++		ret = cnxk_ep_bb_vf_enable_iq(cnxk_ep_bb_vf, q_no);
++		if (ret)
++			return ret;
++	}
++
++	for (q_no = 0; q_no < cnxk_ep_bb_vf->nb_rx_queues; q_no++)
++		cnxk_ep_bb_vf_enable_oq(cnxk_ep_bb_vf, q_no);
++
++	return 0;
++}
++
++static void
++cnxk_ep_bb_vf_disable_iq(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no)
++{
++	uint64_t reg_val = 0ull;
++
++	/* Reset the doorbell register for this Input Queue. */
++	reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr + CNXK_EP_R_IN_ENABLE(q_no));
++	reg_val &= ~0x1ull;
++
++	oct_ep_write64(reg_val, cnxk_ep_bb_vf->hw_addr + CNXK_EP_R_IN_ENABLE(q_no));
++}
++
++static void
++cnxk_ep_bb_vf_disable_oq(struct cnxk_ep_bb_device *cnxk_ep_bb_vf, uint32_t q_no)
++{
++	volatile uint64_t reg_val = 0ull;
++
++	reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr +
++				CNXK_EP_R_OUT_ENABLE(q_no));
++	reg_val &= ~0x1ull;
++
++	oct_ep_write64(reg_val, cnxk_ep_bb_vf->hw_addr +
++		       CNXK_EP_R_OUT_ENABLE(q_no));
++}
++
++static void
++cnxk_ep_bb_vf_disable_io_queues(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	uint32_t q_no = 0;
++
++	for (q_no = 0; q_no < cnxk_ep_bb_vf->sriov_info.rings_per_vf; q_no++) {
++		cnxk_ep_bb_vf_disable_iq(cnxk_ep_bb_vf, q_no);
++		cnxk_ep_bb_vf_disable_oq(cnxk_ep_bb_vf, q_no);
++	}
++}
++
++static const struct cnxk_ep_bb_config default_cnxk_ep_bb_conf = {
++	/* IQ attributes */
++	.iq                        = {
++		.max_iqs           = CNXK_EP_BB_CFG_IO_QUEUES,
++		.instr_type        = CNXK_EP_BB_64BYTE_INSTR,
++		.pending_list_size = (CNXK_EP_BB_MAX_IQ_DESCRIPTORS *
++				      CNXK_EP_BB_CFG_IO_QUEUES),
++	},
++
++	/* OQ attributes */
++	.oq                        = {
++		.max_oqs           = CNXK_EP_BB_CFG_IO_QUEUES,
++		.info_ptr          = CNXK_EP_BB_OQ_INFOPTR_MODE,
++		.refill_threshold  = CNXK_EP_BB_OQ_REFIL_THRESHOLD,
++	},
++
++	.num_iqdef_descs           = CNXK_EP_BB_MAX_IQ_DESCRIPTORS,
++	.num_oqdef_descs           = CNXK_EP_BB_MAX_OQ_DESCRIPTORS,
++	.oqdef_buf_size            = CNXK_EP_BB_OQ_BUF_SIZE,
++};
++
++static const struct cnxk_ep_bb_config*
++cnxk_ep_bb_get_defconf(struct cnxk_ep_bb_device *cnxk_ep_bb_dev __rte_unused)
++{
++	const struct cnxk_ep_bb_config *default_conf = NULL;
++
++	default_conf = &default_cnxk_ep_bb_conf;
++
++	return default_conf;
++}
++
++static int
++cnxk_ep_bb_register_interrupt(struct cnxk_ep_bb_device *cnxk_ep_bb_vf,
++		rte_intr_callback_fn cb, void *data, unsigned int vec)
++{
++	int rc = -1;
++
++	rc = cnxk_ep_bb_register_irq(cnxk_ep_bb_vf, cb, data, vec);
++	return rc;
++}
++
++static int
++cnxk_ep_bb_unregister_interrupt(struct cnxk_ep_bb_device *cnxk_ep_bb_vf,
++		rte_intr_callback_fn cb, void *data)
++{
++	int rc = -1;
++
++	rc = cnxk_ep_bb_unregister_irq(cnxk_ep_bb_vf, cb, data);
++	return rc;
++}
++
++int
++cnxk_ep_bb_vf_setup_device(struct cnxk_ep_bb_device *cnxk_ep_bb_vf)
++{
++	uint64_t reg_val = 0ull;
++
++	/* If application doesn't provide its conf, use driver default conf */
++	if (cnxk_ep_bb_vf->conf == NULL) {
++		cnxk_ep_bb_vf->conf = cnxk_ep_bb_get_defconf(cnxk_ep_bb_vf);
++		if (cnxk_ep_bb_vf->conf == NULL) {
++			cnxk_ep_bb_err("SDP VF default config not found");
++			return -ENOENT;
++		}
++		cnxk_ep_bb_info("Default config is used");
++	}
++
++	/* Get IOQs (RPVF] count */
++	reg_val = oct_ep_read64(cnxk_ep_bb_vf->hw_addr + CNXK_EP_R_IN_CONTROL(0));
++
++	cnxk_ep_bb_vf->sriov_info.rings_per_vf =
++		((reg_val >> CNXK_EP_R_IN_CTL_RPVF_POS) &
++		 CNXK_EP_R_IN_CTL_RPVF_MASK);
++
++	cnxk_ep_bb_info("SDP RPVF: %d", cnxk_ep_bb_vf->sriov_info.rings_per_vf);
++
++	cnxk_ep_bb_vf->fn_list.setup_iq_regs		= cnxk_ep_bb_vf_setup_iq_regs;
++	cnxk_ep_bb_vf->fn_list.setup_oq_regs		= cnxk_ep_bb_vf_setup_oq_regs;
++
++	cnxk_ep_bb_vf->fn_list.setup_device_regs	= cnxk_ep_bb_vf_setup_device_regs;
++
++	cnxk_ep_bb_vf->fn_list.enable_io_queues		= cnxk_ep_bb_vf_enable_io_queues;
++	cnxk_ep_bb_vf->fn_list.disable_io_queues	= cnxk_ep_bb_vf_disable_io_queues;
++
++	cnxk_ep_bb_vf->fn_list.enable_iq		= cnxk_ep_bb_vf_enable_iq;
++	cnxk_ep_bb_vf->fn_list.disable_iq		= cnxk_ep_bb_vf_disable_iq;
++
++	cnxk_ep_bb_vf->fn_list.enable_oq		= cnxk_ep_bb_vf_enable_oq;
++	cnxk_ep_bb_vf->fn_list.disable_oq		= cnxk_ep_bb_vf_disable_oq;
++	cnxk_ep_bb_vf->fn_list.register_interrupt	= cnxk_ep_bb_register_interrupt;
++	cnxk_ep_bb_vf->fn_list.unregister_interrupt	= cnxk_ep_bb_unregister_interrupt;
++
++	return 0;
++}
+diff --git a/drivers/baseband/octeon_ep/cnxk_ep_bb_vf.h b/drivers/baseband/octeon_ep/cnxk_ep_bb_vf.h
+new file mode 100644
+index 0000000000000..45b94ba9af675
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/cnxk_ep_bb_vf.h
+@@ -0,0 +1,175 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2021 Marvell.
++ */
++#ifndef _CNXK_EP_BB_VF_H_
++#define _CNXK_EP_BB_VF_H_
++
++#include <rte_io.h>
++
++#define CNXK_CONFIG_XPANSION_BAR	0x38
++#define CNXK_CONFIG_PCIE_CAP		0x70
++#define CNXK_CONFIG_PCIE_DEVCAP		0x74
++#define CNXK_CONFIG_PCIE_DEVCTL		0x78
++#define CNXK_CONFIG_PCIE_LINKCAP	0x7C
++#define CNXK_CONFIG_PCIE_LINKCTL	0x80
++#define CNXK_CONFIG_PCIE_SLOTCAP	0x84
++#define CNXK_CONFIG_PCIE_SLOTCTL	0x88
++#define CNXK_CONFIG_PCIE_FLTMSK		0x720
++
++#define CNXK_EP_RING_OFFSET		(0x1ULL << 17)
++
++#define CNXK_EP_R_IN_CONTROL_START	0x10000
++#define CNXK_EP_R_IN_ENABLE_START	0x10010
++#define CNXK_EP_R_IN_INSTR_BADDR_START	0x10020
++#define CNXK_EP_R_IN_INSTR_RSIZE_START	0x10030
++#define CNXK_EP_R_IN_INSTR_DBELL_START	0x10040
++#define CNXK_EP_R_IN_CNTS_START		0x10050
++#define CNXK_EP_R_IN_INT_LEVELS_START	0x10060
++#define CNXK_EP_R_IN_PKT_CNT_START	0x10080
++#define CNXK_EP_R_IN_BYTE_CNT_START	0x10090
++#define CNXK_EP_R_IN_CNTS_ISM_START	0x10520
++
++#define CNXK_EP_R_IN_CONTROL(ring)	\
++	(CNXK_EP_R_IN_CONTROL_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_IN_ENABLE(ring)	\
++	(CNXK_EP_R_IN_ENABLE_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_IN_INSTR_BADDR(ring)	\
++	(CNXK_EP_R_IN_INSTR_BADDR_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_IN_INSTR_RSIZE(ring)	\
++	(CNXK_EP_R_IN_INSTR_RSIZE_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_IN_INSTR_DBELL(ring)	\
++	(CNXK_EP_R_IN_INSTR_DBELL_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_IN_CNTS(ring)		\
++	(CNXK_EP_R_IN_CNTS_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_IN_INT_LEVELS(ring)	\
++	(CNXK_EP_R_IN_INT_LEVELS_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_IN_PKT_CNT(ring)	\
++	(CNXK_EP_R_IN_PKT_CNT_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_IN_BYTE_CNT(ring)	\
++	(CNXK_EP_R_IN_BYTE_CNT_START +  ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_IN_CNTS_ISM(ring)	\
++	(CNXK_EP_R_IN_CNTS_ISM_START + (CNXK_EP_RING_OFFSET * (ring)))
++
++/** Rings per Virtual Function **/
++#define CNXK_EP_R_IN_CTL_RPVF_MASK	(0xF)
++#define	CNXK_EP_R_IN_CTL_RPVF_POS	(48)
++
++/* Number of instructions to be read in one MAC read request.
++ * setting to Max value(4)
++ */
++#define CNXK_EP_R_IN_CTL_IDLE		(0x1ULL << 28)
++#define CNXK_EP_R_IN_CTL_RDSIZE		(0x3ULL << 25)
++#define CNXK_EP_R_IN_CTL_IS_64B		(0x1ULL << 24)
++#define CNXK_EP_R_IN_CTL_D_NSR		(0x1ULL << 8)
++#define CNXK_EP_R_IN_CTL_D_ROR		(0x1ULL << 5)
++#define CNXK_EP_R_IN_CTL_NSR		(0x1ULL << 3)
++#define CNXK_EP_R_IN_CTL_ROR		(0x1ULL << 0)
++#define CNXK_EP_R_IN_CTL_ESR		(0x1ull << 1)
++
++#define CNXK_EP_R_IN_CTL_MASK		(CNXK_EP_R_IN_CTL_RDSIZE | CNXK_EP_R_IN_CTL_IS_64B)
++
++#define CNXK_EP_R_OUT_CNTS_START	0x10100
++#define CNXK_EP_R_OUT_INT_LEVELS_START	0x10110
++#define CNXK_EP_R_OUT_SLIST_BADDR_START	0x10120
++#define CNXK_EP_R_OUT_SLIST_RSIZE_START	0x10130
++#define CNXK_EP_R_OUT_SLIST_DBELL_START	0x10140
++#define CNXK_EP_R_OUT_CONTROL_START	0x10150
++/* WMARK need to be set; New in CN10K */
++#define CNXK_EP_R_OUT_WMARK_START	0x10160
++#define CNXK_EP_R_OUT_ENABLE_START	0x10170
++#define CNXK_EP_R_OUT_PKT_CNT_START	0x10180
++#define CNXK_EP_R_OUT_BYTE_CNT_START	0x10190
++#define CNXK_EP_R_OUT_CNTS_ISM_START	0x10510
++
++#define CNXK_EP_R_OUT_CNTS(ring)	\
++	(CNXK_EP_R_OUT_CNTS_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_INT_LEVELS(ring)	\
++	(CNXK_EP_R_OUT_INT_LEVELS_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_SLIST_BADDR(ring)	\
++	(CNXK_EP_R_OUT_SLIST_BADDR_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_SLIST_RSIZE(ring)	\
++	(CNXK_EP_R_OUT_SLIST_RSIZE_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_SLIST_DBELL(ring)	\
++	(CNXK_EP_R_OUT_SLIST_DBELL_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_CONTROL(ring)	\
++	(CNXK_EP_R_OUT_CONTROL_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_ENABLE(ring)	\
++	(CNXK_EP_R_OUT_ENABLE_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_WMARK(ring)	\
++	(CNXK_EP_R_OUT_WMARK_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_PKT_CNT(ring)	\
++	(CNXK_EP_R_OUT_PKT_CNT_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_BYTE_CNT(ring)	\
++	(CNXK_EP_R_OUT_BYTE_CNT_START + ((ring) * CNXK_EP_RING_OFFSET))
++
++#define CNXK_EP_R_OUT_CNTS_ISM(ring)	\
++	(CNXK_EP_R_OUT_CNTS_ISM_START + (CNXK_EP_RING_OFFSET * (ring)))
++
++/*------------------ R_OUT Masks ----------------*/
++#define CNXK_EP_R_OUT_INT_LEVELS_BMODE       (1ULL << 63)
++#define CNXK_EP_R_OUT_INT_LEVELS_TIMET       (32)
++
++#define CNXK_EP_R_OUT_CTL_IDLE               (1ULL << 40)
++#define CNXK_EP_R_OUT_CTL_ES_I         (1ull << 34)
++#define CNXK_EP_R_OUT_CTL_NSR_I              (1ULL << 33)
++#define CNXK_EP_R_OUT_CTL_ROR_I              (1ULL << 32)
++#define CNXK_EP_R_OUT_CTL_ES_D         (1ull << 30)
++#define CNXK_EP_R_OUT_CTL_NSR_D              (1ULL << 29)
++#define CNXK_EP_R_OUT_CTL_ROR_D              (1ULL << 28)
++#define CNXK_EP_R_OUT_CTL_ES_P         (1ull << 26)
++#define CNXK_EP_R_OUT_CTL_NSR_P              (1ULL << 25)
++#define CNXK_EP_R_OUT_CTL_ROR_P              (1ULL << 24)
++#define CNXK_EP_R_OUT_CTL_IMODE              (1ULL << 23)
++
++#define PCI_DEVID_CNF10KA_EP_BBDEV_VF		0xEF07
++
++int
++cnxk_ep_bb_vf_setup_device(struct cnxk_ep_bb_device *sdpvf);
++
++struct cnxk_ep_bb_instr_64B {
++	/* Pointer where the input data is available. */
++	uint64_t dptr;
++
++	/* OTX_EP Instruction Header. */
++	union cnxk_ep_bb_instr_ih ih;
++
++	/** Pointer where the response for a RAW mode packet
++	 * will be written by OCTEON TX.
++	 */
++	uint64_t rptr;
++
++	/* Input Request Header. */
++	union cnxk_ep_bb_instr_irh irh;
++
++	/* Additional headers available in a 64-byte instruction. */
++	uint64_t exhdr[4];
++};
++#define CNXK_EP_IQ_ISM_OFFSET(queue)    (RTE_CACHE_LINE_SIZE * (queue) + 4)
++#define CNXK_EP_OQ_ISM_OFFSET(queue)    (RTE_CACHE_LINE_SIZE * (queue))
++#define CNXK_EP_ISM_EN                  (0x1)
++#define CNXK_EP_ISM_MSIX_DIS            (0x2)
++#define CNXK_EP_MAX_RX_PKT_LEN          (16384)
++#define CNXK_EP_BB_R_MBOX_PF_VF_INT_START        (0x10220)
++#define CNXK_EP_BB_RING_OFFSET                   (0x1ull << 17)
++#define CNXK_EP_BB_R_MBOX_PF_VF_INT(ring) \
++	(CNXK_EP_BB_R_MBOX_PF_VF_INT_START + ((ring) * CNXK_EP_BB_RING_OFFSET))
++
++#endif /*_CNXK_EP_BB_VF_H_ */
+diff --git a/drivers/baseband/octeon_ep/meson.build b/drivers/baseband/octeon_ep/meson.build
+new file mode 100644
+index 0000000000000..999b96d48a194
+--- /dev/null
++++ b/drivers/baseband/octeon_ep/meson.build
+@@ -0,0 +1,12 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2021 Marvell.
++
++deps += ['bbdev', 'bus_pci']
++
++sources = files(
++        'cnxk_ep_bb_dev.c',
++        'cnxk_ep_bb_ep.c',
++        'cnxk_ep_bb_rxtx.c',
++        'cnxk_ep_bb_vf.c',
++        'cnxk_ep_bb_irq.c',
++)
+-- 
+2.25.1
+

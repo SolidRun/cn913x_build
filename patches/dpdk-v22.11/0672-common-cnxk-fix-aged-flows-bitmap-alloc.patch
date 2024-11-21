@@ -1,0 +1,71 @@
+From 96d444e828c912928c0242a608a61b7f78ba5253 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Thu, 2 Nov 2023 00:54:03 +0530
+Subject: [PATCH 672/955] common/cnxk: fix aged flows bitmap alloc
+
+The allocation of bitmap for aged flows should be done in
+npc_aging_ctrl_thread_create() instead of roc_npc_init(), as the bitmap
+free is being done in npc_aging_ctrl_thread_destroy().
+
+Fixes: 78bb2bf22fc2 ("common/cnxk: add support to get aged flows")
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Change-Id: I8bceb0132fe7cde3d19a4f40561c905c8c3b5476
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115122
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c       | 5 ++---
+ drivers/common/cnxk/roc_npc_aging.c | 6 +++++-
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 68485ec7d7b20..29970ca03b514 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -331,9 +331,8 @@ roc_npc_init(struct roc_npc *roc_npc)
+ 	 */
+ 	plt_bitmap_set(npc->rss_grp_entries, 0);
+ 
+-	rc = npc_aged_flows_bitmap_alloc(roc_npc);
+-	if (rc != 0)
+-		goto done;
++	roc_npc->flow_age.age_flow_refcnt = 0;
++
+ 	return rc;
+ 
+ done:
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+index 4c368f4a9496d..7ca04b06730d2 100644
+--- a/drivers/common/cnxk/roc_npc_aging.c
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -33,7 +33,6 @@ npc_aged_flows_bitmap_alloc(struct roc_npc *roc_npc)
+ 		goto done;
+ 	}
+ 
+-	flow_age->age_flow_refcnt = 0;
+ done:
+ 	return rc;
+ }
+@@ -276,11 +275,16 @@ npc_aging_ctrl_thread_create(struct roc_npc *roc_npc,
+ 	flow->has_age_action = true;
+ 
+ 	if (flow_age->age_flow_refcnt == 0) {
++		errcode = npc_aged_flows_bitmap_alloc(roc_npc);
++		if (errcode != 0)
++			goto done;
++
+ 		flow_age->aged_flows_get_thread_exit = false;
+ 		if (plt_ctrl_thread_create(&flow_age->aged_flows_poll_thread,
+ 					   "Aged Flows Get Ctrl Thread", NULL,
+ 					   npc_aged_flows_get, roc_npc) != 0) {
+ 			plt_err("Failed to create thread for age flows");
++			npc_aged_flows_bitmap_free(roc_npc);
+ 			errcode = NPC_ERR_ACTION_NOTSUP;
+ 			goto done;
+ 		}
+-- 
+2.25.1
+

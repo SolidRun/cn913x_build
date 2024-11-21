@@ -1,0 +1,147 @@
+From cfe120a1f455e2244bca839a12a3918ee3f26f2e Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 11 May 2023 18:14:04 +0530
+Subject: [PATCH 465/955] net/cnxk: add atomic fc check in poll mode Tx path
+
+Add a support of atomic fc check in poll mode Tx path. This atomic
+check is useful if multiple threads are using the same Tx queue.
+This will be enabled when Tx offload RTE_ETH_TX_OFFLOAD_MT_LOCKFREE
+is set.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ie2762b009ef05862a06075fb4bf4bb3d78976292
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103291
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev.c |  3 ++
+ drivers/net/cnxk/cn10k_rxtx.h   |  1 +
+ drivers/net/cnxk/cn10k_tx.h     | 61 ++++++++++++++++++++++++++-------
+ 3 files changed, 52 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index 0df7fe9004cd6..f1504a687348d 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -241,6 +241,9 @@ cn10k_nix_tx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t qid,
+ 			return rc;
+ 	}
+ 
++	/* Set Txq flag for MT_LOCKFREE */
++	txq->flag = !!(dev->tx_offloads & RTE_ETH_TX_OFFLOAD_MT_LOCKFREE);
++
+ 	/* Store lmt base in tx queue for easy access */
+ 	txq->lmt_base = nix->lmt_base;
+ 	txq->io_addr = sq->io_addr;
+diff --git a/drivers/net/cnxk/cn10k_rxtx.h b/drivers/net/cnxk/cn10k_rxtx.h
+index bf7fd265adc78..a67466a7c8a7f 100644
+--- a/drivers/net/cnxk/cn10k_rxtx.h
++++ b/drivers/net/cnxk/cn10k_rxtx.h
+@@ -52,6 +52,7 @@ struct cn10k_eth_txq {
+ 	uint16_t sq_desc;
+ 	uint16_t sqes_per_sqb_log2;
+ 	int16_t nb_sqb_bufs_adj;
++	uint8_t flag;
+ 	rte_iova_t cpt_io_addr;
+ 	uint64_t sa_base;
+ 	uint64_t *cpt_fc;
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index bb70e4bdae098..a701a6e8b911b 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -48,6 +48,47 @@
+ 		}                                                              \
+ 	} while (0)
+ 
++#define NIX_XMIT_FC_OR_RETURN_MTS(txq, pkts)                                                       \
++	do {                                                                                       \
++		int64_t *fc_cache = &(txq)->fc_cache_pkts;                                         \
++		uint8_t retry_count = 8;                                                           \
++		int64_t val, newval;                                                               \
++	retry:                                                                                     \
++		/* Reduce the cached count */                                                      \
++		val = (int64_t)__atomic_fetch_sub(fc_cache, pkts, __ATOMIC_RELAXED);               \
++		val -= pkts;                                                                       \
++		/* Cached value is low, Update the fc_cache_pkts */                                \
++		if (unlikely(val < 0)) {                                                           \
++			/* Multiply with sqe_per_sqb to express in pkts */                         \
++			newval = txq->nb_sqb_bufs_adj - __atomic_load_n(txq->fc_mem,               \
++									__ATOMIC_RELAXED);         \
++			newval = (newval << (txq)->sqes_per_sqb_log2) - newval;                    \
++			newval -= pkts;                                                            \
++			if (!__atomic_compare_exchange_n(fc_cache, &val, newval, false,            \
++							 __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {    \
++				if (retry_count) {                                                 \
++					retry_count--;                                             \
++					goto retry;                                                \
++				} else                                                             \
++					return 0;                                                  \
++			}                                                                          \
++			/* Update and check it again for the room */                               \
++			if (unlikely(newval < 0))                                                  \
++				return 0;                                                          \
++		}                                                                                  \
++	} while (0)
++
++#define NIX_XMIT_FC_CHECK_RETURN(txq, pkts)                                                        \
++	do {                                                                                       \
++		if (unlikely((txq)->flag))                                                         \
++			NIX_XMIT_FC_OR_RETURN_MTS(txq, pkts);                                      \
++		else {                                                                             \
++			NIX_XMIT_FC_OR_RETURN(txq, pkts);                                          \
++			/* Reduce the cached count */                                              \
++			txq->fc_cache_pkts -= pkts;                                                \
++		}                                                                                  \
++	} while (0)
++
+ /* Encoded number of segments to number of dwords macro, each value of nb_segs
+  * is encoded as 4bits.
+  */
+@@ -1274,11 +1315,9 @@ cn10k_nix_xmit_pkts(void *tx_queue, uint64_t *ws, struct rte_mbuf **tx_pkts,
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+ 		handle_tx_completion_pkts(txq, flags & NIX_TX_VWQE_F);
+ 
+-	if (!(flags & NIX_TX_VWQE_F)) {
+-		NIX_XMIT_FC_OR_RETURN(txq, pkts);
+-		/* Reduce the cached count */
+-		txq->fc_cache_pkts -= pkts;
+-	}
++	if (!(flags & NIX_TX_VWQE_F))
++		NIX_XMIT_FC_CHECK_RETURN(txq, pkts);
++
+ 	/* Get cmd skeleton */
+ 	cn10k_nix_tx_skeleton(txq, cmd, flags, !(flags & NIX_TX_VWQE_F));
+ 
+@@ -1423,11 +1462,9 @@ cn10k_nix_xmit_pkts_mseg(void *tx_queue, uint64_t *ws,
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+ 		handle_tx_completion_pkts(txq, flags & NIX_TX_VWQE_F);
+ 
+-	if (!(flags & NIX_TX_VWQE_F)) {
+-		NIX_XMIT_FC_OR_RETURN(txq, pkts);
+-		/* Reduce the cached count */
+-		txq->fc_cache_pkts -= pkts;
+-	}
++	if (!(flags & NIX_TX_VWQE_F))
++		NIX_XMIT_FC_CHECK_RETURN(txq, pkts);
++
+ 	/* Get cmd skeleton */
+ 	cn10k_nix_tx_skeleton(txq, cmd, flags, !(flags & NIX_TX_VWQE_F));
+ 
+@@ -1979,11 +2016,9 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 		handle_tx_completion_pkts(txq, flags & NIX_TX_VWQE_F);
+ 
+ 	if (!(flags & NIX_TX_VWQE_F)) {
+-		NIX_XMIT_FC_OR_RETURN(txq, pkts);
+ 		scalar = pkts & (NIX_DESCS_PER_LOOP - 1);
+ 		pkts = RTE_ALIGN_FLOOR(pkts, NIX_DESCS_PER_LOOP);
+-		/* Reduce the cached count */
+-		txq->fc_cache_pkts -= pkts;
++		NIX_XMIT_FC_CHECK_RETURN(txq, pkts);
+ 	} else {
+ 		scalar = pkts & (NIX_DESCS_PER_LOOP - 1);
+ 		pkts = RTE_ALIGN_FLOOR(pkts, NIX_DESCS_PER_LOOP);
+-- 
+2.25.1
+

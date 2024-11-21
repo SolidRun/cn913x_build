@@ -1,0 +1,89 @@
+From 0d69de5d2cc1d1d4a55c95718e2e1a209d9ddb55 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Mon, 15 Jan 2024 20:04:04 +0530
+Subject: [PATCH 198/513] test/security: add TLS sg data walkthrough test
+
+Add scatter gather data walkthrough test for TLS 1.2.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: Ib349b97ad6a850c1d2efaf254ba2e894d7af6687
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119768
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 205c2ddd1b602512bdc42e7fe5d17629ba8dcb2f)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121229
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c                     | 26 +++++++++++++++++++
+ app/test/test_cryptodev_security_tls_record.h |  2 +-
+ 2 files changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 2520116cf6462..08fec9f752714 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12029,6 +12029,8 @@ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ 
+ 	for (i = 0; i < RTE_DIM(sec_alg_list); i++) {
+ 		payload_len = TLS_RECORD_PLAINTEXT_MIN_LEN;
++		if (flags->nb_segs_in_mbuf)
++			payload_len = RTE_MAX(payload_len, flags->nb_segs_in_mbuf);
+ again:
+ 		test_tls_record_td_prepare(sec_alg_list[i].param1, sec_alg_list[i].param2, flags,
+ 					   td_outb, nb_pkts, payload_len);
+@@ -12122,6 +12124,26 @@ test_dtls_1_2_record_proto_data_walkthrough(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_tls_1_2_record_proto_sgl_data_walkthrough(void)
++{
++	struct tls_record_test_flags flags = {
++		.nb_segs_in_mbuf = 5,
++		.tls_version = RTE_SECURITY_VERSION_TLS_1_2,
++		.data_walkthrough = true
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++	if (!(dev_info.feature_flags & RTE_CRYPTODEV_FF_IN_PLACE_SGL)) {
++		printf("Device doesn't support in-place scatter-gather. Test Skipped.\n");
++		return TEST_SKIPPED;
++	}
++
++	return test_tls_record_proto_all(&flags);
++}
++
+ static int
+ test_dtls_1_2_record_proto_display_list(void)
+ {
+@@ -17199,6 +17221,10 @@ static struct unit_test_suite tls12_record_proto_testsuite  = {
+ 			"Multi-segmented mode",
+ 			ut_setup_security, ut_teardown,
+ 			test_tls_1_2_record_proto_sgl),
++		TEST_CASE_NAMED_ST(
++			"Multi-segmented mode data walkthrough",
++			ut_setup_security, ut_teardown,
++			test_tls_1_2_record_proto_sgl_data_walkthrough),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+index 14f73a5073e12..34758fb0e1757 100644
+--- a/app/test/test_cryptodev_security_tls_record.h
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -85,7 +85,7 @@ struct tls_record_test_data {
+ 
+ struct tls_record_test_flags {
+ 	bool display_alg;
+-	int nb_segs_in_mbuf;
++	uint8_t nb_segs_in_mbuf;
+ 	bool data_walkthrough;
+ 	enum rte_security_tls_version tls_version;
+ };
+-- 
+2.25.1
+

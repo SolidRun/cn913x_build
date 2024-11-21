@@ -1,0 +1,38 @@
+From aa2b983b8c09a3b37647b6421c4a3b5c079268ee Mon Sep 17 00:00:00 2001
+From: Jerin Jacob <jerinj@marvell.com>
+Date: Thu, 2 Mar 2023 22:04:17 +0530
+Subject: [PATCH 259/955] devel: devel to release sync up
+
+Change-Id: Ic99457e27c4e5c626eb515838415ec6b9109066a
+Signed-off-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_queue.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 8260ad5ff8e11..21bfe7d498a2f 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -1198,8 +1198,7 @@ sq_cn9k_fini(struct nix *nix, struct roc_nix_sq *sq)
+ }
+ 
+ static int
+-sq_init(struct nix *nix, struct roc_nix_sq *sq, uint32_t rr_quantum,
+-	uint16_t smq)
++sq_init(struct nix *nix, struct roc_nix_sq *sq, uint32_t rr_quantum, uint16_t smq)
+ {
+ 	struct roc_nix *roc_nix = nix_priv_to_roc_nix(nix);
+ 	struct mbox *mbox = (&nix->dev)->mbox;
+@@ -1218,8 +1217,7 @@ sq_init(struct nix *nix, struct roc_nix_sq *sq, uint32_t rr_quantum,
+ 	aq->sq.smq = smq;
+ 	aq->sq.smq_rr_weight = rr_quantum;
+ 	if (roc_nix_is_sdp(roc_nix))
+-		aq->sq.default_chan =
+-			nix->tx_chan_base + (sq->qid % nix->tx_chan_cnt);
++		aq->sq.default_chan = nix->tx_chan_base + (sq->qid % nix->tx_chan_cnt);
+ 	else
+ 		aq->sq.default_chan = nix->tx_chan_base;
+ 	aq->sq.sqe_stype = NIX_STYPE_STF;
+-- 
+2.25.1
+

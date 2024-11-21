@@ -1,0 +1,67 @@
+From e453d4653485aeaf68f783cc1bbb0b8ba776dae5 Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Tue, 8 Nov 2022 13:36:44 +0100
+Subject: [PATCH 028/955] cryptodev: add SHAKE algorithm
+
+Add SHAKE to enum of auth algorithms.
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: I55698896e9e649745bff180caf44a1fe79e20874
+---
+ doc/guides/cryptodevs/features/default.ini | 2 ++
+ lib/cryptodev/rte_crypto_sym.h             | 7 ++++++-
+ lib/cryptodev/rte_cryptodev.c              | 6 +++++-
+ 3 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/doc/guides/cryptodevs/features/default.ini b/doc/guides/cryptodevs/features/default.ini
+index d51d80ff80646..523da0cfa8137 100644
+--- a/doc/guides/cryptodevs/features/default.ini
++++ b/doc/guides/cryptodevs/features/default.ini
+@@ -99,6 +99,8 @@ SHA3_384 HMAC   =
+ SHA3_512        =
+ SHA3_512 HMAC   =
+ SM3             =
++SHAKE_128       =
++SHAKE_256       =
+ 
+ ;
+ ; Supported AEAD algorithms of a default crypto driver.
+diff --git a/lib/cryptodev/rte_crypto_sym.h b/lib/cryptodev/rte_crypto_sym.h
+index 33b4966e16c9f..734024ed0b2b9 100644
+--- a/lib/cryptodev/rte_crypto_sym.h
++++ b/lib/cryptodev/rte_crypto_sym.h
+@@ -373,8 +373,13 @@ enum rte_crypto_auth_algorithm {
+ 	/**< 512 bit SHA3 algorithm. */
+ 	RTE_CRYPTO_AUTH_SHA3_512_HMAC,
+ 	/**< HMAC using 512 bit SHA3 algorithm. */
+-	RTE_CRYPTO_AUTH_SM3
++	RTE_CRYPTO_AUTH_SM3,
+ 	/**< ShangMi 3 (SM3) algorithm */
++
++	RTE_CRYPTO_AUTH_SHAKE_128,
++	/**< 128 bit SHAKE algorithm. */
++	RTE_CRYPTO_AUTH_SHAKE_256,
++	/**< 256 bit SHAKE algorithm. */
+ };
+ 
+ /** Authentication algorithm name strings */
+diff --git a/lib/cryptodev/rte_cryptodev.c b/lib/cryptodev/rte_cryptodev.c
+index 2165a0688c228..942b10f624233 100644
+--- a/lib/cryptodev/rte_cryptodev.c
++++ b/lib/cryptodev/rte_cryptodev.c
+@@ -145,7 +145,11 @@ rte_crypto_auth_algorithm_strings[] = {
+ 	[RTE_CRYPTO_AUTH_KASUMI_F9]	= "kasumi-f9",
+ 	[RTE_CRYPTO_AUTH_SNOW3G_UIA2]	= "snow3g-uia2",
+ 	[RTE_CRYPTO_AUTH_ZUC_EIA3]	= "zuc-eia3",
+-	[RTE_CRYPTO_AUTH_SM3]		= "sm3"
++
++	[RTE_CRYPTO_AUTH_SM3]		= "sm3",
++
++	[RTE_CRYPTO_AUTH_SHAKE_128]	 = "shake-128",
++	[RTE_CRYPTO_AUTH_SHAKE_256]	 = "shake-256",
+ };
+ 
+ /**
+-- 
+2.25.1
+

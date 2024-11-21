@@ -1,0 +1,67 @@
+From 0da72a8f0bfe5bfe664dd329679f00eec077e0df Mon Sep 17 00:00:00 2001
+From: Ferruh Yigit <ferruh.yigit@amd.com>
+Date: Wed, 24 Jan 2024 18:53:58 +0000
+Subject: [PATCH 487/513] pipeline: fix calloc parameters
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+gcc [1] generates warning [2] about calloc usage, because calloc
+parameter order is wrong, fixing it by replacing parameters.
+
+[1]
+gcc (GCC) 14.0.0 20231102 (experimental)
+
+[2]
+ Compiling C object .../pipeline_rte_swx_pipeline_spec.c.o
+.../rte_swx_pipeline_spec.c: In function ‘pipeline_spec_parse’:
+../lib/pipeline/rte_swx_pipeline_spec.c:2893:11:
+  warning: allocation of insufficient size ‘1’ for type
+           ‘struct pipeline_spec’ with size ‘144’ [-Walloc-size]
+ 2893 |         s = calloc(sizeof(struct pipeline_spec), 1);
+      |           ^
+
+.../rte_swx_pipeline_spec.c: In function ‘pipeline_iospec_parse’:
+../lib/pipeline/rte_swx_pipeline_spec.c:4244:11:
+  warning: allocation of insufficient size ‘1’ for type
+           ‘struct pipeline_iospec’ with size ‘64’ [-Walloc-size]
+ 4244 |         s = calloc(sizeof(struct pipeline_iospec), 1);
+      |           ^
+
+Fixes: 30c4abb90942 ("pipeline: rework specification file-based pipeline build")
+Fixes: 54cae37ef4ef ("pipeline: support I/O specification")
+Cc: stable@dpdk.org
+
+Signed-off-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Acked-by: Cristian Dumitrescu <cristian.dumitrescu@intel.com>
+Acked-by: Morten Brørup <mb@smartsharesystems.com>
+Change-Id: If77da69aae655db2b646d826d676c2d6b861c68d
+---
+ lib/pipeline/rte_swx_pipeline_spec.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/lib/pipeline/rte_swx_pipeline_spec.c b/lib/pipeline/rte_swx_pipeline_spec.c
+index 2bba0d0524d0e..17419e7b854b8 100644
+--- a/lib/pipeline/rte_swx_pipeline_spec.c
++++ b/lib/pipeline/rte_swx_pipeline_spec.c
+@@ -2890,7 +2890,7 @@ pipeline_spec_parse(FILE *spec,
+ 	}
+ 
+ 	/* Memory allocation. */
+-	s = calloc(sizeof(struct pipeline_spec), 1);
++	s = calloc(1, sizeof(struct pipeline_spec));
+ 	if (!s) {
+ 		if (err_line)
+ 			*err_line = n_lines;
+@@ -4241,7 +4241,7 @@ pipeline_iospec_parse(FILE *spec,
+ 	}
+ 
+ 	/* Memory allocation. */
+-	s = calloc(sizeof(struct pipeline_iospec), 1);
++	s = calloc(1, sizeof(struct pipeline_iospec));
+ 	if (!s) {
+ 		if (err_line)
+ 			*err_line = n_lines;
+-- 
+2.25.1
+

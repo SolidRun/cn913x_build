@@ -1,0 +1,846 @@
+From 027553fea8f93f3b79563e5bdaa4d22662a37f03 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Sun, 18 Aug 2024 13:36:26 +0530
+Subject: [PATCH 456/513] dma/cnxk: update from upstream
+
+Update from upstream code changes.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ifec2c47908d9341e3ad4b8cd151d35f74b278d50
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133684
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ app/test-eventdev/evt_main.c         |  6 ++-
+ app/test-eventdev/evt_options.c      | 16 ++++--
+ app/test-eventdev/test_perf_atq.c    | 18 ++++---
+ app/test-eventdev/test_perf_common.c | 71 ++++++------------------
+ app/test-eventdev/test_perf_queue.c  | 18 ++++---
+ app/test/test_event_dma_adapter.c    | 10 ++--
+ drivers/common/cnxk/roc_dpi.c        | 18 +++++++
+ drivers/common/cnxk/roc_dpi.h        |  1 +
+ drivers/common/cnxk/roc_dpi_priv.h   |  2 +
+ drivers/common/cnxk/version.map      |  1 +
+ drivers/dma/cnxk/cnxk_dma_event_dp.h | 16 ++++--
+ drivers/dma/cnxk/cnxk_dmadev.c       | 51 +++++-------------
+ drivers/dma/cnxk/cnxk_dmadev.h       |  7 ++-
+ drivers/dma/cnxk/cnxk_dmadev_fp.c    | 81 +++++++++++++++-------------
+ drivers/dma/cnxk/version.map         |  2 +-
+ drivers/event/cnxk/cn9k_eventdev.c   |  2 +
+ lib/eventdev/rte_event_dma_adapter.c |  1 +
+ lib/eventdev/rte_event_dma_adapter.h | 11 +++-
+ 18 files changed, 172 insertions(+), 160 deletions(-)
+
+diff --git a/app/test-eventdev/evt_main.c b/app/test-eventdev/evt_main.c
+index c7f025ec4e2b1..03114020f1e8b 100644
+--- a/app/test-eventdev/evt_main.c
++++ b/app/test-eventdev/evt_main.c
+@@ -142,7 +142,7 @@ main(int argc, char **argv)
+ 	if (test->ops.dmadev_setup) {
+ 		if (test->ops.dmadev_setup(test, &opt)) {
+ 			evt_err("%s: dmadev setup failed", opt.test_name);
+-			goto cryptodev_destroy;
++			goto dmadev_destroy;
+ 		}
+ 	}
+ 
+@@ -207,6 +207,10 @@ main(int argc, char **argv)
+ 	if (test->ops.cryptodev_destroy)
+ 		test->ops.cryptodev_destroy(test, &opt);
+ 
++dmadev_destroy:
++	if (test->ops.dmadev_destroy)
++		test->ops.dmadev_destroy(test, &opt);
++
+ ethdev_destroy:
+ 	if (test->ops.ethdev_destroy)
+ 		test->ops.ethdev_destroy(test, &opt);
+diff --git a/app/test-eventdev/evt_options.c b/app/test-eventdev/evt_options.c
+index c624433b47bde..fb5a0a255f016 100644
+--- a/app/test-eventdev/evt_options.c
++++ b/app/test-eventdev/evt_options.c
+@@ -151,6 +151,10 @@ evt_parse_dma_prod_type(struct evt_options *opt,
+ 			   const char *arg __rte_unused)
+ {
+ 	opt->prod_type = EVT_PROD_TYPE_EVENT_DMA_ADPTR;
++
++	/* Only Forward mode is supported for DMA adapter. */
++	opt->dma_adptr_mode = RTE_EVENT_DMA_ADAPTER_OP_FORWARD;
++
+ 	return 0;
+ }
+ 
+@@ -161,8 +165,13 @@ evt_parse_dma_adptr_mode(struct evt_options *opt, const char *arg)
+ 	int ret;
+ 
+ 	ret = parser_read_uint8(&mode, arg);
+-	opt->dma_adptr_mode = mode ? RTE_EVENT_DMA_ADAPTER_OP_FORWARD :
+-					RTE_EVENT_DMA_ADAPTER_OP_NEW;
++	if (mode != RTE_EVENT_DMA_ADAPTER_OP_FORWARD) {
++		RTE_LOG(ERR, USER1, "DMA adapter is supported in forward mode only\n");
++		return -EINVAL;
++	}
++
++	opt->dma_adptr_mode = RTE_EVENT_DMA_ADAPTER_OP_FORWARD;
++
+ 	return ret;
+ }
+ 
+@@ -479,8 +488,7 @@ usage(char *program)
+ 		"\t--timer_tick_nsec  : timer tick interval in ns.\n"
+ 		"\t--max_tmo_nsec     : max timeout interval in ns.\n"
+ 		"\t--expiry_nsec      : event timer expiry ns.\n"
+-		"\t--dma_adptr_mode   : 0 for OP_NEW mode (default) and\n"
+-		"\t                     1 for OP_FORWARD mode.\n"
++		"\t--dma_adptr_mode   : 1 for OP_FORWARD mode (default).\n"
+ 		"\t--crypto_adptr_mode : 0 for OP_NEW mode (default) and\n"
+ 		"\t                      1 for OP_FORWARD mode.\n"
+ 		"\t--crypto_op_type   : 0 for SYM ops (default) and\n"
+diff --git a/app/test-eventdev/test_perf_atq.c b/app/test-eventdev/test_perf_atq.c
+index 073f2668c98e3..9388ebcd12df6 100644
+--- a/app/test-eventdev/test_perf_atq.c
++++ b/app/test-eventdev/test_perf_atq.c
+@@ -332,16 +332,18 @@ perf_atq_eventdev_setup(struct evt_test *test, struct evt_options *opt)
+ 			}
+ 		}
+ 	} else if (opt->prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR) {
+-		uint8_t dma_dev_id, dma_dev_count;
++		uint8_t dma_dev_id = 0, dma_dev_count;
+ 
+ 		dma_dev_count = rte_dma_count_avail();
+-		for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++) {
+-			ret = rte_dma_start(dma_dev_id);
+-			if (ret) {
+-				evt_err("Failed to start dmadev %u",
+-					dma_dev_id);
+-				return ret;
+-			}
++		if (dma_dev_count == 0) {
++			evt_err("No dma devices available\n");
++			return -ENODEV;
++		}
++
++		ret = rte_dma_start(dma_dev_id);
++		if (ret) {
++			evt_err("Failed to start dmadev %u", dma_dev_id);
++			return ret;
+ 		}
+ 	}
+ 
+diff --git a/app/test-eventdev/test_perf_common.c b/app/test-eventdev/test_perf_common.c
+index 244f7cff3c816..66d22cd559ca2 100644
+--- a/app/test-eventdev/test_perf_common.c
++++ b/app/test-eventdev/test_perf_common.c
+@@ -559,33 +559,6 @@ crypto_adapter_enq_op_fwd(struct prod_data *p)
+ 		       __func__, rte_lcore_id(), alloc_failures);
+ }
+ 
+-static inline void
+-dma_adapter_enq_op_new(struct prod_data *p)
+-{
+-	struct test_perf *t = p->t;
+-	const uint32_t nb_flows = t->nb_flows;
+-	const uint64_t nb_pkts = t->nb_pkts;
+-	struct rte_event_dma_adapter_op *op;
+-	struct evt_options *opt = t->opt;
+-	uint32_t flow_counter = 0;
+-	uint64_t count = 0;
+-
+-	if (opt->verbose_level > 1)
+-		printf("%s(): lcore %d queue %d dma_dev_id %u dma_dev_vhcan_id %u\n",
+-		       __func__, rte_lcore_id(), p->queue_id, p->da.dma_dev_id,
+-		       p->da.vchan_id);
+-
+-	while (count < nb_pkts && t->done == false) {
+-		op = p->da.dma_op[flow_counter++ % nb_flows];
+-		while (rte_dma_copy_sg(op->dma_dev_id, op->vchan, op->src_seg,
+-				       op->dst_seg, op->nb_src, op->nb_dst,
+-				       op->flags) < 0 && t->done == false)
+-			rte_pause();
+-
+-		count++;
+-	}
+-}
+-
+ static inline void
+ dma_adapter_enq_op_fwd(struct prod_data *p)
+ {
+@@ -627,12 +600,9 @@ static inline int
+ perf_event_dma_producer(void *arg)
+ {
+ 	struct prod_data *p = arg;
+-	struct evt_options *opt = p->t->opt;
+ 
+-	if (opt->dma_adptr_mode == RTE_EVENT_DMA_ADAPTER_OP_NEW)
+-		dma_adapter_enq_op_new(p);
+-	else
+-		dma_adapter_enq_op_fwd(p);
++	/* Only fwd mode is supported. */
++	dma_adapter_enq_op_fwd(p);
+ 
+ 	return 0;
+ }
+@@ -2042,8 +2012,9 @@ perf_dmadev_setup(struct evt_test *test, struct evt_options *opt)
+ 			.nb_desc = 1024,
+ 	};
+ 	struct test_perf *t = evt_test_priv(test);
+-	uint8_t dma_dev_count, dma_dev_id;
++	uint8_t dma_dev_count, dma_dev_id = 0;
+ 	unsigned int elt_size;
++	int vchan_id;
+ 	int ret;
+ 
+ 	if (opt->prod_type != EVT_PROD_TYPE_EVENT_DMA_ADPTR)
+@@ -2063,30 +2034,24 @@ perf_dmadev_setup(struct evt_test *test, struct evt_options *opt)
+ 		return -ENOMEM;
+ 	}
+ 
+-	for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++) {
+-		int vchan_id;
++	ret = rte_dma_configure(dma_dev_id, &conf);
++	if (ret) {
++		evt_err("Failed to configure dma dev (%u)", dma_dev_id);
++		goto err;
++	}
+ 
+-		ret = rte_dma_configure(dma_dev_id, &conf);
++	for (vchan_id = 0; vchan_id < conf.nb_vchans; vchan_id++) {
++		ret = rte_dma_vchan_setup(dma_dev_id, vchan_id, &qconf);
+ 		if (ret) {
+-			evt_err("Failed to configure dma dev (%u)", dma_dev_id);
++			evt_err("Failed to setup vchan on dma dev %u\n",
++				dma_dev_id);
+ 			goto err;
+ 		}
+-
+-		for (vchan_id = 0; vchan_id < conf.nb_vchans; vchan_id++) {
+-			ret = rte_dma_vchan_setup(dma_dev_id, vchan_id, &qconf);
+-			if (ret) {
+-				evt_err("Failed to setup vchan on dma dev %u\n",
+-					dma_dev_id);
+-				goto err;
+-			}
+-		}
+ 	}
+ 
+ 	return 0;
+ err:
+-	for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++)
+-		rte_dma_close(dma_dev_id);
+-
++	rte_dma_close(dma_dev_id);
+ 	rte_mempool_free(t->da_op_pool);
+ 
+ 	return ret;
+@@ -2095,7 +2060,7 @@ perf_dmadev_setup(struct evt_test *test, struct evt_options *opt)
+ void
+ perf_dmadev_destroy(struct evt_test *test, struct evt_options *opt)
+ {
+-	uint8_t dma_dev_id, dma_dev_count = rte_dma_count_avail();
++	uint8_t dma_dev_id = 0;
+ 	struct test_perf *t = evt_test_priv(test);
+ 	uint16_t port;
+ 
+@@ -2120,10 +2085,8 @@ perf_dmadev_destroy(struct evt_test *test, struct evt_options *opt)
+ 
+ 	rte_event_dma_adapter_free(TEST_PERF_DA_ID);
+ 
+-	for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++) {
+-		rte_dma_stop(dma_dev_id);
+-		rte_dma_close(dma_dev_id);
+-	}
++	rte_dma_stop(dma_dev_id);
++	rte_dma_close(dma_dev_id);
+ 
+ 	rte_mempool_free(t->da_op_pool);
+ }
+diff --git a/app/test-eventdev/test_perf_queue.c b/app/test-eventdev/test_perf_queue.c
+index 8b6b85c1ad18f..ad80405b3d536 100644
+--- a/app/test-eventdev/test_perf_queue.c
++++ b/app/test-eventdev/test_perf_queue.c
+@@ -349,16 +349,18 @@ perf_queue_eventdev_setup(struct evt_test *test, struct evt_options *opt)
+ 			}
+ 		}
+ 	} else if (opt->prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR) {
+-		uint8_t dma_dev_id, dma_dev_count;
++		uint8_t dma_dev_id = 0, dma_dev_count;
+ 
+ 		dma_dev_count = rte_dma_count_avail();
+-		for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++) {
+-			ret = rte_dma_start(dma_dev_id);
+-			if (ret) {
+-				evt_err("Failed to start dmadev %u",
+-					dma_dev_id);
+-				return ret;
+-			}
++		if (dma_dev_count == 0) {
++			evt_err("No dma devices available\n");
++			return -ENODEV;
++		}
++
++		ret = rte_dma_start(dma_dev_id);
++		if (ret) {
++			evt_err("Failed to start dmadev %u", dma_dev_id);
++			return ret;
+ 		}
+ 	}
+ 
+diff --git a/app/test/test_event_dma_adapter.c b/app/test/test_event_dma_adapter.c
+index d9dff4ff7d3f8..3b39521153bbb 100644
+--- a/app/test/test_event_dma_adapter.c
++++ b/app/test/test_event_dma_adapter.c
+@@ -61,7 +61,8 @@ struct rte_event dma_response_info = {
+ 	.queue_id = TEST_APP_EV_QUEUE_ID,
+ 	.sched_type = RTE_SCHED_TYPE_ATOMIC,
+ 	.flow_id = TEST_APP_EV_FLOWID,
+-	.priority = TEST_APP_EV_PRIORITY
++	.priority = TEST_APP_EV_PRIORITY,
++	.op = RTE_EVENT_OP_NEW,
+ };
+ 
+ static struct event_dma_adapter_test_params params;
+@@ -263,10 +264,12 @@ test_op_forward_mode(void)
+ 		op->op_mp = params.op_mpool;
+ 		op->dma_dev_id = TEST_DMA_DEV_ID;
+ 		op->vchan = TEST_DMA_VCHAN_ID;
++		op->event_meta = dma_response_info.event;
+ 
+ 		/* Fill in event info and update event_ptr with rte_event_dma_adapter_op */
+ 		memset(&ev[i], 0, sizeof(struct rte_event));
+ 		ev[i].event = 0;
++		ev[i].op = RTE_EVENT_OP_NEW;
+ 		ev[i].event_type = RTE_EVENT_TYPE_DMADEV;
+ 		ev[i].queue_id = TEST_DMA_EV_QUEUE_ID;
+ 		ev[i].sched_type = RTE_SCHED_TYPE_ATOMIC;
+@@ -574,10 +577,11 @@ configure_event_dma_adapter(enum rte_event_dma_adapter_mode mode)
+ 	ret = rte_event_dma_adapter_create(TEST_ADAPTER_ID, evdev, &conf, mode);
+ 	TEST_ASSERT_SUCCESS(ret, "Failed to create event dma adapter\n");
+ 
+-	if (cap & RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_VCHAN_EV_BIND) {
++	event.event = dma_response_info.event;
++	if (cap & RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_VCHAN_EV_BIND)
+ 		ret = rte_event_dma_adapter_vchan_add(TEST_ADAPTER_ID, TEST_DMA_DEV_ID,
+ 							    TEST_DMA_VCHAN_ID, &event);
+-	} else
++	else
+ 		ret = rte_event_dma_adapter_vchan_add(TEST_ADAPTER_ID, TEST_DMA_DEV_ID,
+ 							    TEST_DMA_VCHAN_ID, NULL);
+ 
+diff --git a/drivers/common/cnxk/roc_dpi.c b/drivers/common/cnxk/roc_dpi.c
+index 92a618b4b8e43..2c28c107578fa 100644
+--- a/drivers/common/cnxk/roc_dpi.c
++++ b/drivers/common/cnxk/roc_dpi.c
+@@ -78,6 +78,24 @@ recv_msg_from_pf(struct plt_pci_addr *pci_addr, char *value, int size)
+ 	return 0;
+ }
+ 
++int
++roc_dpi_wait_queue_idle(struct roc_dpi *roc_dpi)
++{
++	const uint64_t cyc = (DPI_QUEUE_IDLE_TMO_MS * plt_tsc_hz()) / 1E3;
++	const uint64_t start = plt_tsc_cycles();
++	uint64_t reg;
++
++	/* Wait for SADDR to become idle */
++	reg = plt_read64(roc_dpi->rbase + DPI_VDMA_SADDR);
++	while (!(reg & BIT_ULL(63))) {
++		reg = plt_read64(roc_dpi->rbase + DPI_VDMA_SADDR);
++		if (plt_tsc_cycles() - start == cyc)
++			return -ETIMEDOUT;
++	}
++
++	return 0;
++}
++
+ int
+ roc_dpi_enable(struct roc_dpi *dpi)
+ {
+diff --git a/drivers/common/cnxk/roc_dpi.h b/drivers/common/cnxk/roc_dpi.h
+index 8e4ae21c86ab5..6b88fa29637a4 100644
+--- a/drivers/common/cnxk/roc_dpi.h
++++ b/drivers/common/cnxk/roc_dpi.h
+@@ -20,6 +20,7 @@ int __roc_api roc_dpi_configure(struct roc_dpi *dpi, uint32_t chunk_sz, uint64_t
+ int __roc_api roc_dpi_configure_v2(struct roc_dpi *roc_dpi, uint32_t chunk_sz, uint64_t aura,
+ 				   uint64_t chunk_base);
+ int __roc_api roc_dpi_enable(struct roc_dpi *dpi);
++int __roc_api roc_dpi_wait_queue_idle(struct roc_dpi *dpi);
+ int __roc_api roc_dpi_disable(struct roc_dpi *dpi);
+ 
+ #endif
+diff --git a/drivers/common/cnxk/roc_dpi_priv.h b/drivers/common/cnxk/roc_dpi_priv.h
+index 06b3b46267e20..844e5f37eed9a 100644
+--- a/drivers/common/cnxk/roc_dpi_priv.h
++++ b/drivers/common/cnxk/roc_dpi_priv.h
+@@ -17,6 +17,8 @@
+ #define DPI_GET_REG_CFG 0x4
+ #define DPI_QUEUE_OPEN_V2 0x5
+ 
++#define DPI_QUEUE_IDLE_TMO_MS 1E3
++
+ typedef union dpi_mbox_msg_t {
+ 	uint64_t u[2];
+ 	struct dpi_mbox_message_s {
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 2b2051c74df44..bb77aa5168ea2 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -89,6 +89,7 @@ INTERNAL {
+ 	roc_dpi_dev_dump;
+ 	roc_dpi_disable;
+ 	roc_dpi_enable;
++	roc_dpi_wait_queue_idle;
+ 	roc_error_msg_get;
+ 	roc_eswitch_nix_process_repte_notify_cb_register;
+ 	roc_eswitch_nix_process_repte_notify_cb_unregister;
+diff --git a/drivers/dma/cnxk/cnxk_dma_event_dp.h b/drivers/dma/cnxk/cnxk_dma_event_dp.h
+index 6fa2ebb20e12f..06b5ca8279007 100644
+--- a/drivers/dma/cnxk/cnxk_dma_event_dp.h
++++ b/drivers/dma/cnxk/cnxk_dma_event_dp.h
+@@ -1,13 +1,18 @@
+ /* SPDX-License-Identifier: BSD-3-Clause
+- * Copyright(C) 2023 Marvell.
++ * Copyright(C) 2024 Marvell.
+  */
+ 
+ #ifndef _CNXK_DMA_EVENT_DP_H_
+ #define _CNXK_DMA_EVENT_DP_H_
+ 
++#ifdef __cplusplus
++extern "C" {
++#endif
++
+ #include <stdint.h>
+ 
+ #include <rte_common.h>
++#include <rte_compat.h>
+ #include <rte_eventdev.h>
+ 
+ __rte_internal
+@@ -17,8 +22,13 @@ __rte_internal
+ uint16_t cn9k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events);
+ 
+ __rte_internal
+-uintptr_t cnxk_dma_adapter_dequeue(uintptr_t get_work1);
++uint16_t cn9k_dma_adapter_dual_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events);
+ 
+ __rte_internal
+-struct cnxk_dpi_vf_s *cnxk_dev_id_2_dpivf_get(int16_t dev_id);
++uintptr_t cnxk_dma_adapter_dequeue(uintptr_t get_work1);
++
++#ifdef __cplusplus
++}
++#endif
++
+ #endif /* _CNXK_DMA_EVENT_DP_H_ */
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index f3438d9ce0666..2d5307b22e4ee 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -282,12 +282,12 @@ cnxk_dmadev_start(struct rte_dma_dev *dev)
+ 	int i, j, rc = 0;
+ 	void *chunk;
+ 
+-	dpivf->total_pnum_words = 0;
+-
+ 	for (i = 0; i < dpivf->num_vchans; i++) {
+ 		dpi_conf = &dpivf->conf[i];
+ 		dpi_conf->c_desc.head = 0;
+ 		dpi_conf->c_desc.tail = 0;
++		dpi_conf->pnum_words = 0;
++		dpi_conf->pending = 0;
+ 		dpi_conf->desc_idx = 0;
+ 		for (j = 0; j < dpi_conf->c_desc.max_cnt + 1; j++)
+ 			dpi_conf->c_desc.compl_ptr[j * CNXK_DPI_COMPL_OFFSET] = CNXK_DPI_REQ_CDATA;
+@@ -323,39 +323,14 @@ cnxk_dmadev_start(struct rte_dma_dev *dev)
+ 	}
+ 
+ 	rc = roc_dpi_configure_v2(&dpivf->rdpi, queue_buf_sz, dpivf->aura, (uint64_t)chunk);
+-	if (rc < 0) {
+-		plt_err("DMA configure v2 failed err = %d", rc);
+-		rte_mempool_free(dpivf->chunk_pool);
+-		goto open_v1;
+-	}
+-	dpivf->chunk_size_m1 = (queue_buf_sz >> 3) - 2;
+-	goto done;
+-
+-open_v1:
+-	chunks = CNXK_DPI_CHUNKS_FROM_DESC(CNXK_DPI_QUEUE_BUF_SIZE, nb_desc);
+-	rc = cnxk_dmadev_chunk_pool_create(dev, chunks, CNXK_DPI_QUEUE_BUF_SIZE);
+-	if (rc < 0) {
+-		plt_err("DMA pool configure failed err = %d", rc);
+-		goto error;
+-	}
+-
+-	rc = rte_mempool_get(dpivf->chunk_pool, &chunk);
+-	if (rc < 0) {
+-		plt_err("DMA failed to get chunk pointer err = %d", rc);
+-		rte_mempool_free(dpivf->chunk_pool);
+-		goto error;
+-	}
+-
+-	rc = roc_dpi_configure(&dpivf->rdpi, CNXK_DPI_QUEUE_BUF_SIZE, dpivf->aura, (uint64_t)chunk);
+ 	if (rc < 0) {
+ 		plt_err("DMA configure failed err = %d", rc);
+ 		rte_mempool_free(dpivf->chunk_pool);
+ 		goto error;
+ 	}
+-	dpivf->chunk_size_m1 = (CNXK_DPI_QUEUE_BUF_SIZE >> 3) - 2;
+-done:
+ 	dpivf->chunk_base = chunk;
+ 	dpivf->chunk_head = 0;
++	dpivf->chunk_size_m1 = (queue_buf_sz >> 3) - 2;
+ 
+ 	roc_dpi_enable(&dpivf->rdpi);
+ error:
+@@ -366,11 +341,9 @@ static int
+ cnxk_dmadev_stop(struct rte_dma_dev *dev)
+ {
+ 	struct cnxk_dpi_vf_s *dpivf = dev->fp_obj->dev_private;
+-	uint64_t reg;
+ 
+-	reg = plt_read64(dpivf->rdpi.rbase + DPI_VDMA_SADDR);
+-	while (!(reg & BIT_ULL(63)))
+-		reg = plt_read64(dpivf->rdpi.rbase + DPI_VDMA_SADDR);
++	if (roc_dpi_wait_queue_idle(&dpivf->rdpi))
++		return -EAGAIN;
+ 
+ 	roc_dpi_disable(&dpivf->rdpi);
+ 	rte_mempool_free(dpivf->chunk_pool);
+@@ -463,7 +436,8 @@ cnxk_damdev_burst_capacity(const void *dev_private, uint16_t vchan)
+ 	uint16_t burst_cap;
+ 
+ 	burst_cap = dpi_conf->c_desc.max_cnt -
+-		    (dpi_conf->stats.submitted - dpi_conf->stats.completed) + 1;
++		    ((dpi_conf->stats.submitted - dpi_conf->stats.completed) + dpi_conf->pending) +
++		    1;
+ 
+ 	return burst_cap;
+ }
+@@ -472,16 +446,18 @@ static int
+ cnxk_dmadev_submit(void *dev_private, uint16_t vchan)
+ {
+ 	struct cnxk_dpi_vf_s *dpivf = dev_private;
+-	uint32_t num_words = dpivf->total_pnum_words;
+-	RTE_SET_USED(vchan);
++	struct cnxk_dpi_conf *dpi_conf = &dpivf->conf[vchan];
++	uint32_t num_words = dpi_conf->pnum_words;
+ 
+-	if (!num_words)
++	if (!dpi_conf->pnum_words)
+ 		return 0;
+ 
+ 	rte_wmb();
+ 	plt_write64(num_words, dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+ 
+-	dpivf->total_pnum_words = 0;
++	dpi_conf->stats.submitted += dpi_conf->pending;
++	dpi_conf->pnum_words = 0;
++	dpi_conf->pending = 0;
+ 
+ 	return 0;
+ }
+@@ -605,6 +581,7 @@ cnxk_dmadev_probe(struct rte_pci_driver *pci_drv __rte_unused, struct rte_pci_de
+ 		dmadev->fp_obj->copy_sg = cn10k_dmadev_copy_sg;
+ 	}
+ 
++	dpivf->mcs_lock = NULL;
+ 	rdpi = &dpivf->rdpi;
+ 
+ 	rdpi->pci_dev = pci_dev;
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.h b/drivers/dma/cnxk/cnxk_dmadev.h
+index bd301ecefe7c6..15af1d64dc4e7 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.h
++++ b/drivers/dma/cnxk/cnxk_dmadev.h
+@@ -14,6 +14,7 @@
+ #include <rte_eal.h>
+ #include <rte_lcore.h>
+ #include <rte_mbuf_pool_ops.h>
++#include <rte_mcslock.h>
+ #include <rte_mempool.h>
+ #include <rte_pci.h>
+ 
+@@ -27,7 +28,7 @@
+ 						((s).var - 1))
+ #define CNXK_DPI_MAX_DESC		    32768
+ #define CNXK_DPI_MIN_DESC		    2
+-#define CNXK_DPI_MAX_VCHANS_PER_QUEUE	    128
++#define CNXK_DPI_MAX_VCHANS_PER_QUEUE	    4
+ #define CNXK_DPI_QUEUE_BUF_SIZE		    16256
+ #define CNXK_DPI_QUEUE_BUF_SIZE_V2	    130944
+ #define CNXK_DPI_POOL_MAX_CACHE_SZ	    (16)
+@@ -96,6 +97,8 @@ struct cnxk_dpi_cdesc_data_s {
+ struct cnxk_dpi_conf {
+ 	union cnxk_dpi_instr_cmd cmd;
+ 	struct cnxk_dpi_cdesc_data_s c_desc;
++	uint16_t pnum_words;
++	uint16_t pending;
+ 	uint16_t desc_idx;
+ 	struct rte_dma_stats stats;
+ 	uint64_t completed_offset;
+@@ -107,9 +110,9 @@ struct cnxk_dpi_vf_s {
+ 	uint64_t *chunk_base;
+ 	uint16_t chunk_head;
+ 	uint16_t chunk_size_m1;
+-	uint16_t total_pnum_words;
+ 	struct rte_mempool *chunk_pool;
+ 	struct cnxk_dpi_conf conf[CNXK_DPI_MAX_VCHANS_PER_QUEUE];
++	RTE_ATOMIC(rte_mcslock_t *) mcs_lock;
+ 	/* Slow path */
+ 	struct roc_dpi rdpi;
+ 	uint32_t aura;
+diff --git a/drivers/dma/cnxk/cnxk_dmadev_fp.c b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+index a32fa7512a93d..26591235c6ceb 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev_fp.c
++++ b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+@@ -9,9 +9,6 @@
+ 
+ #include <cn10k_eventdev.h>
+ #include <cnxk_eventdev.h>
+-#include <rte_mcslock.h>
+-
+-rte_mcslock_t *dpi_ml;
+ 
+ static __plt_always_inline void
+ __dpi_cpy_scalar(uint64_t *src, uint64_t *dst, uint8_t n)
+@@ -284,15 +281,16 @@ cnxk_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t d
+ 
+ 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 		rte_wmb();
+-		plt_write64(dpivf->total_pnum_words + CNXK_DPI_DW_PER_SINGLE_CMD,
++		plt_write64(dpi_conf->pnum_words + CNXK_DPI_DW_PER_SINGLE_CMD,
+ 			    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-		dpivf->total_pnum_words = 0;
++		dpi_conf->stats.submitted += dpi_conf->pending + 1;
++		dpi_conf->pnum_words = 0;
++		dpi_conf->pending = 0;
+ 	} else {
+-		dpivf->total_pnum_words += CNXK_DPI_DW_PER_SINGLE_CMD;
++		dpi_conf->pnum_words += CNXK_DPI_DW_PER_SINGLE_CMD;
++		dpi_conf->pending++;
+ 	}
+ 
+-	dpi_conf->stats.submitted += 1;
+-
+ 	return dpi_conf->desc_idx++;
+ }
+ 
+@@ -339,15 +337,16 @@ cnxk_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge
+ 
+ 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 		rte_wmb();
+-		plt_write64(dpivf->total_pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++		plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
+ 			    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-		dpivf->total_pnum_words = 0;
++		dpi_conf->stats.submitted += dpi_conf->pending + 1;
++		dpi_conf->pnum_words = 0;
++		dpi_conf->pending = 0;
+ 	} else {
+-		dpivf->total_pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++		dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++		dpi_conf->pending++;
+ 	}
+ 
+-	dpi_conf->stats.submitted += 1;
+-
+ 	return dpi_conf->desc_idx++;
+ }
+ 
+@@ -384,15 +383,16 @@ cn10k_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t
+ 
+ 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 		rte_wmb();
+-		plt_write64(dpivf->total_pnum_words + CNXK_DPI_DW_PER_SINGLE_CMD,
++		plt_write64(dpi_conf->pnum_words + CNXK_DPI_DW_PER_SINGLE_CMD,
+ 			    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-		dpivf->total_pnum_words = 0;
++		dpi_conf->stats.submitted += dpi_conf->pending + 1;
++		dpi_conf->pnum_words = 0;
++		dpi_conf->pending = 0;
+ 	} else {
+-		dpivf->total_pnum_words += CNXK_DPI_DW_PER_SINGLE_CMD;
++		dpi_conf->pnum_words += 8;
++		dpi_conf->pending++;
+ 	}
+ 
+-	dpi_conf->stats.submitted += 1;
+-
+ 	return dpi_conf->desc_idx++;
+ }
+ 
+@@ -426,15 +426,16 @@ cn10k_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge
+ 
+ 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 		rte_wmb();
+-		plt_write64(dpivf->total_pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++		plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
+ 			    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-		dpivf->total_pnum_words = 0;
++		dpi_conf->stats.submitted += dpi_conf->pending + 1;
++		dpi_conf->pnum_words = 0;
++		dpi_conf->pending = 0;
+ 	} else {
+-		dpivf->total_pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++		dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++		dpi_conf->pending++;
+ 	}
+ 
+-	dpi_conf->stats.submitted += 1;
+-
+ 	return dpi_conf->desc_idx++;
+ }
+ 
+@@ -457,7 +458,7 @@ cn10k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
+ 	struct cnxk_dpi_vf_s *dpivf;
+ 	struct cn10k_sso_hws *work;
+ 	uint16_t nb_src, nb_dst;
+-	rte_mcslock_t ml_me;
++	rte_mcslock_t mcs_lock_me;
+ 	uint64_t hdr[4];
+ 	uint16_t count;
+ 	int rc;
+@@ -485,7 +486,7 @@ cn10k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
+ 		     (ev[count].sched_type & DPI_HDR_TT_MASK) == RTE_SCHED_TYPE_ORDERED))
+ 			roc_sso_hws_head_wait(work->base);
+ 
+-		rte_mcslock_lock(&dpi_ml, &ml_me);
++		rte_mcslock_lock(&dpivf->mcs_lock, &mcs_lock_me);
+ 		rc = __dpi_queue_write_sg(dpivf, hdr, src, dst, nb_src, nb_dst);
+ 		if (unlikely(rc)) {
+ 			rte_mcslock_unlock(&dpivf->mcs_lock, &mcs_lock_me);
+@@ -566,14 +567,16 @@ cn9k_dma_adapter_dual_enqueue(void *ws, struct rte_event ev[], uint16_t nb_event
+ 
+ 		if (op->flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 			rte_wmb();
+-			plt_write64(dpivf->total_pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++			plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
+ 				    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-			dpivf->total_pnum_words = 0;
++			dpi_conf->stats.submitted += dpi_conf->pending + 1;
++			dpi_conf->pnum_words = 0;
++			dpi_conf->pending = 0;
+ 		} else {
+-			dpivf->total_pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++			dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++			dpi_conf->pending++;
+ 		}
+-		dpi_conf->stats.submitted += 1;
+-		rte_mcslock_unlock(&dpi_ml, &ml_me);
++		rte_mcslock_unlock(&dpivf->mcs_lock, &mcs_lock_me);
+ 	}
+ 
+ 	return count;
+@@ -588,7 +591,7 @@ cn9k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
+ 	struct cnxk_dpi_vf_s *dpivf;
+ 	struct cn9k_sso_hws *work;
+ 	uint16_t nb_src, nb_dst;
+-	rte_mcslock_t ml_me;
++	rte_mcslock_t mcs_lock_me;
+ 	uint64_t hdr[4];
+ 	uint16_t count;
+ 	int rc;
+@@ -624,23 +627,25 @@ cn9k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
+ 		if ((ev[count].sched_type & DPI_HDR_TT_MASK) == RTE_SCHED_TYPE_ORDERED)
+ 			roc_sso_hws_head_wait(work->base);
+ 
+-		rte_mcslock_lock(&dpi_ml, &ml_me);
++		rte_mcslock_lock(&dpivf->mcs_lock, &mcs_lock_me);
+ 		rc = __dpi_queue_write_sg(dpivf, hdr, fptr, lptr, nb_src, nb_dst);
+ 		if (unlikely(rc)) {
+-			rte_mcslock_unlock(&dpi_ml, &ml_me);
++			rte_mcslock_unlock(&dpivf->mcs_lock, &mcs_lock_me);
+ 			return rc;
+ 		}
+ 
+ 		if (op->flags & RTE_DMA_OP_FLAG_SUBMIT) {
+ 			rte_wmb();
+-			plt_write64(dpivf->total_pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++			plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
+ 				    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
+-			dpivf->total_pnum_words = 0;
++			dpi_conf->stats.submitted += dpi_conf->pending + 1;
++			dpi_conf->pnum_words = 0;
++			dpi_conf->pending = 0;
+ 		} else {
+-			dpivf->total_pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++			dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++			dpi_conf->pending++;
+ 		}
+-		dpi_conf->stats.submitted += 1;
+-		rte_mcslock_unlock(&dpi_ml, &ml_me);
++		rte_mcslock_unlock(&dpivf->mcs_lock, &mcs_lock_me);
+ 	}
+ 
+ 	return count;
+diff --git a/drivers/dma/cnxk/version.map b/drivers/dma/cnxk/version.map
+index 4932988c3c1c4..a1490abf97dfd 100644
+--- a/drivers/dma/cnxk/version.map
++++ b/drivers/dma/cnxk/version.map
+@@ -3,8 +3,8 @@ INTERNAL {
+ 
+ 	cn10k_dma_adapter_enqueue;
+ 	cn9k_dma_adapter_enqueue;
++	cn9k_dma_adapter_dual_enqueue;
+ 	cnxk_dma_adapter_dequeue;
+-	cnxk_dev_id_2_dpivf_get;
+ 
+ 	local: *;
+ };
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 0769d86d9a866..7a74534fa3219 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -462,6 +462,7 @@ cn9k_sso_fp_tmplt_fns_set(struct rte_eventdev *event_dev)
+ 		}
+ 	}
+ 	event_dev->ca_enqueue = cn9k_sso_hws_ca_enq;
++	event_dev->dma_enqueue = cn9k_dma_adapter_enqueue;
+ 
+ 	if (dev->tx_offloads & NIX_TX_MULTI_SEG_F)
+ 		CN9K_SET_EVDEV_ENQ_OP(dev, event_dev->txa_enqueue,
+@@ -477,6 +478,7 @@ cn9k_sso_fp_tmplt_fns_set(struct rte_eventdev *event_dev)
+ 		event_dev->enqueue_forward_burst =
+ 			cn9k_sso_hws_dual_enq_fwd_burst;
+ 		event_dev->ca_enqueue = cn9k_sso_hws_dual_ca_enq;
++		event_dev->dma_enqueue = cn9k_dma_adapter_dual_enqueue;
+ 		event_dev->profile_switch = cn9k_sso_hws_dual_profile_switch;
+ 
+ 		if (dev->rx_offloads & NIX_RX_MULTI_SEG_F) {
+diff --git a/lib/eventdev/rte_event_dma_adapter.c b/lib/eventdev/rte_event_dma_adapter.c
+index a0f0a3c0312a7..250dd57525f27 100644
+--- a/lib/eventdev/rte_event_dma_adapter.c
++++ b/lib/eventdev/rte_event_dma_adapter.c
+@@ -666,6 +666,7 @@ edma_ops_enqueue_burst(struct event_dma_adapter *adapter, struct rte_event_dma_a
+ 			ev->op = RTE_EVENT_OP_FORWARD;
+ 		else
+ 			ev->op = RTE_EVENT_OP_NEW;
++		ev->event = ops[i]->event_meta;
+ 	}
+ 
+ 	do {
+diff --git a/lib/eventdev/rte_event_dma_adapter.h b/lib/eventdev/rte_event_dma_adapter.h
+index 048ddba3f354d..768390cd30a52 100644
+--- a/lib/eventdev/rte_event_dma_adapter.h
++++ b/lib/eventdev/rte_event_dma_adapter.h
+@@ -179,8 +179,17 @@ struct rte_event_dma_adapter_op {
+ 	 * The dma device implementation should not modify this area.
+ 	 */
+ 	uint64_t event_meta;
+-	/**< Event metadata that defines event attributes when used in OP_NEW mode.
++	/**< Event metadata of DMA completion event.
++	 * Used when RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_VCHAN_EV_BIND is not
++	 * supported in OP_NEW mode.
+ 	 * @see rte_event_dma_adapter_mode::RTE_EVENT_DMA_ADAPTER_OP_NEW
++	 * @see RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_VCHAN_EV_BIND
++	 *
++	 * Used when RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_OP_FWD is not
++	 * supported in OP_FWD mode.
++	 * @see rte_event_dma_adapter_mode::RTE_EVENT_DMA_ADAPTER_OP_FORWARD
++	 * @see RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_OP_FWD
++	 *
+ 	 * @see struct rte_event::event
+ 	 */
+ 	int16_t dma_dev_id;
+-- 
+2.25.1
+

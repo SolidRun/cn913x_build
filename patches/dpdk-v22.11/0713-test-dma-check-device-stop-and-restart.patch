@@ -1,0 +1,87 @@
+From 2130a94909117b287ade41594e00b62aba2a26e4 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Thu, 16 Feb 2023 11:09:19 +0000
+Subject: [PATCH 713/955] test/dma: check device stop and restart
+
+Validate device operation when a device is stopped or restarted.
+
+The only complication - and gap in the dmadev ABI specification - is
+what happens to the job ids on restart. Some drivers reset them to 0,
+while others continue where things left off. Take account of both
+possibilities in the test case.
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+Acked-by: Kevin Laatz <kevin.laatz@intel.com>
+Acked-by: Chengwen Feng <fengchengwen@huawei.com>
+Change-Id: I8fe2a2170efada64d4413cb7e220b4de2f691bc7
+---
+ app/test/test_dmadev.c | 46 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 46 insertions(+)
+
+diff --git a/app/test/test_dmadev.c b/app/test/test_dmadev.c
+index 5f2190b6e8466..dc872244cccf0 100644
+--- a/app/test/test_dmadev.c
++++ b/app/test/test_dmadev.c
+@@ -322,6 +322,48 @@ test_enqueue_copies(int16_t dev_id, uint16_t vchan)
+ 			|| do_multi_copies(dev_id, vchan, 0, 0, 1);
+ }
+ 
++static int
++test_stop_start(int16_t dev_id, uint16_t vchan)
++{
++	/* device is already started on input, should be (re)started on output */
++
++	uint16_t id = 0;
++	enum rte_dma_status_code status = RTE_DMA_STATUS_SUCCESSFUL;
++
++	/* - test stopping a device works ok,
++	 * - then do a start-stop without doing a copy
++	 * - finally restart the device
++	 * checking for errors at each stage, and validating we can still copy at the end.
++	 */
++	if (rte_dma_stop(dev_id) < 0)
++		ERR_RETURN("Error stopping device\n");
++
++	if (rte_dma_start(dev_id) < 0)
++		ERR_RETURN("Error restarting device\n");
++	if (rte_dma_stop(dev_id) < 0)
++		ERR_RETURN("Error stopping device after restart (no jobs executed)\n");
++
++	if (rte_dma_start(dev_id) < 0)
++		ERR_RETURN("Error restarting device after multiple stop-starts\n");
++
++	/* before doing a copy, we need to know what the next id will be it should
++	 * either be:
++	 * - the last completed job before start if driver does not reset id on stop
++	 * - or -1 i.e. next job is 0, if driver does reset the job ids on stop
++	 */
++	if (rte_dma_completed_status(dev_id, vchan, 1, &id, &status) != 0)
++		ERR_RETURN("Error with rte_dma_completed_status when no job done\n");
++	id += 1; /* id_count is next job id */
++	if (id != id_count && id != 0)
++		ERR_RETURN("Unexpected next id from device after stop-start. Got %u, expected %u or 0\n",
++				id, id_count);
++
++	id_count = id;
++	if (test_single_copy(dev_id, vchan) < 0)
++		ERR_RETURN("Error performing copy after device restart\n");
++	return 0;
++}
++
+ /* Failure handling test cases - global macros and variables for those tests*/
+ #define COMP_BURST_SZ	16
+ #define OPT_FENCE(idx) ((fence && idx == 8) ? RTE_DMA_OP_FLAG_FENCE : 0)
+@@ -923,6 +965,10 @@ test_dmadev_instance(int16_t dev_id)
+ 	if (runtest("copy", test_enqueue_copies, 640, dev_id, vchan, CHECK_ERRS) < 0)
+ 		goto err;
+ 
++	/* run tests stopping/starting devices and check jobs still work after restart */
++	if (runtest("stop-start", test_stop_start, 1, dev_id, vchan, CHECK_ERRS) < 0)
++		goto err;
++
+ 	/* run some burst capacity tests */
+ 	if (rte_dma_burst_capacity(dev_id, vchan) < 64)
+ 		printf("DMA Dev %u: insufficient burst capacity (64 required), skipping tests\n",
+-- 
+2.25.1
+

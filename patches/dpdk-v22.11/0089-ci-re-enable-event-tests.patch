@@ -1,0 +1,68 @@
+From 15ac44882eccb114d29b41695830717e949fb8e0 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Tue, 13 Dec 2022 20:28:52 +0530
+Subject: [PATCH 089/955] ci: re-enable event tests
+
+Re-enabled event tests which was disabled due to failure in timer
+adapter tests.
+
+Disabled event_eth_rx_adapter_autotest as one test is failing.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I11c96d1db56b3e5b36af6674fbeff700c4fcbeb2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92500
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh | 3 ++-
+ marvell-ci/test/env/cn10k.env                     | 4 +---
+ marvell-ci/test/env/cn9k.env                      | 4 +---
+ 3 files changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh b/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
+index 17e21eef43579..4d85aa855d2f3 100755
+--- a/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
++++ b/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
+@@ -66,7 +66,8 @@ register_cn9k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE
+ register_cn9k_event_test	eventdev_selftest_cn9k		"-l $ISOLCPUS"
+ register_cn10k_event_test	eventdev_selftest_cn10k		"-l $ISOLCPUS"
+ register_cn10k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE,gw_mode=0,tim_stats_ena=1"
+-register_cnxk_event_test	event_eth_rx_adapter_autotest	"-l $ISOLCPUS"
++#FIXME: re-enable event_eth_rx_adapter_autotest
++#register_cnxk_event_test	event_eth_rx_adapter_autotest	"-l $ISOLCPUS"
+ register_cnxk_event_test	event_crypto_adapter_autotest	"-l 0,1"
+ 
+ case $TEST_TYPE in
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 012e7fe1b0e68..c1f84e9393846 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -68,9 +68,7 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-}
+ 
+-FIXME_SKIP_TESTS="
+-	cnxk_dpdk_event_tests
+-"
++FIXME_SKIP_TESTS=""
+ 
+ DEFAULT_SKIP_TESTS="
+ 	distributor_autotest
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index 1b206fa0bd43c..00e8ff2d03737 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -67,9 +67,7 @@ PERF_STAGE=${PERF_STAGE:-}
+ # Flag to enable target setup needed for TM tests
+ TM_SETUP=${TM_SETUP:-1}
+ 
+-FIXME_SKIP_TESTS="
+-	cnxk_dpdk_event_tests
+-"
++FIXME_SKIP_TESTS=""
+ 
+ DEFAULT_SKIP_TESTS="
+ 	distributor_autotest
+-- 
+2.25.1
+

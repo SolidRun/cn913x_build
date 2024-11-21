@@ -1,0 +1,208 @@
+From e48530480091e000431e50a67f273c135a40c6b6 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Tue, 2 Jul 2024 21:07:02 +0530
+Subject: [PATCH 388/513] common/cnxk: common mbox for representor events
+
+Adding a common mbox which can process multiple representor events
+under one mbox ID. Different types of events like, representee state
+change, MTU change all can be sent as different events but via same
+mbox.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Change-Id: I8e778ed8a0a3c00d147d6bb80ee2702a255233e0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130787
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130910
+---
+ drivers/common/cnxk/roc_dev.c     | 68 +++++++++++++------------------
+ drivers/common/cnxk/roc_eswitch.h |  7 ++++
+ drivers/common/cnxk/roc_mbox.h    | 28 ++++++++-----
+ 3 files changed, 53 insertions(+), 50 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index daf7684d8e6cc..957f667dc7b2e 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -540,16 +540,16 @@ pf_vf_mbox_send_up_msg(struct dev *dev, void *rec_msg)
+ }
+ 
+ static int
+-mbox_up_handler_rep_repte_notify(struct dev *dev, struct rep_repte_req *req, struct msg_rsp *rsp)
++mbox_up_handler_rep_event_up_notify(struct dev *dev, struct rep_event *req, struct msg_rsp *rsp)
+ {
+ 	struct roc_eswitch_repte_notify_msg *notify_msg;
+ 	int rc = 0;
+ 
++	plt_base_dbg("mbox_up_handler_rep_event_up_notify");
+ 	plt_base_dbg("pf:%d/vf:%d msg id 0x%x (%s) from: pf:%d/vf:%d", dev_get_pf(dev->pf_func),
+ 		     dev_get_vf(dev->pf_func), req->hdr.id, mbox_id2name(req->hdr.id),
+ 		     dev_get_pf(req->hdr.pcifunc), dev_get_vf(req->hdr.pcifunc));
+ 
+-	plt_base_dbg("repte pcifunc %x, enable %d", req->repte_pcifunc, req->enable);
+ 	if (dev->ops && dev->ops->repte_notify) {
+ 		notify_msg = plt_zmalloc(sizeof(struct roc_eswitch_repte_notify_msg), 0);
+ 		if (!notify_msg) {
+@@ -557,49 +557,39 @@ mbox_up_handler_rep_repte_notify(struct dev *dev, struct rep_repte_req *req, str
+ 			rc = -ENOMEM;
+ 			goto fail;
+ 		}
+-		notify_msg->type = ROC_ESWITCH_REPTE_STATE;
+-		notify_msg->state.hw_func = req->repte_pcifunc;
+-		notify_msg->state.enable = req->enable;
+ 
+-		rc = dev->ops->repte_notify(dev->roc_nix, (void *)notify_msg);
+-		if (rc < 0)
+-			plt_err("Failed to sent new representee %x notification to %s",
+-				req->repte_pcifunc, (req->enable == true) ? "enable" : "disable");
+-
+-		plt_free(notify_msg);
+-	}
+-fail:
+-	rsp->hdr.rc = rc;
+-	return rc;
+-}
+-
+-static int
+-mbox_up_handler_rep_set_mtu(struct dev *dev, struct rep_mtu *req, struct msg_rsp *rsp)
+-{
+-	struct roc_eswitch_repte_notify_msg *notify_msg;
+-	int rc = 0;
+-
+-	plt_base_dbg("pf:%d/vf:%d msg id 0x%x (%s) from: pf:%d/vf:%d", dev_get_pf(dev->pf_func),
+-		     dev_get_vf(dev->pf_func), req->hdr.id, mbox_id2name(req->hdr.id),
+-		     dev_get_pf(req->hdr.pcifunc), dev_get_vf(req->hdr.pcifunc));
+-
+-	plt_base_dbg("rep pcifunc %x, rep id %d mtu %d", req->rep_pcifunc, req->rep_id, req->mtu);
+-	if (dev->ops && dev->ops->repte_notify) {
+-		notify_msg = plt_zmalloc(sizeof(struct roc_eswitch_repte_notify_msg), 0);
+-		if (!notify_msg) {
+-			plt_err("Failed to allocate memory");
+-			rc = -ENOMEM;
++		switch (req->event) {
++		case RVU_EVENT_PORT_STATE:
++			plt_base_dbg("pcifunc %x, port_state %d", req->pcifunc,
++				     req->evt_data.port_state);
++			notify_msg->type = ROC_ESWITCH_LINK_STATE;
++			notify_msg->link.hw_func = req->pcifunc;
++			notify_msg->link.enable = req->evt_data.port_state;
++			break;
++		case RVU_EVENT_PFVF_STATE:
++			plt_base_dbg("pcifunc %x, repte_state %d", req->pcifunc,
++				     req->evt_data.vf_state);
++			notify_msg->type = ROC_ESWITCH_REPTE_STATE;
++			notify_msg->state.hw_func = req->pcifunc;
++			notify_msg->state.enable = req->evt_data.vf_state;
++			break;
++		case RVU_EVENT_MTU_CHANGE:
++			plt_base_dbg("pcifunc %x, mtu val %d", req->pcifunc, req->evt_data.mtu);
++			notify_msg->type = ROC_ESWITCH_REPTE_MTU;
++			notify_msg->mtu.hw_func = req->pcifunc;
++			notify_msg->mtu.mtu = req->evt_data.mtu;
++			break;
++		default:
++			plt_err("Unknown event type %u", req->event);
++			plt_free(notify_msg);
++			rc = -EINVAL;
+ 			goto fail;
+ 		}
+-		notify_msg->type = ROC_ESWITCH_REPTE_MTU;
+-		notify_msg->mtu.hw_func = req->rep_pcifunc;
+-		notify_msg->mtu.rep_id = req->rep_id;
+-		notify_msg->mtu.mtu = req->mtu;
+ 
+ 		rc = dev->ops->repte_notify(dev->roc_nix, (void *)notify_msg);
+ 		if (rc < 0)
+-			plt_err("Failed to send new mtu notification for representee %x ",
+-				req->rep_pcifunc);
++			plt_err("Failed to send notification type %x for representee %x",
++				notify_msg->type, notify_msg->state.hw_func);
+ 
+ 		plt_free(notify_msg);
+ 	}
+diff --git a/drivers/common/cnxk/roc_eswitch.h b/drivers/common/cnxk/roc_eswitch.h
+index b701ea69ee863..45400ae77ab1b 100644
+--- a/drivers/common/cnxk/roc_eswitch.h
++++ b/drivers/common/cnxk/roc_eswitch.h
+@@ -10,6 +10,7 @@
+ 
+ typedef enum roc_eswitch_repte_notify_msg_type {
+ 	ROC_ESWITCH_REPTE_STATE = 0,
++	ROC_ESWITCH_LINK_STATE,
+ 	ROC_ESWITCH_REPTE_MTU,
+ } roc_eswitch_repte_notify_msg_type_t;
+ 
+@@ -18,6 +19,11 @@ struct roc_eswitch_repte_state {
+ 	uint16_t hw_func;
+ };
+ 
++struct roc_eswitch_link_state {
++	bool enable;
++	uint16_t hw_func;
++};
++
+ struct roc_eswitch_repte_mtu {
+ 	uint16_t mtu;
+ 	uint16_t rep_id;
+@@ -28,6 +34,7 @@ struct roc_eswitch_repte_notify_msg {
+ 	roc_eswitch_repte_notify_msg_type_t type;
+ 	union {
+ 		struct roc_eswitch_repte_state state;
++		struct roc_eswitch_link_state link;
+ 		struct roc_eswitch_repte_mtu mtu;
+ 	};
+ };
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index f1a3371ef92cd..89deef0ab61b4 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -358,9 +358,7 @@ struct mbox_msghdr {
+ 
+ #define MBOX_UP_MCS_MESSAGES M(MCS_INTR_NOTIFY, 0xE00, mcs_intr_notify, mcs_intr_info, msg_rsp)
+ 
+-#define MBOX_UP_REP_MESSAGES						       \
+-M(REP_REPTE_NOTIFY, 0xEF1, rep_repte_notify, rep_repte_req, msg_rsp)           \
+-M(REP_SET_MTU, 0xEF2, rep_set_mtu, rep_mtu, msg_rsp)
++#define MBOX_UP_REP_MESSAGES M(REP_EVENT_UP_NOTIFY, 0xEF0, rep_event_up_notify, rep_event, msg_rsp)
+ 
+ enum {
+ #define M(_name, _id, _1, _2, _3) MBOX_MSG_##_name = _id,
+@@ -2835,16 +2833,24 @@ struct nix_spi_to_sa_delete_req {
+ 	uint8_t __io way;
+ };
+ 
+-struct rep_repte_req {
+-	struct mbox_msghdr hdr;
+-	uint16_t __io repte_pcifunc;
+-	bool __io enable;
++struct rep_evt_data {
++	uint8_t __io port_state;
++	uint8_t __io vf_state;
++	uint16_t __io rx_mode;
++	uint16_t __io rx_flags;
++	uint16_t __io mtu;
++	uint64_t __io rsvd[5];
+ };
+ 
+-struct rep_mtu {
++struct rep_event {
+ 	struct mbox_msghdr hdr;
+-	uint16_t __io rep_pcifunc;
+-	uint16_t __io rep_id;
+-	uint16_t __io mtu;
++	uint16_t __io pcifunc;
++#define RVU_EVENT_PORT_STATE	 BIT_ULL(0)
++#define RVU_EVENT_PFVF_STATE	 BIT_ULL(1)
++#define RVU_EVENT_MTU_CHANGE	 BIT_ULL(2)
++#define RVU_EVENT_RX_MODE_CHANGE BIT_ULL(3)
++	uint16_t __io event;
++	struct rep_evt_data evt_data;
+ };
++
+ #endif /* __ROC_MBOX_H__ */
+-- 
+2.25.1
+

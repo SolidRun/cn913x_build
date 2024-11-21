@@ -1,0 +1,38 @@
+From fe6211778e427cf8044279c40c5f2e4c806e3bcd Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 19 Aug 2024 10:32:41 +0000
+Subject: [PATCH 460/513] marvell-ci/cpt_raw_test: use opaque pointer for QPTR
+
+Use opaque pointer for QPTR.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Iffe01123a420939734312639155f571ac8016a74
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133744
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134275
+---
+ marvell-ci/test/cnxk-tests/cpt_raw_test/main.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c b/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
+index 72ec672df9b33..f6691d9d554c9 100644
+--- a/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
++++ b/marvell-ci/test/cnxk-tests/cpt_raw_test/main.c
+@@ -502,10 +502,11 @@ test_cpt_raw_api(struct test_ctx *ctx, struct test_case_params *tc_params, int n
+ 	void *data_ptrs[NB_DESC], *rptrs[NB_DESC], *cptrs[NB_CPTR];
+ 	uint64_t timeout, tsc_start, tsc_end, tsc_cycles;
+ 	double test_us, throughput_gbps, ops_per_second;
++	struct rte_pmd_cnxk_crypto_qptr *qptr;
+ 	struct cpt_inst_s *inst_mem, *inst;
+ 	int ret, i, status = TEST_SUCCESS;
+ 	union cpt_res_s res, *hw_res;
+-	void *qptr, *dptr;
++	void *dptr;
+ 
+ 	const union cpt_res_s res_init = {
+ 		.cn10k.compcode = CPT_COMP_NOT_DONE,
+-- 
+2.25.1
+

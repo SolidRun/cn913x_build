@@ -1,0 +1,131 @@
+From f684d5ac4c5acb08fc0039db8f18ec5bc5ef3ed8 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Tue, 23 Jul 2024 04:33:59 -0700
+Subject: [PATCH 405/513] crypto/cnxk: add multi segment support for Rx inject
+
+Add support for multi segmented packet in Rx inject.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I163c89e9232486ce2eac55a50971f180a6d44996
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131859
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 53 ++++++++++++++++++-----
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.h  |  9 +++-
+ 2 files changed, 50 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 8fcd637b964a9..b35ce6144ce0f 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -1366,8 +1366,8 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 	union cpt_fc_write_s fc;
+ 	struct cnxk_cpt_vf *vf;
+ 	struct rte_mbuf *m;
++	uint64_t u64_dptr;
+ 	uint64_t *fc_addr;
+-	uint64_t dptr;
+ 	int i;
+ 
+ 	vf = cdev->data->dev_private;
+@@ -1401,11 +1401,6 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 			break;
+ 		}
+ 
+-		if (unlikely(!rte_pktmbuf_is_contiguous(m))) {
+-			plt_dp_err("Multi seg is not supported");
+-			break;
+-		}
+-
+ 		l2_len = m->l2_len;
+ 
+ 		*rte_security_dynfield(m) = (uint64_t)sec_sess->userdata;
+@@ -1415,6 +1410,46 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 		hw_res = RTE_PTR_ALIGN_CEIL(hw_res, 16);
+ 
+ 		/* Prepare CPT instruction */
++		if (m->nb_segs > 1) {
++			struct rte_mbuf *last = rte_pktmbuf_lastseg(m);
++			uintptr_t dptr, rxphdr, wqe_hdr;
++			uint16_t i;
++
++			if ((m->nb_segs > CNXK_CPT_MAX_SG_SEGS) ||
++			    (rte_pktmbuf_tailroom(m) < CNXK_CPT_MIN_TAILROOM_REQ))
++				goto exit;
++
++			wqe_hdr = rte_pktmbuf_mtod_offset(last, uintptr_t, last->data_len);
++			wqe_hdr += BIT_ULL(7);
++			wqe_hdr = (wqe_hdr - 1) & ~(BIT_ULL(7) - 1);
++
++			/* Pointer to WQE header */
++			*(uint64_t *)(m + 1) = wqe_hdr;
++
++			/* Reserve SG list after end of last mbuf data location. */
++			rxphdr = wqe_hdr + 8;
++			dptr = rxphdr + 7 * 8;
++
++			/* Prepare Multiseg SG list */
++			i = fill_sg2_comp_from_pkt((struct roc_sg2list_comp *)dptr, 0, m);
++			u64_dptr = dptr | ((uint64_t)(i) << 60);
++		} else {
++			struct roc_sg2list_comp *sg2;
++			uintptr_t dptr, wqe_hdr;
++
++			/* Reserve space for WQE, NIX_RX_PARSE_S and SG_S.
++			 * Populate SG_S with num segs and seg length
++			 */
++			wqe_hdr = (uintptr_t)(m + 1);
++			*(uint64_t *)(m + 1) = wqe_hdr;
++
++			sg2 = (struct roc_sg2list_comp *)(wqe_hdr + 8 * 8);
++			sg2->u.s.len[0] = rte_pktmbuf_pkt_len(m);
++			sg2->u.s.valid_segs = 1;
++
++			dptr = (uint64_t)rte_pktmbuf_iova(m);
++			u64_dptr = dptr;
++		}
+ 
+ 		/* Word 0 and 1 */
+ 		u64_0 = pf_func << 48 | *(vf->rx_chan_base + m->port) << 4 | (l2_len - 2) << 24 |
+@@ -1432,15 +1467,11 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 		/* Word 4 and 5 */
+ 		u64_0 = sec_sess->inst.w4 | (rte_pktmbuf_pkt_len(m));
+ 		inst_45 = vsetq_lane_u64(u64_0, inst_45, 0);
+-		dptr = (uint64_t)rte_pktmbuf_iova(m);
+-		u64_1 = dptr;
+-		inst_45 = vsetq_lane_u64(u64_1, inst_45, 1);
++		inst_45 = vsetq_lane_u64(u64_dptr, inst_45, 1);
+ 		vst1q_u64(&inst->w4.u64, inst_45);
+ 
+ 		/* Word 6 and 7 */
+-		u64_0 = dptr;
+ 		u64_1 = sec_sess->inst.w7;
+-		inst_67 = vsetq_lane_u64(u64_0, inst_67, 0);
+ 		inst_67 = vsetq_lane_u64(u64_1, inst_67, 1);
+ 		vst1q_u64(&inst->w6.u64, inst_67);
+ 
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+index d96cd29c51e03..26d8dbac4804d 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+@@ -18,7 +18,14 @@
+ 
+ /* Space for ctrl_word(8B), IV(48B), passthrough alignment(8B) */
+ #define CNXK_CPT_MIN_HEADROOM_REQ 64
+-#define CNXK_CPT_MIN_TAILROOM_REQ 102
++/* Tailroom required for RX-inject path.
++ * In RX-inject path, space is required for below entities:
++ * WQE header and NIX_RX_PARSE_S
++ * SG list format for 6 IOVA pointers
++ * Space for 128 byte alignment.
++ */
++#define CNXK_CPT_MIN_TAILROOM_REQ 256
++#define CNXK_CPT_MAX_SG_SEGS	  6
+ 
+ /* Default command timeout in seconds */
+ #define DEFAULT_COMMAND_TIMEOUT 4
+-- 
+2.25.1
+

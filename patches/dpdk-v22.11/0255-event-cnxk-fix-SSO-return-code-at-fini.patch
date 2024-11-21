@@ -1,0 +1,41 @@
+From 1aef563eb53d44c3fa945b83e6a3b85a927c7f45 Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Fri, 24 Feb 2023 12:28:46 +0100
+Subject: [PATCH 255/955] event/cnxk: fix SSO return code at fini
+
+dev_fini() can return EAGAIN in case if LF is active(used by other
+devices). Ignoring return code leads to early free of resources that are
+still in use.
+
+Fixes: 8558dcaa05b8 ("event/cnxk: add build infra and device setup")
+Cc: stable@dpdk.org
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: I6729b52ce5a4ac7ad1e8e67ae0dc1e43117bd2d4
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98128
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/event/cnxk/cnxk_eventdev.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index 9815e84c24e1e..6aecccb45debf 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -670,9 +670,8 @@ cnxk_sso_fini(struct rte_eventdev *event_dev)
+ 
+ 	cnxk_tim_fini();
+ 	roc_sso_rsrc_fini(&dev->sso);
+-	roc_sso_dev_fini(&dev->sso);
+ 
+-	return 0;
++	return roc_sso_dev_fini(&dev->sso);
+ }
+ 
+ int
+-- 
+2.25.1
+

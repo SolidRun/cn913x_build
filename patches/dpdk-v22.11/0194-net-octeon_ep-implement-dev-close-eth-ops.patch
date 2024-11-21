@@ -1,0 +1,169 @@
+From 6ff3f84b87f7ab4be7b145b33e9bef0cbc805212 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Tue, 7 Feb 2023 08:57:18 -0800
+Subject: [PATCH 194/955] net/octeon_ep: implement dev close eth ops
+
+implement  dev_close function handler in
+eth_dev_ops
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I2a00d3fe6ffaccc9042aed2f317d02bcb5028503
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96486
+Tested-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 106 +++++++++++++-------------
+ 1 file changed, 51 insertions(+), 55 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index c144e1dcf093e..b8553fd44c318 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -31,6 +31,22 @@ static const struct rte_eth_desc_lim otx_ep_tx_desc_lim = {
+ 	.nb_align	= OTX_EP_TXD_ALIGN,
+ };
+ 
++static void
++otx_ep_interrupt_handler(void *param)
++{
++	struct otx_ep_device *otx_epvf = (struct otx_ep_device *)param;
++	uint64_t reg_val;
++	if (otx_epvf) {
++		/* Clear Mbox interrupts */
++		reg_val = rte_read64((uint8_t *)otx_epvf->hw_addr + OTX_EP_R_MBOX_PF_VF_INT(0));
++		rte_write64(reg_val, (uint8_t *)otx_epvf->hw_addr + OTX_EP_R_MBOX_PF_VF_INT(0));
++		otx_ep_info("otx_epdev_interrupt_handler is called pf_num: %d vf_num: %d port_id: %d\n",
++		otx_epvf->pf_num, otx_epvf->vf_num, otx_epvf->port_id);
++	} else {
++		otx_ep_err("otx_epdev_interrupt_handler is called with dev NULL\n");
++	}
++}
++
+ static int
+ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 		    struct rte_eth_dev_info *devinfo)
+@@ -186,6 +202,40 @@ otx_ep_dev_stop(struct rte_eth_dev *eth_dev)
+ 	return 0;
+ }
+ 
++/* Close device */
++static int
++otx_ep_dev_close(struct rte_eth_dev *eth_dev)
++{
++	struct otx_ep_device *otx_epvf;
++	uint32_t num_queues, q;
++
++	otx_epvf = OTX_EP_DEV(eth_dev);
++	otx_ep_mbox_disable_interrupt(otx_epvf);
++	otx_epvf->fn_list.disable_io_queues(otx_epvf);
++	num_queues = otx_epvf->nb_rx_queues;
++	for (q = 0; q < num_queues; q++) {
++		if (otx_ep_delete_oqs(otx_epvf, q)) {
++			otx_ep_err("Failed to delete OQ:%d\n", q);
++			return -EINVAL;
++		}
++	}
++	otx_ep_info("Num OQs:%d freed\n", otx_epvf->nb_rx_queues);
++	num_queues = otx_epvf->nb_tx_queues;
++	for (q = 0; q < num_queues; q++) {
++		if (otx_ep_delete_iqs(otx_epvf, q)) {
++			otx_ep_err("Failed to delete IQ:%d\n", q);
++			return -EINVAL;
++		}
++	}
++	otx_ep_dbg("Num IQs:%d freed\n", otx_epvf->nb_tx_queues);
++
++	if (rte_eth_dma_zone_free(eth_dev, "ism", 0)) {
++		otx_ep_err("Failed to delete ISM buffer\n");
++		return -EINVAL;
++	}
++	return 0;
++}
++
+ /*
+  * We only need 2 uint32_t locations per IOQ, but separate these so
+  * each IOQ has the variables on its own cache line.
+@@ -256,22 +306,6 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 	return ret;
+ }
+ 
+-static void
+-otx_ep_interrupt_handler(void *param)
+-{
+-	struct otx_ep_device *otx_epvf = (struct otx_ep_device *)param;
+-	uint64_t reg_val;
+-	if (otx_epvf) {
+-		/* Clear Mbox interrupts */
+-		reg_val = rte_read64((uint8_t *)otx_epvf->hw_addr + OTX_EP_R_MBOX_PF_VF_INT(0));
+-		rte_write64(reg_val, (uint8_t *)otx_epvf->hw_addr + OTX_EP_R_MBOX_PF_VF_INT(0));
+-		otx_ep_info("otx_epdev_interrupt_handler is called pf_num: %d vf_num: %d port_id: %d\n",
+-		otx_epvf->pf_num, otx_epvf->vf_num, otx_epvf->port_id);
+-	} else {
+-		otx_ep_err("otx_epdev_interrupt_handler is called with dev NULL\n");
+-	}
+-}
+-
+ /* OTX_EP VF device initialization */
+ static int
+ otx_epdev_init(struct otx_ep_device *otx_epvf)
+@@ -563,6 +597,7 @@ static const struct eth_dev_ops otx_ep_eth_dev_ops = {
+ 	.dev_configure		= otx_ep_dev_configure,
+ 	.dev_start		= otx_ep_dev_start,
+ 	.dev_stop		= otx_ep_dev_stop,
++	.dev_close		= otx_ep_dev_close,
+ 	.rx_queue_setup	        = otx_ep_rx_queue_setup,
+ 	.rx_queue_release	= otx_ep_rx_queue_release,
+ 	.tx_queue_setup	        = otx_ep_tx_queue_setup,
+@@ -575,50 +610,11 @@ static const struct eth_dev_ops otx_ep_eth_dev_ops = {
+ 	.mac_addr_set           = otx_ep_dev_set_default_mac_addr,
+ };
+ 
+-static int
+-otx_epdev_exit(struct rte_eth_dev *eth_dev)
+-{
+-	struct otx_ep_device *otx_epvf;
+-	uint32_t num_queues, q;
+-
+-	otx_ep_info("%s:\n", __func__);
+-
+-	otx_epvf = OTX_EP_DEV(eth_dev);
+-	otx_ep_mbox_disable_interrupt(otx_epvf);
+-	otx_ep_unregister_irq(otx_epvf, otx_ep_interrupt_handler,
+-						(void *)otx_epvf);
+-	otx_epvf->fn_list.disable_io_queues(otx_epvf);
+-	num_queues = otx_epvf->nb_rx_queues;
+-	for (q = 0; q < num_queues; q++) {
+-		if (otx_ep_delete_oqs(otx_epvf, q)) {
+-			otx_ep_err("Failed to delete OQ:%d\n", q);
+-			return -EINVAL;
+-		}
+-	}
+-	otx_ep_info("Num OQs:%d freed\n", otx_epvf->nb_rx_queues);
+-	num_queues = otx_epvf->nb_tx_queues;
+-	for (q = 0; q < num_queues; q++) {
+-		if (otx_ep_delete_iqs(otx_epvf, q)) {
+-			otx_ep_err("Failed to delete IQ:%d\n", q);
+-			return -EINVAL;
+-		}
+-	}
+-	otx_ep_dbg("Num IQs:%d freed\n", otx_epvf->nb_tx_queues);
+-
+-	if (rte_eth_dma_zone_free(eth_dev, "ism", 0)) {
+-		otx_ep_err("Failed to delete ISM buffer\n");
+-		return -EINVAL;
+-	}
+-
+-	return 0;
+-}
+-
+ static int
+ otx_ep_eth_dev_uninit(struct rte_eth_dev *eth_dev)
+ {
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+ 		return 0;
+-	otx_epdev_exit(eth_dev);
+ 
+ 	eth_dev->dev_ops = NULL;
+ 	eth_dev->rx_pkt_burst = NULL;
+-- 
+2.25.1
+

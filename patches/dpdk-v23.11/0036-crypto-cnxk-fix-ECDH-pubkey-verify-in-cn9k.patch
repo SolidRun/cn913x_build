@@ -1,0 +1,46 @@
+From f03bb65e66fc50ad24dd35d2c7678781d16f1a9c Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Wed, 15 Nov 2023 15:58:41 +0530
+Subject: [PATCH 036/513] crypto/cnxk: fix ECDH pubkey verify in cn9k
+
+Fix ECDH pubkey verify in cn9k.
+
+Fixes: baae0994fa96 ("crypto/cnxk: support ECDH")
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Id3d1882e457da297f91c8f82b1c2a5ba01052bd8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115960
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117461
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cn9k_cryptodev_ops.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+index 34d40b07d4c69..442cd8e5a95cf 100644
+--- a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+@@ -578,7 +578,17 @@ cn9k_cpt_dequeue_post_process(struct cnxk_cpt_qp *qp, struct rte_crypto_op *cop,
+ 		if (unlikely(res->uc_compcode)) {
+ 			if (res->uc_compcode == ROC_SE_ERR_GC_ICV_MISCOMPARE)
+ 				cop->status = RTE_CRYPTO_OP_STATUS_AUTH_FAILED;
+-			else
++			else if (cop->type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC &&
++				 cop->sess_type == RTE_CRYPTO_OP_WITH_SESSION &&
++				 cop->asym->ecdh.ke_type == RTE_CRYPTO_ASYM_KE_PUB_KEY_VERIFY) {
++				if (res->uc_compcode == ROC_AE_ERR_ECC_POINT_NOT_ON_CURVE) {
++					cop->status = RTE_CRYPTO_OP_STATUS_ERROR;
++					return;
++				} else if (res->uc_compcode == ROC_AE_ERR_ECC_PAI) {
++					cop->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
++					return;
++				}
++			} else
+ 				cop->status = RTE_CRYPTO_OP_STATUS_ERROR;
+ 
+ 			plt_dp_info("Request failed with microcode error");
+-- 
+2.25.1
+

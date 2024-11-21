@@ -1,0 +1,173 @@
+From de079b0922d93df027d9770bf883469986d2951a Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Tue, 8 Nov 2022 13:44:16 +0100
+Subject: [PATCH 030/955] crypto/cnxk: add support for SHAKE hash
+
+Add support for SHAKE hash and hmac operations
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: I7b87ba44cd8a12aba07d0913d8965227c6aba9ab
+---
+ doc/guides/cryptodevs/cnxk.rst                |  2 +
+ doc/guides/cryptodevs/features/cn10k.ini      |  2 +
+ doc/guides/cryptodevs/features/cn9k.ini       |  2 +
+ drivers/common/cnxk/roc_se.h                  |  4 +-
+ drivers/crypto/cnxk/cnxk_cryptodev.h          |  2 +-
+ .../crypto/cnxk/cnxk_cryptodev_capabilities.c | 40 +++++++++++++++++++
+ drivers/crypto/cnxk/cnxk_se.h                 | 15 +++++++
+ 7 files changed, 64 insertions(+), 3 deletions(-)
+
+diff --git a/doc/guides/cryptodevs/cnxk.rst b/doc/guides/cryptodevs/cnxk.rst
+index 9b01e04e5fb65..3c2e38fefdef1 100644
+--- a/doc/guides/cryptodevs/cnxk.rst
++++ b/doc/guides/cryptodevs/cnxk.rst
+@@ -67,6 +67,8 @@ Hash algorithms:
+ * ``RTE_CRYPTO_AUTH_SHA3_384_HMAC``
+ * ``RTE_CRYPTO_AUTH_SHA3_512``
+ * ``RTE_CRYPTO_AUTH_SHA3_512_HMAC``
++* ``RTE_CRYPTO_AUTH_SHAKE_128``
++* ``RTE_CRYPTO_AUTH_SHAKE_256``
+ * ``RTE_CRYPTO_AUTH_SNOW3G_UIA2``
+ * ``RTE_CRYPTO_AUTH_ZUC_EIA3``
+ * ``RTE_CRYPTO_AUTH_AES_CMAC``
+diff --git a/doc/guides/cryptodevs/features/cn10k.ini b/doc/guides/cryptodevs/features/cn10k.ini
+index 44b61663fc530..162d1a25ca490 100644
+--- a/doc/guides/cryptodevs/features/cn10k.ini
++++ b/doc/guides/cryptodevs/features/cn10k.ini
+@@ -71,6 +71,8 @@ SHA3_384        = Y
+ SHA3_384 HMAC   = Y
+ SHA3_512        = Y
+ SHA3_512 HMAC   = Y
++SHAKE_128       = Y
++SHAKE_256       = Y
+ 
+ ;
+ ; Supported AEAD algorithms of 'cn10k' crypto driver.
+diff --git a/doc/guides/cryptodevs/features/cn9k.ini b/doc/guides/cryptodevs/features/cn9k.ini
+index e7b287db26edf..bbed4b2e232fc 100644
+--- a/doc/guides/cryptodevs/features/cn9k.ini
++++ b/doc/guides/cryptodevs/features/cn9k.ini
+@@ -72,6 +72,8 @@ SHA3_384        = Y
+ SHA3_384 HMAC   = Y
+ SHA3_512        = Y
+ SHA3_512 HMAC   = Y
++SHAKE_128       = Y
++SHAKE_256       = Y
+ 
+ ;
+ ; Supported AEAD algorithms of 'cn9k' crypto driver.
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index a8f0f49479926..262eff6503037 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -85,8 +85,8 @@ typedef enum {
+ 	ROC_SE_SHA3_SHA256 = 11,
+ 	ROC_SE_SHA3_SHA384 = 12,
+ 	ROC_SE_SHA3_SHA512 = 13,
+-	ROC_SE_SHA3_SHAKE256 = 14,
+-	ROC_SE_SHA3_SHAKE512 = 15,
++	ROC_SE_SHA3_SHAKE128 = 14,
++	ROC_SE_SHA3_SHAKE256 = 15,
+ 
+ 	/* These are only for software use */
+ 	ROC_SE_ZUC_EIA3 = 0x90,
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.h b/drivers/crypto/cnxk/cnxk_cryptodev.h
+index 8241ee67d0994..dd7dd3bc3a275 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.h
+@@ -10,7 +10,7 @@
+ 
+ #include "roc_cpt.h"
+ 
+-#define CNXK_CPT_MAX_CAPS	 45
++#define CNXK_CPT_MAX_CAPS	 47
+ #define CNXK_SEC_CRYPTO_MAX_CAPS 16
+ #define CNXK_SEC_MAX_CAPS	 9
+ #define CNXK_AE_EC_ID_MAX	 8
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index b2197a12be548..d2ae4b5bff9e2 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -498,6 +498,46 @@ static const struct rte_cryptodev_capabilities caps_sha3[] = {
+ 			}, }
+ 		}, }
+ 	},
++	{	/* SHAKE_128 */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHAKE_128,
++				.block_size = 168,
++				.key_size = {
++					.min = 0,
++					.max = 0,
++					.increment = 0
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 255,
++					.increment = 1
++				},
++			}, }
++		}, }
++	},
++	{	/* SHAKE_256 */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AUTH,
++			{.auth = {
++				.algo = RTE_CRYPTO_AUTH_SHAKE_256,
++				.block_size = 136,
++				.key_size = {
++					.min = 0,
++					.max = 0,
++					.increment = 0
++				},
++				.digest_size = {
++					.min = 1,
++					.max = 255,
++					.increment = 1
++				},
++			}, }
++		}, }
++	},
+ };
+ 
+ static const struct rte_cryptodev_capabilities caps_chacha20[] = {
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index 092cdd88e782b..9594355d8267d 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -187,6 +187,13 @@ cpt_mac_len_verify(struct rte_crypto_auth_xform *auth)
+ 	case RTE_CRYPTO_AUTH_SHA3_512_HMAC:
+ 		ret = (mac_len <= 64) ? 0 : -1;
+ 		break;
++	/* SHAKE itself doesn't have limitation of digest length,
++	 * but in microcode size of length field is limited to 8 bits
++	 */
++	case RTE_CRYPTO_AUTH_SHAKE_128:
++	case RTE_CRYPTO_AUTH_SHAKE_256:
++		ret = (mac_len <= UINT8_MAX) ? 0 : -1;
++		break;
+ 	case RTE_CRYPTO_AUTH_NULL:
+ 		ret = 0;
+ 		break;
+@@ -1930,6 +1937,14 @@ fill_sess_auth(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 		is_sha3 = 1;
+ 		auth_type = ROC_SE_SHA3_SHA512;
+ 		break;
++	case RTE_CRYPTO_AUTH_SHAKE_128:
++		is_sha3 = 1;
++		auth_type = ROC_SE_SHA3_SHAKE128;
++		break;
++	case RTE_CRYPTO_AUTH_SHAKE_256:
++		is_sha3 = 1;
++		auth_type = ROC_SE_SHA3_SHAKE256;
++		break;
+ 	case RTE_CRYPTO_AUTH_MD5_HMAC:
+ 	case RTE_CRYPTO_AUTH_MD5:
+ 		auth_type = ROC_SE_MD5_TYPE;
+-- 
+2.25.1
+

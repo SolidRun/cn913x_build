@@ -1,0 +1,28 @@
+From 1a2aaa3011311d84b9df1aa4dd4032177bb41c31 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 4 Dec 2023 15:34:55 +0530
+Subject: [PATCH 081/513] common/cnxk: sync from ODP
+
+Change-Id: Ic106793bbc91f6e317c0d904299e9585778264d9
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_constants.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_constants.h b/drivers/common/cnxk/roc_constants.h
+index 291b6a4bc97aa..5ff58501dbfed 100644
+--- a/drivers/common/cnxk/roc_constants.h
++++ b/drivers/common/cnxk/roc_constants.h
+@@ -36,6 +36,9 @@
+ #define PCI_DEVID_CNXK_RVU_AF_VF      0xA0f8
+ #define PCI_DEVID_CNXK_DPI_VF	      0xA081
+ #define PCI_DEVID_CNXK_EP_VF	      0xB203
++#define PCI_DEVID_CNF95XXN_EP_NET_VF  0xB403 /* CNF95XXN EP mode */
++#define PCI_DEVID_CNF95XXO_EP_NET_VF  0xB603 /* CNF95XXO EP mode */
++#define PCI_DEVID_LIO3_EP_NET_VF      0x3383 /* LIO3 EP mode */
+ #define PCI_DEVID_CNXK_RVU_SDP_PF     0xA0f6
+ #define PCI_DEVID_CNXK_RVU_SDP_VF     0xA0f7
+ #define PCI_DEVID_CNXK_BPHY	      0xA089
+-- 
+2.25.1
+

@@ -1,0 +1,31 @@
+From acf732eb18bc4da13e81bcf36190c8b27f00509a Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Fri, 14 Jun 2024 01:58:07 +0530
+Subject: [PATCH 361/513] ci: modprobe vfio on host
+
+Modprobe vfio on host during EP setup.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Ibbe707720868951d46b48ad54177980ae3d632e1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128989
+(cherry picked from commit 4890e8752fe9bec311a049e2f348f5fc8592aab2)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129651
+---
+ marvell-ci/test/board/cnxk-ep-setup.sh | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/marvell-ci/test/board/cnxk-ep-setup.sh b/marvell-ci/test/board/cnxk-ep-setup.sh
+index ddcd66c467436..cd9a5d55a91e2 100755
+--- a/marvell-ci/test/board/cnxk-ep-setup.sh
++++ b/marvell-ci/test/board/cnxk-ep-setup.sh
+@@ -78,6 +78,7 @@ setup_host()
+ 	echo 2 > /sys/bus/pci/devices/${host_pf}/sriov_numvfs
+ 
+ 	host_vf=$(lspci -Dd :ba03 | head -1 | awk '{ print $1 }')
++	modprobe vfio
+ 	echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
+ 	$VFIO_DEVBIND -b vfio-pci $host_vf
+ }
+-- 
+2.25.1
+

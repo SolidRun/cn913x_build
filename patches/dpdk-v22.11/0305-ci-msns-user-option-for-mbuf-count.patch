@@ -1,0 +1,128 @@
+From 177da32fa877bea4f7254824bf2215ff5a3ee647 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Fri, 10 Mar 2023 17:43:21 +0530
+Subject: [PATCH 305/955] ci: msns: user option for mbuf count
+
+For packet pool create, user can also specify number of mbufs
+using --nb-mbufs argument.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ie825d04e1cf2e62bec0cb78179f60730f63fb718
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98907
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/ipsec_msns/README  |  6 ++++-
+ .../test/cnxk-tests/ipsec_msns/ipsec_msns.c   | 23 ++++++++++++++++---
+ 2 files changed, 25 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/README b/marvell-ci/test/cnxk-tests/ipsec_msns/README
+index 137118d2f9f57..96e6cc2119591 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/README
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/README
+@@ -38,7 +38,7 @@ And expects the received packet to be decrypted.
+ 
+ Usage:
+ ======
+-./cnxk_ipsec_msns -a 0002:02:00.0,custom_sa_act=1 -a 0002:1d:00.0 -a 0002:20:00.1 -- [--perf] [--pfc]
++./cnxk_ipsec_msns -a 0002:02:00.0,custom_sa_act=1 -a 0002:1d:00.0 -a 0002:20:00.1 -- [--perf] [--pfc] [--nb-mbufs]
+ 
+ Perf mode:
+ ==========
+@@ -51,3 +51,7 @@ PFC:
+ ====
+ When "--pfc" argument is given, each port would be assigned a PFC channel sequentially and PFC
+ would be enabled.
++
++MBUF COUNT:
++==========
++When "--nb-mbufs" argument is given, packet pool will be created for specified count.
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+index 7e9e61ad89289..4c33470dbf3c3 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+@@ -5,6 +5,7 @@
+ #include <inttypes.h>
+ #include <signal.h>
+ #include <stdlib.h>
++#include <unistd.h>
+ 
+ #include <rte_atomic.h>
+ #include <rte_bitmap.h>
+@@ -36,7 +37,7 @@
+ #define TX_HTHRESH 0  /**< Default values of TX host threshold reg. */
+ #define TX_WTHRESH 0  /**< Default values of TX write-back threshold reg. */
+ 
+-#define NB_MBUF 10240
++#define NB_MBUF 10240U
+ 
+ static struct rte_mempool *mbufpool[RTE_MAX_ETHPORTS];
+ static struct rte_mempool *sess_pool;
+@@ -104,6 +105,7 @@ static struct sa_index_map bmap[RTE_MAX_ETHPORTS][2];
+ 
+ static uint32_t ethdev_port_mask = RTE_PORT_ALL;
+ static volatile bool force_quit;
++static uint32_t nb_bufs = 0;
+ static bool perf_mode;
+ static bool pfc;
+ static int eventdev_id;
+@@ -835,7 +837,7 @@ static void
+ print_usage(const char *name)
+ {
+ 	printf("Invalid arguments\n");
+-	printf("usage: %s [--perf] [--pfc] [--portmask\n", name);
++	printf("usage: %s [--perf] [--pfc] [--portmask] [--nb-mbufs <count >]\n", name);
+ }
+ 
+ static int
+@@ -867,6 +869,13 @@ parse_args(int argc, char **argv)
+ 			continue;
+ 		}
+ 
++		if (!strcmp(argv[0], "--nb-mbufs") && (argc > 1)) {
++			nb_bufs = atoi(argv[1]);
++			argc-=2;
++			argv+=2;
++			continue;
++		}
++
+ 		/* Unknown args */
+ 		print_usage(name);
+ 		return -1;
+@@ -880,6 +889,8 @@ ut_setup(int argc, char **argv)
+ {
+ 	uint16_t nb_rx_queue = 1, nb_tx_queue = 1;
+ 	int socketid = 0, ret;
++	uint32_t nb_lcores;
++	uint32_t nb_mbufs;
+ 	uint16_t nb_ports;
+ 	uint16_t nb_rxd;
+ 	uint16_t nb_txd;
+@@ -909,15 +920,21 @@ ut_setup(int argc, char **argv)
+ 		return -1;
+ 	}
+ 
++	nb_lcores = rte_lcore_count();
++
+ 	nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
+ 	nb_txd = RTE_TEST_TX_DESC_DEFAULT;
+ 
++	nb_mbufs = nb_bufs ? nb_bufs : RTE_MAX(nb_ports * (nb_rxd + nb_txd +
++							   nb_lcores * MEMPOOL_CACHE_SIZE),
++					       NB_MBUF);
++
+ 	/* Setup all available ports */
+ 	RTE_ETH_FOREACH_DEV(portid) {
+ 		if ((ethdev_port_mask & RTE_BIT64(portid)) == 0)
+ 			continue;
+ 
+-		ret = init_pktmbuf_pool(portid, NB_MBUF);
++		ret = init_pktmbuf_pool(portid, nb_mbufs);
+ 		if (ret) {
+ 			printf("Failed to setup pktmbuf pool for port=%d, ret=%d", portid, ret);
+ 			return ret;
+-- 
+2.25.1
+

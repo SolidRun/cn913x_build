@@ -1,0 +1,334 @@
+From 0956d1e4314927a3a5deb63d4629742d7b953139 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Wed, 10 Jan 2024 17:16:36 +0530
+Subject: [PATCH 148/513] ethdev: parsing multiple representor devargs string
+
+Adding support for parsing multiple representor devargs strings
+passed to a PCI BDF. There may be scenario where port representors
+for various PFs or VFs under PFs are required and all these are
+representor ports shall be backed by single pci device. In such
+case port representors can be created using devargs string:
+<PCI BDF>,representor=[pf[0-1],pf2vf[1,2-3],[4-5]]
+
+Change-Id: I7c90ce2589ffac6f6e9f4f35b3a6364b20f8d579
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/net/bnxt/bnxt_ethdev.c                |   4 +-
+ drivers/net/enic/enic_ethdev.c                |   4 +-
+ drivers/net/i40e/i40e_ethdev.c                |   4 +-
+ drivers/net/ice/ice_dcf_ethdev.c              |   4 +-
+ drivers/net/ixgbe/ixgbe_ethdev.c              |   4 +-
+ drivers/net/mlx5/linux/mlx5_os.c              |   8 +-
+ .../net/nfp/flower/nfp_flower_representor.c   |   4 +-
+ drivers/net/sfc/sfc_ethdev.c                  |   4 +-
+ lib/ethdev/ethdev_driver.c                    | 106 +++++++++++++++---
+ lib/ethdev/ethdev_driver.h                    |   9 +-
+ 10 files changed, 116 insertions(+), 35 deletions(-)
+
+diff --git a/drivers/net/bnxt/bnxt_ethdev.c b/drivers/net/bnxt/bnxt_ethdev.c
+index acf7e6e46e233..5d4f599044f15 100644
+--- a/drivers/net/bnxt/bnxt_ethdev.c
++++ b/drivers/net/bnxt/bnxt_ethdev.c
+@@ -6383,8 +6383,8 @@ static int bnxt_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
+ 
+ 	if (pci_dev->device.devargs) {
+ 		ret = rte_eth_devargs_parse(pci_dev->device.devargs->args,
+-					    &eth_da);
+-		if (ret)
++					    &eth_da, 1);
++		if (ret < 0)
+ 			return ret;
+ 	}
+ 
+diff --git a/drivers/net/enic/enic_ethdev.c b/drivers/net/enic/enic_ethdev.c
+index b04b6c9aa109e..33d96ec07abb4 100644
+--- a/drivers/net/enic/enic_ethdev.c
++++ b/drivers/net/enic/enic_ethdev.c
+@@ -1317,8 +1317,8 @@ static int eth_enic_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
+ 	ENICPMD_FUNC_TRACE();
+ 	if (pci_dev->device.devargs) {
+ 		retval = rte_eth_devargs_parse(pci_dev->device.devargs->args,
+-				&eth_da);
+-		if (retval)
++				&eth_da, 1);
++		if (retval < 0)
+ 			return retval;
+ 	}
+ 	if (eth_da.nb_representor_ports > 0 &&
+diff --git a/drivers/net/i40e/i40e_ethdev.c b/drivers/net/i40e/i40e_ethdev.c
+index 3ca226156b10a..4d21341382d83 100644
+--- a/drivers/net/i40e/i40e_ethdev.c
++++ b/drivers/net/i40e/i40e_ethdev.c
+@@ -646,8 +646,8 @@ eth_i40e_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
+ 
+ 	if (pci_dev->device.devargs) {
+ 		retval = rte_eth_devargs_parse(pci_dev->device.devargs->args,
+-				&eth_da);
+-		if (retval)
++				&eth_da, 1);
++		if (retval < 0)
+ 			return retval;
+ 	}
+ 
+diff --git a/drivers/net/ice/ice_dcf_ethdev.c b/drivers/net/ice/ice_dcf_ethdev.c
+index 5d845bba31b14..0e991fe4b8b93 100644
+--- a/drivers/net/ice/ice_dcf_ethdev.c
++++ b/drivers/net/ice/ice_dcf_ethdev.c
+@@ -2041,8 +2041,8 @@ eth_ice_dcf_pci_probe(__rte_unused struct rte_pci_driver *pci_drv,
+ 	if (!ice_devargs_check(pci_dev->device.devargs, ICE_DCF_DEVARG_CAP))
+ 		return 1;
+ 
+-	ret = rte_eth_devargs_parse(pci_dev->device.devargs->args, &eth_da);
+-	if (ret)
++	ret = rte_eth_devargs_parse(pci_dev->device.devargs->args, &eth_da, 1);
++	if (ret < 0)
+ 		return ret;
+ 
+ 	ret = rte_eth_dev_pci_generic_probe(pci_dev,
+diff --git a/drivers/net/ixgbe/ixgbe_ethdev.c b/drivers/net/ixgbe/ixgbe_ethdev.c
+index d6cf00317e77b..98e9b8a0319f3 100644
+--- a/drivers/net/ixgbe/ixgbe_ethdev.c
++++ b/drivers/net/ixgbe/ixgbe_ethdev.c
+@@ -1765,8 +1765,8 @@ eth_ixgbe_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
+ 
+ 	if (pci_dev->device.devargs) {
+ 		retval = rte_eth_devargs_parse(pci_dev->device.devargs->args,
+-				&eth_da);
+-		if (retval)
++				&eth_da, 1);
++		if (retval < 0)
+ 			return retval;
+ 	} else
+ 		memset(&eth_da, 0, sizeof(eth_da));
+diff --git a/drivers/net/mlx5/linux/mlx5_os.c b/drivers/net/mlx5/linux/mlx5_os.c
+index ae82e1e5d87e9..17061126d563f 100644
+--- a/drivers/net/mlx5/linux/mlx5_os.c
++++ b/drivers/net/mlx5/linux/mlx5_os.c
+@@ -2733,16 +2733,16 @@ mlx5_os_parse_eth_devargs(struct rte_device *dev,
+ 	memset(eth_da, 0, sizeof(*eth_da));
+ 	/* Parse representor information first from class argument. */
+ 	if (dev->devargs->cls_str)
+-		ret = rte_eth_devargs_parse(dev->devargs->cls_str, eth_da);
+-	if (ret != 0) {
++		ret = rte_eth_devargs_parse(dev->devargs->cls_str, eth_da, 1);
++	if (ret < 0) {
+ 		DRV_LOG(ERR, "failed to parse device arguments: %s",
+ 			dev->devargs->cls_str);
+ 		return -rte_errno;
+ 	}
+ 	if (eth_da->type == RTE_ETH_REPRESENTOR_NONE && dev->devargs->args) {
+ 		/* Parse legacy device argument */
+-		ret = rte_eth_devargs_parse(dev->devargs->args, eth_da);
+-		if (ret) {
++		ret = rte_eth_devargs_parse(dev->devargs->args, eth_da, 1);
++		if (ret < 0) {
+ 			DRV_LOG(ERR, "failed to parse device arguments: %s",
+ 				dev->devargs->args);
+ 			return -rte_errno;
+diff --git a/drivers/net/nfp/flower/nfp_flower_representor.c b/drivers/net/nfp/flower/nfp_flower_representor.c
+index 0f0e63aae0624..46e1d6151fb38 100644
+--- a/drivers/net/nfp/flower/nfp_flower_representor.c
++++ b/drivers/net/nfp/flower/nfp_flower_representor.c
+@@ -641,8 +641,8 @@ nfp_flower_repr_create(struct nfp_app_fw_flower *app_fw_flower)
+ 
+ 	/* Now parse PCI device args passed for representor info */
+ 	if (pci_dev->device.devargs != NULL) {
+-		ret = rte_eth_devargs_parse(pci_dev->device.devargs->args, &eth_da);
+-		if (ret != 0) {
++		ret = rte_eth_devargs_parse(pci_dev->device.devargs->args, &eth_da, 1);
++		if (ret < 0) {
+ 			PMD_INIT_LOG(ERR, "devarg parse failed");
+ 			return -EINVAL;
+ 		}
+diff --git a/drivers/net/sfc/sfc_ethdev.c b/drivers/net/sfc/sfc_ethdev.c
+index 6d57b2ba268ac..0bbcb803652c4 100644
+--- a/drivers/net/sfc/sfc_ethdev.c
++++ b/drivers/net/sfc/sfc_ethdev.c
+@@ -3305,8 +3305,8 @@ sfc_parse_rte_devargs(const char *args, struct rte_eth_devargs *devargs)
+ 	int rc;
+ 
+ 	if (args != NULL) {
+-		rc = rte_eth_devargs_parse(args, &eth_da);
+-		if (rc != 0) {
++		rc = rte_eth_devargs_parse(args, &eth_da, 1);
++		if (rc < 0) {
+ 			SFC_GENERIC_LOG(ERR,
+ 					"Failed to parse generic devargs '%s'",
+ 					args);
+diff --git a/lib/ethdev/ethdev_driver.c b/lib/ethdev/ethdev_driver.c
+index fff4b7b4cdff8..f407ad2b66221 100644
+--- a/lib/ethdev/ethdev_driver.c
++++ b/lib/ethdev/ethdev_driver.c
+@@ -2,6 +2,7 @@
+  * Copyright(c) 2022 Intel Corporation
+  */
+ 
++#include <ctype.h>
+ #include <stdlib.h>
+ #include <pthread.h>
+ 
+@@ -459,9 +460,23 @@ eth_dev_devargs_tokenise(struct rte_kvargs *arglist, const char *str_in)
+ 			break;
+ 
+ 		case 3: /* Parsing list */
+-			if (*letter == ']')
+-				state = 2;
+-			else if (*letter == '\0')
++			if (*letter == ']') {
++				/* Multiple representor case has ']' dual meaning, first end of
++				 * individual pfvf list and other end of consolidated list of
++				 * representors.
++				 * Complete multiple representors list to be considered as one
++				 * pair value.
++				 */
++				if ((strcmp("representor", pair->key) == 0) &&
++				    ((*(letter + 2) == 'p' && *(letter + 3) == 'f')   ||
++				     (*(letter + 2) == 'v' && *(letter + 3) == 'f')   ||
++				     (*(letter + 2) == 's' && *(letter + 3) == 'f')   ||
++				     (*(letter + 2) == 'c' && isdigit(*(letter + 3))) ||
++				     (*(letter + 2) == '[' && isdigit(*(letter + 3)))))
++					state = 3;
++				else
++					state = 2;
++			} else if (*letter == '\0')
+ 				return -EINVAL;
+ 			break;
+ 		}
+@@ -469,16 +484,56 @@ eth_dev_devargs_tokenise(struct rte_kvargs *arglist, const char *str_in)
+ 	}
+ }
+ 
++static int
++eth_dev_tokenise_representor_list(char *p_val, struct rte_eth_devargs *eth_devargs,
++				  uint8_t nb_da)
++{
++	struct rte_eth_devargs *eth_da;
++	char da_val[BUFSIZ];
++	char delim[] = "]";
++	int devargs = 0;
++	int result = 0;
++	char *token;
++
++	token = strtok(&p_val[1], delim);
++	while (token != NULL) {
++		eth_da = &eth_devargs[devargs];
++		memset(eth_da, 0, sizeof(*eth_da));
++		snprintf(da_val, BUFSIZ, "%s%c", (token[0] == ',') ? ++token : token, ']');
++		/* Parse the tokenised devarg value */
++		result = rte_eth_devargs_parse_representor_ports(da_val, eth_da);
++		if (result < 0)
++			goto parse_cleanup;
++		devargs++;
++		if (devargs > nb_da) {
++			RTE_ETHDEV_LOG(ERR,
++				       "Devargs parsed %d > max array size %d\n",
++				       devargs, nb_da);
++			result = -1;
++			goto parse_cleanup;
++		}
++		token = strtok(NULL, delim);
++	}
++
++	result = devargs;
++
++parse_cleanup:
++	return result;
++
++}
++
+ int
+-rte_eth_devargs_parse(const char *dargs, struct rte_eth_devargs *eth_da)
++rte_eth_devargs_parse(const char *dargs, struct rte_eth_devargs *eth_devargs,
++		      uint8_t nb_da)
+ {
+-	struct rte_kvargs args;
++	struct rte_eth_devargs *eth_da;
+ 	struct rte_kvargs_pair *pair;
++	struct rte_kvargs args;
++	bool dup_rep = false;
++	int devargs = 0;
+ 	unsigned int i;
+ 	int result = 0;
+ 
+-	memset(eth_da, 0, sizeof(*eth_da));
+-
+ 	result = eth_dev_devargs_tokenise(&args, dargs);
+ 	if (result < 0)
+ 		goto parse_cleanup;
+@@ -486,18 +541,41 @@ rte_eth_devargs_parse(const char *dargs, struct rte_eth_devargs *eth_da)
+ 	for (i = 0; i < args.count; i++) {
+ 		pair = &args.pairs[i];
+ 		if (strcmp("representor", pair->key) == 0) {
+-			if (eth_da->type != RTE_ETH_REPRESENTOR_NONE) {
+-				RTE_LOG(ERR, EAL, "duplicated representor key: %s\n",
+-					dargs);
++			if (dup_rep) {
++				RTE_ETHDEV_LOG(ERR, "Duplicated representor key: %s\n",
++						    pair->value);
+ 				result = -1;
+ 				goto parse_cleanup;
+ 			}
+-			result = rte_eth_devargs_parse_representor_ports(
+-					pair->value, eth_da);
+-			if (result < 0)
+-				goto parse_cleanup;
++
++			if (pair->value[0] == '[' && !isdigit(pair->value[1])) {
++				/* Multiple representor list case */
++				devargs = eth_dev_tokenise_representor_list(pair->value,
++									    eth_devargs, nb_da);
++				if (devargs < 0)
++					goto parse_cleanup;
++			} else {
++				/* Single representor case */
++				eth_da = &eth_devargs[devargs];
++				memset(eth_da, 0, sizeof(*eth_da));
++				result =
++					rte_eth_devargs_parse_representor_ports(pair->value,
++										eth_da);
++				if (result < 0)
++					goto parse_cleanup;
++				devargs++;
++				if (devargs > nb_da) {
++					RTE_ETHDEV_LOG(ERR,
++						       "Devargs parsed %d > max array size %d\n",
++						       devargs, nb_da);
++					result = -1;
++					goto parse_cleanup;
++				}
++			}
++			dup_rep = true;
+ 		}
+ 	}
++	result = devargs;
+ 
+ parse_cleanup:
+ 	free(args.str);
+diff --git a/lib/ethdev/ethdev_driver.h b/lib/ethdev/ethdev_driver.h
+index b482cd12bb499..e4b99448dd38f 100644
+--- a/lib/ethdev/ethdev_driver.h
++++ b/lib/ethdev/ethdev_driver.h
+@@ -1800,14 +1800,17 @@ rte_eth_representor_id_get(uint16_t port_id,
+  * @param devargs
+  *  device arguments
+  * @param eth_devargs
+- *  parsed ethdev specific arguments.
++ *  contiguous memory populated with parsed ethdev specific arguments.
++ * @param nb_da
++ *  size of eth_devargs array passed
+  *
+  * @return
+- *   Negative errno value on error, 0 on success.
++ *   Negative errno value on error, no of devargs parsed on success.
+  */
+ __rte_internal
+ int
+-rte_eth_devargs_parse(const char *devargs, struct rte_eth_devargs *eth_devargs);
++rte_eth_devargs_parse(const char *devargs, struct rte_eth_devargs *eth_devargs,
++		      uint8_t nb_da);
+ 
+ 
+ typedef int (*ethdev_init_t)(struct rte_eth_dev *ethdev, void *init_params);
+-- 
+2.25.1
+

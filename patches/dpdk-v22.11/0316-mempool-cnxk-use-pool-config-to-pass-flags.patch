@@ -1,0 +1,164 @@
+From 4f5653dace243afb113f1d066c9ab5f9ac3b631f Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 14 Feb 2023 13:19:16 +0530
+Subject: [PATCH 316/955] mempool/cnxk: use pool config to pass flags
+
+Use lower bits of pool_config to pass flags specific to
+cnxk mempool PMD ops.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Idb2b8d42155463b1675967f9ec049b4d0197139a
+---
+ drivers/mempool/cnxk/cnxk_mempool.h     | 24 ++++++++++++++++++++++++
+ drivers/mempool/cnxk/cnxk_mempool_ops.c | 17 ++++++++++-------
+ drivers/net/cnxk/cnxk_ethdev_sec.c      | 25 ++++++-------------------
+ 3 files changed, 40 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/mempool/cnxk/cnxk_mempool.h b/drivers/mempool/cnxk/cnxk_mempool.h
+index 3405aa7663495..fc2e4b5b70412 100644
+--- a/drivers/mempool/cnxk/cnxk_mempool.h
++++ b/drivers/mempool/cnxk/cnxk_mempool.h
+@@ -7,6 +7,30 @@
+ 
+ #include <rte_mempool.h>
+ 
++enum cnxk_mempool_flags {
++	/* This flag is used to ensure that only aura zero is allocated.
++	 * If aura zero is not available, then mempool creation fails.
++	 */
++	CNXK_MEMPOOL_F_ZERO_AURA = RTE_BIT64(0),
++	/* Here the pool create will use the npa_aura_s structure passed
++	 * as pool config to create the pool.
++	 */
++	CNXK_MEMPOOL_F_CUSTOM_AURA = RTE_BIT64(1),
++};
++
++#define CNXK_MEMPOOL_F_MASK 0xFUL
++
++#define CNXK_MEMPOOL_FLAGS(_m)                                                 \
++	(PLT_U64_CAST((_m)->pool_config) & CNXK_MEMPOOL_F_MASK)
++#define CNXK_MEMPOOL_CONFIG(_m)                                                \
++	(PLT_PTR_CAST(PLT_U64_CAST((_m)->pool_config) & ~CNXK_MEMPOOL_F_MASK))
++#define CNXK_MEMPOOL_SET_FLAGS(_m, _f)                                         \
++	do {                                                                   \
++		void *_c = CNXK_MEMPOOL_CONFIG(_m);                            \
++		uint64_t _flags = CNXK_MEMPOOL_FLAGS(_m) | (_f);               \
++		(_m)->pool_config = PLT_PTR_CAST(PLT_U64_CAST(_c) | _flags);   \
++	} while (0)
++
+ unsigned int cnxk_mempool_get_count(const struct rte_mempool *mp);
+ ssize_t cnxk_mempool_calc_mem_size(const struct rte_mempool *mp,
+ 				   uint32_t obj_num, uint32_t pg_shift,
+diff --git a/drivers/mempool/cnxk/cnxk_mempool_ops.c b/drivers/mempool/cnxk/cnxk_mempool_ops.c
+index 3769afd3d16a1..1b6c4591bb123 100644
+--- a/drivers/mempool/cnxk/cnxk_mempool_ops.c
++++ b/drivers/mempool/cnxk/cnxk_mempool_ops.c
+@@ -72,7 +72,7 @@ cnxk_mempool_calc_mem_size(const struct rte_mempool *mp, uint32_t obj_num,
+ int
+ cnxk_mempool_alloc(struct rte_mempool *mp)
+ {
+-	uint32_t block_count, flags = 0;
++	uint32_t block_count, flags, roc_flags = 0;
+ 	uint64_t aura_handle = 0;
+ 	struct npa_aura_s aura;
+ 	struct npa_pool_s pool;
+@@ -96,15 +96,18 @@ cnxk_mempool_alloc(struct rte_mempool *mp)
+ 	pool.nat_align = 1;
+ 	pool.buf_offset = mp->header_size / ROC_ALIGN;
+ 
+-	/* Use driver specific mp->pool_config to override aura config */
+-	if (mp->pool_config != NULL)
+-		memcpy(&aura, mp->pool_config, sizeof(struct npa_aura_s));
++	flags = CNXK_MEMPOOL_FLAGS(mp);
++	if (flags & CNXK_MEMPOOL_F_ZERO_AURA) {
++		roc_flags = ROC_NPA_ZERO_AURA_F;
++	} else if (flags & CNXK_MEMPOOL_F_CUSTOM_AURA) {
++		struct npa_aura_s *paura;
+ 
+-	if (aura.ena && aura.pool_addr == 0)
+-		flags = ROC_NPA_ZERO_AURA_F;
++		paura = CNXK_MEMPOOL_CONFIG(mp);
++		memcpy(&aura, paura, sizeof(struct npa_aura_s));
++	}
+ 
+ 	rc = roc_npa_pool_create(&aura_handle, block_size, block_count, &aura,
+-				 &pool, flags);
++				 &pool, roc_flags);
+ 	if (rc) {
+ 		plt_err("Failed to alloc pool or aura rc=%d", rc);
+ 		goto error;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index aa8a378a004a1..cd64daacc086d 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -3,6 +3,7 @@
+  */
+ 
+ #include <cnxk_ethdev.h>
++#include <cnxk_mempool.h>
+ 
+ #define CNXK_NIX_INL_META_POOL_NAME "NIX_INL_META_POOL"
+ 
+@@ -43,7 +44,6 @@ cnxk_nix_inl_meta_pool_cb(uint64_t *aura_handle, uintptr_t *mpool, uint32_t buf_
+ {
+ 	const char *mp_name = NULL;
+ 	struct rte_pktmbuf_pool_private mbp_priv;
+-	struct npa_aura_s *aura;
+ 	struct rte_mempool *mp;
+ 	uint16_t first_skip;
+ 	int rc;
+@@ -65,7 +65,6 @@ cnxk_nix_inl_meta_pool_cb(uint64_t *aura_handle, uintptr_t *mpool, uint32_t buf_
+ 			return -EINVAL;
+ 		}
+ 
+-		plt_free(mp->pool_config);
+ 		rte_mempool_free(mp);
+ 
+ 		*aura_handle = 0;
+@@ -84,22 +83,12 @@ cnxk_nix_inl_meta_pool_cb(uint64_t *aura_handle, uintptr_t *mpool, uint32_t buf_
+ 		return -EIO;
+ 	}
+ 
+-	/* Indicate to allocate zero aura */
+-	aura = plt_zmalloc(sizeof(struct npa_aura_s), 0);
+-	if (!aura) {
+-		rc = -ENOMEM;
+-		goto free_mp;
+-	}
+-	aura->ena = 1;
+-	if (!mempool_name)
+-		aura->pool_addr = 0;
+-	else
+-		aura->pool_addr = 1; /* Any non zero value, so that alloc from next free Index */
+-
+-	rc = rte_mempool_set_ops_byname(mp, rte_mbuf_platform_mempool_ops(), aura);
++	rc = rte_mempool_set_ops_byname(mp, rte_mbuf_platform_mempool_ops(),
++					mempool_name ?
++					NULL : PLT_PTR_CAST(CNXK_MEMPOOL_F_ZERO_AURA));
+ 	if (rc) {
+ 		plt_err("Failed to setup mempool ops for meta, rc=%d", rc);
+-		goto free_aura;
++		goto free_mp;
+ 	}
+ 
+ 	/* Init mempool private area */
+@@ -113,15 +102,13 @@ cnxk_nix_inl_meta_pool_cb(uint64_t *aura_handle, uintptr_t *mpool, uint32_t buf_
+ 	rc = rte_mempool_populate_default(mp);
+ 	if (rc < 0) {
+ 		plt_err("Failed to create inline meta pool, rc=%d", rc);
+-		goto free_aura;
++		goto free_mp;
+ 	}
+ 
+ 	rte_mempool_obj_iter(mp, rte_pktmbuf_init, NULL);
+ 	*aura_handle = mp->pool_id;
+ 	*mpool = (uintptr_t)mp;
+ 	return 0;
+-free_aura:
+-	plt_free(aura);
+ free_mp:
+ 	rte_mempool_free(mp);
+ 	return rc;
+-- 
+2.25.1
+

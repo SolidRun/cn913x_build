@@ -1,0 +1,368 @@
+From 13049fd3fa8c0808e8711d938e28e62c8a85f520 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 15 Dec 2022 12:20:54 +0530
+Subject: [PATCH 085/955] common/cnxk: restructure for cn10k datapath
+
+Restructure for separate datapath functionality to reduce
+recompilation time.
+
+New *_dp.h are created to have macros, functions as required
+for datapath.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Id58ee799764faf4842fcb9aeac8503f472bfd73e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91801
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Pavan Nikhilesh Bhagavatula <pbhagavatula@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92681
+---
+ drivers/common/cnxk/roc_api.h        |  6 +--
+ drivers/common/cnxk/roc_nix_inl.h    | 49 ------------------------
+ drivers/common/cnxk/roc_nix_inl_dp.h | 57 ++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_npa.h        | 25 ------------
+ drivers/common/cnxk/roc_npa_dp.h     | 34 +++++++++++++++++
+ drivers/common/cnxk/roc_sso.h        | 25 ------------
+ drivers/common/cnxk/roc_sso_dp.h     | 33 ++++++++++++++++
+ 7 files changed, 127 insertions(+), 102 deletions(-)
+ create mode 100644 drivers/common/cnxk/roc_nix_inl_dp.h
+ create mode 100644 drivers/common/cnxk/roc_npa_dp.h
+ create mode 100644 drivers/common/cnxk/roc_sso_dp.h
+
+diff --git a/drivers/common/cnxk/roc_api.h b/drivers/common/cnxk/roc_api.h
+index ea132453f09e8..993a2f7a6895c 100644
+--- a/drivers/common/cnxk/roc_api.h
++++ b/drivers/common/cnxk/roc_api.h
+@@ -18,9 +18,6 @@
+ /* ROC Constants */
+ #include "roc_constants.h"
+ 
+-/* Constants */
+-#define PLT_ETHER_ADDR_LEN 6
+-
+ /* Platform definition */
+ #include "roc_platform.h"
+ 
+@@ -57,6 +54,7 @@
+ #include "roc_mbox.h"
+ 
+ /* NPA */
++#include "roc_npa_dp.h"
+ #include "roc_npa.h"
+ 
+ /* NPC */
+@@ -66,6 +64,7 @@
+ #include "roc_nix.h"
+ 
+ /* SSO */
++#include "roc_sso_dp.h"
+ #include "roc_sso.h"
+ 
+ /* TIM */
+@@ -108,6 +107,7 @@
+ #include "roc_hash.h"
+ 
+ /* NIX Inline dev */
++#include "roc_nix_inl_dp.h"
+ #include "roc_nix_inl.h"
+ 
+ #endif /* _ROC_API_H_ */
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index 99d128116908e..220663568e701 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -40,27 +40,6 @@
+ 	(ROC_NIX_INL_ON_IPSEC_OUTB_HW_SZ + ROC_NIX_INL_ON_IPSEC_OUTB_SW_RSVD)
+ #define ROC_NIX_INL_ON_IPSEC_OUTB_SA_SZ_LOG2 9
+ 
+-/* OT INB HW area */
+-#define ROC_NIX_INL_OT_IPSEC_INB_HW_SZ                                         \
+-	PLT_ALIGN(sizeof(struct roc_ot_ipsec_inb_sa), ROC_ALIGN)
+-/* OT INB SW reserved area */
+-#define ROC_NIX_INL_OT_IPSEC_INB_SW_RSVD 128
+-#define ROC_NIX_INL_OT_IPSEC_INB_SA_SZ                                         \
+-	(ROC_NIX_INL_OT_IPSEC_INB_HW_SZ + ROC_NIX_INL_OT_IPSEC_INB_SW_RSVD)
+-#define ROC_NIX_INL_OT_IPSEC_INB_SA_SZ_LOG2 10
+-
+-/* OT OUTB HW area */
+-#define ROC_NIX_INL_OT_IPSEC_OUTB_HW_SZ                                        \
+-	PLT_ALIGN(sizeof(struct roc_ot_ipsec_outb_sa), ROC_ALIGN)
+-/* OT OUTB SW reserved area */
+-#define ROC_NIX_INL_OT_IPSEC_OUTB_SW_RSVD 128
+-#define ROC_NIX_INL_OT_IPSEC_OUTB_SA_SZ                                        \
+-	(ROC_NIX_INL_OT_IPSEC_OUTB_HW_SZ + ROC_NIX_INL_OT_IPSEC_OUTB_SW_RSVD)
+-#define ROC_NIX_INL_OT_IPSEC_OUTB_SA_SZ_LOG2 9
+-
+-/* Alignment of SA Base */
+-#define ROC_NIX_INL_SA_BASE_ALIGN BIT_ULL(16)
+-
+ #define ROC_NIX_INL_SA_SOFT_EXP_ERR_MAX_POLL_COUNT 25
+ 
+ #define ROC_NIX_SOFT_EXP_ERR_RING_MAX_ENTRY_LOG2 16
+@@ -135,34 +114,6 @@ roc_nix_inl_onf_ipsec_outb_sa_sw_rsvd(void *sa)
+ 	return PLT_PTR_ADD(sa, ROC_NIX_INL_ONF_IPSEC_OUTB_HW_SZ);
+ }
+ 
+-static inline struct roc_ot_ipsec_inb_sa *
+-roc_nix_inl_ot_ipsec_inb_sa(uintptr_t base, uint64_t idx)
+-{
+-	uint64_t off = idx << ROC_NIX_INL_OT_IPSEC_INB_SA_SZ_LOG2;
+-
+-	return PLT_PTR_ADD(base, off);
+-}
+-
+-static inline struct roc_ot_ipsec_outb_sa *
+-roc_nix_inl_ot_ipsec_outb_sa(uintptr_t base, uint64_t idx)
+-{
+-	uint64_t off = idx << ROC_NIX_INL_OT_IPSEC_OUTB_SA_SZ_LOG2;
+-
+-	return PLT_PTR_ADD(base, off);
+-}
+-
+-static inline void *
+-roc_nix_inl_ot_ipsec_inb_sa_sw_rsvd(void *sa)
+-{
+-	return PLT_PTR_ADD(sa, ROC_NIX_INL_OT_IPSEC_INB_HW_SZ);
+-}
+-
+-static inline void *
+-roc_nix_inl_ot_ipsec_outb_sa_sw_rsvd(void *sa)
+-{
+-	return PLT_PTR_ADD(sa, ROC_NIX_INL_OT_IPSEC_OUTB_HW_SZ);
+-}
+-
+ /* Inline device SSO Work callback */
+ typedef void (*roc_nix_inl_sso_work_cb_t)(uint64_t *gw, void *args,
+ 					  uint32_t soft_exp_event);
+diff --git a/drivers/common/cnxk/roc_nix_inl_dp.h b/drivers/common/cnxk/roc_nix_inl_dp.h
+new file mode 100644
+index 0000000000000..a9d8e0a705fbd
+--- /dev/null
++++ b/drivers/common/cnxk/roc_nix_inl_dp.h
+@@ -0,0 +1,57 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++#ifndef _ROC_NIX_INL_DP_H_
++#define _ROC_NIX_INL_DP_H_
++
++/* OT INB HW area */
++#define ROC_NIX_INL_OT_IPSEC_INB_HW_SZ                                         \
++	PLT_ALIGN(sizeof(struct roc_ot_ipsec_inb_sa), ROC_ALIGN)
++/* OT INB SW reserved area */
++#define ROC_NIX_INL_OT_IPSEC_INB_SW_RSVD 128
++#define ROC_NIX_INL_OT_IPSEC_INB_SA_SZ                                         \
++	(ROC_NIX_INL_OT_IPSEC_INB_HW_SZ + ROC_NIX_INL_OT_IPSEC_INB_SW_RSVD)
++#define ROC_NIX_INL_OT_IPSEC_INB_SA_SZ_LOG2 10
++
++/* OT OUTB HW area */
++#define ROC_NIX_INL_OT_IPSEC_OUTB_HW_SZ                                        \
++	PLT_ALIGN(sizeof(struct roc_ot_ipsec_outb_sa), ROC_ALIGN)
++
++/* OT OUTB SW reserved area */
++#define ROC_NIX_INL_OT_IPSEC_OUTB_SW_RSVD 128
++#define ROC_NIX_INL_OT_IPSEC_OUTB_SA_SZ                                        \
++	(ROC_NIX_INL_OT_IPSEC_OUTB_HW_SZ + ROC_NIX_INL_OT_IPSEC_OUTB_SW_RSVD)
++#define ROC_NIX_INL_OT_IPSEC_OUTB_SA_SZ_LOG2 9
++
++/* Alignment of SA Base */
++#define ROC_NIX_INL_SA_BASE_ALIGN BIT_ULL(16)
++
++static inline struct roc_ot_ipsec_inb_sa *
++roc_nix_inl_ot_ipsec_inb_sa(uintptr_t base, uint64_t idx)
++{
++	uint64_t off = idx << ROC_NIX_INL_OT_IPSEC_INB_SA_SZ_LOG2;
++
++	return PLT_PTR_ADD(base, off);
++}
++
++static inline struct roc_ot_ipsec_outb_sa *
++roc_nix_inl_ot_ipsec_outb_sa(uintptr_t base, uint64_t idx)
++{
++	uint64_t off = idx << ROC_NIX_INL_OT_IPSEC_OUTB_SA_SZ_LOG2;
++
++	return PLT_PTR_ADD(base, off);
++}
++
++static inline void *
++roc_nix_inl_ot_ipsec_inb_sa_sw_rsvd(void *sa)
++{
++	return PLT_PTR_ADD(sa, ROC_NIX_INL_OT_IPSEC_INB_HW_SZ);
++}
++
++static inline void *
++roc_nix_inl_ot_ipsec_outb_sa_sw_rsvd(void *sa)
++{
++	return PLT_PTR_ADD(sa, ROC_NIX_INL_OT_IPSEC_OUTB_HW_SZ);
++}
++
++#endif /* _ROC_NIX_INL_DP_H_ */
+diff --git a/drivers/common/cnxk/roc_npa.h b/drivers/common/cnxk/roc_npa.h
+index c9093e6448da8..73470cb13e5c0 100644
+--- a/drivers/common/cnxk/roc_npa.h
++++ b/drivers/common/cnxk/roc_npa.h
+@@ -5,7 +5,6 @@
+ #ifndef _ROC_NPA_H_
+ #define _ROC_NPA_H_
+ 
+-#define ROC_AURA_ID_MASK       (BIT_ULL(16) - 1)
+ #define ROC_AURA_OP_LIMIT_MASK (BIT_ULL(36) - 1)
+ 
+ #define ROC_NPA_MAX_BLOCK_SZ		   (128 * 1024)
+@@ -39,18 +38,6 @@ roc_npa_aura_handle_gen(uint32_t aura_id, uintptr_t addr)
+ 	return (uint64_t)addr | val;
+ }
+ 
+-static inline uint64_t
+-roc_npa_aura_handle_to_aura(uint64_t aura_handle)
+-{
+-	return aura_handle & ROC_AURA_ID_MASK;
+-}
+-
+-static inline uintptr_t
+-roc_npa_aura_handle_to_base(uint64_t aura_handle)
+-{
+-	return (uintptr_t)(aura_handle & ~ROC_AURA_ID_MASK);
+-}
+-
+ static inline uint64_t
+ roc_npa_aura_op_alloc(uint64_t aura_handle, const int drop)
+ {
+@@ -65,18 +52,6 @@ roc_npa_aura_op_alloc(uint64_t aura_handle, const int drop)
+ 	return roc_atomic64_add_nosync(wdata, addr);
+ }
+ 
+-static inline void
+-roc_npa_aura_op_free(uint64_t aura_handle, const int fabs, uint64_t iova)
+-{
+-	uint64_t reg = roc_npa_aura_handle_to_aura(aura_handle);
+-	const uint64_t addr =
+-		roc_npa_aura_handle_to_base(aura_handle) + NPA_LF_AURA_OP_FREE0;
+-	if (fabs)
+-		reg |= BIT_ULL(63); /* FABS */
+-
+-	roc_store_pair(iova, reg, addr);
+-}
+-
+ static inline uint64_t
+ roc_npa_aura_op_cnt_get(uint64_t aura_handle)
+ {
+diff --git a/drivers/common/cnxk/roc_npa_dp.h b/drivers/common/cnxk/roc_npa_dp.h
+new file mode 100644
+index 0000000000000..92c317f205749
+--- /dev/null
++++ b/drivers/common/cnxk/roc_npa_dp.h
+@@ -0,0 +1,34 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#ifndef _ROC_NPA_DP_H_
++#define _ROC_NPA_DP_H_
++
++#define ROC_AURA_ID_MASK       (BIT_ULL(16) - 1)
++
++static inline uint64_t
++roc_npa_aura_handle_to_aura(uint64_t aura_handle)
++{
++	return aura_handle & ROC_AURA_ID_MASK;
++}
++
++static inline uintptr_t
++roc_npa_aura_handle_to_base(uint64_t aura_handle)
++{
++	return (uintptr_t)(aura_handle & ~ROC_AURA_ID_MASK);
++}
++
++static inline void
++roc_npa_aura_op_free(uint64_t aura_handle, const int fabs, uint64_t iova)
++{
++	uint64_t reg = roc_npa_aura_handle_to_aura(aura_handle);
++	const uint64_t addr =
++		roc_npa_aura_handle_to_base(aura_handle) + NPA_LF_AURA_OP_FREE0;
++	if (fabs)
++		reg |= BIT_ULL(63); /* FABS */
++
++	roc_store_pair(iova, reg, addr);
++}
++
++#endif /* _ROC_NPA_DP_H_ */
+diff --git a/drivers/common/cnxk/roc_sso.h b/drivers/common/cnxk/roc_sso.h
+index 6d94ca43b5266..1ec45cabb011e 100644
+--- a/drivers/common/cnxk/roc_sso.h
++++ b/drivers/common/cnxk/roc_sso.h
+@@ -60,31 +60,6 @@ struct roc_sso {
+ 	uint8_t reserved[ROC_SSO_MEM_SZ] __plt_cache_aligned;
+ } __plt_cache_aligned;
+ 
+-static __plt_always_inline uint64_t
+-roc_sso_hws_head_wait(uintptr_t base)
+-{
+-	uintptr_t tag_op = base + SSOW_LF_GWS_TAG;
+-	uint64_t tag;
+-
+-#if defined(__aarch64__)
+-	asm volatile(PLT_CPU_FEATURE_PREAMBLE
+-		     "		ldr %[tag], [%[tag_op]]	\n"
+-		     "		tbnz %[tag], 35, done%=		\n"
+-		     "		sevl				\n"
+-		     "rty%=:	wfe				\n"
+-		     "		ldr %[tag], [%[tag_op]]	\n"
+-		     "		tbz %[tag], 35, rty%=		\n"
+-		     "done%=:					\n"
+-		     : [tag] "=&r"(tag)
+-		     : [tag_op] "r"(tag_op));
+-#else
+-	do {
+-		tag = plt_read64(tag_op);
+-	} while (!(tag & BIT_ULL(35)));
+-#endif
+-	return tag;
+-}
+-
+ /* SSO device initialization */
+ int __roc_api roc_sso_dev_init(struct roc_sso *roc_sso);
+ int __roc_api roc_sso_dev_fini(struct roc_sso *roc_sso);
+diff --git a/drivers/common/cnxk/roc_sso_dp.h b/drivers/common/cnxk/roc_sso_dp.h
+new file mode 100644
+index 0000000000000..9d30286d2f846
+--- /dev/null
++++ b/drivers/common/cnxk/roc_sso_dp.h
+@@ -0,0 +1,33 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#ifndef _ROC_SSO_DP_H_
++#define _ROC_SSO_DP_H_
++
++static __plt_always_inline uint64_t
++roc_sso_hws_head_wait(uintptr_t base)
++{
++	uintptr_t tag_op = base + SSOW_LF_GWS_TAG;
++	uint64_t tag;
++
++#if defined(__aarch64__)
++	asm volatile(PLT_CPU_FEATURE_PREAMBLE
++		     "		ldr %[tag], [%[tag_op]]	\n"
++		     "		tbnz %[tag], 35, done%=		\n"
++		     "		sevl				\n"
++		     "rty%=:	wfe				\n"
++		     "		ldr %[tag], [%[tag_op]]	\n"
++		     "		tbz %[tag], 35, rty%=		\n"
++		     "done%=:					\n"
++		     : [tag] "=&r"(tag)
++		     : [tag_op] "r"(tag_op));
++#else
++	do {
++		tag = plt_read64(tag_op);
++	} while (!(tag & BIT_ULL(35)));
++#endif
++	return tag;
++}
++
++#endif /* _ROC_SSO_DP_H_ */
+-- 
+2.25.1
+

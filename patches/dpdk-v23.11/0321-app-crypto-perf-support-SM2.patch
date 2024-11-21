@@ -1,0 +1,670 @@
+From 64def2f8eba4daaf8b02b8a32292aacc9686b33e Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 12 Apr 2024 19:41:01 +0530
+Subject: [PATCH 321/513] app/crypto-perf: support SM2
+
+Added support for SM2 asymmetric crypto performance.
+A new command line option is added to specify
+asymmetric operation type `--asym-op Type`.
+Type can be sign/verify/encrypt/decrypt.
+
+Example command:
+
+./dpdk-test-crypto-perf --vdev crypto_openssl -c 0x30 -- \
+--devtype crypto_openssl --ptest throughput --optype sm2 \
+--total-ops 10000 --asym-op sign
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I4241636de2b03fdaf2fe39411f017471430a96f3
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125898
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 206a1fa869c225a444904d74a943d911b3e96858)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126399
+---
+ app/test-crypto-perf/cperf_ops.c             |  70 ++++++++++-
+ app/test-crypto-perf/cperf_options.h         |   6 +
+ app/test-crypto-perf/cperf_options_parsing.c |  55 ++++++++-
+ app/test-crypto-perf/cperf_test_common.c     |   2 +-
+ app/test-crypto-perf/cperf_test_latency.c    |   3 +-
+ app/test-crypto-perf/cperf_test_throughput.c |   3 +-
+ app/test-crypto-perf/cperf_test_vectors.c    | 120 +++++++++++++++++++
+ app/test-crypto-perf/cperf_test_vectors.h    |  25 ++++
+ app/test-crypto-perf/cperf_test_verify.c     |   3 +-
+ app/test-crypto-perf/main.c                  |  68 ++++++++++-
+ doc/guides/tools/cryptoperf.rst              |   6 +
+ 11 files changed, 350 insertions(+), 11 deletions(-)
+
+diff --git a/app/test-crypto-perf/cperf_ops.c b/app/test-crypto-perf/cperf_ops.c
+index 4ca001b721a4b..06ef09b8f3e04 100644
+--- a/app/test-crypto-perf/cperf_ops.c
++++ b/app/test-crypto-perf/cperf_ops.c
+@@ -10,7 +10,7 @@
+ #include "cperf_test_vectors.h"
+ 
+ static void
+-cperf_set_ops_asym(struct rte_crypto_op **ops,
++cperf_set_ops_asym_modex(struct rte_crypto_op **ops,
+ 		   uint32_t src_buf_offset __rte_unused,
+ 		   uint32_t dst_buf_offset __rte_unused, uint16_t nb_ops,
+ 		   void *sess,
+@@ -35,6 +35,48 @@ cperf_set_ops_asym(struct rte_crypto_op **ops,
+ 	}
+ }
+ 
++static void
++cperf_set_ops_asym_sm2(struct rte_crypto_op **ops,
++		   uint32_t src_buf_offset __rte_unused,
++		   uint32_t dst_buf_offset __rte_unused, uint16_t nb_ops,
++		   void *sess,
++		   const struct cperf_options *options,
++		   const struct cperf_test_vector *test_vector __rte_unused,
++		   uint16_t iv_offset __rte_unused,
++		   uint32_t *imix_idx __rte_unused,
++		   uint64_t *tsc_start __rte_unused)
++{
++	uint16_t i;
++	void *asym_sess = (void *)sess;
++
++	for (i = 0; i < nb_ops; i++) {
++		struct rte_crypto_asym_op *asym_op = ops[i]->asym;
++
++		ops[i]->status = RTE_CRYPTO_OP_STATUS_NOT_PROCESSED;
++		rte_crypto_op_attach_asym_session(ops[i], asym_sess);
++
++		/* Populate op with operational details */
++		asym_op->sm2.hash = options->asym_hash_alg;
++
++		asym_op->sm2.op_type = options->asym_op_type;
++		asym_op->sm2.message.data = options->sm2_data->message.data;
++		asym_op->sm2.message.length = options->sm2_data->message.length;
++		asym_op->sm2.cipher.data = options->sm2_data->cipher.data;
++		asym_op->sm2.cipher.length = options->sm2_data->cipher.length;
++		asym_op->sm2.id.data = options->sm2_data->id.data;
++		asym_op->sm2.id.length = options->sm2_data->id.length;
++
++		asym_op->sm2.k.data = options->sm2_data->k.data;
++		asym_op->sm2.k.length = options->sm2_data->k.length;
++
++		asym_op->sm2.r.data = options->sm2_data->sign_r.data;
++		asym_op->sm2.r.length = options->sm2_data->sign_r.length;
++		asym_op->sm2.s.data = options->sm2_data->sign_s.data;
++		asym_op->sm2.s.length = options->sm2_data->sign_s.length;
++	}
++}
++
++
+ #ifdef RTE_LIB_SECURITY
+ static void
+ test_ipsec_vec_populate(struct rte_mbuf *m, const struct cperf_options *options,
+@@ -935,6 +977,27 @@ cperf_create_session(struct rte_mempool *sess_mp,
+ 		}
+ 		return asym_sess;
+ 	}
++
++	if (options->op_type == CPERF_ASYM_SM2) {
++		xform.next = NULL;
++		xform.xform_type = RTE_CRYPTO_ASYM_XFORM_SM2;
++		xform.ec.curve_id = options->sm2_data->curve;
++		xform.ec.pkey.data = options->sm2_data->pkey.data;
++		xform.ec.pkey.length = options->sm2_data->pkey.length;
++		xform.ec.q.x.data = options->sm2_data->pubkey_qx.data;
++		xform.ec.q.x.length = options->sm2_data->pubkey_qx.length;
++		xform.ec.q.y.data = options->sm2_data->pubkey_qy.data;
++		xform.ec.q.y.length = options->sm2_data->pubkey_qy.length;
++
++		ret = rte_cryptodev_asym_session_create(dev_id, &xform,
++				sess_mp, &asym_sess);
++		if (ret < 0) {
++			RTE_LOG(ERR, USER1, "SM2 Asym session create failed\n");
++			return NULL;
++		}
++
++		return asym_sess;
++	}
+ #ifdef RTE_LIB_SECURITY
+ 	/*
+ 	 * security only
+@@ -1233,7 +1296,10 @@ cperf_get_op_functions(const struct cperf_options *options,
+ 			op_fns->populate_ops = cperf_set_ops_cipher;
+ 		break;
+ 	case CPERF_ASYM_MODEX:
+-		op_fns->populate_ops = cperf_set_ops_asym;
++		op_fns->populate_ops = cperf_set_ops_asym_modex;
++		break;
++	case CPERF_ASYM_SM2:
++		op_fns->populate_ops = cperf_set_ops_asym_sm2;
+ 		break;
+ #ifdef RTE_LIB_SECURITY
+ 	case CPERF_PDCP:
+diff --git a/app/test-crypto-perf/cperf_options.h b/app/test-crypto-perf/cperf_options.h
+index be36c70be1711..d730ae18d08d0 100644
+--- a/app/test-crypto-perf/cperf_options.h
++++ b/app/test-crypto-perf/cperf_options.h
+@@ -49,6 +49,8 @@
+ 
+ #define CPERF_DIGEST_SZ		("digest-sz")
+ 
++#define CPERF_ASYM_OP		("asym-op")
++
+ #ifdef RTE_LIB_SECURITY
+ #define CPERF_PDCP_SN_SZ	("pdcp-sn-sz")
+ #define CPERF_PDCP_DOMAIN	("pdcp-domain")
+@@ -85,6 +87,7 @@ enum cperf_op_type {
+ 	CPERF_DOCSIS,
+ 	CPERF_IPSEC,
+ 	CPERF_ASYM_MODEX,
++	CPERF_ASYM_SM2,
+ 	CPERF_TLS,
+ };
+ 
+@@ -162,6 +165,9 @@ struct cperf_options {
+ 	uint8_t imix_distribution_count;
+ 	struct cperf_modex_test_data *modex_data;
+ 	uint16_t modex_len;
++	struct cperf_sm2_test_data *sm2_data;
++	enum rte_crypto_asym_op_type asym_op_type;
++	enum rte_crypto_auth_algorithm asym_hash_alg;
+ };
+ 
+ void
+diff --git a/app/test-crypto-perf/cperf_options_parsing.c b/app/test-crypto-perf/cperf_options_parsing.c
+index cba6d6bc42a56..13d0a17a59c03 100644
+--- a/app/test-crypto-perf/cperf_options_parsing.c
++++ b/app/test-crypto-perf/cperf_options_parsing.c
+@@ -37,7 +37,7 @@ usage(char *progname)
+ 		" --desc-nb N: set number of descriptors for each crypto device\n"
+ 		" --devtype TYPE: set crypto device type to use\n"
+ 		" --optype cipher-only / auth-only / cipher-then-auth / auth-then-cipher /\n"
+-		"        aead / pdcp / docsis / ipsec / modex / tls-record : set operation type\n"
++		"        aead / pdcp / docsis / ipsec / modex / sm2 / tls-record : set operation type\n"
+ 		" --sessionless: enable session-less crypto operations\n"
+ 		" --out-of-place: enable out-of-place crypto operations\n"
+ 		" --test-file NAME: set the test vector file path\n"
+@@ -61,6 +61,7 @@ usage(char *progname)
+ 		" --csv-friendly: enable test result output CSV friendly\n"
+ 		" --modex-len N: modex length, supported lengths are "
+ 		"60, 128, 255, 448. Default: 128\n"
++		" --asym-op encrypt / decrypt / sign / verify : set asym operation type\n"
+ #ifdef RTE_LIB_SECURITY
+ 		" --pdcp-sn-sz N: set PDCP SN size N <5/7/12/15/18>\n"
+ 		" --pdcp-domain DOMAIN: set PDCP domain <control/user>\n"
+@@ -482,6 +483,10 @@ parse_op_type(struct cperf_options *opts, const char *arg)
+ 			cperf_op_type_strs[CPERF_ASYM_MODEX],
+ 			CPERF_ASYM_MODEX
+ 		},
++		{
++			cperf_op_type_strs[CPERF_ASYM_SM2],
++			CPERF_ASYM_SM2
++		},
+ 		{
+ 			cperf_op_type_strs[CPERF_TLS],
+ 			CPERF_TLS
+@@ -857,6 +862,45 @@ parse_aead_aad_sz(struct cperf_options *opts, const char *arg)
+ 	return parse_uint16_t(&opts->aead_aad_sz, arg);
+ }
+ 
++static int
++parse_asym_op(struct cperf_options *opts, const char *arg)
++{
++	struct name_id_map asym_op_namemap[] = {
++		{
++			rte_crypto_asym_op_strings
++			[RTE_CRYPTO_ASYM_OP_ENCRYPT],
++			RTE_CRYPTO_ASYM_OP_ENCRYPT
++		},
++		{
++			rte_crypto_asym_op_strings
++			[RTE_CRYPTO_ASYM_OP_DECRYPT],
++			RTE_CRYPTO_ASYM_OP_DECRYPT
++		},
++		{
++			rte_crypto_asym_op_strings
++			[RTE_CRYPTO_ASYM_OP_SIGN],
++			RTE_CRYPTO_ASYM_OP_SIGN
++		},
++		{
++			rte_crypto_asym_op_strings
++			[RTE_CRYPTO_ASYM_OP_VERIFY],
++			RTE_CRYPTO_ASYM_OP_VERIFY
++		}
++	};
++
++	int id = get_str_key_id_mapping(asym_op_namemap,
++			RTE_DIM(asym_op_namemap), arg);
++	if (id < 0) {
++		RTE_LOG(ERR, USER1, "invalid ASYM operation specified\n");
++		return -1;
++	}
++
++	opts->asym_op_type = (enum rte_crypto_asym_op_type)id;
++
++	return 0;
++}
++
++
+ static int
+ parse_csv_friendly(struct cperf_options *opts, const char *arg __rte_unused)
+ {
+@@ -931,6 +975,8 @@ static struct option lgopts[] = {
+ 
+ 	{ CPERF_DIGEST_SZ, required_argument, 0, 0 },
+ 
++	{ CPERF_ASYM_OP, required_argument, 0, 0 },
++
+ #ifdef RTE_LIB_SECURITY
+ 	{ CPERF_PDCP_SN_SZ, required_argument, 0, 0 },
+ 	{ CPERF_PDCP_DOMAIN, required_argument, 0, 0 },
+@@ -1013,6 +1059,9 @@ cperf_options_default(struct cperf_options *opts)
+ 	opts->docsis_hdr_sz = 17;
+ #endif
+ 	opts->modex_data = (struct cperf_modex_test_data *)&modex_perf_data[0];
++
++	opts->sm2_data = &sm2_perf_data;
++	opts->asym_op_type = RTE_CRYPTO_ASYM_OP_SIGN;
+ }
+ 
+ static int
+@@ -1049,6 +1098,7 @@ cperf_opts_parse_long(int opt_idx, struct cperf_options *opts)
+ 		{ CPERF_AEAD_IV_SZ,	parse_aead_iv_sz },
+ 		{ CPERF_AEAD_AAD_SZ,	parse_aead_aad_sz },
+ 		{ CPERF_DIGEST_SZ,	parse_digest_sz },
++		{ CPERF_ASYM_OP,	parse_asym_op },
+ #ifdef RTE_LIB_SECURITY
+ 		{ CPERF_PDCP_SN_SZ,	parse_pdcp_sn_sz },
+ 		{ CPERF_PDCP_DOMAIN,	parse_pdcp_domain },
+@@ -1434,6 +1484,9 @@ cperf_options_dump(struct cperf_options *opts)
+ 	printf("#\n");
+ 	printf("# number of queue pairs per device: %u\n", opts->nb_qps);
+ 	printf("# crypto operation: %s\n", cperf_op_type_strs[opts->op_type]);
++	if (opts->op_type == CPERF_ASYM_SM2)
++		printf("# asym operation type: %s\n",
++				rte_crypto_asym_op_strings[opts->asym_op_type]);
+ 	printf("# sessionless: %s\n", opts->sessionless ? "yes" : "no");
+ 	printf("# out of place: %s\n", opts->out_of_place ? "yes" : "no");
+ 	if (opts->test == CPERF_TEST_TYPE_PMDCC)
+diff --git a/app/test-crypto-perf/cperf_test_common.c b/app/test-crypto-perf/cperf_test_common.c
+index 932aab16df507..4681ecc791038 100644
+--- a/app/test-crypto-perf/cperf_test_common.c
++++ b/app/test-crypto-perf/cperf_test_common.c
+@@ -154,7 +154,7 @@ cperf_alloc_common_memory(const struct cperf_options *options,
+ 		sizeof(struct rte_crypto_sym_op);
+ 	uint16_t crypto_op_private_size;
+ 
+-	if (options->op_type == CPERF_ASYM_MODEX) {
++	if (options->op_type == CPERF_ASYM_MODEX || options->op_type == CPERF_ASYM_SM2) {
+ 		snprintf(pool_name, RTE_MEMPOOL_NAMESIZE, "perf_asym_op_pool%u",
+ 			 rte_socket_id());
+ 		*pool = rte_crypto_op_pool_create(
+diff --git a/app/test-crypto-perf/cperf_test_latency.c b/app/test-crypto-perf/cperf_test_latency.c
+index 99b7d7c678ec0..874e7fa4dd7a2 100644
+--- a/app/test-crypto-perf/cperf_test_latency.c
++++ b/app/test-crypto-perf/cperf_test_latency.c
+@@ -47,7 +47,8 @@ cperf_latency_test_free(struct cperf_latency_ctx *ctx)
+ 		return;
+ 
+ 	if (ctx->sess != NULL) {
+-		if (ctx->options->op_type == CPERF_ASYM_MODEX)
++		if (ctx->options->op_type == CPERF_ASYM_MODEX ||
++				ctx->options->op_type == CPERF_ASYM_SM2)
+ 			rte_cryptodev_asym_session_free(ctx->dev_id, ctx->sess);
+ #ifdef RTE_LIB_SECURITY
+ 		else if (ctx->options->op_type == CPERF_PDCP ||
+diff --git a/app/test-crypto-perf/cperf_test_throughput.c b/app/test-crypto-perf/cperf_test_throughput.c
+index e3d266d7a46c0..17779e09cdba2 100644
+--- a/app/test-crypto-perf/cperf_test_throughput.c
++++ b/app/test-crypto-perf/cperf_test_throughput.c
+@@ -37,7 +37,8 @@ cperf_throughput_test_free(struct cperf_throughput_ctx *ctx)
+ 	if (!ctx)
+ 		return;
+ 	if (ctx->sess) {
+-		if (ctx->options->op_type == CPERF_ASYM_MODEX)
++		if (ctx->options->op_type == CPERF_ASYM_MODEX ||
++				ctx->options->op_type == CPERF_ASYM_SM2)
+ 			rte_cryptodev_asym_session_free(ctx->dev_id,
+ 					(void *)ctx->sess);
+ #ifdef RTE_LIB_SECURITY
+diff --git a/app/test-crypto-perf/cperf_test_vectors.c b/app/test-crypto-perf/cperf_test_vectors.c
+index 3c35eea4606bd..91927ca76b4b6 100644
+--- a/app/test-crypto-perf/cperf_test_vectors.c
++++ b/app/test-crypto-perf/cperf_test_vectors.c
+@@ -236,6 +236,80 @@ cperf_modex_test_data modex_perf_data[4] = {
+ 	}
+ };
+ 
++static uint8_t fp256_pkey[] = {
++	0x77, 0x84, 0x35, 0x65, 0x4c, 0x7a, 0x6d, 0xb1,
++	0x1e, 0x63, 0x0b, 0x41, 0x97, 0x36, 0x04, 0xf4,
++	0xec, 0x35, 0xee, 0x3b, 0x76, 0xc2, 0x34, 0x08,
++	0xd9, 0x4a, 0x22, 0x0d, 0x7f, 0xf6, 0xc6, 0x90
++};
++
++static uint8_t fp256_qx[] = {
++	0x7b, 0x24, 0xa3, 0x03, 0xcf, 0xb2, 0x22, 0xfa,
++	0x4c, 0xb3, 0x88, 0x54, 0xf9, 0x30, 0xd1, 0x4d,
++	0xe3, 0x50, 0xda, 0xba, 0xe6, 0xa7, 0x0b, 0x91,
++	0x4c, 0x04, 0x0d, 0x5c, 0xe0, 0x8e, 0x86, 0xc5
++};
++
++static uint8_t fp256_qy[] = {
++	0xbc, 0x39, 0xe3, 0x19, 0x4e, 0xd2, 0x29, 0x22,
++	0x5b, 0x37, 0x2d, 0xeb, 0xcc, 0x05, 0x52, 0x8d,
++	0xb9, 0x40, 0xa3, 0xab, 0x3c, 0xbe, 0x16, 0x30,
++	0x1c, 0xe4, 0xe8, 0x7f, 0xba, 0x6e, 0x0b, 0xae
++};
++
++static uint8_t fp256_k[] = {
++	0x01, 0x04, 0x02, 0x05, 0x04, 0x06, 0x03, 0x07
++};
++
++static uint8_t fp256_sign_r[] = {
++	0x75, 0x2B, 0x8C, 0x15, 0x38, 0x10, 0xF6, 0xC0,
++	0x28, 0xC9, 0x8A, 0x51, 0xD0, 0x62, 0x69, 0x4B,
++	0xF6, 0x58, 0x06, 0xEB, 0xF1, 0x91, 0x1F, 0x15,
++	0x8B, 0x08, 0x09, 0xF9, 0x88, 0x0A, 0x44, 0x24
++};
++
++static uint8_t fp256_sign_s[] = {
++	0x5A, 0x3C, 0x96, 0x3E, 0x1C, 0xB4, 0x19, 0xF9,
++	0xD7, 0x78, 0xB8, 0xCE, 0xFF, 0x9D, 0xB1, 0x31,
++	0x77, 0xDB, 0xA0, 0xFE, 0x84, 0x61, 0x1A, 0xD9,
++	0x4E, 0xFF, 0x82, 0x13, 0x1C, 0xCA, 0x04, 0x75,
++};
++
++static uint8_t fp256_id[] = {
++	0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8
++};
++
++static uint8_t fp256_message[] = {
++	0x6D, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x20,
++	0x64, 0x69, 0x67, 0x65, 0x73, 0x74
++};
++
++static uint8_t fp256_digest[] = {
++	0x0F, 0xB5, 0xCE, 0xF3, 0x3C, 0xB7, 0xD1, 0x35,
++	0xA9, 0x3A, 0xC7, 0xA7, 0x89, 0x2A, 0x6D, 0x9A,
++	0xF3, 0x1E, 0xC5, 0x38, 0xD3, 0x65, 0x1B, 0xB9,
++	0xDF, 0x5F, 0x7F, 0x4A, 0xD8, 0x89, 0x57, 0xF1
++};
++
++static uint8_t fp256_cipher[] = {
++	0x30, 0x78, 0x02, 0x21, 0x00, 0xAB, 0xBD, 0xE8,
++	0xE8, 0x80, 0x93, 0x36, 0x77, 0xB6, 0x44, 0x47,
++	0x6D, 0x00, 0xF6, 0x51, 0xC8, 0x80, 0x9C, 0x9E,
++	0xD9, 0xEC, 0x36, 0x8A, 0x60, 0x8E, 0x26, 0x2D,
++	0x71, 0x31, 0xB7, 0xC1, 0x38, 0x02, 0x21, 0x00,
++	0xE1, 0xBF, 0x4C, 0x13, 0x7A, 0x87, 0x40, 0x32,
++	0xF5, 0xA1, 0xE2, 0xA1, 0x3B, 0x83, 0xBF, 0x6B,
++	0x3F, 0xFB, 0xC8, 0x13, 0x01, 0xDE, 0xCF, 0xC0,
++	0xF4, 0x24, 0x66, 0x52, 0x89, 0xDA, 0x6D, 0x7A,
++	0x04, 0x20, 0x8E, 0xFD, 0x52, 0x77, 0xC9, 0xE7,
++	0x90, 0xD1, 0x17, 0x75, 0xDE, 0xEE, 0xF3, 0xE5,
++	0x11, 0x0C, 0x5D, 0xE1, 0x3A, 0xB6, 0x2B, 0x72,
++	0x60, 0xE5, 0xD5, 0xF3, 0x0F, 0xE2, 0x44, 0xDB,
++	0xBC, 0x66, 0x04, 0x0E, 0x78, 0x2D, 0xC0, 0x3D,
++	0x38, 0xA2, 0x42, 0xA4, 0x8E, 0x8B, 0xF5, 0x06,
++	0x32, 0xFA
++};
++
+ uint8_t plaintext[2048] = {
+ 	0x71, 0x75, 0x83, 0x98, 0x75, 0x42, 0x51, 0x09, 0x94, 0x02, 0x13, 0x20,
+ 	0x15, 0x64, 0x46, 0x32, 0x08, 0x18, 0x91, 0x82, 0x86, 0x52, 0x23, 0x93,
+@@ -640,6 +714,52 @@ uint8_t ipsec_plaintext[2048] = {
+ 		0x75, 0x67, 0x00, 0x01
+ };
+ 
++/** SM2 Fp256 elliptic curve test params */
++struct
++cperf_sm2_test_data sm2_perf_data = {
++	.pubkey_qx = {
++		.data = fp256_qx,
++		.length = sizeof(fp256_qx),
++	},
++	.pubkey_qy = {
++		.data = fp256_qy,
++		.length = sizeof(fp256_qy),
++	},
++	.k = {
++		.data = fp256_k,
++		.length = sizeof(fp256_k),
++	},
++	.sign_r = {
++		.data = fp256_sign_r,
++		.length = sizeof(fp256_sign_r),
++	},
++	.sign_s = {
++		.data = fp256_sign_s,
++		.length = sizeof(fp256_sign_s),
++	},
++	.id = {
++		.data = fp256_id,
++		.length = sizeof(fp256_id),
++	},
++	.pkey = {
++		.data = fp256_pkey,
++		.length = sizeof(fp256_pkey),
++	},
++	.message = {
++		.data = fp256_message,
++		.length = sizeof(fp256_message),
++	},
++	.digest = {
++		.data = fp256_digest,
++		.length = sizeof(fp256_digest),
++	},
++	.cipher = {
++		.data = fp256_cipher,
++		.length = sizeof(fp256_cipher),
++	},
++	.curve = RTE_CRYPTO_EC_GROUP_SM2
++};
++
+ struct cperf_test_vector*
+ cperf_test_vector_get_dummy(struct cperf_options *options)
+ {
+diff --git a/app/test-crypto-perf/cperf_test_vectors.h b/app/test-crypto-perf/cperf_test_vectors.h
+index 649478ff838c7..1f76b8b0cdac9 100644
+--- a/app/test-crypto-perf/cperf_test_vectors.h
++++ b/app/test-crypto-perf/cperf_test_vectors.h
+@@ -75,6 +75,16 @@ struct cperf_test_vector {
+ 		uint32_t mlen;
+ 		uint32_t elen;
+ 	} modex;
++
++	struct {
++		uint8_t *sign_r;
++		uint8_t *sign_s;
++		uint8_t *message;
++		uint8_t *cipher;
++		uint32_t sign_len;
++		uint32_t msg_len;
++		uint32_t cipher_len;
++	} sm2;
+ };
+ 
+ struct cperf_modex_test_data {
+@@ -97,6 +107,20 @@ struct cperf_modex_test_data {
+ 	} result;
+ };
+ 
++struct cperf_sm2_test_data {
++	rte_crypto_param pubkey_qx;
++	rte_crypto_param pubkey_qy;
++	rte_crypto_param pkey;
++	rte_crypto_param k;
++	rte_crypto_param sign_r;
++	rte_crypto_param sign_s;
++	rte_crypto_param id;
++	rte_crypto_param cipher;
++	rte_crypto_param message;
++	rte_crypto_param digest;
++	int curve;
++};
++
+ struct cperf_test_vector*
+ cperf_test_vector_get_dummy(struct cperf_options *options);
+ 
+@@ -111,5 +135,6 @@ extern uint8_t aad[];
+ extern uint8_t digest[2048];
+ 
+ extern struct cperf_modex_test_data modex_perf_data[4];
++extern struct cperf_sm2_test_data sm2_perf_data;
+ 
+ #endif
+diff --git a/app/test-crypto-perf/cperf_test_verify.c b/app/test-crypto-perf/cperf_test_verify.c
+index a57841dafb83b..e6a6bf3449775 100644
+--- a/app/test-crypto-perf/cperf_test_verify.c
++++ b/app/test-crypto-perf/cperf_test_verify.c
+@@ -42,7 +42,8 @@ cperf_verify_test_free(struct cperf_verify_ctx *ctx)
+ 		return;
+ 
+ 	if (ctx->sess != NULL) {
+-		if (ctx->options->op_type == CPERF_ASYM_MODEX)
++		if (ctx->options->op_type == CPERF_ASYM_MODEX ||
++				ctx->options->op_type == CPERF_ASYM_SM2)
+ 			rte_cryptodev_asym_session_free(ctx->dev_id, ctx->sess);
+ #ifdef RTE_LIB_SECURITY
+ 		else if (ctx->options->op_type == CPERF_PDCP ||
+diff --git a/app/test-crypto-perf/main.c b/app/test-crypto-perf/main.c
+index 40c0b4b54f3b6..02dac5b32f018 100644
+--- a/app/test-crypto-perf/main.c
++++ b/app/test-crypto-perf/main.c
+@@ -44,6 +44,7 @@ const char *cperf_op_type_strs[] = {
+ 	[CPERF_DOCSIS] = "docsis",
+ 	[CPERF_IPSEC] = "ipsec",
+ 	[CPERF_ASYM_MODEX] = "modex",
++	[CPERF_ASYM_SM2] = "sm2",
+ 	[CPERF_TLS] = "tls-record"
+ };
+ 
+@@ -203,7 +204,7 @@ cperf_initialize_cryptodev(struct cperf_options *opts, uint8_t *enabled_cdevs)
+ 
+ 		rte_cryptodev_info_get(cdev_id, &cdev_info);
+ 
+-		if (opts->op_type == CPERF_ASYM_MODEX) {
++		if (opts->op_type == CPERF_ASYM_MODEX || opts->op_type == CPERF_ASYM_SM2) {
+ 			if ((cdev_info.feature_flags &
+ 			     RTE_CRYPTODEV_FF_ASYMMETRIC_CRYPTO) == 0)
+ 				continue;
+@@ -223,6 +224,7 @@ cperf_initialize_cryptodev(struct cperf_options *opts, uint8_t *enabled_cdevs)
+ 		};
+ 
+ 		switch (opts->op_type) {
++		case CPERF_ASYM_SM2:
+ 		case CPERF_ASYM_MODEX:
+ 			conf.ff_disable |= (RTE_CRYPTODEV_FF_SECURITY |
+ 					    RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO);
+@@ -289,7 +291,7 @@ cperf_initialize_cryptodev(struct cperf_options *opts, uint8_t *enabled_cdevs)
+ 			return -ENOTSUP;
+ 		}
+ 
+-		if (opts->op_type == CPERF_ASYM_MODEX)
++		if (opts->op_type == CPERF_ASYM_MODEX || opts->op_type == CPERF_ASYM_SM2)
+ 			ret = create_asym_op_pool_socket(socket_id,
+ 							 sessions_needed);
+ 		else
+@@ -300,9 +302,8 @@ cperf_initialize_cryptodev(struct cperf_options *opts, uint8_t *enabled_cdevs)
+ 
+ 		qp_conf.mp_session = session_pool_socket[socket_id].sess_mp;
+ 
+-		if (opts->op_type == CPERF_ASYM_MODEX) {
++		if (opts->op_type == CPERF_ASYM_MODEX || opts->op_type == CPERF_ASYM_SM2)
+ 			qp_conf.mp_session = NULL;
+-		}
+ 
+ 		ret = rte_cryptodev_configure(cdev_id, &conf);
+ 		if (ret < 0) {
+@@ -362,6 +363,65 @@ cperf_verify_devices_capabilities(struct cperf_options *opts,
+ 
+ 		}
+ 
++		if (opts->op_type == CPERF_ASYM_SM2) {
++			asym_cap_idx.type = RTE_CRYPTO_ASYM_XFORM_SM2;
++			asym_capability = rte_cryptodev_asym_capability_get(cdev_id, &asym_cap_idx);
++			if (asym_capability == NULL)
++				return -1;
++
++			if (!rte_cryptodev_asym_xform_capability_check_optype(asym_capability,
++						opts->asym_op_type))
++				return -1;
++
++			if (rte_cryptodev_asym_xform_capability_check_hash(asym_capability,
++						RTE_CRYPTO_AUTH_SM3)) {
++				opts->asym_hash_alg = RTE_CRYPTO_AUTH_SM3;
++				if (opts->asym_op_type == RTE_CRYPTO_ASYM_OP_SIGN ||
++						opts->asym_op_type == RTE_CRYPTO_ASYM_OP_VERIFY) {
++					opts->sm2_data->message.data = sm2_perf_data.message.data;
++					opts->sm2_data->message.length =
++							sm2_perf_data.message.length;
++					opts->sm2_data->id.data = sm2_perf_data.id.data;
++					opts->sm2_data->id.length = sm2_perf_data.id.length;
++				}
++			} else {
++				opts->asym_hash_alg = RTE_CRYPTO_AUTH_NULL;
++				if (opts->asym_op_type == RTE_CRYPTO_ASYM_OP_SIGN ||
++						opts->asym_op_type == RTE_CRYPTO_ASYM_OP_VERIFY) {
++					opts->sm2_data->message.data = sm2_perf_data.digest.data;
++					opts->sm2_data->message.length =
++							sm2_perf_data.digest.length;
++					opts->sm2_data->id.data = NULL;
++					opts->sm2_data->id.length = 0;
++				}
++			}
++			if (asym_capability->internal_rng != 0) {
++				opts->sm2_data->k.data = NULL;
++				opts->sm2_data->k.length = 0;
++			}
++			if (opts->asym_op_type == RTE_CRYPTO_ASYM_OP_ENCRYPT) {
++				opts->sm2_data->message.data = sm2_perf_data.message.data;
++				opts->sm2_data->message.length = sm2_perf_data.message.length;
++				opts->sm2_data->cipher.data = sm2_perf_data.cipher.data;
++				opts->sm2_data->cipher.length = sm2_perf_data.cipher.length;
++			} else if (opts->asym_op_type == RTE_CRYPTO_ASYM_OP_DECRYPT) {
++				opts->sm2_data->cipher.data = sm2_perf_data.cipher.data;
++				opts->sm2_data->cipher.length = sm2_perf_data.cipher.length;
++				opts->sm2_data->message.data = sm2_perf_data.message.data;
++				opts->sm2_data->message.length = sm2_perf_data.message.length;
++			} else if (opts->asym_op_type == RTE_CRYPTO_ASYM_OP_SIGN) {
++				opts->sm2_data->sign_r.data = sm2_perf_data.sign_r.data;
++				opts->sm2_data->sign_r.length = sm2_perf_data.sign_r.length;
++				opts->sm2_data->sign_s.data = sm2_perf_data.sign_s.data;
++				opts->sm2_data->sign_s.length = sm2_perf_data.sign_s.length;
++			} else if (opts->asym_op_type == RTE_CRYPTO_ASYM_OP_VERIFY) {
++				opts->sm2_data->sign_r.data = sm2_perf_data.sign_r.data;
++				opts->sm2_data->sign_r.length = sm2_perf_data.sign_r.length;
++				opts->sm2_data->sign_s.data = sm2_perf_data.sign_s.data;
++				opts->sm2_data->sign_s.length = sm2_perf_data.sign_s.length;
++			}
++		}
++
+ 		if (opts->op_type == CPERF_AUTH_ONLY ||
+ 				opts->op_type == CPERF_CIPHER_THEN_AUTH ||
+ 				opts->op_type == CPERF_AUTH_THEN_CIPHER) {
+diff --git a/doc/guides/tools/cryptoperf.rst b/doc/guides/tools/cryptoperf.rst
+index facf4127992ca..8cfb194f105ce 100644
+--- a/doc/guides/tools/cryptoperf.rst
++++ b/doc/guides/tools/cryptoperf.rst
+@@ -175,6 +175,7 @@ The following are the application command-line options:
+            pdcp
+            docsis
+            modex
++           sm2
+            ipsec
+            tls-record
+ 
+@@ -342,6 +343,11 @@ The following are the application command-line options:
+         Set modex length for asymmetric crypto perf test.
+         Supported lengths are 60, 128, 255, 448. Default length is 128.
+ 
++* ``--asym-op <sign/verify/encrypt/decrypt>``
++
++        Set Asymmetric crypto operation mode.
++        To be used with SM2 asymmetric crypto ops. Default is ``sign``.
++
+ * ``--tls-version <TLS1.2/TLS1.3/DTLS1.2>``
+ 
+         Set TLS/DTLS protocol version for perf test (default is TLS1.2).
+-- 
+2.25.1
+

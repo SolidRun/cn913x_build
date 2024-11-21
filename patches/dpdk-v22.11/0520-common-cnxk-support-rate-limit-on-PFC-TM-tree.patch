@@ -1,0 +1,166 @@
+From f35172779a5400b43089a96f41e43ccec6ee94bd Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 26 Jun 2023 11:28:20 +0530
+Subject: [PATCH 520/955] common/cnxk: support rate limit on PFC TM tree
+
+New SQ rate limit API to support SQ rate limit on PFC tree.
+In PFC tree each SQ had its one to one mapped TL3, this patch
+configures shaper rate on TL3. Also configures the TL2 with
+link rate.
+
+Change-Id: I2f75dfd9388b8ce68794b35e8b68471c53d93482
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106305
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h        |  9 ++-
+ drivers/common/cnxk/roc_nix_tm_ops.c | 98 ++++++++++++++++++++++++++++
+ drivers/common/cnxk/version.map      |  1 +
+ 3 files changed, 106 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 9c2ba9a68534c..1d84f4de9db5b 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -707,8 +707,13 @@ int __roc_api roc_nix_tm_node_stats_get(struct roc_nix *roc_nix,
+ /*
+  * TM ratelimit tree API.
+  */
+-int __roc_api roc_nix_tm_rlimit_sq(struct roc_nix *roc_nix, uint16_t qid,
+-				   uint64_t rate);
++int __roc_api roc_nix_tm_rlimit_sq(struct roc_nix *roc_nix, uint16_t qid, uint64_t rate);
++
++/*
++ * TM PFC tree ratelimit API.
++ */
++int __roc_api roc_nix_tm_pfc_rlimit_sq(struct roc_nix *roc_nix, uint16_t qid, uint64_t rate);
++
+ /*
+  * TM hierarchy enable/disable API.
+  */
+diff --git a/drivers/common/cnxk/roc_nix_tm_ops.c b/drivers/common/cnxk/roc_nix_tm_ops.c
+index 4e88ad1beb719..e1cef7a670b66 100644
+--- a/drivers/common/cnxk/roc_nix_tm_ops.c
++++ b/drivers/common/cnxk/roc_nix_tm_ops.c
+@@ -1032,6 +1032,104 @@ roc_nix_tm_init(struct roc_nix *roc_nix)
+ 	return rc;
+ }
+ 
++int
++roc_nix_tm_pfc_rlimit_sq(struct roc_nix *roc_nix, uint16_t qid, uint64_t rate)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct nix_tm_shaper_profile profile;
++	struct mbox *mbox = (&nix->dev)->mbox;
++	struct nix_tm_node *node, *parent;
++	struct roc_nix_link_info link_info;
++
++	volatile uint64_t *reg, *regval;
++	struct nix_txschq_config *req;
++	uint64_t tl2_rate = 0;
++	uint16_t flags;
++	uint8_t k = 0;
++	int rc;
++
++	if ((nix->tm_tree != ROC_NIX_TM_PFC) || !(nix->tm_flags & NIX_TM_HIERARCHY_ENA))
++		return NIX_ERR_TM_INVALID_TREE;
++
++	node = nix_tm_node_search(nix, qid, nix->tm_tree);
++
++	/* check if we found a valid leaf node */
++	if (!node || !nix_tm_is_leaf(nix, node->lvl) || !node->parent ||
++	    node->parent->hw_id == NIX_TM_HW_ID_INVALID) {
++		return NIX_ERR_TM_INVALID_NODE;
++	}
++
++	/* Get the link Speed */
++	if (roc_nix_mac_link_info_get(roc_nix, &link_info))
++		return -EINVAL;
++
++	if (link_info.status)
++		tl2_rate = link_info.speed * (uint64_t)1E6;
++
++	/* Configure TL3 of leaf node with requested rate */
++	parent = node->parent;	 /* SMQ/MDQ */
++	parent = parent->parent; /* TL4 */
++	parent = parent->parent; /* TL3 */
++	flags = parent->flags;
++
++	req = mbox_alloc_msg_nix_txschq_cfg(mbox_get(mbox));
++	req->lvl = parent->hw_lvl;
++	reg = req->reg;
++	regval = req->regval;
++
++	if (rate == 0) {
++		k += nix_tm_sw_xoff_prep(parent, true, &reg[k], &regval[k]);
++		flags &= ~NIX_TM_NODE_ENABLED;
++		goto exit;
++	}
++
++	if (!(flags & NIX_TM_NODE_ENABLED)) {
++		k += nix_tm_sw_xoff_prep(parent, false, &reg[k], &regval[k]);
++		flags |= NIX_TM_NODE_ENABLED;
++	}
++
++	/* Use only PIR for rate limit */
++	memset(&profile, 0, sizeof(profile));
++	profile.peak.rate = rate;
++	/* Minimum burst of ~4us Bytes of Tx */
++	profile.peak.size =
++		PLT_MAX((uint64_t)roc_nix_max_pkt_len(roc_nix), (4ul * rate) / ((uint64_t)1E6 * 8));
++	if (!nix->tm_rate_min || nix->tm_rate_min > rate)
++		nix->tm_rate_min = rate;
++
++	k += nix_tm_shaper_reg_prep(parent, &profile, &reg[k], &regval[k]);
++exit:
++	req->num_regs = k;
++	rc = mbox_process(mbox);
++	mbox_put(mbox);
++	if (rc)
++		return rc;
++
++	parent->flags = flags;
++
++	/* If link is up then configure TL2 with link speed */
++	if (tl2_rate && (flags & NIX_TM_NODE_ENABLED)) {
++		k = 0;
++		parent = parent->parent;
++		req = mbox_alloc_msg_nix_txschq_cfg(mbox_get(mbox));
++		req->lvl = parent->hw_lvl;
++		reg = req->reg;
++		regval = req->regval;
++
++		/* Use only PIR for rate limit */
++		memset(&profile, 0, sizeof(profile));
++		profile.peak.rate = tl2_rate;
++		/* Minimum burst of ~4us Bytes of Tx */
++		profile.peak.size = PLT_MAX((uint64_t)roc_nix_max_pkt_len(roc_nix),
++					    (4ul * tl2_rate) / ((uint64_t)1E6 * 8));
++		k += nix_tm_shaper_reg_prep(parent, &profile, &reg[k], &regval[k]);
++		req->num_regs = k;
++		rc = mbox_process(mbox);
++		mbox_put(mbox);
++	}
++	return rc;
++}
++
+ int
+ roc_nix_tm_rlimit_sq(struct roc_nix *roc_nix, uint16_t qid, uint64_t rate)
+ {
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 2be9bc79247e2..51f0a0791b896 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -350,6 +350,7 @@ INTERNAL {
+ 	roc_nix_tm_node_suspend_resume;
+ 	roc_nix_tm_prealloc_res;
+ 	roc_nix_tm_pfc_prepare_tree;
++	roc_nix_tm_pfc_rlimit_sq;
+ 	roc_nix_tm_prepare_rate_limited_tree;
+ 	roc_nix_tm_rlimit_sq;
+ 	roc_nix_tm_root_has_sp;
+-- 
+2.25.1
+

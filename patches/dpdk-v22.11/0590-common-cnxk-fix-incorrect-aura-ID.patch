@@ -1,0 +1,38 @@
+From b5fecf739ea709997006608b1693707d4463eb2c Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Fri, 4 Aug 2023 22:47:16 +0530
+Subject: [PATCH 590/955] common/cnxk: fix incorrect aura ID
+
+The function `sso_hwgrp_alloc_xaq` expects aura ID, fix incorrectly
+passing aura handle to it.
+
+Fixes: 7e9a94909eea ("common/cnxk: realloc inline device XAQ AURA")
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ic9c9152c0e240a4f4faa4c796a6c8540178e5c49
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109144
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl_dev.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index 2863d5da515ff..de3498a4f7cdf 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -678,7 +678,8 @@ roc_nix_inl_dev_xaq_realloc(uint64_t aura_handle)
+ 	}
+ 
+ 	/* Setup xaq for hwgrps */
+-	rc = sso_hwgrp_alloc_xaq(&inl_dev->dev, inl_dev->xaq.aura_handle, 1);
++	rc = sso_hwgrp_alloc_xaq(&inl_dev->dev,
++				 roc_npa_aura_handle_to_aura(inl_dev->xaq.aura_handle), 1);
+ 	if (rc) {
+ 		plt_err("Failed to setup hwgrp xaq aura, rc=%d", rc);
+ 		return rc;
+-- 
+2.25.1
+

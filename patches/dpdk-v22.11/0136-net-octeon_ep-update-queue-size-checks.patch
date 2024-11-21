@@ -1,0 +1,115 @@
+From dbbc57654b98357d2b5a91bf060a816333ad0691 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Mon, 2 Jan 2023 03:57:12 -0800
+Subject: [PATCH 136/955] net/octeon_ep: update queue size checks
+
+Update output queue size checks to ensure that
+queue is larger than backpressure watermark.The
+backpressure is configured on Octeon, and the
+value is not available to the host.Update minimum
+sizes and alignment enforced by standard DPDK
+mechanisms to reflect device requirements.Driver
+still enforces requirements as well.
+Update driver error messages for incorrect
+parameters to be more clear.
+Add setting of default queue sizes to the minimum
+so that applications like testpmd can be started
+without explicit queue size arguments.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I2ecce47f243bf8acdfe188b7084356a2012d304b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93504
+Tested-by: Satananda Burla <sburla@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_common.h |  9 +++++++--
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 16 ++++++++++++----
+ drivers/net/octeon_ep/otx_ep_rxtx.h   |  4 ++--
+ 3 files changed, 21 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index bf855e48c8f20..2085cb2a90b74 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -11,8 +11,13 @@
+ #define OTX_EP_MAX_RINGS_PER_VF        (8)
+ #define OTX_EP_CFG_IO_QUEUES        OTX_EP_MAX_RINGS_PER_VF
+ #define OTX_EP_64BYTE_INSTR         (64)
+-#define OTX_EP_MIN_IQ_DESCRIPTORS   (128)
+-#define OTX_EP_MIN_OQ_DESCRIPTORS   (128)
++/*
++ * Backpressure for SDP is configured on Octeon, and the minimum queue sizes
++ * must be much larger than the backpressure watermark configured in the Octeon
++ * SDP driver.  IQ and OQ backpressure configurations are separate.
++ */
++#define OTX_EP_MIN_IQ_DESCRIPTORS   (2048)
++#define OTX_EP_MIN_OQ_DESCRIPTORS   (2048)
+ #define OTX_EP_MAX_IQ_DESCRIPTORS   (8192)
+ #define OTX_EP_MAX_OQ_DESCRIPTORS   (8192)
+ #define OTX_EP_OQ_BUF_SIZE          (2048)
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 2fd2ebf45c87c..6a786a19bba10 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -50,6 +50,9 @@ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 	devinfo->rx_desc_lim = otx_ep_rx_desc_lim;
+ 	devinfo->tx_desc_lim = otx_ep_tx_desc_lim;
+ 
++	devinfo->default_rxportconf.ring_size = OTX_EP_MIN_OQ_DESCRIPTORS;
++	devinfo->default_txportconf.ring_size = OTX_EP_MIN_IQ_DESCRIPTORS;
++
+ 	return 0;
+ }
+ 
+@@ -266,13 +269,13 @@ otx_ep_rx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t q_no,
+ 	}
+ 
+ 	if (num_rx_descs & (num_rx_descs - 1)) {
+-		otx_ep_err("Invalid rx desc number should be pow 2  %u\n",
++		otx_ep_err("Invalid rx desc number(%u) This must be a power of 2\n",
+ 			   num_rx_descs);
+ 		return -EINVAL;
+ 	}
+ 	if (num_rx_descs < (SDP_GBL_WMARK * 8)) {
+-		otx_ep_err("Invalid rx desc number should at least be greater than 8xwmark  %u\n",
+-			   num_rx_descs);
++		otx_ep_err("Invalid rx desc number(%u) should at least be greater than 8*wmark(%u)\n",
++			   num_rx_descs, (SDP_GBL_WMARK * 8));
+ 		return -EINVAL;
+ 	}
+ 
+@@ -350,10 +353,15 @@ otx_ep_tx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t q_no,
+ 		return -EINVAL;
+ 	}
+ 	if (num_tx_descs & (num_tx_descs - 1)) {
+-		otx_ep_err("Invalid tx desc number should be pow 2  %u\n",
++		otx_ep_err("Invalid tx desc number(%u) This must be a power of 2\n",
+ 			   num_tx_descs);
+ 		return -EINVAL;
+ 	}
++	if (num_tx_descs < (SDP_GBL_WMARK * 8)) {
++		otx_ep_err("Invalid tx desc number(%u) should at least be greater than 8*wmark(%u)\n",
++			   num_tx_descs, (SDP_GBL_WMARK * 8));
++		return -EINVAL;
++	}
+ 
+ 	retval = otx_ep_setup_iqs(otx_epvf, q_no, num_tx_descs, socket_id);
+ 
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.h b/drivers/net/octeon_ep/otx_ep_rxtx.h
+index a7dc1a21c8b2f..0f2ea46fb2060 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.h
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.h
+@@ -7,8 +7,8 @@
+ 
+ #include <rte_byteorder.h>
+ 
+-#define OTX_EP_RXD_ALIGN 1
+-#define OTX_EP_TXD_ALIGN 1
++#define OTX_EP_RXD_ALIGN 2
++#define OTX_EP_TXD_ALIGN 2
+ 
+ #define OTX_EP_IQ_SEND_FAILED      (-1)
+ #define OTX_EP_IQ_SEND_SUCCESS     (0)
+-- 
+2.25.1
+

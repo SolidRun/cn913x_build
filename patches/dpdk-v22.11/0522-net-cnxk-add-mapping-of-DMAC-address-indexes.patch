@@ -1,0 +1,93 @@
+From 715c5ea7c58713d5e3c2a2fbf276b1bfcc45d8f7 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Tue, 27 Jun 2023 17:50:33 +0530
+Subject: [PATCH 522/955] net/cnxk: add mapping of DMAC address indexes
+
+Add support to map DMAC address indexes during
+mac address add and remove operation.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: Iafecc3a8fb4b436b9100775f4decdd722d24b021
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106465
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c     | 11 +++++++++++
+ drivers/net/cnxk/cnxk_ethdev.h     |  1 +
+ drivers/net/cnxk/cnxk_ethdev_ops.c |  4 +++-
+ 3 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 46450088ebb8c..bd161ad3758ae 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1921,6 +1921,13 @@ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		goto dev_fini;
+ 	}
+ 
++	dev->dmac_idx_map = rte_zmalloc("dmac_idx_map", max_entries * sizeof(int), 0);
++	if (dev->dmac_idx_map == NULL) {
++		plt_err("Failed to allocate memory for dmac idx map");
++		rc = -ENOMEM;
++		goto free_mac_addrs;
++	}
++
+ 	dev->max_mac_entries = max_entries;
+ 	dev->dmac_filter_count = 1;
+ 
+@@ -1978,6 +1985,7 @@ cnxk_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 
+ free_mac_addrs:
+ 	rte_free(eth_dev->data->mac_addrs);
++	rte_free(dev->dmac_idx_map);
+ dev_fini:
+ 	roc_nix_dev_fini(nix);
+ error:
+@@ -2095,6 +2103,9 @@ cnxk_eth_dev_uninit(struct rte_eth_dev *eth_dev, bool reset)
+ 	if (rc)
+ 		plt_err("Failed to free nix lf, rc=%d", rc);
+ 
++	rte_free(dev->dmac_idx_map);
++	dev->dmac_idx_map = NULL;
++
+ 	rte_free(eth_dev->data->mac_addrs);
+ 	eth_dev->data->mac_addrs = NULL;
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 2b9ff11a6a717..4d3ebf123b6c3 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -338,6 +338,7 @@ struct cnxk_eth_dev {
+ 	uint8_t dmac_filter_count;
+ 	uint8_t max_mac_entries;
+ 	bool dmac_filter_enable;
++	int *dmac_idx_map;
+ 
+ 	uint16_t flags;
+ 	uint8_t ptype_disable;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index 3ade8eed36268..5de2919047c17 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -474,6 +474,8 @@ cnxk_nix_mac_addr_add(struct rte_eth_dev *eth_dev, struct rte_ether_addr *addr,
+ 		return rc;
+ 	}
+ 
++	dev->dmac_idx_map[index] = rc;
++
+ 	/* Enable promiscuous mode at NIX level */
+ 	roc_nix_npc_promisc_ena_dis(nix, true);
+ 	dev->dmac_filter_enable = true;
+@@ -490,7 +492,7 @@ cnxk_nix_mac_addr_del(struct rte_eth_dev *eth_dev, uint32_t index)
+ 	struct roc_nix *nix = &dev->nix;
+ 	int rc;
+ 
+-	rc = roc_nix_mac_addr_del(nix, index);
++	rc = roc_nix_mac_addr_del(nix, dev->dmac_idx_map[index]);
+ 	if (rc)
+ 		plt_err("Failed to delete mac address, rc=%d", rc);
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,164 @@
+From 7f309bb3384e76678e39edb32b83bd7906197787 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 16 Feb 2024 12:41:06 +0530
+Subject: [PATCH 245/513] cryptodev: add API to get used queue pair depth
+
+Added a new fast path API to get used queue pair
+descriptors of a specific queue pair of a device.
+Applications may monitor the depth used and enqueue
+crypto ops accordingly.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I62143d85b1d1981630a051aa1633011bf5d6afe1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122062
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ lib/cryptodev/cryptodev_pmd.c          |  1 +
+ lib/cryptodev/cryptodev_pmd.h          |  2 ++
+ lib/cryptodev/cryptodev_trace_points.c |  3 ++
+ lib/cryptodev/rte_cryptodev.h          | 45 ++++++++++++++++++++++++++
+ lib/cryptodev/rte_cryptodev_core.h     |  7 +++-
+ lib/cryptodev/rte_cryptodev_trace_fp.h |  7 ++++
+ 6 files changed, 64 insertions(+), 1 deletion(-)
+
+diff --git a/lib/cryptodev/cryptodev_pmd.c b/lib/cryptodev/cryptodev_pmd.c
+index d8073a601dbdb..87ced122b41ad 100644
+--- a/lib/cryptodev/cryptodev_pmd.c
++++ b/lib/cryptodev/cryptodev_pmd.c
+@@ -236,6 +236,7 @@ cryptodev_fp_ops_set(struct rte_crypto_fp_ops *fp_ops,
+ 	fp_ops->qp.data = dev->data->queue_pairs;
+ 	fp_ops->qp.enq_cb = dev->enq_cbs;
+ 	fp_ops->qp.deq_cb = dev->deq_cbs;
++	fp_ops->qp_depth_used = dev->qp_depth_used;
+ }
+ 
+ void *
+diff --git a/lib/cryptodev/cryptodev_pmd.h b/lib/cryptodev/cryptodev_pmd.h
+index 3bb3d95c1338a..f6ef64e1d0199 100644
+--- a/lib/cryptodev/cryptodev_pmd.h
++++ b/lib/cryptodev/cryptodev_pmd.h
+@@ -117,6 +117,8 @@ struct rte_cryptodev {
+ 	struct rte_cryptodev_cb_rcu *enq_cbs;
+ 	/** User application callback for post dequeue processing */
+ 	struct rte_cryptodev_cb_rcu *deq_cbs;
++	/** Pointer to PMD function to get used queue pair depth */
++	crypto_qp_depth_used_t qp_depth_used;
+ } __rte_cache_aligned;
+ 
+ /** Global structure used for maintaining state of allocated crypto devices */
+diff --git a/lib/cryptodev/cryptodev_trace_points.c b/lib/cryptodev/cryptodev_trace_points.c
+index 8c47ab1e78f48..7403412553003 100644
+--- a/lib/cryptodev/cryptodev_trace_points.c
++++ b/lib/cryptodev/cryptodev_trace_points.c
+@@ -194,3 +194,6 @@ RTE_TRACE_POINT_REGISTER(rte_cryptodev_trace_op_pool_create,
+ 
+ RTE_TRACE_POINT_REGISTER(rte_cryptodev_trace_count,
+ 	lib.cryptodev.count)
++
++RTE_TRACE_POINT_REGISTER(rte_cryptodev_trace_qp_depth_used,
++	lib.cryptodev.qp_depth_used)
+diff --git a/lib/cryptodev/rte_cryptodev.h b/lib/cryptodev/rte_cryptodev.h
+index aaeaf294e6bbd..c99bdd31b40eb 100644
+--- a/lib/cryptodev/rte_cryptodev.h
++++ b/lib/cryptodev/rte_cryptodev.h
+@@ -2007,6 +2007,51 @@ rte_cryptodev_enqueue_burst(uint8_t dev_id, uint16_t qp_id,
+ 	return fp_ops->enqueue_burst(qp, ops, nb_ops);
+ }
+ 
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
++ *
++ * Get the number of used descriptors or depth of a cryptodev queue pair.
++ *
++ * This function retrieves the number of used descriptors in a crypto queue.
++ * Applications can use this API in the fast path to inspect QP occupancy and
++ * take appropriate action.
++ *
++ * Since it is a fast-path function, no check is performed on dev_id and qp_id.
++ * Caller must therefore ensure that the device is enabled and queue pair is setup.
++ *
++ * @param	dev_id		The identifier of the device.
++ * @param	qp_id		The index of the queue pair for which used descriptor
++ *				count is to be retrieved. The value
++ *				must be in the range [0, nb_queue_pairs - 1]
++ *				previously supplied to *rte_cryptodev_configure*.
++ *
++ * @return
++ *  The number of used descriptors on the specified queue pair, or:
++ *   - (-ENOTSUP) if the device does not support this function.
++ */
++
++__rte_experimental
++static inline int
++rte_cryptodev_qp_depth_used(uint8_t dev_id, uint16_t qp_id)
++{
++	const struct rte_crypto_fp_ops *fp_ops;
++	void *qp;
++	int rc;
++
++	fp_ops = &rte_crypto_fp_ops[dev_id];
++	qp = fp_ops->qp.data[qp_id];
++
++	if (fp_ops->qp_depth_used == NULL) {
++		rc = -ENOTSUP;
++		goto out;
++	}
++
++	rc = fp_ops->qp_depth_used(qp);
++out:
++	rte_cryptodev_trace_qp_depth_used(dev_id, qp_id);
++	return rc;
++}
+ 
+ 
+ #ifdef __cplusplus
+diff --git a/lib/cryptodev/rte_cryptodev_core.h b/lib/cryptodev/rte_cryptodev_core.h
+index 5de89d099f1ca..073c4bc3ff295 100644
+--- a/lib/cryptodev/rte_cryptodev_core.h
++++ b/lib/cryptodev/rte_cryptodev_core.h
+@@ -24,6 +24,9 @@ typedef uint16_t (*enqueue_pkt_burst_t)(void *qp,
+ 		struct rte_crypto_op **ops,	uint16_t nb_ops);
+ /**< Enqueue packets for processing on queue pair of a device. */
+ 
++typedef uint32_t (*crypto_qp_depth_used_t)(void *qp);
++/**< Get used descriptor depth in a queue pair of a device. */
++
+ /**
+  * @internal
+  * Structure used to hold opaque pointers to internal ethdev Rx/Tx
+@@ -47,8 +50,10 @@ struct rte_crypto_fp_ops {
+ 	dequeue_pkt_burst_t dequeue_burst;
+ 	/** Internal queue pair data pointers. */
+ 	struct rte_cryptodev_qpdata qp;
++	/** Get the number of used queue pair descriptors. */
++	crypto_qp_depth_used_t qp_depth_used;
+ 	/** Reserved for future ops. */
+-	uintptr_t reserved[3];
++	uintptr_t reserved[2];
+ } __rte_cache_aligned;
+ 
+ extern struct rte_crypto_fp_ops rte_crypto_fp_ops[RTE_CRYPTO_MAX_DEVS];
+diff --git a/lib/cryptodev/rte_cryptodev_trace_fp.h b/lib/cryptodev/rte_cryptodev_trace_fp.h
+index 9218997c14a81..dbfbc7b2e52be 100644
+--- a/lib/cryptodev/rte_cryptodev_trace_fp.h
++++ b/lib/cryptodev/rte_cryptodev_trace_fp.h
+@@ -31,6 +31,13 @@ RTE_TRACE_POINT_FP(
+ 	rte_trace_point_emit_u16(nb_ops);
+ )
+ 
++RTE_TRACE_POINT_FP(
++	rte_cryptodev_trace_qp_depth_used,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint16_t qp_id),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u16(qp_id);
++)
++
+ #ifdef __cplusplus
+ }
+ #endif
+-- 
+2.25.1
+

@@ -1,0 +1,61 @@
+From 0e4236f58e6a749b332622e86e6a6d3e4f95c445 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 16 Apr 2024 07:25:56 +0000
+Subject: [PATCH 306/513] dma/odm: add checks to avoid overflow
+
+Upstream CI complaining about overflow. Address the same.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ibffa9f4e5f1f6523397492d0443ae4a3a1ae83ee
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125423
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+(cherry picked from commit 2c563c60f574a7f92f121b1e63940cb0a4639cb0)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125439
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/dma/odm/odm_dmadev.c | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/dma/odm/odm_dmadev.c b/drivers/dma/odm/odm_dmadev.c
+index 04286e3bf7dd0..6e9ef904945e9 100644
+--- a/drivers/dma/odm/odm_dmadev.c
++++ b/drivers/dma/odm/odm_dmadev.c
+@@ -238,12 +238,11 @@ odm_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge *
+ 		   const struct rte_dma_sge *dst, uint16_t nb_src, uint16_t nb_dst, uint64_t flags)
+ {
+ 	uint16_t pending_submit_len, pending_submit_cnt, iring_head, ins_ring_head;
++	uint16_t iring_sz_available, i, nb, num_words;
+ 	uint64_t cmd[ODM_IRING_ENTRY_SIZE_MAX];
+ 	struct odm_dev *odm = dev_private;
+ 	uint32_t s_sz = 0, d_sz = 0;
+-	uint16_t iring_sz_available;
+ 	uint64_t *iring_head_ptr;
+-	int i, nb, num_words;
+ 	struct odm_queue *vq;
+ 	union odm_instr_hdr_s hdr = {
+ 		.s.ct = ODM_HDR_CT_CW_NC,
+@@ -281,12 +280,16 @@ odm_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge *
+ 		return -ENOSPC;
+ 
+ 	if ((iring_head + num_words) >= max_iring_words) {
+-		int words_avail = max_iring_words - iring_head;
++		uint16_t words_avail = max_iring_words - iring_head;
++		uint16_t words_pend = num_words - words_avail;
++
++		if (unlikely(words_avail + words_pend > ODM_IRING_ENTRY_SIZE_MAX))
++			return -ENOSPC;
+ 
+ 		odm_dmadev_fill_sg(cmd, src, dst, nb_src, nb_dst, &hdr);
+ 		rte_memcpy((void *)&iring_head_ptr[iring_head], (void *)cmd, words_avail * 8);
+-		iring_head = num_words - words_avail;
+-		rte_memcpy((void *)iring_head_ptr, (void *)&cmd[words_avail], iring_head * 8);
++		rte_memcpy((void *)iring_head_ptr, (void *)&cmd[words_avail], words_pend * 8);
++		iring_head = words_pend;
+ 	} else {
+ 		odm_dmadev_fill_sg(&iring_head_ptr[iring_head], src, dst, nb_src, nb_dst, &hdr);
+ 		iring_head += num_words;
+-- 
+2.25.1
+

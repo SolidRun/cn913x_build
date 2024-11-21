@@ -1,0 +1,344 @@
+From 15ddb500534d42b6f6a74880078a830cb5457984 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Mon, 5 Dec 2022 15:01:42 +0530
+Subject: [PATCH 273/955] app/testeventdev: add cipher alg option for cryptodev
+
+Testeventdev crypto adapter symmetric tests are only attempting
+NULL cipher algorithm. This limits crypto adapter usage with only
+PMDs that can support NULL cipher algorithm. Also, since NULL cipher
+algorithm doesn't perform any crypto operation, the performance numbers
+reported may not reflect the actual crypto capabilities of the device.
+Extend the application to support non-NULL cipher algorithms.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: Ib3a44866c2b4f8ad608db9541307b31353ec5568
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96834
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test-eventdev/evt_common.h       |  7 +++
+ app/test-eventdev/evt_options.c      | 68 ++++++++++++++++++++++++++++
+ app/test-eventdev/evt_options.h      | 10 ++++
+ app/test-eventdev/parser.c           |  4 +-
+ app/test-eventdev/parser.h           |  2 +-
+ app/test-eventdev/test_perf_common.c | 57 +++++++++++++++++++++--
+ 6 files changed, 141 insertions(+), 7 deletions(-)
+
+diff --git a/app/test-eventdev/evt_common.h b/app/test-eventdev/evt_common.h
+index 15e9c34e2c74d..fcb35714386fe 100644
+--- a/app/test-eventdev/evt_common.h
++++ b/app/test-eventdev/evt_common.h
+@@ -47,9 +47,12 @@ enum evt_prod_type {
+ 
+ struct evt_options {
+ #define EVT_TEST_NAME_MAX_LEN     32
++#define EVT_CRYPTO_MAX_KEY_SIZE   256
++#define EVT_CRYPTO_MAX_IV_SIZE    16
+ 	char test_name[EVT_TEST_NAME_MAX_LEN];
+ 	bool plcores[RTE_MAX_LCORE];
+ 	bool wlcores[RTE_MAX_LCORE];
++	bool crypto_cipher_bit_mode;
+ 	int pool_sz;
+ 	int socket_id;
+ 	int nb_stages;
+@@ -64,12 +67,14 @@ struct evt_options {
+ 	uint16_t wkr_deq_dep;
+ 	uint16_t vector_size;
+ 	uint16_t eth_queues;
++	uint16_t crypto_cipher_iv_sz;
+ 	uint32_t nb_flows;
+ 	uint32_t tx_first;
+ 	uint16_t tx_pkt_sz;
+ 	uint32_t max_pkt_sz;
+ 	uint32_t prod_enq_burst_sz;
+ 	uint32_t deq_tmo_nsec;
++	uint32_t crypto_cipher_key_sz;
+ 	uint32_t q_priority:1;
+ 	uint32_t fwd_latency:1;
+ 	uint32_t ena_vector : 1;
+@@ -83,6 +88,8 @@ struct evt_options {
+ 	enum evt_prod_type prod_type;
+ 	enum rte_event_crypto_adapter_mode crypto_adptr_mode;
+ 	enum rte_crypto_op_type crypto_op_type;
++	enum rte_crypto_cipher_algorithm crypto_cipher_alg;
++	uint8_t crypto_cipher_key[EVT_CRYPTO_MAX_KEY_SIZE];
+ };
+ 
+ static inline bool
+diff --git a/app/test-eventdev/evt_options.c b/app/test-eventdev/evt_options.c
+index 6c3e0e5b6ac44..b175c067cd70a 100644
+--- a/app/test-eventdev/evt_options.c
++++ b/app/test-eventdev/evt_options.c
+@@ -40,6 +40,8 @@ evt_options_default(struct evt_options *opt)
+ 	opt->vector_size = 64;
+ 	opt->vector_tmo_nsec = 100E3;
+ 	opt->crypto_op_type = RTE_CRYPTO_OP_TYPE_SYMMETRIC;
++	opt->crypto_cipher_alg = RTE_CRYPTO_CIPHER_NULL;
++	opt->crypto_cipher_key_sz = 0;
+ }
+ 
+ typedef int (*option_parser_t)(struct evt_options *opt,
+@@ -176,6 +178,61 @@ evt_parse_crypto_op_type(struct evt_options *opt, const char *arg)
+ 	return ret;
+ }
+ 
++static bool
++cipher_alg_is_bit_mode(enum rte_crypto_cipher_algorithm alg)
++{
++	return (alg == RTE_CRYPTO_CIPHER_SNOW3G_UEA2 ||
++		alg == RTE_CRYPTO_CIPHER_ZUC_EEA3 ||
++		alg == RTE_CRYPTO_CIPHER_KASUMI_F8);
++}
++
++static int
++evt_parse_crypto_cipher_alg(struct evt_options *opt, const char *arg)
++{
++	enum rte_crypto_cipher_algorithm cipher_alg;
++
++	if (rte_cryptodev_get_cipher_algo_enum(&cipher_alg, arg) < 0) {
++		RTE_LOG(ERR, USER1, "Invalid cipher algorithm specified\n");
++		return -1;
++	}
++
++	opt->crypto_cipher_alg = cipher_alg;
++	opt->crypto_cipher_bit_mode = cipher_alg_is_bit_mode(cipher_alg);
++
++	return 0;
++}
++
++static int
++evt_parse_crypto_cipher_key(struct evt_options *opt, const char *arg)
++{
++	opt->crypto_cipher_key_sz = EVT_CRYPTO_MAX_KEY_SIZE;
++	if (parse_hex_string(arg, opt->crypto_cipher_key,
++			     (uint32_t *)&opt->crypto_cipher_key_sz)) {
++		RTE_LOG(ERR, USER1, "Invalid cipher key specified\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++static int
++evt_parse_crypto_cipher_iv_sz(struct evt_options *opt, const char *arg)
++{
++	uint16_t iv_sz;
++	int ret;
++
++	ret = parser_read_uint16(&(iv_sz), arg);
++	if (iv_sz > EVT_CRYPTO_MAX_IV_SIZE) {
++		RTE_LOG(ERR, USER1,
++			"Unsupported cipher IV length [%d] specified\n",
++			iv_sz);
++		return -1;
++	}
++
++	opt->crypto_cipher_iv_sz = iv_sz;
++	return ret;
++}
++
+ static int
+ evt_parse_test_name(struct evt_options *opt, const char *arg)
+ {
+@@ -404,6 +461,11 @@ usage(char *program)
+ 		"\t                      1 for OP_FORWARD mode.\n"
+ 		"\t--crypto_op_type   : 0 for SYM ops (default) and\n"
+ 		"\t                     1 for ASYM ops.\n"
++		"\t--crypto_cipher_alg : cipher algorithm to be used\n"
++		"\t                      default algorithm is NULL.\n"
++		"\t--crypto_cipher_key : key for the cipher algorithm selected\n"
++		"\t--crypto_cipher_iv_sz : IV size for the cipher algorithm\n"
++		"\t                        selected\n"
+ 		"\t--mbuf_sz          : packet mbuf size.\n"
+ 		"\t--max_pkt_sz       : max packet size.\n"
+ 		"\t--prod_enq_burst_sz : producer enqueue burst size.\n"
+@@ -483,6 +545,9 @@ static struct option lgopts[] = {
+ 	{ EVT_PROD_TIMERDEV_BURST, 0, 0, 0 },
+ 	{ EVT_CRYPTO_ADPTR_MODE,   1, 0, 0 },
+ 	{ EVT_CRYPTO_OP_TYPE,	   1, 0, 0 },
++	{ EVT_CRYPTO_CIPHER_ALG,   1, 0, 0 },
++	{ EVT_CRYPTO_CIPHER_KEY,   1, 0, 0 },
++	{ EVT_CRYPTO_CIPHER_IV_SZ, 1, 0, 0 },
+ 	{ EVT_NB_TIMERS,           1, 0, 0 },
+ 	{ EVT_NB_TIMER_ADPTRS,     1, 0, 0 },
+ 	{ EVT_TIMER_TICK_NSEC,     1, 0, 0 },
+@@ -528,6 +593,9 @@ evt_opts_parse_long(int opt_idx, struct evt_options *opt)
+ 		{ EVT_PROD_TIMERDEV_BURST, evt_parse_timer_prod_type_burst},
+ 		{ EVT_CRYPTO_ADPTR_MODE, evt_parse_crypto_adptr_mode},
+ 		{ EVT_CRYPTO_OP_TYPE, evt_parse_crypto_op_type},
++		{ EVT_CRYPTO_CIPHER_ALG, evt_parse_crypto_cipher_alg},
++		{ EVT_CRYPTO_CIPHER_KEY, evt_parse_crypto_cipher_key},
++		{ EVT_CRYPTO_CIPHER_IV_SZ, evt_parse_crypto_cipher_iv_sz},
+ 		{ EVT_NB_TIMERS, evt_parse_nb_timers},
+ 		{ EVT_NB_TIMER_ADPTRS, evt_parse_nb_timer_adptrs},
+ 		{ EVT_TIMER_TICK_NSEC, evt_parse_timer_tick_nsec},
+diff --git a/app/test-eventdev/evt_options.h b/app/test-eventdev/evt_options.h
+index 01bc8614080dc..8bf0a2ff38ad7 100644
+--- a/app/test-eventdev/evt_options.h
++++ b/app/test-eventdev/evt_options.h
+@@ -39,6 +39,9 @@
+ #define EVT_PROD_TIMERDEV_BURST  ("prod_type_timerdev_burst")
+ #define EVT_CRYPTO_ADPTR_MODE	 ("crypto_adptr_mode")
+ #define EVT_CRYPTO_OP_TYPE	 ("crypto_op_type")
++#define EVT_CRYPTO_CIPHER_ALG	 ("crypto_cipher_alg")
++#define EVT_CRYPTO_CIPHER_KEY	 ("crypto_cipher_key")
++#define EVT_CRYPTO_CIPHER_IV_SZ  ("crypto_cipher_iv_sz")
+ #define EVT_NB_TIMERS            ("nb_timers")
+ #define EVT_NB_TIMER_ADPTRS      ("nb_timer_adptrs")
+ #define EVT_TIMER_TICK_NSEC      ("timer_tick_nsec")
+@@ -305,6 +308,13 @@ evt_dump_producer_type(struct evt_options *opt)
+ 			 (opt->crypto_op_type == RTE_CRYPTO_OP_TYPE_SYMMETRIC) ?
+ 			 "SYMMETRIC" : "ASYMMETRIC");
+ 		evt_dump("nb_cryptodev", "%u", rte_cryptodev_count());
++		if (opt->crypto_op_type == RTE_CRYPTO_OP_TYPE_SYMMETRIC) {
++			evt_dump("cipher algo", "%s",
++				 rte_cryptodev_get_cipher_algo_string(opt->crypto_cipher_alg));
++			evt_dump("cipher key sz", "%u",
++				 opt->crypto_cipher_key_sz);
++			evt_dump("cipher iv sz", "%u", opt->crypto_cipher_iv_sz);
++		}
+ 		break;
+ 	}
+ 	evt_dump("prod_type", "%s", name);
+diff --git a/app/test-eventdev/parser.c b/app/test-eventdev/parser.c
+index 8818c37ff8b5a..bbea47b87d378 100644
+--- a/app/test-eventdev/parser.c
++++ b/app/test-eventdev/parser.c
+@@ -274,10 +274,10 @@ parse_tokenize_string(char *string, char *tokens[], uint32_t *n_tokens)
+ }
+ 
+ int
+-parse_hex_string(char *src, uint8_t *dst, uint32_t *size)
++parse_hex_string(const char *src, uint8_t *dst, uint32_t *size)
+ {
+-	char *c;
+ 	uint32_t len, i;
++	const char *c;
+ 
+ 	/* Check input parameters */
+ 	if ((src == NULL) ||
+diff --git a/app/test-eventdev/parser.h b/app/test-eventdev/parser.h
+index 954371b5b8293..3617872997a33 100644
+--- a/app/test-eventdev/parser.h
++++ b/app/test-eventdev/parser.h
+@@ -43,7 +43,7 @@ int parser_read_uint8_hex(uint8_t *value, const char *p);
+ 
+ int parser_read_int32(int32_t *value, const char *p);
+ 
+-int parse_hex_string(char *src, uint8_t *dst, uint32_t *size);
++int parse_hex_string(const char *src, uint8_t *dst, uint32_t *size);
+ 
+ int parse_tokenize_string(char *string, char *tokens[], uint32_t *n_tokens);
+ 
+diff --git a/app/test-eventdev/test_perf_common.c b/app/test-eventdev/test_perf_common.c
+index c54f0ba1dfac3..fd434666cbc7d 100644
+--- a/app/test-eventdev/test_perf_common.c
++++ b/app/test-eventdev/test_perf_common.c
+@@ -8,6 +8,10 @@
+ 
+ #define NB_CRYPTODEV_DESCRIPTORS 1024
+ #define DATA_SIZE		512
++#define IV_OFFSET (sizeof(struct rte_crypto_op) + \
++		   sizeof(struct rte_crypto_sym_op) + \
++		   sizeof(union rte_event_crypto_metadata))
++
+ struct modex_test_data {
+ 	enum rte_crypto_asym_xform_type xform_type;
+ 	struct {
+@@ -364,6 +368,7 @@ crypto_adapter_enq_op_new(struct prod_data *p)
+ 	const uint32_t nb_flows = t->nb_flows;
+ 	const uint64_t nb_pkts = t->nb_pkts;
+ 	struct rte_mempool *pool = t->pool;
++	uint16_t data_length, data_offset;
+ 	struct evt_options *opt = t->opt;
+ 	uint16_t qp_id = p->ca.cdev_qp_id;
+ 	uint8_t cdev_id = p->ca.cdev_id;
+@@ -382,6 +387,14 @@ crypto_adapter_enq_op_new(struct prod_data *p)
+ 	offset = sizeof(struct perf_elt);
+ 	len = RTE_MAX(RTE_ETHER_MIN_LEN + offset, opt->mbuf_sz);
+ 
++	if (opt->crypto_cipher_bit_mode) {
++		data_offset = offset << 3;
++		data_length = (len - offset) << 3;
++	} else {
++		data_offset = offset;
++		data_length = len - offset;
++	}
++
+ 	while (count < nb_pkts && t->done == false) {
+ 		if (opt->crypto_op_type == RTE_CRYPTO_OP_TYPE_SYMMETRIC) {
+ 			struct rte_crypto_sym_op *sym_op;
+@@ -403,8 +416,10 @@ crypto_adapter_enq_op_new(struct prod_data *p)
+ 			rte_pktmbuf_append(m, len);
+ 			sym_op = op->sym;
+ 			sym_op->m_src = m;
+-			sym_op->cipher.data.offset = offset;
+-			sym_op->cipher.data.length = len - offset;
++
++			sym_op->cipher.data.offset = data_offset;
++			sym_op->cipher.data.length = data_length;
++
+ 			rte_crypto_op_attach_sym_session(
+ 				op, p->ca.crypto_sess[flow_counter++ % nb_flows]);
+ 		} else {
+@@ -1136,11 +1151,45 @@ perf_event_crypto_adapter_setup(struct test_perf *t, struct prod_data *p)
+ static void *
+ cryptodev_sym_sess_create(struct prod_data *p, struct test_perf *t)
+ {
++	const struct rte_cryptodev_symmetric_capability *cap;
++	struct rte_cryptodev_sym_capability_idx cap_idx;
++	enum rte_crypto_cipher_algorithm cipher_algo;
+ 	struct rte_crypto_sym_xform cipher_xform;
++	struct evt_options *opt = t->opt;
++	uint16_t key_size;
++	uint16_t iv_size;
+ 	void *sess;
+ 
++	cipher_algo = opt->crypto_cipher_alg;
++	key_size = opt->crypto_cipher_key_sz;
++	iv_size = opt->crypto_cipher_iv_sz;
++
++	/* Check if device supports the algorithm */
++	cap_idx.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
++	cap_idx.algo.cipher = cipher_algo;
++
++	cap = rte_cryptodev_sym_capability_get(p->ca.cdev_id, &cap_idx);
++	if (cap == NULL) {
++		evt_err("Device doesn't support cipher algorithm [%s]. Test Skipped\n",
++			rte_cryptodev_get_cipher_algo_string(cipher_algo));
++		return NULL;
++	}
++
++	/* Check if device supports key size and IV size */
++	if (rte_cryptodev_sym_capability_check_cipher(cap, key_size,
++			iv_size) < 0) {
++		evt_err("Device doesn't support cipher configuration:\n"
++			"cipher algo [%s], key sz [%d], iv sz [%d]. Test Skipped\n",
++			rte_cryptodev_get_cipher_algo_string(cipher_algo), key_size, iv_size);
++		return NULL;
++	}
++
+ 	cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+-	cipher_xform.cipher.algo = RTE_CRYPTO_CIPHER_NULL;
++	cipher_xform.cipher.algo = cipher_algo;
++	cipher_xform.cipher.key.data = opt->crypto_cipher_key;
++	cipher_xform.cipher.key.length = key_size;
++	cipher_xform.cipher.iv.length = iv_size;
++	cipher_xform.cipher.iv.offset = IV_OFFSET;
+ 	cipher_xform.cipher.op = RTE_CRYPTO_CIPHER_OP_ENCRYPT;
+ 	cipher_xform.next = NULL;
+ 
+@@ -1643,7 +1692,7 @@ perf_cryptodev_setup(struct evt_test *test, struct evt_options *opt)
+ 
+ 	t->ca_op_pool = rte_crypto_op_pool_create(
+ 		"crypto_op_pool", opt->crypto_op_type, opt->pool_sz,
+-		128, sizeof(union rte_event_crypto_metadata),
++		128, sizeof(union rte_event_crypto_metadata) + EVT_CRYPTO_MAX_IV_SIZE,
+ 		rte_socket_id());
+ 	if (t->ca_op_pool == NULL) {
+ 		evt_err("Failed to create crypto op pool");
+-- 
+2.25.1
+

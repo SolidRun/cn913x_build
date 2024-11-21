@@ -1,0 +1,46 @@
+From 4a1168fc19c16844e26e090a6394a6b1dea59101 Mon Sep 17 00:00:00 2001
+From: Veerasenareddy Burru <vburru@marvell.com>
+Date: Wed, 22 Feb 2023 04:46:02 -0800
+Subject: [PATCH 242/955] net/octeon_ep: set watermark for SDP output queues
+
+Set watermark for SDP output queues to send backpressure to NIX
+when available Rx buffers fall below watermark.
+
+Signed-off-by: Veerasenareddy Burru <vburru@marvell.com>
+Change-Id: I12ecb20718a431aa907254a2baaf689a2b56ed4c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97778
+Tested-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_vf.c    | 3 +++
+ drivers/net/octeon_ep/otx_ep_common.h | 1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.c b/drivers/net/octeon_ep/cnxk_ep_vf.c
+index 28584416c9db2..92e44f8a72fc7 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.c
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.c
+@@ -263,6 +263,9 @@ cnxk_ep_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 	otx_ep_dbg("SDP_R[%d]_sent: %x", oq_no,
+ 			rte_read32(droq->pkts_sent_reg));
+ 
++	/* Set Watermark for backpressure */
++	oct_ep_write64(OTX_EP_OQ_WMARK_MIN, otx_ep->hw_addr + CNXK_EP_R_OUT_WMARK(oq_no));
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 08579db0b21a4..256ce5750f1c9 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -22,6 +22,7 @@
+ #define OTX_EP_MAX_OQ_DESCRIPTORS   (8192)
+ #define OTX_EP_OQ_BUF_SIZE          (2048)
+ #define OTX_EP_MIN_RX_BUF_SIZE      (64)
++#define OTX_EP_OQ_WMARK_MIN         (256)
+ 
+ #define OTX_EP_OQ_INFOPTR_MODE      (0)
+ #define OTX_EP_OQ_REFIL_THRESHOLD   (16)
+-- 
+2.25.1
+

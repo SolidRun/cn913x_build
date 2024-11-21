@@ -1,0 +1,47 @@
+From c5f65f7bdcafabd074bfb900e8fa123f8dd4cbb8 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Fri, 5 Jan 2024 20:42:04 +0530
+Subject: [PATCH 125/513] ci: set minimum march as armv8-a
+
+Set minimum march as armv8-a to allow compilation
+with older compilers.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I7dbfc43f744d604dc42c6971f63a75d314acb7b6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119240
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/build/config/arm64_cn10k_linux_clang       | 2 +-
+ marvell-ci/build/config/arm64_cn10k_linux_gcc-marvell | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/build/config/arm64_cn10k_linux_clang b/marvell-ci/build/config/arm64_cn10k_linux_clang
+index d46e5b592a3af..c51a7b7247861 100644
+--- a/marvell-ci/build/config/arm64_cn10k_linux_clang
++++ b/marvell-ci/build/config/arm64_cn10k_linux_clang
+@@ -9,7 +9,7 @@ pcap-config = ''
+ [host_machine]
+ system = 'linux'
+ cpu_family = 'aarch64'
+-cpu = 'armv8.6-a'
++cpu = 'armv8-a'
+ endian = 'little'
+ 
+ [properties]
+diff --git a/marvell-ci/build/config/arm64_cn10k_linux_gcc-marvell b/marvell-ci/build/config/arm64_cn10k_linux_gcc-marvell
+index 71f9a01344e89..a683c9b138ebe 100644
+--- a/marvell-ci/build/config/arm64_cn10k_linux_gcc-marvell
++++ b/marvell-ci/build/config/arm64_cn10k_linux_gcc-marvell
+@@ -10,7 +10,7 @@ pcap-config = ''
+ [host_machine]
+ system = 'linux'
+ cpu_family = 'aarch64'
+-cpu = 'armv8.6-a'
++cpu = 'armv8-a'
+ endian = 'little'
+ 
+ [properties]
+-- 
+2.25.1
+

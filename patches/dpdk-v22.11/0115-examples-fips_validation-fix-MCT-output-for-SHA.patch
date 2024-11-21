@@ -1,0 +1,99 @@
+From 521a2dbf90ec25e2b2c973ac58d7a99cd006155f Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Thu, 1 Dec 2022 12:31:14 +0530
+Subject: [PATCH 115/955] examples/fips_validation: fix MCT output for SHA
+
+MCT test for SHA need not print message string along
+with digest value.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I4350b4e482009dcbae1edd63fbf6c6e4a1ff1946
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92855
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ examples/fips_validation/fips_validation_sha.c |  8 ++------
+ examples/fips_validation/main.c                | 13 +++++--------
+ 2 files changed, 7 insertions(+), 14 deletions(-)
+
+diff --git a/examples/fips_validation/fips_validation_sha.c b/examples/fips_validation/fips_validation_sha.c
+index c5da2cc623d91..178ea492d3e90 100644
+--- a/examples/fips_validation/fips_validation_sha.c
++++ b/examples/fips_validation/fips_validation_sha.c
+@@ -182,7 +182,7 @@ parse_test_sha_json_writeback(struct fips_val *val)
+ static int
+ parse_test_sha_mct_json_writeback(struct fips_val *val)
+ {
+-	json_t *tcId, *msg, *md, *resArr, *res;
++	json_t *tcId, *md, *resArr, *res;
+ 	struct fips_val val_local;
+ 
+ 	tcId = json_object_get(json_info.json_test_case, "tcId");
+@@ -208,11 +208,7 @@ parse_test_sha_mct_json_writeback(struct fips_val *val)
+ 
+ 	res = json_object();
+ 
+-	writeback_hex_str("", info.one_line_text, &val[1]);
+-	msg = json_string(info.one_line_text);
+-	json_object_set_new(res, "msg", msg);
+-
+-	val_local.val = val[0].val + vec.pt.len;
++	val_local.val = val->val + vec.pt.len;
+ 	val_local.len = vec.cipher_auth.digest.len;
+ 
+ 	writeback_hex_str("", info.one_line_text, &val_local);
+diff --git a/examples/fips_validation/main.c b/examples/fips_validation/main.c
+index 622f8b5a6ecdb..cc585e8418091 100644
+--- a/examples/fips_validation/main.c
++++ b/examples/fips_validation/main.c
+@@ -2268,8 +2268,7 @@ fips_mct_sha_test(void)
+ #define SHA_EXTERN_ITER	100
+ #define SHA_INTERN_ITER	1000
+ #define SHA_MD_BLOCK	3
+-	/* val[0] is op result and other value is for parse_writeback callback */
+-	struct fips_val val[2] = {{NULL, 0},};
++	struct fips_val val = {NULL, 0};
+ 	struct fips_val  md[SHA_MD_BLOCK], msg;
+ 	int ret;
+ 	uint32_t i, j;
+@@ -2328,7 +2327,7 @@ fips_mct_sha_test(void)
+ 				return ret;
+ 			}
+ 
+-			ret = get_writeback_data(&val[0]);
++			ret = get_writeback_data(&val);
+ 			if (ret < 0)
+ 				return ret;
+ 
+@@ -2337,7 +2336,7 @@ fips_mct_sha_test(void)
+ 			memcpy(md[1].val, md[2].val, md[2].len);
+ 			md[1].len = md[2].len;
+ 
+-			memcpy(md[2].val, (val[0].val + vec.pt.len),
++			memcpy(md[2].val, (val.val + vec.pt.len),
+ 				vec.cipher_auth.digest.len);
+ 			md[2].len = vec.cipher_auth.digest.len;
+ 		}
+@@ -2348,9 +2347,7 @@ fips_mct_sha_test(void)
+ 		if (info.file_type != FIPS_TYPE_JSON)
+ 			fprintf(info.fp_wr, "COUNT = %u\n", j);
+ 
+-		val[1].val = msg.val;
+-		val[1].len = msg.len;
+-		info.parse_writeback(val);
++		info.parse_writeback(&val);
+ 
+ 		if (info.file_type != FIPS_TYPE_JSON)
+ 			fprintf(info.fp_wr, "\n");
+@@ -2361,7 +2358,7 @@ fips_mct_sha_test(void)
+ 
+ 	rte_free(vec.pt.val);
+ 
+-	free(val[0].val);
++	free(val.val);
+ 	free(msg.val);
+ 
+ 	return 0;
+-- 
+2.25.1
+

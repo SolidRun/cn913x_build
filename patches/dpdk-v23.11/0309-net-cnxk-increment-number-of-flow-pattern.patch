@@ -1,0 +1,35 @@
+From cbd4ce853164c2af65fbff1a0eb341c1a06f116f Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Thu, 18 Apr 2024 15:34:08 +0530
+Subject: [PATCH 309/513] net/cnxk: increment number of flow pattern
+
+Increment nb_pattern count to include RTE_FLOW_ITEM_TYPE_END.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I6c269a68a66bc6a763b683d50789bf3a124c4f95
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125658
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/cnxk/cnxk_rep_flow.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_rep_flow.c b/drivers/net/cnxk/cnxk_rep_flow.c
+index 5077486bd535e..9a84b7ee3c686 100644
+--- a/drivers/net/cnxk/cnxk_rep_flow.c
++++ b/drivers/net/cnxk/cnxk_rep_flow.c
+@@ -171,6 +171,9 @@ populate_vxlan_encap_action_conf(const struct rte_flow_action_vxlan_encap *vxlan
+ 	for (; pattern->type != RTE_FLOW_ITEM_TYPE_END; pattern++)
+ 		nb_patterns++;
+ 
++	/* +1 for RTE_FLOW_ITEM_TYPE_END */
++	nb_patterns++;
++
+ 	len = sizeof(uint64_t);
+ 	rte_memcpy(vxlan_encap_action_data, &nb_patterns, len);
+ 	pattern = vxlan_conf->definition;
+-- 
+2.25.1
+

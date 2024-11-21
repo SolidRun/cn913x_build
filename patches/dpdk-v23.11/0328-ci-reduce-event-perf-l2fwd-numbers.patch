@@ -1,0 +1,40 @@
+From 803abc5c6355d9cfc3e42fa145d87ce50ee23141 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 27 Feb 2024 20:41:24 +0530
+Subject: [PATCH 328/513] ci: reduce event perf l2fwd numbers
+
+Reduce l2fwd event perf numbers.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I437f541a2f7a67c5c620b40dc8535ccc39435075
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122670
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ .../event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv      | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
+index 90851522d9ab9..0a51a6c6efaf9 100644
+--- a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
++++ b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
+@@ -2,14 +2,14 @@ L2FWD_EVENT (atomic queue) output in packets per second
+ cores, RESULT
+ 1, 7314495
+ 8, 44187476
+-16, 85869138
++16, 80869138
+ 
+ ------------------------------------------------------------------------
+ L3FWD_EVENT (ordered queue) output in packets per second
+ cores, RESULT
+ 1, 7495352
+ 8, 44160021
+-16, 85651417
++16, 80651417
+ 
+ ------------------------------------------------------------------------
+ PERF_ATQ (parallel queue) output in packets per second
+-- 
+2.25.1
+

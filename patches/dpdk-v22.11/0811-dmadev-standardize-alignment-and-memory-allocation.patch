@@ -1,0 +1,67 @@
+From 9e878f68336bf5e44f1a0b5d0381acf5df3f833e Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 30 Jan 2024 21:59:48 +0530
+Subject: [PATCH 811/955] dmadev: standardize alignment and memory allocation
+
+Align fp_objects based on cacheline size, allocate
+devices and fp_objects memory on hugepages.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Iad7db8ded0504c1283b77a6a6f9f4bb19ccaa53b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120726
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit 4ce46365ca3140ff19bf80133fb8425f93a7fd43)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121028
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ lib/dmadev/rte_dmadev.c      | 6 ++----
+ lib/dmadev/rte_dmadev_core.h | 2 +-
+ 2 files changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/lib/dmadev/rte_dmadev.c b/lib/dmadev/rte_dmadev.c
+index 26526994151ec..f61c33e98e299 100644
+--- a/lib/dmadev/rte_dmadev.c
++++ b/lib/dmadev/rte_dmadev.c
+@@ -141,10 +141,9 @@ dma_fp_data_prepare(void)
+ 	 */
+ 	size = dma_devices_max * sizeof(struct rte_dma_fp_object) +
+ 		RTE_CACHE_LINE_SIZE;
+-	ptr = malloc(size);
++	ptr = rte_zmalloc("", size, RTE_CACHE_LINE_SIZE);
+ 	if (ptr == NULL)
+ 		return -ENOMEM;
+-	memset(ptr, 0, size);
+ 
+ 	rte_dma_fp_objs = RTE_PTR_ALIGN(ptr, RTE_CACHE_LINE_SIZE);
+ 	for (i = 0; i < dma_devices_max; i++)
+@@ -162,10 +161,9 @@ dma_dev_data_prepare(void)
+ 		return 0;
+ 
+ 	size = dma_devices_max * sizeof(struct rte_dma_dev);
+-	rte_dma_devices = malloc(size);
++	rte_dma_devices = rte_zmalloc("", size, RTE_CACHE_LINE_SIZE);
+ 	if (rte_dma_devices == NULL)
+ 		return -ENOMEM;
+-	memset(rte_dma_devices, 0, size);
+ 
+ 	return 0;
+ }
+diff --git a/lib/dmadev/rte_dmadev_core.h b/lib/dmadev/rte_dmadev_core.h
+index 064785686f7fe..e8239c2d22b69 100644
+--- a/lib/dmadev/rte_dmadev_core.h
++++ b/lib/dmadev/rte_dmadev_core.h
+@@ -73,7 +73,7 @@ struct rte_dma_fp_object {
+ 	rte_dma_completed_t        completed;
+ 	rte_dma_completed_status_t completed_status;
+ 	rte_dma_burst_capacity_t   burst_capacity;
+-} __rte_aligned(128);
++} __rte_cache_aligned;
+ 
+ extern struct rte_dma_fp_object *rte_dma_fp_objs;
+ 
+-- 
+2.25.1
+

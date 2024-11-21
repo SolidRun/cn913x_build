@@ -1,0 +1,43 @@
+From 8dc6636ea79cccd7a5f560b98c523b833c951570 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Sat, 2 Sep 2023 18:59:20 +0530
+Subject: [PATCH 624/955] ci: update cn10k performance numbers
+
+Update cn10k performance drop due to additional barrier in
+the Tx routine.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I3671c54e6e18a1bd54d7035e1f9655bbd0428f7b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/111128
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv      | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
+index 9ef51d1782ce6..90851522d9ab9 100644
+--- a/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
++++ b/marvell-ci/test/cnxk-tests/event_perf/ref_numbers/cn106xx_rclk2500_sclk1100.csv
+@@ -35,14 +35,14 @@ cores, RESULT
+ ------------------------------------------------------------------------
+ GW_MODE_PREF (atomic queue) output in packets per second
+ cores, RESULT
+-1, 7.777
++1, 7.3
+ 8, 43.035
+ 16, 83.120
+ 
+ ------------------------------------------------------------------------
+ GW_MODE_WFE_PREF (atomic queue) output in packets per second
+ cores, RESULT
+-1, 7.775
++1, 7.3
+ 8, 43.019
+ 16, 83.129
+ 
+-- 
+2.25.1
+

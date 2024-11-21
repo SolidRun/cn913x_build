@@ -1,0 +1,82 @@
+From 67e20dfad1bcca15924ce219ce023ecbe78d2f50 Mon Sep 17 00:00:00 2001
+From: Honnappa Nagarahalli <honnappa.nagarahalli@arm.com>
+Date: Tue, 20 Feb 2024 01:45:32 +0000
+Subject: [PATCH 265/513] config/arm: add NVIDIA Grace CPU
+
+Add meson build configuration for NVIDIA Grace platform
+with 64-bit Arm Neoverse V2 cores.
+
+Signed-off-by: Honnappa Nagarahalli <honnappa.nagarahalli@arm.com>
+Acked-by: Ruifeng Wang <ruifeng.wang@arm.com>
+Reviewed-by: Wathsala Vithanage <wathsala.vithanage@arm.com>
+Change-Id: I4eda5453324bf25fdaef6c0436ee1d47fbdf7f39
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123208
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ config/arm/arm64_grace_linux_gcc | 16 ++++++++++++++++
+ config/arm/meson.build           | 10 ++++++++++
+ 2 files changed, 26 insertions(+)
+ create mode 100644 config/arm/arm64_grace_linux_gcc
+
+diff --git a/config/arm/arm64_grace_linux_gcc b/config/arm/arm64_grace_linux_gcc
+new file mode 100644
+index 0000000000000..bde55b17a864b
+--- /dev/null
++++ b/config/arm/arm64_grace_linux_gcc
+@@ -0,0 +1,16 @@
++[binaries]
++c = ['ccache', 'aarch64-linux-gnu-gcc']
++cpp = ['ccache', 'aarch64-linux-gnu-g++']
++ar = 'aarch64-linux-gnu-gcc-ar'
++strip = 'aarch64-linux-gnu-strip'
++pkgconfig = 'aarch64-linux-gnu-pkg-config'
++pcap-config = ''
++
++[host_machine]
++system = 'linux'
++cpu_family = 'aarch64'
++cpu = 'armv9-a'
++endian = 'little'
++
++[properties]
++platform = 'grace'
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index 0c27ef2d0211f..b4bc13bc27834 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -430,6 +430,14 @@ soc_tys2500 = {
+     'numa': true
+ }
+ 
++soc_grace = {
++    'description': 'NVIDIA Grace',
++    'implementer': '0x41',
++    'part_number': '0xd4f',
++    'extra_march_features': ['crypto'],
++    'numa': true
++}
++
+ soc_graviton2 = {
+     'description': 'AWS Graviton2',
+     'implementer': '0x41',
+@@ -557,6 +565,7 @@ dpaa:            NXP DPAA
+ emag:            Ampere eMAG
+ ft2000plus:      Phytium FT-2000+
+ tys2500:         Phytium TengYun S2500
++grace:           NVIDIA Grace
+ graviton2:       AWS Graviton2
+ graviton3:       AWS Graviton3
+ hip10:           HiSilicon HIP10
+@@ -589,6 +598,7 @@ socs = {
+     'emag': soc_emag,
+     'ft2000plus': soc_ft2000plus,
+     'tys2500': soc_tys2500,
++    'grace': soc_grace,
+     'graviton2': soc_graviton2,
+     'graviton3': soc_graviton3,
+     'hip10': soc_hip10,
+-- 
+2.25.1
+

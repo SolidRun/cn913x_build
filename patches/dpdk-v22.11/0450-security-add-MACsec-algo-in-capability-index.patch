@@ -1,0 +1,48 @@
+From c034163b77e07a1c598658535183d0ea1f2e4db6 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Fri, 12 May 2023 12:03:58 +0530
+Subject: [PATCH 450/955] security: add MACsec algo in capability index
+
+This patch adds the MACsec algorithm field in security capability index
+structure. This field is compared against the MACsec alg to return the
+correct capability.
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Change-Id: Ia034412a0b76fb0daffc85bb9e8b5c211cc60c16
+---
+ lib/security/rte_security.c | 4 ++++
+ lib/security/rte_security.h | 3 +++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/lib/security/rte_security.c b/lib/security/rte_security.c
+index 871a0194e04c3..220792bcdd20b 100644
+--- a/lib/security/rte_security.c
++++ b/lib/security/rte_security.c
+@@ -299,6 +299,10 @@ rte_security_capability_get(struct rte_security_ctx *instance,
+ 				if (capability->docsis.direction ==
+ 							idx->docsis.direction)
+ 					return capability;
++			} else if (idx->protocol ==
++						RTE_SECURITY_PROTOCOL_MACSEC) {
++				if (idx->macsec.alg == capability->macsec.alg)
++					return capability;
+ 			}
+ 		}
+ 	}
+diff --git a/lib/security/rte_security.h b/lib/security/rte_security.h
+index 7f44baa933fd1..7ac17adaee6ce 100644
+--- a/lib/security/rte_security.h
++++ b/lib/security/rte_security.h
+@@ -1289,6 +1289,9 @@ struct rte_security_capability_idx {
+ 		struct {
+ 			enum rte_security_docsis_direction direction;
+ 		} docsis;
++		struct {
++			enum rte_security_macsec_alg alg;
++		} macsec;
+ 	};
+ };
+ 
+-- 
+2.25.1
+

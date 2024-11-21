@@ -1,0 +1,34 @@
+From ec8600de075b1c28798f72d0349e703a64b44cb5 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Mon, 4 Mar 2024 08:26:33 -0800
+Subject: [PATCH 271/513] crypto/cnxk: remove the response len handling for tls
+
+Microcode is updating the rlen properly for TLS-1.3
+Remove the rlen handling for the same in PMD.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I4b175fac0b5d92403d40953a6ed3698b601ef4b4
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122388
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 11be64aa9d165..9ceeda7d1a4b2 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -1124,8 +1124,6 @@ cn10k_cpt_tls_post_process(struct rte_crypto_op *cop, struct cpt_cn10k_res_s *re
+ 	uint16_t m_len = res->rlen;
+ 
+ 	if (!res->uc_compcode) {
+-		if ((tls_opt.tls_ver == RTE_SECURITY_VERSION_TLS_1_3) && (!tls_opt.is_write))
+-			m_len -= 1;
+ 		if (mbuf->next == NULL)
+ 			mbuf->data_len = m_len;
+ 		mbuf->pkt_len = m_len;
+-- 
+2.25.1
+

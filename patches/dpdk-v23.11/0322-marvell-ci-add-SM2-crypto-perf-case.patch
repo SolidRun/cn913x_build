@@ -1,0 +1,84 @@
+From 1947f7aac25bf03c538788e0d8ec374ae9c905d5 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 26 Apr 2024 21:10:02 +0530
+Subject: [PATCH 322/513] marvell-ci: add SM2 crypto perf case
+
+Added perf case for SM2-sign crypto operation.
+SM2 perf is measured for a single buffer size
+as the application ignores the other sizes.
+Also reduced the NUMOPS to 100000, as it takes too
+much of time to execute for default NUMOPS.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ie6d414f89e5c15c02f41652c7450acd9d359fba7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126191
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 7b9337be3b84d830d271ce6da31314c73df0c780)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126400
+---
+ .../cnxk-tests/crypto_perf/cnxk_crypto_perf.sh    | 15 +++++++++++++++
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx     |  4 +++-
+ .../ref_numbers/cn10k/rclk2700_sclk1200.106xx     |  4 +++-
+ 3 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh b/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
+index bcf7d5a628990..c0db83c78c362 100755
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
+@@ -440,6 +440,20 @@ function ae_modex_perf()
+ 	crypto_perf_common "$optype" "--devtype $DEVTYPE --ptest throughput --optype $optype --pool-sz $POOLSZ --buffer-sz $BUFFERSZ --total-ops $NUMOPS --burst-sz $BURSTSZ --silent --csv-friendly"
+ }
+ 
++function ae_sm2_perf()
++{
++	local optype="sm2"
++	local asymoptype="sign"
++	local algostr="sm2-sign"
++	BUFSIZE=(64)
++	BUFFERSZ="64"
++	NUMOPS=100000
++	crypto_perf_common "$algostr" "--devtype $DEVTYPE --ptest throughput --optype $optype --pool-sz $POOLSZ --buffer-sz $BUFFERSZ --total-ops $NUMOPS --burst-sz $BURSTSZ --asym-op $asymoptype --silent --csv-friendly"
++	BUFSIZE=(64 384 1504)
++	BUFFERSZ="64,384,1504"
++	NUMOPS=10000000
++}
++
+ echo "Starting crypto perf application"
+ 
+ trap "sig_handler ERR" ERR
+@@ -468,6 +482,7 @@ aead_ipsec_perf
+ zuc_eia3_perf
+ zuc_eea3_perf
+ ae_modex_perf
++ae_sm2_perf
+ 
+ if [[ $IS_CN103 -ne 0 ]] || [[ $PART_106B0 == "B0" ]]; then
+ 	aead_tls12_perf
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+index ccdc2397a2e77..ea4c795e99804 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+@@ -58,4 +58,6 @@ aes-gcm-dtls1.2
+ 384: 29.12 30.26 31.41
+ 1504: 9.28 9.369 9.61
+ <end>
+-
++sm2-sign
++64: 0.109 0.109 0.109
++<end>
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx
+index 65f3a9a8e2f87..7b24e93cfcba4 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx
+@@ -58,4 +58,6 @@ aes-gcm-dtls1.2
+ 384: 31.77 34.26 36
+ 1504: 9.28 11.369 11.558
+ <end>
+-
++sm2-sign
++64: 0.109 0.109 0.109
++<end>
+-- 
+2.25.1
+

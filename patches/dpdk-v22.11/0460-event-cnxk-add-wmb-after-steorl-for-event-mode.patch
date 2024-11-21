@@ -1,0 +1,48 @@
+From b82dc11b33b2642dbade62449f95af0d22f3a8c5 Mon Sep 17 00:00:00 2001
+From: Author Srujana Challa <schalla@marvell.com>
+Date: Tue, 16 May 2023 17:52:01 +0530
+Subject: [PATCH 460/955] event/cnxk: add wmb after steorl for event mode
+
+LMTST area can be overwritten before read by HW between to consecutive
+steorl operations. Hence, add wmb() after steorl op to make sure
+the lmtst operation is complete.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Ib16d7cd88cff79e9ca78eff8c47b7ddad2d234dd
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103549
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_tx_worker.h | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_tx_worker.h b/drivers/event/cnxk/cn10k_tx_worker.h
+index e67aff3e3c7ab..dea6cdcde2ac8 100644
+--- a/drivers/event/cnxk/cn10k_tx_worker.h
++++ b/drivers/event/cnxk/cn10k_tx_worker.h
+@@ -61,7 +61,6 @@ cn10k_sso_tx_one(struct cn10k_sso_hws *ws, struct rte_mbuf *m, uint64_t *cmd,
+ 		 const uint64_t *txq_data, const uint32_t flags)
+ {
+ 	uint8_t lnum = 0, loff = 0, shft = 0;
+-	uint16_t ref_cnt = m->refcnt;
+ 	struct cn10k_eth_txq *txq;
+ 	uintptr_t laddr;
+ 	uint16_t segdw;
+@@ -116,10 +115,9 @@ cn10k_sso_tx_one(struct cn10k_sso_hws *ws, struct rte_mbuf *m, uint64_t *cmd,
+ 
+ 	roc_lmt_submit_steorl(lmt_id, pa);
+ 
+-	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F) {
+-		if (ref_cnt > 1)
+-			rte_io_wmb();
+-	}
++	/* Memory barrier to make sure lmtst store completes */
++	rte_io_wmb();
++
+ 	return 1;
+ }
+ 
+-- 
+2.25.1
+

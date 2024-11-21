@@ -1,0 +1,124 @@
+From 30b6d8e39c6d295f63ae65f259c46b881fc68518 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Tue, 27 Feb 2024 03:08:53 -0800
+Subject: [PATCH 290/513] test/dma: update the sg test to verify wrap around
+ case
+
+Run the sg test in a loop to verify wrap around case.
+Total number commands submitted to be more than the number descriptors
+allocated to verify the scenario.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I728ae8f5797851d208f0ce080e9a7a189c3c39d7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122653
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_dmadev.c     | 45 ++++++++++++++++++++++++--------------
+ app/test/test_dmadev_api.c |  1 -
+ app/test/test_dmadev_api.h |  2 ++
+ 3 files changed, 31 insertions(+), 17 deletions(-)
+
+diff --git a/app/test/test_dmadev.c b/app/test/test_dmadev.c
+index 143e1bcd68851..7462e908317df 100644
+--- a/app/test/test_dmadev.c
++++ b/app/test/test_dmadev.c
+@@ -393,34 +393,26 @@ test_stop_start(int16_t dev_id, uint16_t vchan)
+ }
+ 
+ static int
+-test_enqueue_sg_copies(int16_t dev_id, uint16_t vchan)
++test_enqueue_sg(int16_t dev_id, uint16_t vchan, unsigned int n_sge, unsigned int test_len)
+ {
+-	unsigned int src_len, dst_len, n_sge, len, i, j, k;
+ 	char orig_src[COPY_LEN], orig_dst[COPY_LEN];
+-	struct rte_dma_info info = { 0 };
++	unsigned int src_len, dst_len, i, j, k;
+ 	enum rte_dma_status_code status;
+ 	uint16_t id, n_src, n_dst;
+ 
+-	if (rte_dma_info_get(dev_id, &info) < 0)
+-		ERR_RETURN("Failed to get dev info");
+-
+-	if (info.max_sges < 2)
+-		ERR_RETURN("Test needs minimum 2 SG pointers");
+-
+-	n_sge = info.max_sges;
+-
+ 	for (n_src = 1; n_src <= n_sge; n_src++) {
+ 		for (n_dst = 1; n_dst <= n_sge; n_dst++) {
+ 			/* Normalize SG buffer lengths */
+-			len = COPY_LEN;
+-			len -= (len % (n_src * n_dst));
+-			dst_len = len / n_dst;
+-			src_len = len / n_src;
+-
++			unsigned int len = test_len - (test_len % (n_src * n_dst));
+ 			struct rte_dma_sge sg_src[n_sge], sg_dst[n_sge];
+ 			struct rte_mbuf *src[n_sge], *dst[n_sge];
+ 			char *src_data[n_sge], *dst_data[n_sge];
+ 
++			dst_len = len / n_dst;
++			src_len = len / n_src;
++			if (dst_len == 0 || src_len == 0)
++				continue;
++
+ 			for (i = 0 ; i < len; i++)
+ 				orig_src[i] = rte_rand() & 0xFF;
+ 
+@@ -511,6 +503,27 @@ test_enqueue_sg_copies(int16_t dev_id, uint16_t vchan)
+ 	return 0;
+ }
+ 
++static int
++test_enqueue_sg_copies(int16_t dev_id, uint16_t vchan)
++{
++	struct rte_dma_info info = { 0 };
++	unsigned int n_sge, len;
++	int loop_count = 0;
++
++	if (rte_dma_info_get(dev_id, &info) < 0)
++		ERR_RETURN("Failed to get dev info");
++
++	n_sge = RTE_MIN(info.max_sges, TEST_SG_MAX);
++	len = COPY_LEN;
++
++	do {
++		test_enqueue_sg(dev_id, vchan, n_sge, len);
++		loop_count++;
++	} while (loop_count * n_sge * n_sge < TEST_RINGSIZE * 3);
++
++	return 0;
++}
++
+ /* Failure handling test cases - global macros and variables for those tests*/
+ #define COMP_BURST_SZ	16
+ #define OPT_FENCE(idx) ((fence && idx == 8) ? RTE_DMA_OP_FLAG_FENCE : 0)
+diff --git a/app/test/test_dmadev_api.c b/app/test/test_dmadev_api.c
+index a130e74b51a89..4c5a8c929af01 100644
+--- a/app/test/test_dmadev_api.c
++++ b/app/test/test_dmadev_api.c
+@@ -16,7 +16,6 @@ extern int test_dma_api(uint16_t dev_id);
+ 
+ #define TEST_MEMCPY_SIZE	1024
+ #define TEST_WAIT_US_VAL	50000
+-#define TEST_SG_MAX		64
+ 
+ static int16_t test_dev_id;
+ static int16_t invalid_dev_id;
+diff --git a/app/test/test_dmadev_api.h b/app/test/test_dmadev_api.h
+index 33fbc5bd41be0..a03f7acd4f638 100644
+--- a/app/test/test_dmadev_api.h
++++ b/app/test/test_dmadev_api.h
+@@ -2,4 +2,6 @@
+  * Copyright(c) 2021 HiSilicon Limited
+  */
+ 
++#define TEST_SG_MAX		64
++
+ int test_dma_api(uint16_t dev_id);
+-- 
+2.25.1
+

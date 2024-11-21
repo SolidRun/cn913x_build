@@ -1,0 +1,60 @@
+From 794b7acb59454cb113c8a3e9a63c1c476428e633 Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Tue, 1 Nov 2022 10:37:07 +0530
+Subject: [PATCH 035/955] common/cnxk: move ICMP ltype to end of enum
+
+While configuring the RSS key, mask has been created to match multiple
+ltypes for L4. Since ICMP is placed in between, it is also being
+considered for RSS. So, moving the ICMP to end of enum.
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: I45e088585fd55e776ef701d38a642e5449fac741
+---
+ drivers/common/cnxk/hw/npc.h | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/npc.h b/drivers/common/cnxk/hw/npc.h
+index b8218e25afc13..4164c6ac2ecc1 100644
+--- a/drivers/common/cnxk/hw/npc.h
++++ b/drivers/common/cnxk/hw/npc.h
+@@ -219,8 +219,7 @@ enum npc_kpu_lc_ltype {
+ enum npc_kpu_ld_ltype {
+ 	NPC_LT_LD_TCP = 1,
+ 	NPC_LT_LD_UDP,
+-	NPC_LT_LD_ICMP,
+-	NPC_LT_LD_SCTP,
++	NPC_LT_LD_SCTP = 4,
+ 	NPC_LT_LD_ICMP6,
+ 	NPC_LT_LD_CUSTOM0,
+ 	NPC_LT_LD_CUSTOM1,
+@@ -231,6 +230,7 @@ enum npc_kpu_ld_ltype {
+ 	NPC_LT_LD_NSH,
+ 	NPC_LT_LD_TU_MPLS_IN_NSH,
+ 	NPC_LT_LD_TU_MPLS_IN_IP,
++	NPC_LT_LD_ICMP,
+ };
+ 
+ enum npc_kpu_le_ltype {
+@@ -276,14 +276,14 @@ enum npc_kpu_lg_ltype {
+ enum npc_kpu_lh_ltype {
+ 	NPC_LT_LH_TU_TCP = 1,
+ 	NPC_LT_LH_TU_UDP,
+-	NPC_LT_LH_TU_ICMP,
+-	NPC_LT_LH_TU_SCTP,
++	NPC_LT_LH_TU_SCTP = 4,
+ 	NPC_LT_LH_TU_ICMP6,
++	NPC_LT_LH_CUSTOM0,
++	NPC_LT_LH_CUSTOM1,
+ 	NPC_LT_LH_TU_IGMP = 8,
+ 	NPC_LT_LH_TU_ESP,
+ 	NPC_LT_LH_TU_AH,
+-	NPC_LT_LH_CUSTOM0 = 0xE,
+-	NPC_LT_LH_CUSTOM1 = 0xF,
++	NPC_LT_LH_TU_ICMP = 0xF,
+ };
+ 
+ enum npc_kpu_lb_uflag {
+-- 
+2.25.1
+

@@ -1,0 +1,673 @@
+From edfb454dd0cbcbebd153c40bfb0934a3fa8c2572 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Fri, 3 Nov 2023 19:01:25 +0530
+Subject: [PATCH 708/955] net/cnxk: add support of Rx inject
+
+Add Rx inject security callback APIs to configure, inject
+packet to CPT and receive back as in receive path.
+Devargs "rx_inj_ena=1" will be required to enable the
+inline IPsec Rx inject feature. If inline device is used
+then this devarg will be required for both inline device
+and eth device.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ife4fd05afbee38d5343de73bc4908fa728964679
+---
+ doc/guides/nics/cnxk.rst               |  27 ++++
+ drivers/net/cnxk/cn10k_ethdev_sec.c    |  48 ++++++
+ drivers/net/cnxk/cn10k_rx.h            | 205 ++++++++++++++++++++++++-
+ drivers/net/cnxk/cn10k_rxtx.h          |  57 +++++++
+ drivers/net/cnxk/cn10k_tx.h            |  57 -------
+ drivers/net/cnxk/cnxk_ethdev.h         |   3 +
+ drivers/net/cnxk/cnxk_ethdev_devargs.c |   8 +-
+ drivers/net/cnxk/cnxk_ethdev_dp.h      |   8 +
+ drivers/net/cnxk/cnxk_ethdev_sec.c     |  21 ++-
+ 9 files changed, 372 insertions(+), 62 deletions(-)
+
+diff --git a/doc/guides/nics/cnxk.rst b/doc/guides/nics/cnxk.rst
+index 42a81f7ce8442..17e3c95c04d84 100644
+--- a/doc/guides/nics/cnxk.rst
++++ b/doc/guides/nics/cnxk.rst
+@@ -415,6 +415,19 @@ Runtime Config Options
+    With the above configuration, PMD would allocate meta buffers of size 512 for
+    inline inbound IPsec processing second pass.
+ 
++- ``Rx Inject Enable inbound inline IPsec for second pass`` (default ``0``)
++
++   Rx packet inject feature for inbound inline IPsec processing can be enabled
++   by ``rx_inj_ena`` ``devargs`` parameter.
++   This option is for OCTEON CN106-B0/CN103XX SoC family.
++
++   For example::
++
++      -a 0002:02:00.0,rx_inj_ena=1
++
++   With the above configuration, driver would enable packet inject from ARM cores
++   to crypto to process and send back in Rx path.
++
+ .. note::
+ 
+    Above devarg parameters are configurable per device, user needs to pass the
+@@ -610,6 +623,20 @@ Runtime Config Options for inline device
+    With the above configuration, driver would poll for aging flows every 50
+    seconds.
+ 
++- ``Rx Inject Enable inbound inline IPsec for second pass`` (default ``0``)
++
++   Rx packet inject feature for inbound inline IPsec processing can be enabled
++   by ``rx_inj_ena`` ``devargs`` parameter with both inline device and ethdev
++   device.
++   This option is for OCTEON CN106-B0/CN103XX SoC family.
++
++   For example::
++
++      -a 0002:1d:00.0,rx_inj_ena=1
++
++   With the above configuration, driver would enable packet inject from ARM cores
++   to crypto to process and send back in Rx path.
++
+ Debugging Options
+ -----------------
+ 
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index 05ec49d9815a5..af27d3bbc15f2 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -1267,6 +1267,52 @@ eth_sec_caps_add(struct rte_security_capability eth_sec_caps[], uint32_t *idx,
+ 	*idx += nb_caps;
+ }
+ 
++static uint16_t __rte_hot
++cn10k_eth_sec_inb_rx_inject(void *device, struct rte_mbuf **pkts,
++			    struct rte_security_session **sess, uint16_t nb_pkts)
++{
++	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++
++	return cn10k_nix_inj_pkts(sess, &dev->inj_cfg, pkts, nb_pkts);
++}
++
++static int
++cn10k_eth_sec_rx_inject_config(void *device, uint16_t port_id, bool enable)
++{
++	struct rte_eth_dev *eth_dev = (struct rte_eth_dev *)device;
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	uint64_t channel, pf_func, inj_match_id = 0xFFFFUL;
++	struct cnxk_ethdev_inj_cfg *inj_cfg;
++	struct roc_nix *nix = &dev->nix;
++	struct roc_cpt_lf *inl_lf;
++	uint64_t sa_base;
++
++	if (!rte_eth_dev_is_valid_port(port_id))
++		return -EINVAL;
++
++	if (eth_dev->data->dev_started || !eth_dev->data->dev_configured)
++		return -EBUSY;
++
++	if (!roc_nix_inl_inb_rx_inject_enable(nix, dev->inb.inl_dev))
++		return -ENOTSUP;
++
++	roc_idev_nix_rx_inject_set(port_id, enable);
++
++	inl_lf = roc_nix_inl_inb_inj_lf_get(nix);
++	sa_base = roc_nix_inl_inb_sa_base_get(nix, dev->inb.inl_dev);
++
++	inj_cfg = &dev->inj_cfg;
++	inj_cfg->sa_base = sa_base | eth_dev->data->port_id;
++	inj_cfg->io_addr = inl_lf->io_addr;
++	inj_cfg->lmt_base = nix->lmt_base;
++	channel = roc_nix_get_base_chan(nix);
++	pf_func = roc_nix_inl_dev_pffunc_get();
++	inj_cfg->cmd_w0 = pf_func << 48 | inj_match_id << 32 | channel << 4;
++
++	return 0;
++}
++
+ void
+ cn10k_eth_sec_ops_override(void)
+ {
+@@ -1301,4 +1347,6 @@ cn10k_eth_sec_ops_override(void)
+ 	cnxk_eth_sec_ops.session_stats_get = cn10k_eth_sec_session_stats_get;
+ 	cnxk_eth_sec_ops.macsec_sc_stats_get = cnxk_eth_macsec_sc_stats_get;
+ 	cnxk_eth_sec_ops.macsec_sa_stats_get = cnxk_eth_macsec_sa_stats_get;
++	cnxk_eth_sec_ops.rx_inject_configure = cn10k_eth_sec_rx_inject_config;
++	cnxk_eth_sec_ops.inb_pkt_rx_inject = cn10k_eth_sec_inb_rx_inject;
+ }
+diff --git a/drivers/net/cnxk/cn10k_rx.h b/drivers/net/cnxk/cn10k_rx.h
+index e3301da8b08a3..6aecd3b2ba8d5 100644
+--- a/drivers/net/cnxk/cn10k_rx.h
++++ b/drivers/net/cnxk/cn10k_rx.h
+@@ -5,6 +5,7 @@
+ #define __CN10K_RX_H__
+ 
+ #include <rte_ethdev.h>
++#include <rte_security_driver.h>
+ #include <rte_vect.h>
+ #include "cn10k_rxtx.h"
+ 
+@@ -487,10 +488,15 @@ nix_sec_meta_to_mbuf_sc(uint64_t cq_w1, uint64_t cq_w5, const uint64_t sa_base,
+ 	inb_sa = roc_nix_inl_ot_ipsec_inb_sa(sa_base, sa_idx);
+ 	inb_priv = roc_nix_inl_ot_ipsec_inb_sa_sw_rsvd(inb_sa);
+ 
+-	if (flags & NIX_RX_REAS_F && sa_idx == 0xFFFFFFFF)
++	/* Cryptodev injected packet can be identified from SA IDX 0xFFFFFFFF, and
++	 * Ethdev injected packet can be identified with match ID 0xFFFF.
++	 */
++	if (flags & NIX_RX_REAS_F && (sa_idx == 0xFFFFFFFF || hdr->w0.match_id == 0xFFFFU)) {
+ 		*(uint64_t *)(&inner->rearm_data) = (mbuf_init & ~(BIT_ULL(16) - 1)) |
+ 						    inner->data_off;
+-	else {
++		if (hdr->w0.match_id == 0xFFFFU)
++			*rte_security_dynfield(inner) = (uint64_t)inb_priv->userdata;
++	} else {
+ 		/* Update dynamic field with userdata */
+ 		*rte_security_dynfield(inner) = (uint64_t)inb_priv->userdata;
+ 		*(uint64_t *)(&inner->rearm_data) = mbuf_init;
+@@ -583,6 +589,11 @@ nix_sec_meta_to_mbuf(uint64_t cq_w1, uint64_t cq_w5, uintptr_t inb_sa,
+ 		*rte_security_dynfield(inner) = (uint64_t)inb_priv->userdata;
+ 
+ 	}
++
++	/* Clear and update original lower 16 bit of data offset */
++	if (flags & NIX_RX_REAS_F && hdr->w0.match_id == 0xFFFFU)
++		*rearm = (*rearm & ~(BIT_ULL(16) - 1)) | inner->data_off;
++
+ 	/* Mark inner mbuf as get */
+ 	if (!(flags & NIX_RX_REAS_F) ||
+ 	    hdr->w0.pkt_fmt != ROC_IE_OT_SA_PKT_FMT_FULL)
+@@ -715,7 +726,14 @@ nix_cqe_xtract_mseg(const union nix_rx_parse_u *rx, struct rte_mbuf *mbuf,
+ 		cq_w5 = *((const uint64_t *)rx + 4);
+ 	/* Use inner rx parse for meta pkts sg list */
+ 	if (cq_w1 & BIT(11) && flags & NIX_RX_OFFLOAD_SECURITY_F) {
+-		const uint64_t *wqe = (const uint64_t *)(mbuf + 1);
++		const uint64_t *wqe;
++		/* Rx Inject packet must have Match ID 0xFFFF and for this
++		 * wqe will get from address stored at mbuf+1 location
++		 */
++		if ((flags & NIX_RX_REAS_F) && hdr->w0.match_id == 0xFFFFU)
++			wqe = (const uint64_t *)*((uint64_t *)(mbuf + 1));
++		else
++			wqe = (const uint64_t *)(mbuf + 1);
+ 
+ 		if (hdr->w0.pkt_fmt != ROC_IE_OT_SA_PKT_FMT_FULL)
+ 			rx = (const union nix_rx_parse_u *)(wqe + 1);
+@@ -1203,6 +1221,187 @@ cn10k_nix_flush_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pk
+ 	return nb_pkts;
+ }
+ 
++#if defined(RTE_ARCH_ARM64)
++static __rte_always_inline uint16_t
++cn10k_nix_rx_inj_prepare_mseg(struct rte_mbuf *m, uint64_t *cmd)
++{
++	union nix_send_sg_s *sg, l_sg;
++	struct rte_mbuf *m_next;
++	uint16_t segdw, nb_segs;
++	uint64_t len, dlen;
++	uint64_t *slist;
++
++	sg = (union nix_send_sg_s *)cmd;
++	l_sg.u = sg->u;
++	l_sg.u &= 0xC00000000000000; /* LD_TYPE */
++	l_sg.subdc = NIX_SUBDC_SG;
++	nb_segs = m->nb_segs;
++	len = m->pkt_len;
++	slist = &cmd[1];
++
++	/* Fill mbuf segments */
++	do {
++		*slist = rte_pktmbuf_iova(m);
++		dlen = m->data_len;
++		len -= dlen;
++
++		/* Set the segment length */
++		l_sg.u |= ((uint64_t)dlen << (l_sg.segs << 4));
++		l_sg.segs += 1;
++		slist++;
++		nb_segs--;
++		if (l_sg.segs > 2 && nb_segs) {
++			sg->u = l_sg.u;
++			/* Next SG subdesc */
++			sg = (union nix_send_sg_s *)slist;
++			l_sg.u = sg->u;
++			l_sg.u &= 0xC00000000000000; /* LD_TYPE */
++			l_sg.subdc = NIX_SUBDC_SG;
++			slist++;
++		}
++		m_next = m->next;
++		m->next = NULL;
++		m = m_next;
++	} while (nb_segs);
++
++	/* Add remaining bytes of data to last seg */
++	if (len) {
++		uint8_t shft = (l_sg.subdc == NIX_SUBDC_SG) ? ((l_sg.segs - 1) << 4) : 0;
++		dlen = ((l_sg.u >> shft) & 0xFFFFULL) + len;
++		l_sg.u = l_sg.u & ~(0xFFFFULL << shft);
++		l_sg.u |= dlen << shft;
++	}
++	/* Write the last subdc out */
++	sg->u = l_sg.u;
++
++	segdw = (uint64_t *)slist - cmd;
++	/* Roundup extra dwords to multiple of 2 */
++	segdw = (segdw >> 1) + (segdw & 0x1);
++	return segdw;
++}
++
++static __rte_always_inline uint16_t
++cn10k_nix_inj_pkts(struct rte_security_session **sess, struct cnxk_ethdev_inj_cfg *inj_cfg,
++		   struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
++{
++	uintptr_t c_lbase = inj_cfg->lmt_base;
++	struct cn10k_sec_sess_priv sess_priv;
++	uint64_t sa_base = inj_cfg->sa_base;
++	uint16_t c_lmt_id, burst, left, i;
++	uintptr_t cptres, rxphdr, dptr;
++	struct rte_mbuf *m, *last;
++	uint8_t lnum, shft, loff;
++	uint64x2_t cmd01, cmd23;
++	uint64_t ucode_cmd[4];
++	rte_iova_t c_io_addr;
++	uint64_t *laddr;
++	uint64_t sa, w0;
++	uint16_t segdw;
++
++	/* Get LMT base address and LMT ID as lcore id */
++	ROC_LMT_CPT_BASE_ID_GET(c_lbase, c_lmt_id);
++	c_io_addr = inj_cfg->io_addr;
++
++	left = nb_pkts;
++again:
++	burst = left > 32 ? 32 : left;
++
++	lnum = 0;
++	loff = 0;
++	shft = 16;
++
++	for (i = 0; i < burst; i++) {
++		m = tx_pkts[i];
++		sess_priv.u64 = sess[i]->fast_mdata;
++		last = rte_pktmbuf_lastseg(m);
++
++		cptres = rte_pktmbuf_mtod_offset(last, uintptr_t, last->data_len);
++		cptres += BIT_ULL(7);
++		cptres = (cptres - 1) & ~(BIT_ULL(7) - 1);
++
++		if (m->nb_segs > 1) {
++			/* Will reserve NIX Rx descriptor with SG list after end of
++			 * last mbuf data location. and pointer to this will be
++			 * stored at 1st mbuf space for Rx path multi-seg processing.
++			 */
++			/* Pointer to WQE header */
++			*(uint64_t *)(m + 1) = cptres;
++			/* Reserve 8 Dwords of WQE Hdr + Rx Parse Hdr */
++			rxphdr = cptres + 8;
++			dptr = rxphdr + 7 * 8;
++			/* Prepare Multiseg SG list */
++			segdw = cn10k_nix_rx_inj_prepare_mseg(m, (uint64_t *)(dptr));
++			*(uint64_t *)rxphdr = (uint64_t)(segdw - 1) << 12;
++			cptres += 64 + segdw * 16;
++			ucode_cmd[1] = dptr | ((uint64_t)m->nb_segs << 60);
++		} else {
++			dptr = (uint64_t)rte_pktmbuf_iova(m);
++			ucode_cmd[1] = dptr;
++		}
++
++		/* Prepare CPT instruction */
++		/* CPT word 0 and 1 */
++		cmd01 = vdupq_n_u64(0);
++		w0 = inj_cfg->cmd_w0 | ((uint64_t)m->l2_len - 2) << 24 | (uint64_t)m->l2_len << 16;
++		cmd01 = vsetq_lane_u64(w0, cmd01, 0);
++		cmd01 = vsetq_lane_u64(cptres, cmd01, 1);
++
++		/* CPT word 2 and 3 */
++		cmd23 = vdupq_n_u64(0);
++		/* Set PF func */
++		w0 &= 0xFFFF000000000000UL;
++		cmd23 = vsetq_lane_u64(w0, cmd23, 0);
++		cmd23 = vsetq_lane_u64(((uint64_t)m + sizeof(struct rte_mbuf)) | 1, cmd23, 1);
++
++		sa_base &= ~0xFFFFUL;
++		sa = (uintptr_t)roc_nix_inl_ot_ipsec_inb_sa(sa_base, sess_priv.sa_idx);
++		ucode_cmd[0] = (ROC_IE_OT_MAJOR_OP_PROCESS_INBOUND_IPSEC << 48 | 1UL << 54 |
++				((uint64_t)sess_priv.chksum) << 32 |
++				((uint64_t)sess_priv.dec_ttl) << 34 | m->pkt_len);
++
++		ucode_cmd[2] = 0;
++		ucode_cmd[3] = (ROC_CPT_DFLT_ENG_GRP_SE_IE << 61 | 1UL << 60 | sa);
++
++		/* Move to our line */
++		laddr = LMT_OFF(c_lbase, lnum, loff ? 64 : 0);
++
++		/* Write CPT instruction to lmt line */
++		vst1q_u64(laddr, cmd01);
++		vst1q_u64((laddr + 2), cmd23);
++
++		*(__uint128_t *)(laddr + 4) = *(__uint128_t *)ucode_cmd;
++		*(__uint128_t *)(laddr + 6) = *(__uint128_t *)(ucode_cmd + 2);
++
++		loff = !loff;
++		lnum = lnum + (loff ? 0 : 1);
++		shft = shft + (loff ? 0 : 3);
++	}
++
++	left -= burst;
++	tx_pkts += burst;
++	sess += burst;
++
++	cn10k_nix_sec_steorl(c_io_addr, c_lmt_id, lnum, loff, shft);
++
++	rte_io_wmb();
++	if (left)
++		goto again;
++
++	return nb_pkts;
++}
++#else
++static __rte_always_inline uint16_t
++cn10k_nix_inj_pkts(struct rte_security_session **sess, struct cnxk_ethdev_inj_cfg *inj_cfg,
++		   struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
++{
++	RTE_SET_USED(sess);
++	RTE_SET_USED(inj_cfg);
++	RTE_SET_USED(tx_pkts);
++	RTE_SET_USED(nb_pkts);
++	return 0;
++}
++#endif
++
+ #if defined(RTE_ARCH_ARM64)
+ 
+ static __rte_always_inline uint64_t
+diff --git a/drivers/net/cnxk/cn10k_rxtx.h b/drivers/net/cnxk/cn10k_rxtx.h
+index aeffc4ac924d1..2143df1a7e721 100644
+--- a/drivers/net/cnxk/cn10k_rxtx.h
++++ b/drivers/net/cnxk/cn10k_rxtx.h
+@@ -191,4 +191,61 @@ handle_tx_completion_pkts(struct cn10k_eth_txq *txq, uint8_t mt_safe)
+ 		rte_spinlock_unlock(&txq->tx_compl.ext_buf_lock);
+ }
+ 
++static __rte_always_inline uint64_t
++cn10k_cpt_tx_steor_data(void)
++{
++	/* We have two CPT instructions per LMTLine */
++	const uint64_t dw_m1 = ROC_CN10K_TWO_CPT_INST_DW_M1;
++	uint64_t data;
++
++	/* This will be moved to addr area */
++	data = dw_m1 << 16;
++	data |= dw_m1 << 19;
++	data |= dw_m1 << 22;
++	data |= dw_m1 << 25;
++	data |= dw_m1 << 28;
++	data |= dw_m1 << 31;
++	data |= dw_m1 << 34;
++	data |= dw_m1 << 37;
++	data |= dw_m1 << 40;
++	data |= dw_m1 << 43;
++	data |= dw_m1 << 46;
++	data |= dw_m1 << 49;
++	data |= dw_m1 << 52;
++	data |= dw_m1 << 55;
++	data |= dw_m1 << 58;
++	data |= dw_m1 << 61;
++
++	return data;
++}
++
++static __rte_always_inline void
++cn10k_nix_sec_steorl(uintptr_t io_addr, uint32_t lmt_id, uint8_t lnum,
++		     uint8_t loff, uint8_t shft)
++{
++	uint64_t data;
++	uintptr_t pa;
++
++	/* Check if there is any CPT instruction to submit */
++	if (!lnum && !loff)
++		return;
++
++	data = cn10k_cpt_tx_steor_data();
++	/* Update lmtline use for partial end line */
++	if (loff) {
++		data &= ~(0x7ULL << shft);
++		/* Update it to half full i.e 64B */
++		data |= (0x3UL << shft);
++	}
++
++	pa = io_addr | ((data >> 16) & 0x7) << 4;
++	data &= ~(0x7ULL << 16);
++	/* Update lines - 1 that contain valid data */
++	data |= ((uint64_t)(lnum + loff - 1)) << 12;
++	data |= (uint64_t)lmt_id;
++
++	/* STEOR */
++	roc_lmt_submit_steorl(data, pa);
++}
++
+ #endif /* __CN10K_RXTX_H__ */
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index 390ece41966d9..cc091748ab286 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -314,34 +314,6 @@ cn10k_nix_tx_steor_vec_data(const uint16_t flags)
+ 	return data;
+ }
+ 
+-static __rte_always_inline uint64_t
+-cn10k_cpt_tx_steor_data(void)
+-{
+-	/* We have two CPT instructions per LMTLine */
+-	const uint64_t dw_m1 = ROC_CN10K_TWO_CPT_INST_DW_M1;
+-	uint64_t data;
+-
+-	/* This will be moved to addr area */
+-	data = dw_m1 << 16;
+-	data |= dw_m1 << 19;
+-	data |= dw_m1 << 22;
+-	data |= dw_m1 << 25;
+-	data |= dw_m1 << 28;
+-	data |= dw_m1 << 31;
+-	data |= dw_m1 << 34;
+-	data |= dw_m1 << 37;
+-	data |= dw_m1 << 40;
+-	data |= dw_m1 << 43;
+-	data |= dw_m1 << 46;
+-	data |= dw_m1 << 49;
+-	data |= dw_m1 << 52;
+-	data |= dw_m1 << 55;
+-	data |= dw_m1 << 58;
+-	data |= dw_m1 << 61;
+-
+-	return data;
+-}
+-
+ static __rte_always_inline void
+ cn10k_nix_tx_skeleton(struct cn10k_eth_txq *txq, uint64_t *cmd,
+ 		      const uint16_t flags, const uint16_t static_sz)
+@@ -461,35 +433,6 @@ cn10k_nix_sec_fc_wait(struct cn10k_eth_txq *txq, uint16_t nb_pkts)
+ 		goto again;
+ }
+ 
+-static __rte_always_inline void
+-cn10k_nix_sec_steorl(uintptr_t io_addr, uint32_t lmt_id, uint8_t lnum,
+-		     uint8_t loff, uint8_t shft)
+-{
+-	uint64_t data;
+-	uintptr_t pa;
+-
+-	/* Check if there is any CPT instruction to submit */
+-	if (!lnum && !loff)
+-		return;
+-
+-	data = cn10k_cpt_tx_steor_data();
+-	/* Update lmtline use for partial end line */
+-	if (loff) {
+-		data &= ~(0x7ULL << shft);
+-		/* Update it to half full i.e 64B */
+-		data |= (0x3UL << shft);
+-	}
+-
+-	pa = io_addr | ((data >> 16) & 0x7) << 4;
+-	data &= ~(0x7ULL << 16);
+-	/* Update lines - 1 that contain valid data */
+-	data |= ((uint64_t)(lnum + loff - 1)) << 12;
+-	data |= (uint64_t)lmt_id;
+-
+-	/* STEOR */
+-	roc_lmt_submit_steorl(data, pa);
+-}
+-
+ #if defined(RTE_ARCH_ARM64)
+ static __rte_always_inline void
+ cn10k_nix_prep_sec_vec(struct rte_mbuf *m, uint64x2_t *cmd0, uint64x2_t *cmd1,
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 4232cae3d2e82..eb8d2bf4ebebe 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -424,6 +424,9 @@ struct cnxk_eth_dev {
+ 	/* MCS device */
+ 	struct cnxk_mcs_dev *mcs_dev;
+ 	struct cnxk_macsec_sess_list mcs_list;
++
++	/* Inject packets */
++	struct cnxk_ethdev_inj_cfg inj_cfg;
+ };
+ 
+ struct cnxk_eth_rxq_sp {
+diff --git a/drivers/net/cnxk/cnxk_ethdev_devargs.c b/drivers/net/cnxk/cnxk_ethdev_devargs.c
+index a0e9300cfff71..1bab19fc23fc0 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_devargs.c
++++ b/drivers/net/cnxk/cnxk_ethdev_devargs.c
+@@ -279,6 +279,7 @@ parse_val_u16(const char *key, const char *value, void *extra_args)
+ #define CNXK_SQB_SLACK		"sqb_slack"
+ #define CNXK_NIX_META_BUF_SZ	"meta_buf_sz"
+ #define CNXK_FLOW_AGING_POLL_FREQ	"aging_poll_freq"
++#define CNXK_NIX_RX_INJ_ENABLE	"rx_inj_ena"
+ 
+ int
+ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+@@ -305,6 +306,7 @@ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+ 	uint32_t meta_buf_sz = 0;
+ 	uint16_t no_inl_dev = 0;
+ 	uint8_t lock_rx_ctx = 0;
++	uint8_t rx_inj_ena = 0;
+ 
+ 	memset(&sdp_chan, 0, sizeof(sdp_chan));
+ 	memset(&pre_l2_info, 0, sizeof(struct flow_pre_l2_size_info));
+@@ -355,6 +357,7 @@ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+ 	rte_kvargs_process(kvlist, CNXK_NIX_META_BUF_SZ, &parse_meta_bufsize, &meta_buf_sz);
+ 	rte_kvargs_process(kvlist, CNXK_FLOW_AGING_POLL_FREQ, &parse_val_u16,
+ 			   &aging_thread_poll_freq);
++	rte_kvargs_process(kvlist, CNXK_NIX_RX_INJ_ENABLE, &parse_flag, &rx_inj_ena);
+ 	rte_kvargs_free(kvlist);
+ 
+ null_devargs:
+@@ -387,6 +390,8 @@ cnxk_ethdev_parse_devargs(struct rte_devargs *devargs, struct cnxk_eth_dev *dev)
+ 	dev->npc.pre_l2_size_offset_mask = pre_l2_info.pre_l2_size_off_mask;
+ 	dev->npc.pre_l2_size_shift_dir = pre_l2_info.pre_l2_size_shift_dir;
+ 	dev->npc.flow_age.aging_poll_freq = aging_thread_poll_freq;
++	if (roc_feature_nix_has_rx_inject())
++		dev->nix.rx_inj_ena = rx_inj_ena;
+ 	return 0;
+ exit:
+ 	return -EINVAL;
+@@ -409,4 +414,5 @@ RTE_PMD_REGISTER_PARAM_STRING(net_cnxk,
+ 			      CNXK_SDP_CHANNEL_MASK "=<1-4095>/<1-4095>"
+ 			      CNXK_CUSTOM_SA_ACT "=1"
+ 			      CNXK_SQB_SLACK "=<12-512>"
+-			      CNXK_FLOW_AGING_POLL_FREQ "=<10-65535>");
++			      CNXK_FLOW_AGING_POLL_FREQ "=<10-65535>"
++			      CNXK_NIX_RX_INJ_ENABLE "=1");
+diff --git a/drivers/net/cnxk/cnxk_ethdev_dp.h b/drivers/net/cnxk/cnxk_ethdev_dp.h
+index c1f99a26161af..56cfcb7fc611c 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_dp.h
++++ b/drivers/net/cnxk/cnxk_ethdev_dp.h
+@@ -4,6 +4,7 @@
+ #ifndef __CNXK_ETHDEV_DP_H__
+ #define __CNXK_ETHDEV_DP_H__
+ 
++#include <rte_security_driver.h>
+ #include <rte_mbuf.h>
+ 
+ /* If PTP is enabled additional SEND MEM DESC is required which
+@@ -82,6 +83,13 @@ struct cnxk_timesync_info {
+ 	uint64_t *tx_tstamp;
+ } __plt_cache_aligned;
+ 
++struct cnxk_ethdev_inj_cfg {
++	uintptr_t lmt_base;
++	uint64_t io_addr;
++	uint64_t sa_base;
++	uint64_t cmd_w0;
++} __plt_cache_aligned;
++
+ /* Inlines */
+ static __rte_always_inline uint64_t
+ cnxk_pktmbuf_detach(struct rte_mbuf *m)
+diff --git a/drivers/net/cnxk/cnxk_ethdev_sec.c b/drivers/net/cnxk/cnxk_ethdev_sec.c
+index b02dac49527c3..6f5319e534fd2 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_sec.c
++++ b/drivers/net/cnxk/cnxk_ethdev_sec.c
+@@ -16,6 +16,7 @@
+ #define CNXK_NIX_INL_META_BUF_SZ      "meta_buf_sz"
+ #define CNXK_NIX_SOFT_EXP_POLL_FREQ   "soft_exp_poll_freq"
+ #define CNXK_MAX_IPSEC_RULES	"max_ipsec_rules"
++#define CNXK_NIX_INL_RX_INJ_ENABLE	"rx_inj_ena"
+ 
+ /* Default soft expiry poll freq in usec */
+ #define CNXK_NIX_SOFT_EXP_POLL_FREQ_DFLT 100
+@@ -192,6 +193,19 @@ parse_max_ipsec_rules(const char *key, const char *value, void *extra_args)
+ 	return 0;
+ }
+ 
++static int
++parse_inl_rx_inj_ena(const char *key, const char *value, void *extra_args)
++{
++	RTE_SET_USED(key);
++	uint32_t val;
++
++	val = atoi(value);
++
++	*(uint8_t *)extra_args = !!(val == 1);
++
++	return 0;
++}
++
+ int
+ cnxk_eth_outb_sa_idx_get(struct cnxk_eth_dev *dev, uint32_t *idx_p,
+ 			 uint32_t spi)
+@@ -352,6 +366,7 @@ nix_inl_parse_devargs(struct rte_devargs *devargs,
+ 	struct rte_kvargs *kvlist;
+ 	uint32_t nb_meta_bufs = 0;
+ 	uint32_t meta_buf_sz = 0;
++	uint8_t rx_inj_ena = 0;
+ 	uint8_t selftest = 0;
+ 
+ 	memset(&cpt_channel, 0, sizeof(cpt_channel));
+@@ -378,6 +393,7 @@ nix_inl_parse_devargs(struct rte_devargs *devargs,
+ 	rte_kvargs_process(kvlist, CNXK_NIX_SOFT_EXP_POLL_FREQ,
+ 			   &parse_val_u32, &soft_exp_poll_freq);
+ 	rte_kvargs_process(kvlist, CNXK_MAX_IPSEC_RULES, &parse_max_ipsec_rules, &max_ipsec_rules);
++	rte_kvargs_process(kvlist, CNXK_NIX_INL_RX_INJ_ENABLE, &parse_inl_rx_inj_ena, &rx_inj_ena);
+ 	rte_kvargs_free(kvlist);
+ 
+ null_devargs:
+@@ -391,6 +407,8 @@ nix_inl_parse_devargs(struct rte_devargs *devargs,
+ 	inl_dev->meta_buf_sz = meta_buf_sz;
+ 	inl_dev->soft_exp_poll_freq = soft_exp_poll_freq;
+ 	inl_dev->max_ipsec_rules = max_ipsec_rules;
++	if (roc_feature_nix_has_rx_inject())
++		inl_dev->rx_inj_ena = rx_inj_ena;
+ 	return 0;
+ exit:
+ 	return -EINVAL;
+@@ -518,4 +536,5 @@ RTE_PMD_REGISTER_PARAM_STRING(cnxk_nix_inl,
+ 			      CNXK_NIX_INL_NB_META_BUFS "=<1-U32_MAX>"
+ 			      CNXK_NIX_INL_META_BUF_SZ "=<1-U32_MAX>"
+ 			      CNXK_NIX_SOFT_EXP_POLL_FREQ "=<0-U32_MAX>"
+-			      CNXK_MAX_IPSEC_RULES "=<1-4095>");
++			      CNXK_MAX_IPSEC_RULES "=<1-4095>"
++			      CNXK_NIX_INL_RX_INJ_ENABLE "=1");
+-- 
+2.25.1
+

@@ -1,0 +1,222 @@
+From e87422f3f84ec57664d449af64e469903f1a47ac Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 17 Sep 2024 22:45:08 +0530
+Subject: [PATCH 507/513] net/cnxk: handle RSS action for representees
+
+Flows installed via single queue'd port representors on behalf of
+multiple queue'd gets installed as unicast flows, causing representee
+application to loose RSS advantage. Handling the scenario by
+appending a RSS action to flow action list if representee is configured
+with multiple queues support.
+
+Change-Id: Ifc705b099945a65c77f6798dfe62ceeacf2a4268
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/136104
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/cnxk/cnxk_flow.c    | 80 ++++++++++++++++++++++++++++++---
+ drivers/net/cnxk/cnxk_rep.c     |  9 +++-
+ drivers/net/cnxk/cnxk_rep.h     |  5 ++-
+ drivers/net/cnxk/cnxk_rep_msg.h |  2 +-
+ 4 files changed, 85 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index d5603fe1f2ba8..8c77f3b7347dc 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -220,12 +220,65 @@ append_mark_action(struct roc_npc_action *in_actions, uint8_t has_tunnel_pattern
+ 	return 0;
+ }
+ 
++static int
++append_rss_action(struct cnxk_eth_dev *dev, struct roc_npc_action *in_actions, uint16_t nb_rxq,
++		  uint32_t *flowkey_cfg, uint64_t *free_allocs, uint16_t rss_repte_pf_func,
++		  int *act_cnt)
++{
++	struct roc_npc_action_rss *rss_conf;
++	int i = *act_cnt, j = 0, l, rc = 0;
++	uint16_t *queue_arr;
++
++	rss_conf = plt_zmalloc(sizeof(struct roc_npc_action_rss), 0);
++	if (!rss_conf) {
++		plt_err("Failed to allocate memory for rss conf");
++		rc = -ENOMEM;
++		goto fail;
++	}
++
++	/* Add RSS action */
++	rss_conf->queue_num = nb_rxq;
++	queue_arr = calloc(1, rss_conf->queue_num * sizeof(uint16_t));
++	if (!queue_arr) {
++		plt_err("Failed to allocate memory for rss queue");
++		rc = -ENOMEM;
++		goto free_rss;
++	}
++
++	for (l = 0; l < nb_rxq; l++)
++		queue_arr[l] = l;
++	rss_conf->queue = queue_arr;
++	rss_conf->key = NULL;
++	rss_conf->types = RTE_ETH_RSS_IP | RTE_ETH_RSS_UDP | RTE_ETH_RSS_TCP;
++
++	i++;
++
++	in_actions[i].type = ROC_NPC_ACTION_TYPE_RSS;
++	in_actions[i].conf = (struct roc_npc_action_rss *)rss_conf;
++	in_actions[i].rss_repte_pf_func = rss_repte_pf_func;
++
++	npc_rss_flowkey_get(dev, &in_actions[i], flowkey_cfg,
++			    RTE_ETH_RSS_IP | RTE_ETH_RSS_UDP | RTE_ETH_RSS_TCP);
++
++	*act_cnt = i;
++
++	while (free_allocs[j] != 0)
++		j++;
++	free_allocs[j] = (uint64_t)rss_conf;
++
++	return 0;
++free_rss:
++	rte_free(rss_conf);
++fail:
++	return rc;
++}
++
+ static int
+ representor_rep_portid_action(struct roc_npc_action *in_actions, struct rte_eth_dev *eth_dev,
+ 			      struct rte_eth_dev *portid_eth_dev,
+ 			      enum rte_flow_action_type act_type, uint8_t rep_pattern,
+ 			      uint16_t *dst_pf_func, bool is_rep, uint8_t has_tunnel_pattern,
+-			      uint64_t *free_allocs, int *act_cnt)
++			      uint64_t *free_allocs, int *act_cnt, uint32_t *flowkey_cfg)
+ {
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	struct rte_eth_dev *rep_eth_dev = portid_eth_dev;
+@@ -360,6 +413,19 @@ representor_rep_portid_action(struct roc_npc_action *in_actions, struct rte_eth_
+ 			rc = append_mark_action(in_actions, has_tunnel_pattern, free_allocs, &i);
+ 			if (rc)
+ 				return rc;
++			/* Append RSS action if representee has RSS enabled */
++			if (rep_dev->nb_rxq > 1) {
++				/* PF can install rule for only its VF acting as representee */
++				if (rep_dev->hw_func &&
++				    roc_eswitch_is_repte_pfs_vf(rep_dev->hw_func,
++							roc_nix_get_pf_func(npc->roc_nix))) {
++					rc = append_rss_action(dev, in_actions, rep_dev->nb_rxq,
++							       flowkey_cfg, free_allocs,
++							       rep_dev->hw_func, &i);
++					if (rc)
++						return rc;
++				}
++			}
+ 		}
+ 	}
+ done:
+@@ -464,10 +530,9 @@ cnxk_map_actions(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 				    eth_dev->data->port_id, if_name, act_ethdev->port_id);
+ 			if (cnxk_ethdev_is_representor(if_name)) {
+ 				if (representor_rep_portid_action(in_actions, eth_dev,
+-								  portid_eth_dev, actions->type,
+-								  rep_pattern, dst_pf_func, is_rep,
+-								  has_tunnel_pattern, free_allocs,
+-								  &i)) {
++					    portid_eth_dev, actions->type, rep_pattern,
++					    dst_pf_func, is_rep, has_tunnel_pattern,
++					    free_allocs, &i, flowkey_cfg)) {
+ 					plt_err("Representor port action set failed");
+ 					goto err_exit;
+ 				}
+@@ -535,6 +600,7 @@ cnxk_map_actions(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 			rc = npc_rss_action_validate(eth_dev, attr, actions);
+ 			if (rc)
+ 				goto err_exit;
++
+ 			in_actions[i].type = ROC_NPC_ACTION_TYPE_RSS;
+ 			in_actions[i].conf = actions->conf;
+ 			npc_rss_flowkey_get(dev, &in_actions[i], flowkey_cfg,
+@@ -855,8 +921,8 @@ cnxk_flow_create_common(struct rte_eth_dev *eth_dev, const struct rte_flow_attr
+ 			const struct rte_flow_action actions[], struct rte_flow_error *error,
+ 			bool is_rep)
+ {
+-	struct roc_npc_item_info in_pattern[ROC_NPC_ITEM_TYPE_END + 1];
+-	struct roc_npc_action in_actions[ROC_NPC_MAX_ACTION_COUNT];
++	struct roc_npc_item_info in_pattern[ROC_NPC_ITEM_TYPE_END + 1] = {0};
++	struct roc_npc_action in_actions[ROC_NPC_MAX_ACTION_COUNT] = {0};
+ 	struct roc_npc_action_sample in_sample_action;
+ 	struct cnxk_rep_dev *rep_dev = NULL;
+ 	struct roc_npc_flow *flow = NULL;
+diff --git a/drivers/net/cnxk/cnxk_rep.c b/drivers/net/cnxk/cnxk_rep.c
+index e58fff3ef8f61..94c2e54e53196 100644
+--- a/drivers/net/cnxk/cnxk_rep.c
++++ b/drivers/net/cnxk/cnxk_rep.c
+@@ -29,12 +29,15 @@ switch_domain_id_allocate(struct cnxk_eswitch_dev *eswitch_dev, uint16_t pf)
+ }
+ 
+ int
+-cnxk_rep_state_update(struct cnxk_eswitch_dev *eswitch_dev, uint16_t hw_func, uint16_t *rep_id)
++cnxk_rep_state_update(struct cnxk_eswitch_dev *eswitch_dev, uint32_t state, uint16_t *rep_id)
+ {
+ 	struct cnxk_rep_dev *rep_dev = NULL;
+ 	struct rte_eth_dev *rep_eth_dev;
++	uint16_t hw_func, nb_rxq;
+ 	int i, rc = 0;
+ 
++	nb_rxq = state & 0xFFFF;
++	hw_func = (state >> 16) & 0xFFFF;
+ 	/* Delete the individual PFVF flows as common eswitch VF rule will be used. */
+ 	rc = cnxk_eswitch_flow_rules_delete(eswitch_dev, hw_func);
+ 	if (rc) {
+@@ -61,8 +64,10 @@ cnxk_rep_state_update(struct cnxk_eswitch_dev *eswitch_dev, uint16_t hw_func, ui
+ 		}
+ 
+ 		rep_dev = cnxk_rep_pmd_priv(rep_eth_dev);
+-		if (rep_dev->hw_func == hw_func && rep_dev->is_vf_active)
++		if (rep_dev->hw_func == hw_func && rep_dev->is_vf_active) {
+ 			rep_dev->native_repte = false;
++			rep_dev->nb_rxq = nb_rxq;
++		}
+ 	}
+ 
+ 	return 0;
+diff --git a/drivers/net/cnxk/cnxk_rep.h b/drivers/net/cnxk/cnxk_rep.h
+index ad8964970298f..a0f99a1bb3cce 100644
+--- a/drivers/net/cnxk/cnxk_rep.h
++++ b/drivers/net/cnxk/cnxk_rep.h
+@@ -62,7 +62,10 @@ struct cnxk_rep_dev {
+ 	uint16_t rep_id;
+ 	uint16_t switch_domain_id;
+ 	struct cnxk_eswitch_dev *parent_dev;
++	/* Representee HW func */
+ 	uint16_t hw_func;
++	/* No of queues configured at representee */
++	uint16_t nb_rxq;
+ 	bool is_vf_active;
+ 	bool native_repte;
+ 	struct cnxk_rep_rxq *rxq;
+@@ -130,7 +133,7 @@ int cnxk_rep_dev_close(struct rte_eth_dev *eth_dev);
+ int cnxk_rep_stats_get(struct rte_eth_dev *eth_dev, struct rte_eth_stats *stats);
+ int cnxk_rep_stats_reset(struct rte_eth_dev *eth_dev);
+ int cnxk_rep_flow_ops_get(struct rte_eth_dev *ethdev, const struct rte_flow_ops **ops);
+-int cnxk_rep_state_update(struct cnxk_eswitch_dev *eswitch_dev, uint16_t hw_func, uint16_t *rep_id);
++int cnxk_rep_state_update(struct cnxk_eswitch_dev *eswitch_dev, uint32_t state, uint16_t *rep_id);
+ int cnxk_rep_promiscuous_enable(struct rte_eth_dev *ethdev);
+ int cnxk_rep_promiscuous_disable(struct rte_eth_dev *ethdev);
+ int cnxk_rep_mac_addr_set(struct rte_eth_dev *eth_dev, struct rte_ether_addr *addr);
+diff --git a/drivers/net/cnxk/cnxk_rep_msg.h b/drivers/net/cnxk/cnxk_rep_msg.h
+index bfd9ce9c7be36..f5cb636c6c31a 100644
+--- a/drivers/net/cnxk/cnxk_rep_msg.h
++++ b/drivers/net/cnxk/cnxk_rep_msg.h
+@@ -86,7 +86,7 @@ typedef struct cnxk_rep_msg_ack_data1 {
+ typedef struct cnxk_rep_msg_ready_data {
+ 	uint8_t val;
+ 	uint16_t nb_ports;
+-	uint16_t data[];
++	uint32_t data[];
+ } __rte_packed cnxk_rep_msg_ready_data_t;
+ 
+ /* Exit msg */
+-- 
+2.25.1
+

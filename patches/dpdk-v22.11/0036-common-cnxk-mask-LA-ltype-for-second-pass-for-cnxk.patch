@@ -1,0 +1,98 @@
+From 3cfb339451e163e4e1bf10e36218f88dc5ba0bb6 Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Thu, 10 Nov 2022 14:12:56 +0530
+Subject: [PATCH 036/955] common/cnxk: mask LA ltype for second pass for cnxk
+
+While installing flow rule, if user provide item type
+as RTE_FLOW_ITEM_TYPE_ETH, it should be applied to both
+first and second pass. Adding changes to mask the ltype
+to match both.
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Ie96a33e8a69eabfab402f09b9a920ef8c2a06e32
+---
+ drivers/common/cnxk/roc_npc_mcam.c  | 29 +++++++++++++++++++++++------
+ drivers/common/cnxk/roc_npc_parse.c |  1 +
+ drivers/common/cnxk/roc_npc_priv.h  |  1 +
+ 3 files changed, 25 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index a725cabc5702c..526a6d157940c 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -551,6 +551,8 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow,
+ 	struct idev_cfg *idev;
+ 	uint16_t pf_func = 0;
+ 	uint16_t ctr = ~(0);
++	uint32_t la_offset;
++	uint64_t mask;
+ 	int rc, idx;
+ 	int entry;
+ 
+@@ -617,17 +619,32 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow,
+ 			flow->npc_action &= ~(GENMASK(19, 4));
+ 			flow->npc_action |= (uint64_t)pf_func << 4;
+ 
+-			npc_mcam_set_channel(flow, req, inl_dev->channel,
+-					     inl_dev->chan_mask, false);
++			npc_mcam_set_channel(flow, req, inl_dev->channel, inl_dev->chan_mask,
++					     false);
+ 		} else if (npc->is_sdp_link) {
+-			npc_mcam_set_channel(flow, req, npc->sdp_channel,
+-					     npc->sdp_channel_mask,
++			npc_mcam_set_channel(flow, req, npc->sdp_channel, npc->sdp_channel_mask,
+ 					     pst->is_second_pass_rule);
+ 		} else {
+-			npc_mcam_set_channel(flow, req, npc->channel,
+-					     (BIT_ULL(12) - 1),
++			npc_mcam_set_channel(flow, req, npc->channel, (BIT_ULL(12) - 1),
+ 					     pst->is_second_pass_rule);
+ 		}
++		/* Always match both 1st pass and 2nd pass ltypes for all rules */
++		if (!pst->is_second_pass_rule && pst->has_eth_type) {
++			la_offset = __builtin_popcount(npc->keyx_supp_nmask[flow->nix_intf] &
++						       ((1ULL << 9 /* LA offset */) - 1));
++			la_offset *= 4;
++
++			mask = ~((0xfULL << la_offset));
++			/* Mask ltype ETHER (0x2) and CPT_HDR (0xa)  */
++			req->entry_data.kw[0] &= mask;
++			req->entry_data.kw_mask[0] &= mask;
++			req->entry_data.kw[0] |= (0x2ULL << la_offset);
++			req->entry_data.kw_mask[0] |= (0x7ULL << la_offset);
++			flow->mcam_data[0] &= mask;
++			flow->mcam_mask[0] &= mask;
++			flow->mcam_data[0] |= (0x2ULL << la_offset);
++			flow->mcam_mask[0] |= (0x7ULL << la_offset);
++		}
+ 	} else {
+ 		uint16_t pf_func = (flow->npc_action >> 4) & 0xffff;
+ 
+diff --git a/drivers/common/cnxk/roc_npc_parse.c b/drivers/common/cnxk/roc_npc_parse.c
+index ff00c746d67a7..947e1ec53dc4e 100644
+--- a/drivers/common/cnxk/roc_npc_parse.c
++++ b/drivers/common/cnxk/roc_npc_parse.c
+@@ -193,6 +193,7 @@ npc_parse_la(struct npc_parse_state *pst)
+ 	if (pst->pattern->type != ROC_NPC_ITEM_TYPE_ETH)
+ 		return 0;
+ 
++	pst->has_eth_type = true;
+ 	eth_item = pst->pattern->spec;
+ 
+ 	lid = NPC_LID_LA;
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 1a597280d11f0..09a727b13e45f 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -196,6 +196,7 @@ struct npc_parse_state {
+ 	bool set_vlan_ltype_mask;
+ 	bool set_ipv6ext_ltype_mask;
+ 	bool is_second_pass_rule;
++	bool has_eth_type;
+ };
+ 
+ enum npc_kpu_parser_flag {
+-- 
+2.25.1
+

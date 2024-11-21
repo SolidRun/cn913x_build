@@ -1,0 +1,34 @@
+From 9cef7b245746d01f5e0a523a262b8f88b8a6072b Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Thu, 12 Jan 2023 11:40:27 +0530
+Subject: [PATCH 159/955] ci: re-enable timer adapter test on cn10k
+
+Revert "ci: disable event timer adapter test on cn10k"
+This reverts commit ba1812f4e267d90c78942222bb97903148892ad1.
+
+Change-Id: I0062554e5d06043b4a26f9f49f7367d394d6a21d
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94366
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh b/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
+index 0924c4a6b7291..17e21eef43579 100755
+--- a/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
++++ b/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
+@@ -65,8 +65,7 @@ run_event_tests() {
+ register_cn9k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE,single_ws=1,tim_stats_ena=1"
+ register_cn9k_event_test	eventdev_selftest_cn9k		"-l $ISOLCPUS"
+ register_cn10k_event_test	eventdev_selftest_cn10k		"-l $ISOLCPUS"
+-# TODO: re-enable after moving test to new stage
+-#register_cn10k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE,gw_mode=0,tim_stats_ena=1"
++register_cn10k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE,gw_mode=0,tim_stats_ena=1"
+ register_cnxk_event_test	event_eth_rx_adapter_autotest	"-l $ISOLCPUS"
+ register_cnxk_event_test	event_crypto_adapter_autotest	"-l 0,1"
+ 
+-- 
+2.25.1
+

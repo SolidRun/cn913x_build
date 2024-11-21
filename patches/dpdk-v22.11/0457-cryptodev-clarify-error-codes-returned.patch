@@ -1,0 +1,51 @@
+From ea75604866735a7ef57fc22b9f2760f296554b9d Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 21 Apr 2023 06:35:55 +0000
+Subject: [PATCH 457/955] cryptodev: clarify error codes returned
+
+When symmetric sessions are created, it may fail due to non-critical
+errors. When PMD doesn't support the specific combination that
+application requested, it can return -ENOTSUP which can be handled so in
+application. The API is already setting rte_errno according to the
+reason of the failure. Clarifying this in the spec to list down possible
+error codes.
+
+Fixes: bdce2564dbf7 ("cryptodev: rework session framework")
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ie2b3d16aa4fad9760d497b31a53ff533f180f2ed
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101956
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 67590ae5964d56bdc0b544e8fab7fecfd0cc726e)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104049
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+---
+ lib/cryptodev/rte_cryptodev.h | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/lib/cryptodev/rte_cryptodev.h b/lib/cryptodev/rte_cryptodev.h
+index bbb854ccb960e..cbc919039e43e 100644
+--- a/lib/cryptodev/rte_cryptodev.h
++++ b/lib/cryptodev/rte_cryptodev.h
+@@ -1039,11 +1039,14 @@ rte_cryptodev_asym_session_pool_create(const char *name, uint32_t nb_elts,
+  * @param   dev_id   ID of device that we want the session to be used on
+  * @param   xforms   Symmetric crypto transform operations to apply on flow
+  *                   processed with this session
+- * @param   mp       Mempool where the private data is allocated.
++ * @param   mp       Mempool to allocate symmetric session objects from
+  *
+  * @return
+  *  - On success return pointer to sym-session.
+- *  - On failure returns NULL.
++ *  - On failure returns NULL and rte_errno is set to the error code.
++ *     EINVAL on invalid arguments.
++ *     ENOMEM on memory error for session allocation.
++ *     ENOTSUP if device doesn't support session configuration.
+  */
+ void *
+ rte_cryptodev_sym_session_create(uint8_t dev_id,
+-- 
+2.25.1
+

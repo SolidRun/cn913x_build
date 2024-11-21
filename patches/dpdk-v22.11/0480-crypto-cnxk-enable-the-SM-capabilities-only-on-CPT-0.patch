@@ -1,0 +1,43 @@
+From 87aabe60a088aa05191b23841309bea0c0265775 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Thu, 15 Jun 2023 05:39:05 -0700
+Subject: [PATCH 480/955] crypto/cnxk: enable the SM capabilities only on CPT
+ 05
+
+Enable the sm3 and sm4 capabilities only when CPT 05
+microcode is loaded.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I5f43c0a07da4e2efad73199656067b177d96fb21
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105681
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 8b81064efe552eaad61471a6a2f23d6bf86fd201)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105745
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index 71ec71c431ee6..80cf6dfa31f91 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -1619,8 +1619,10 @@ static void
+ cn10k_crypto_caps_add(struct rte_cryptodev_capabilities cnxk_caps[],
+ 		     union cpt_eng_caps *hw_caps, int *cur_pos)
+ {
+-	CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, sm3);
+-	CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, sm4);
++	if (hw_caps->sg_ver2) {
++		CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, sm3);
++		CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, sm4);
++	}
+ }
+ 
+ static void
+-- 
+2.25.1
+

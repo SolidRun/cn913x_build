@@ -1,0 +1,194 @@
+From b5691a59de56fd212b962698c3eaae26873a5cb8 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 7 Nov 2023 09:16:57 +0000
+Subject: [PATCH 052/513] test/crypto: move algorithm display routines to
+ common
+
+The functions that are used for printing algorithms in case of IPsec can
+be moved to the common header, test_security_proto.h. The same could be
+used for other security protocol testing.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ia3f284b34bbcb0b37745dab2863c2fb8a66d4b28
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115442
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117477
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test-security-perf/test_security_perf.c |  3 +--
+ app/test/test_cryptodev.c                   |  6 ++---
+ app/test/test_cryptodev_security_ipsec.c    | 26 ---------------------
+ app/test/test_cryptodev_security_ipsec.h    |  3 ---
+ app/test/test_security_inline_proto.c       |  9 +++----
+ app/test/test_security_proto.c              | 25 ++++++++++++++++++++
+ app/test/test_security_proto.h              |  2 ++
+ 7 files changed, 33 insertions(+), 41 deletions(-)
+
+diff --git a/app/test-security-perf/test_security_perf.c b/app/test-security-perf/test_security_perf.c
+index c64f20e76c678..84726de7b0bfb 100644
+--- a/app/test-security-perf/test_security_perf.c
++++ b/app/test-security-perf/test_security_perf.c
+@@ -532,8 +532,7 @@ main(int argc, char **argv)
+ 	for (ctx.td_idx = 0; ctx.td_idx < RTE_DIM(alg_list); ctx.td_idx++) {
+ 
+ 		printf("\n\n    Algorithm combination:");
+-		test_ipsec_display_alg(alg_list[ctx.td_idx].param1,
+-				       alg_list[ctx.td_idx].param2);
++		test_sec_alg_display(alg_list[ctx.td_idx].param1, alg_list[ctx.td_idx].param2);
+ 		printf("    ----------------------");
+ 
+ 		printf("\n%20s%20s%20s%20s%20s%20s\n\n",
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 2e749b73a31f4..0c69220f91cd8 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -10611,8 +10611,7 @@ test_ipsec_proto_all(const struct ipsec_test_flags *flags)
+ 			return TEST_FAILED;
+ 
+ 		if (flags->display_alg)
+-			test_ipsec_display_alg(alg_list[i].param1,
+-					       alg_list[i].param2);
++			test_sec_alg_display(alg_list[i].param1, alg_list[i].param2);
+ 
+ 		pass_cnt++;
+ 	}
+@@ -10657,8 +10656,7 @@ test_ipsec_ah_proto_all(const struct ipsec_test_flags *flags)
+ 			return TEST_FAILED;
+ 
+ 		if (flags->display_alg)
+-			test_ipsec_display_alg(ah_alg_list[i].param1,
+-					       ah_alg_list[i].param2);
++			test_sec_alg_display(ah_alg_list[i].param1, ah_alg_list[i].param2);
+ 
+ 		pass_cnt++;
+ 	}
+diff --git a/app/test/test_cryptodev_security_ipsec.c b/app/test/test_cryptodev_security_ipsec.c
+index 01e0a45ffd2de..dafe3244e8d69 100644
+--- a/app/test/test_cryptodev_security_ipsec.c
++++ b/app/test/test_cryptodev_security_ipsec.c
+@@ -549,32 +549,6 @@ test_ipsec_td_update(struct ipsec_test_data td_inb[],
+ 	}
+ }
+ 
+-void
+-test_ipsec_display_alg(const struct crypto_param *param1,
+-		       const struct crypto_param *param2)
+-{
+-	if (param1->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
+-		printf("\t%s [%d]",
+-		       rte_cryptodev_get_aead_algo_string(param1->alg.aead),
+-		       param1->key_length * 8);
+-	} else if (param1->type == RTE_CRYPTO_SYM_XFORM_AUTH) {
+-		printf("\t%s",
+-		       rte_cryptodev_get_auth_algo_string(param1->alg.auth));
+-		if (param1->alg.auth != RTE_CRYPTO_AUTH_NULL)
+-			printf(" [%dB ICV]", param1->digest_length);
+-	} else {
+-		printf("\t%s",
+-		       rte_cryptodev_get_cipher_algo_string(param1->alg.cipher));
+-		if (param1->alg.cipher != RTE_CRYPTO_CIPHER_NULL)
+-			printf(" [%d]", param1->key_length * 8);
+-		printf(" %s",
+-		       rte_cryptodev_get_auth_algo_string(param2->alg.auth));
+-		if (param2->alg.auth != RTE_CRYPTO_AUTH_NULL)
+-			printf(" [%dB ICV]", param2->digest_length);
+-	}
+-	printf("\n");
+-}
+-
+ static int
+ test_ipsec_tunnel_hdr_len_get(const struct ipsec_test_data *td)
+ {
+diff --git a/app/test/test_cryptodev_security_ipsec.h b/app/test/test_cryptodev_security_ipsec.h
+index 77cb5fa7f939f..41aa865a0ff8b 100644
+--- a/app/test/test_cryptodev_security_ipsec.h
++++ b/app/test/test_cryptodev_security_ipsec.h
+@@ -155,9 +155,6 @@ void test_ipsec_td_update(struct ipsec_test_data td_inb[],
+ 			  int nb_td,
+ 			  const struct ipsec_test_flags *flags);
+ 
+-void test_ipsec_display_alg(const struct crypto_param *param1,
+-			    const struct crypto_param *param2);
+-
+ int test_ipsec_post_process(const struct rte_mbuf *m,
+ 			    const struct ipsec_test_data *td,
+ 			    struct ipsec_test_data *res_d, bool silent,
+diff --git a/app/test/test_security_inline_proto.c b/app/test/test_security_inline_proto.c
+index 9644a3c39cd1c..6cda9fe7aaf46 100644
+--- a/app/test/test_security_inline_proto.c
++++ b/app/test/test_security_inline_proto.c
+@@ -1345,8 +1345,7 @@ test_ipsec_inline_proto_all(const struct ipsec_test_flags *flags)
+ 
+ 		if (ret == TEST_FAILED) {
+ 			printf("\n TEST FAILED");
+-			test_ipsec_display_alg(alg_list[i].param1,
+-					       alg_list[i].param2);
++			test_sec_alg_display(alg_list[i].param1, alg_list[i].param2);
+ 			fail_cnt++;
+ 			continue;
+ 		}
+@@ -1360,15 +1359,13 @@ test_ipsec_inline_proto_all(const struct ipsec_test_flags *flags)
+ 
+ 		if (ret == TEST_FAILED) {
+ 			printf("\n TEST FAILED");
+-			test_ipsec_display_alg(alg_list[i].param1,
+-					       alg_list[i].param2);
++			test_sec_alg_display(alg_list[i].param1, alg_list[i].param2);
+ 			fail_cnt++;
+ 			continue;
+ 		}
+ 
+ 		if (flags->display_alg)
+-			test_ipsec_display_alg(alg_list[i].param1,
+-					       alg_list[i].param2);
++			test_sec_alg_display(alg_list[i].param1, alg_list[i].param2);
+ 
+ 		pass_cnt++;
+ 	}
+diff --git a/app/test/test_security_proto.c b/app/test/test_security_proto.c
+index bc4c5e11d2eb4..d62302a8dd50e 100644
+--- a/app/test/test_security_proto.c
++++ b/app/test/test_security_proto.c
+@@ -81,3 +81,28 @@ test_sec_crypto_caps_auth_verify(const struct rte_security_capability *sec_cap,
+ 
+ 	return -ENOTSUP;
+ }
++
++void
++test_sec_alg_display(const struct crypto_param *param1, const struct crypto_param *param2)
++{
++	if (param1->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
++		printf("\t%s [%d]",
++		       rte_cryptodev_get_aead_algo_string(param1->alg.aead),
++		       param1->key_length * 8);
++	} else if (param1->type == RTE_CRYPTO_SYM_XFORM_AUTH) {
++		printf("\t%s",
++		       rte_cryptodev_get_auth_algo_string(param1->alg.auth));
++		if (param1->alg.auth != RTE_CRYPTO_AUTH_NULL)
++			printf(" [%dB ICV]", param1->digest_length);
++	} else {
++		printf("\t%s",
++		       rte_cryptodev_get_cipher_algo_string(param1->alg.cipher));
++		if (param1->alg.cipher != RTE_CRYPTO_CIPHER_NULL)
++			printf(" [%d]", param1->key_length * 8);
++		printf(" %s",
++		       rte_cryptodev_get_auth_algo_string(param2->alg.auth));
++		if (param2->alg.auth != RTE_CRYPTO_AUTH_NULL)
++			printf(" [%dB ICV]", param2->digest_length);
++	}
++	printf("\n");
++}
+diff --git a/app/test/test_security_proto.h b/app/test/test_security_proto.h
+index e8d619353071a..596402fff9dd3 100644
+--- a/app/test/test_security_proto.h
++++ b/app/test/test_security_proto.h
+@@ -141,4 +141,6 @@ int test_sec_crypto_caps_cipher_verify(const struct rte_security_capability *sec
+ int test_sec_crypto_caps_auth_verify(const struct rte_security_capability *sec_cap,
+ 		struct rte_crypto_sym_xform *auth);
+ 
++void test_sec_alg_display(const struct crypto_param *param1, const struct crypto_param *param2);
++
+ #endif
+-- 
+2.25.1
+

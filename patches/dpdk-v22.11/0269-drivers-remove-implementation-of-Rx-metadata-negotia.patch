@@ -1,0 +1,321 @@
+From 943e2224cfe1784ce3ccd4cc827c7ebb574660f7 Mon Sep 17 00:00:00 2001
+From: Hanumanth Pothula <hpothula@marvell.com>
+Date: Tue, 28 Feb 2023 10:56:11 +0530
+Subject: [PATCH 269/955] drivers: remove implementation of Rx metadata
+ negotiation
+
+Presently, Rx metadata is sent to PMD by default, leading
+to a performance drop as processing for the same in Rx path
+takes extra cycles.
+
+Hence, removing driver implementation of Rx metadata negotiation
+and falling back to old implementation where mark actions are
+tracked as part of the flow rule
+
+Signed-off-by: Hanumanth Pothula <hpothula@marvell.com>
+Change-Id: I1c90e8e5c6cd9a1ec18dcdef4bd7db4f067f87c6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98106
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c      | 19 +++++++++++++++++++
+ drivers/common/cnxk/roc_npc.h      |  3 +++
+ drivers/common/cnxk/roc_npc_priv.h |  1 +
+ drivers/common/cnxk/version.map    |  2 ++
+ drivers/net/cnxk/cn10k_ethdev.c    | 26 --------------------------
+ drivers/net/cnxk/cn10k_flow.c      | 19 +++++++++++++++++++
+ drivers/net/cnxk/cn9k_ethdev.c     | 25 -------------------------
+ drivers/net/cnxk/cn9k_flow.c       | 20 ++++++++++++++++++++
+ drivers/net/cnxk/cnxk_ethdev.h     |  1 -
+ 9 files changed, 64 insertions(+), 52 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index e1b56f1b87bf1..379d082e35fea 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -5,6 +5,23 @@
+ #include "roc_api.h"
+ #include "roc_priv.h"
+ 
++int
++roc_npc_mark_actions_get(struct roc_npc *roc_npc)
++{
++	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++
++	return npc->mark_actions;
++}
++
++int
++roc_npc_mark_actions_sub_return(struct roc_npc *roc_npc, uint32_t count)
++{
++	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++
++	npc->mark_actions -= count;
++	return npc->mark_actions;
++}
++
+ int
+ roc_npc_vtag_actions_get(struct roc_npc *roc_npc)
+ {
+@@ -492,12 +509,14 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			}
+ 			mark = act_mark->id + 1;
+ 			req_act |= ROC_NPC_ACTION_TYPE_MARK;
++			npc->mark_actions += 1;
+ 			flow->match_id = mark;
+ 			break;
+ 
+ 		case ROC_NPC_ACTION_TYPE_FLAG:
+ 			mark = NPC_FLOW_FLAG_VAL;
+ 			req_act |= ROC_NPC_ACTION_TYPE_FLAG;
++			npc->mark_actions += 1;
+ 			break;
+ 
+ 		case ROC_NPC_ACTION_TYPE_COUNT:
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 4726d04f580e2..26a43c12cb0f9 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -398,6 +398,9 @@ int __roc_api roc_npc_mcam_free_all_resources(struct roc_npc *roc_npc);
+ void __roc_api roc_npc_flow_dump(FILE *file, struct roc_npc *roc_npc);
+ void __roc_api roc_npc_flow_mcam_dump(FILE *file, struct roc_npc *roc_npc,
+ 				      struct roc_npc_flow *mcam);
++int __roc_api roc_npc_mark_actions_get(struct roc_npc *roc_npc);
++int __roc_api roc_npc_mark_actions_sub_return(struct roc_npc *roc_npc,
++					      uint32_t count);
+ int __roc_api roc_npc_vtag_actions_get(struct roc_npc *roc_npc);
+ int __roc_api roc_npc_vtag_actions_sub_return(struct roc_npc *roc_npc,
+ 					      uint32_t count);
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 08d763eeb4989..714dcb09c9265 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -393,6 +393,7 @@ struct npc {
+ 	uint16_t flow_prealloc_size;		/* Pre allocated mcam size */
+ 	uint16_t flow_max_priority;		/* Max priority for flow */
+ 	uint16_t switch_header_type; /* Supported switch header type */
++	uint32_t mark_actions;
+ 	uint32_t vtag_strip_actions; /* vtag insert/strip actions */
+ 	uint16_t pf_func;	     /* pf_func of device */
+ 	npc_dxcfg_t prx_dxcfg;	     /* intf, lid, lt, extract */
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index efe411d1fb184..4bc14901a7e2f 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -344,6 +344,8 @@ INTERNAL {
+ 	roc_npc_flow_parse;
+ 	roc_npc_get_low_priority_mcam;
+ 	roc_npc_init;
++	roc_npc_mark_actions_get;
++	roc_npc_mark_actions_sub_return;
+ 	roc_npc_vtag_actions_get;
+ 	roc_npc_vtag_actions_sub_return;
+ 	roc_npc_mcam_alloc_entries;
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index 019c8299ce511..2b4ab8b772f48 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -39,9 +39,6 @@ nix_rx_offload_flags(struct rte_eth_dev *eth_dev)
+ 	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY)
+ 		flags |= NIX_RX_OFFLOAD_SECURITY_F;
+ 
+-	if (dev->rx_mark_update)
+-		flags |= NIX_RX_OFFLOAD_MARK_UPDATE_F;
+-
+ 	return flags;
+ }
+ 
+@@ -583,27 +580,6 @@ cn10k_nix_dev_start(struct rte_eth_dev *eth_dev)
+ 	return 0;
+ }
+ 
+-static int
+-cn10k_nix_rx_metadata_negotiate(struct rte_eth_dev *eth_dev, uint64_t *features)
+-{
+-	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+-
+-	*features &=
+-		(RTE_ETH_RX_METADATA_USER_FLAG | RTE_ETH_RX_METADATA_USER_MARK);
+-
+-	if (*features) {
+-		dev->rx_offload_flags |= NIX_RX_OFFLOAD_MARK_UPDATE_F;
+-		dev->rx_mark_update = true;
+-	} else {
+-		dev->rx_offload_flags &= ~NIX_RX_OFFLOAD_MARK_UPDATE_F;
+-		dev->rx_mark_update = false;
+-	}
+-
+-	cn10k_eth_set_rx_function(eth_dev);
+-
+-	return 0;
+-}
+-
+ static int
+ cn10k_nix_reassembly_capability_get(struct rte_eth_dev *eth_dev,
+ 		struct rte_eth_ip_reassembly_params *reassembly_capa)
+@@ -791,8 +767,6 @@ nix_eth_dev_ops_override(void)
+ 	cnxk_eth_dev_ops.dev_ptypes_set = cn10k_nix_ptypes_set;
+ 	cnxk_eth_dev_ops.timesync_enable = cn10k_nix_timesync_enable;
+ 	cnxk_eth_dev_ops.timesync_disable = cn10k_nix_timesync_disable;
+-	cnxk_eth_dev_ops.rx_metadata_negotiate =
+-		cn10k_nix_rx_metadata_negotiate;
+ 	cnxk_eth_dev_ops.timesync_read_tx_timestamp =
+ 		cn10k_nix_timesync_read_tx_timestamp;
+ 	cnxk_eth_dev_ops.ip_reassembly_capability_get =
+diff --git a/drivers/net/cnxk/cn10k_flow.c b/drivers/net/cnxk/cn10k_flow.c
+index 2ce9e1de74d64..3a7b09d794afc 100644
+--- a/drivers/net/cnxk/cn10k_flow.c
++++ b/drivers/net/cnxk/cn10k_flow.c
+@@ -135,6 +135,7 @@ cn10k_flow_create(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 	struct roc_npc_flow *flow;
+ 	int vtag_actions = 0;
+ 	uint32_t req_act = 0;
++	int mark_actions = 0;
+ 	int i, rc;
+ 
+ 	for (i = 0; actions[i].type != RTE_FLOW_ACTION_TYPE_END; i++) {
+@@ -197,6 +198,12 @@ cn10k_flow_create(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 			cn10k_mtr_connect(eth_dev, mtr->mtr_id);
+ 	}
+ 
++	mark_actions = roc_npc_mark_actions_get(npc);
++	if (mark_actions) {
++		dev->rx_offload_flags |= NIX_RX_OFFLOAD_MARK_UPDATE_F;
++		cn10k_eth_set_rx_function(eth_dev);
++	}
++
+ 	vtag_actions = roc_npc_vtag_actions_get(npc);
+ 
+ 	if (vtag_actions) {
+@@ -231,9 +238,21 @@ cn10k_flow_destroy(struct rte_eth_dev *eth_dev, struct rte_flow *rte_flow,
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	struct roc_npc *npc = &dev->npc;
+ 	int vtag_actions = 0;
++	int mark_actions = 0;
++	uint16_t match_id = 0;
+ 	uint32_t mtr_id;
+ 	int rc;
+ 
++	match_id = (flow->npc_action >> NPC_RX_ACT_MATCH_OFFSET) &
++		   NPC_RX_ACT_MATCH_MASK;
++	if (match_id) {
++		mark_actions = roc_npc_mark_actions_sub_return(npc, 1);
++		if (mark_actions == 0) {
++			dev->rx_offload_flags &= ~NIX_RX_OFFLOAD_MARK_UPDATE_F;
++			cn10k_eth_set_rx_function(eth_dev);
++		}
++	}
++
+ 	vtag_actions = roc_npc_vtag_actions_get(npc);
+ 	if (vtag_actions) {
+ 		if (flow->nix_intf == ROC_NPC_INTF_RX) {
+diff --git a/drivers/net/cnxk/cn9k_ethdev.c b/drivers/net/cnxk/cn9k_ethdev.c
+index e5c3074d91b09..e55a2aa133391 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.c
++++ b/drivers/net/cnxk/cn9k_ethdev.c
+@@ -39,9 +39,6 @@ nix_rx_offload_flags(struct rte_eth_dev *eth_dev)
+ 	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY)
+ 		flags |= NIX_RX_OFFLOAD_SECURITY_F;
+ 
+-	if (dev->rx_mark_update)
+-		flags |= NIX_RX_OFFLOAD_MARK_UPDATE_F;
+-
+ 	return flags;
+ }
+ 
+@@ -541,27 +538,6 @@ cn9k_nix_timesync_read_tx_timestamp(struct rte_eth_dev *eth_dev,
+ 	return 0;
+ }
+ 
+-static int
+-cn9k_nix_rx_metadata_negotiate(struct rte_eth_dev *eth_dev, uint64_t *features)
+-{
+-	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+-
+-	*features &=
+-		(RTE_ETH_RX_METADATA_USER_FLAG | RTE_ETH_RX_METADATA_USER_MARK);
+-
+-	if (*features) {
+-		dev->rx_offload_flags |= NIX_RX_OFFLOAD_MARK_UPDATE_F;
+-		dev->rx_mark_update = true;
+-	} else {
+-		dev->rx_offload_flags &= ~NIX_RX_OFFLOAD_MARK_UPDATE_F;
+-		dev->rx_mark_update = false;
+-	}
+-
+-	cn9k_eth_set_rx_function(eth_dev);
+-
+-	return 0;
+-}
+-
+ static int
+ cn9k_nix_tm_mark_vlan_dei(struct rte_eth_dev *eth_dev, int mark_green,
+ 			  int mark_yellow, int mark_red,
+@@ -695,7 +671,6 @@ nix_eth_dev_ops_override(void)
+ 	cnxk_eth_dev_ops.timesync_enable = cn9k_nix_timesync_enable;
+ 	cnxk_eth_dev_ops.timesync_disable = cn9k_nix_timesync_disable;
+ 	cnxk_eth_dev_ops.mtr_ops_get = NULL;
+-	cnxk_eth_dev_ops.rx_metadata_negotiate = cn9k_nix_rx_metadata_negotiate;
+ 	cnxk_eth_dev_ops.timesync_read_tx_timestamp =
+ 		cn9k_nix_timesync_read_tx_timestamp;
+ }
+diff --git a/drivers/net/cnxk/cn9k_flow.c b/drivers/net/cnxk/cn9k_flow.c
+index a418af185d5b3..b9ce1112a7b6d 100644
+--- a/drivers/net/cnxk/cn9k_flow.c
++++ b/drivers/net/cnxk/cn9k_flow.c
+@@ -16,11 +16,19 @@ cn9k_flow_create(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 	struct roc_npc *npc = &dev->npc;
+ 	struct roc_npc_flow *flow;
+ 	int vtag_actions = 0;
++	int mark_actions = 0;
+ 
+ 	flow = cnxk_flow_create(eth_dev, attr, pattern, actions, error);
+ 	if (!flow)
+ 		return NULL;
+ 
++	mark_actions = roc_npc_mark_actions_get(npc);
++
++	if (mark_actions) {
++		dev->rx_offload_flags |= NIX_RX_OFFLOAD_MARK_UPDATE_F;
++		cn9k_eth_set_rx_function(eth_dev);
++	}
++
+ 	vtag_actions = roc_npc_vtag_actions_get(npc);
+ 
+ 	if (vtag_actions) {
+@@ -39,6 +47,18 @@ cn9k_flow_destroy(struct rte_eth_dev *eth_dev, struct rte_flow *rte_flow,
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	struct roc_npc *npc = &dev->npc;
+ 	int vtag_actions = 0;
++	uint16_t match_id = 0;
++	int mark_actions = 0;
++
++	match_id = (flow->npc_action >> NPC_RX_ACT_MATCH_OFFSET) &
++		   NPC_RX_ACT_MATCH_MASK;
++	if (match_id) {
++		mark_actions = roc_npc_mark_actions_sub_return(npc, 1);
++		if (mark_actions == 0) {
++			dev->rx_offload_flags &= ~NIX_RX_OFFLOAD_MARK_UPDATE_F;
++			cn9k_eth_set_rx_function(eth_dev);
++		}
++	}
+ 
+ 	vtag_actions = roc_npc_vtag_actions_get(npc);
+ 	if (vtag_actions) {
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 91a8fde0ec3c4..62a06e5d03900 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -316,7 +316,6 @@ struct cnxk_eth_dev {
+ 	bool tx_compl_ena;
+ 	bool tx_mark;
+ 	bool ptp_en;
+-	bool rx_mark_update; /* Enable/Disable mark update to mbuf */
+ 
+ 	/* Pointer back to rte */
+ 	struct rte_eth_dev *eth_dev;
+-- 
+2.25.1
+

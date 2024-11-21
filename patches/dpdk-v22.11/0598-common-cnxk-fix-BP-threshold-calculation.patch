@@ -1,0 +1,52 @@
+From fa4166cbaef9556af65ec7cbd8546afded21ea20 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Tue, 11 Jul 2023 13:17:13 +0530
+Subject: [PATCH 598/955] common/cnxk: fix BP threshold calculation
+
+Current macro to calculate BP threshold were evaluating incorrect
+threshold because aura_limit is first shifted by shift then percentage
+is calculated.
+
+While first percentage should be calculated and the resultant should be
+shifted by shift.
+
+So formula is updated accordingly.
+
+Fixes: cb4bfd6e7bdf ("event/cnxk: support Rx adapter")
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I5bb054bad5da158d00c0a641a7098755f2f805aa
+---
+ drivers/common/cnxk/roc_nix_fc.c   | 2 +-
+ drivers/common/cnxk/roc_nix_priv.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index d58b35268e047..0f9b5cbbc04a7 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -496,7 +496,7 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, ui
+ 	aura_attr = &lf->aura_attr[aura_id];
+ 
+ 	bp_intf = 1 << nix->is_nix1;
+-	bp_thresh = NIX_RQ_AURA_THRESH(drop_percent, aura_attr->limit >> aura_attr->shift);
++	bp_thresh = NIX_RQ_AURA_BP_THRESH(drop_percent, aura_attr->limit, aura_attr->shift);
+ 
+ 	bpid = (aura_attr->bp_ena & 0x1) ? aura_attr->nix0_bpid : aura_attr->nix1_bpid;
+ 	/* BP is already enabled. */
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index f82e411b709fa..a582b9df33299 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -20,7 +20,7 @@
+ /* Apply LBP at 75% of actual BP */
+ #define NIX_CQ_LPB_THRESH_FRAC	(75 * 16 / 100)
+ #define NIX_CQ_FULL_ERRATA_SKID (1024ull * 256)
+-#define NIX_RQ_AURA_THRESH(percent, val) (((val) * (percent)) / 100)
++#define NIX_RQ_AURA_BP_THRESH(percent, limit, shift) ((((limit) * (percent)) / 100) >> (shift))
+ 
+ /* IRQ triggered when NIX_LF_CINTX_CNT[QCOUNT] crosses this value */
+ #define CQ_CQE_THRESH_DEFAULT	0x1ULL
+-- 
+2.25.1
+

@@ -1,0 +1,77 @@
+From fc4109939e0d504778af6c8d63da877c7e396cb1 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 20 Jun 2024 20:50:13 +0530
+Subject: [PATCH 878/955] net/cnxk: avoid NPC Rx and MCAM entries disable
+
+For inline IPsec, Rx misses are observed during dev stop process.
+There can be a situation of 2nd pass packets are being dropped and
+can cause a buffer leak.
+To handle such case, will avoid NPC Rx and MCAM entries disable in
+dev stop. These will be handled in dev close routine.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Id19c0dacbc2143d9fce05eaa726805d43421ffd2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129961
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130176
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c | 27 ++++++++++++++++++++-------
+ 1 file changed, 20 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index db8feca620c79..38746c81c57c5 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1625,18 +1625,26 @@ cnxk_nix_dev_stop(struct rte_eth_dev *eth_dev)
+ 	int count, i, j, rc;
+ 	void *rxq;
+ 
+-	/* Disable all the NPC entries */
+-	rc = roc_npc_mcam_enable_all_entries(&dev->npc, 0);
+-	if (rc)
+-		return rc;
++	/* In case of Inline IPSec, will need to avoid disabling the MCAM rules and NPC Rx
++	 * in this routine to continue processing of second pass inflight packets if any.
++	 * Drop of second pass packets will leak first pass buffers on some platforms
++	 * due to hardware limitations.
++	 */
++	if (roc_feature_nix_has_second_pass_drop() ||
++	    !(dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY)) {
++		/* Disable all the NPC entries */
++		rc = roc_npc_mcam_enable_all_entries(&dev->npc, 0);
++		if (rc)
++			return rc;
++
++		/* Disable Rx via NPC */
++		roc_nix_npc_rx_ena_dis(&dev->nix, false);
++	}
+ 
+ 	/* Stop link change events */
+ 	if (!roc_nix_is_vf_or_sdp(&dev->nix))
+ 		roc_nix_mac_link_event_start_stop(&dev->nix, false);
+ 
+-	/* Disable Rx via NPC */
+-	roc_nix_npc_rx_ena_dis(&dev->nix, false);
+-
+ 	roc_nix_inl_outb_soft_exp_poll_switch(&dev->nix, false);
+ 
+ 	/* Stop inline device RQ first */
+@@ -2047,6 +2055,11 @@ cnxk_eth_dev_uninit(struct rte_eth_dev *eth_dev, bool reset)
+ 	/* Clear the flag since we are closing down */
+ 	dev->configured = 0;
+ 
++	/* Disable all the NPC entries */
++	rc = roc_npc_mcam_enable_all_entries(&dev->npc, 0);
++	if (rc)
++		return rc;
++
+ 	roc_nix_npc_rx_ena_dis(nix, false);
+ 
+ 	/* Restore 802.3 Flow control configuration */
+-- 
+2.25.1
+

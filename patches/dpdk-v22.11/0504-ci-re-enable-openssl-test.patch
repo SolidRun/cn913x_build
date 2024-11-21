@@ -1,0 +1,44 @@
+From e050dee052566d24aacdefba9081fd9db2035620 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Fri, 16 Jun 2023 14:43:46 +0530
+Subject: [PATCH 504/955] ci: re-enable openssl test
+
+Re-enable openssl test.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I4a206760ea3092c7010aa6ed56622e854093ddf6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105772
+Reviewed-by: Ashwin Sekhar T K
+Tested-by: Ashwin Sekhar T K
+---
+ marvell-ci/test/env/cn10k.env | 1 -
+ marvell-ci/test/env/cn9k.env  | 1 -
+ 2 files changed, 2 deletions(-)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 158fad71a23bb..98d217443dda5 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -74,7 +74,6 @@ TM_SETUP=${TM_SETUP:-}
+ FIXME_SKIP_TESTS="
+ 	cnxk_mtr_test_config
+ 	cnxk_fc_test_config
+-	cryptodev_openssl_autotest
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index d3c9328cac3ef..dd57040053b25 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -72,7 +72,6 @@ TM_SETUP=${TM_SETUP:-1}
+ 
+ FIXME_SKIP_TESTS="
+         cnxk_fc_test_config
+-	cryptodev_openssl_autotest
+ "
+ 
+ 
+-- 
+2.25.1
+

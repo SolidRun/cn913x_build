@@ -1,0 +1,91 @@
+From d385a2cf915eb591e2c51cc4da1d6c0cc1a93b6d Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Thu, 6 Jun 2024 14:12:53 +0530
+Subject: [PATCH 358/513] crypto/cnxk: fix ECDH pubkey verify
+
+Fix dequeue operation for ECDH pubkey verify.
+
+Fixes: baae0994fa96 ("crypto/cnxk: support ECDH")
+Fixes: f03bb65e66fc ("crypto/cnxk: fix ECDH pubkey verify in cn9k")
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Id5b21e3c533288fb19fbb0b6758dd6e8023b4f88
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129190
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 23 ++++++++++++++---------
+ drivers/crypto/cnxk/cn9k_cryptodev_ops.c  | 21 +++++++++++++--------
+ 2 files changed, 27 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 0afd623990e35..02f179f593fc9 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -1235,15 +1235,20 @@ cn10k_cpt_dequeue_post_process(struct cnxk_cpt_qp *qp, struct rte_crypto_op *cop
+ 
+ 		return;
+ 	} else if (cop->type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC &&
+-			   cop->sess_type == RTE_CRYPTO_OP_WITH_SESSION &&
+-			   cop->asym->ecdh.ke_type == RTE_CRYPTO_ASYM_KE_PUB_KEY_VERIFY) {
+-		if (likely(compcode == CPT_COMP_GOOD)) {
+-			if (uc_compcode == ROC_AE_ERR_ECC_POINT_NOT_ON_CURVE) {
+-				cop->status = RTE_CRYPTO_OP_STATUS_ERROR;
+-				return;
+-			} else if (uc_compcode == ROC_AE_ERR_ECC_PAI) {
+-				cop->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+-				return;
++		   cop->sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
++		struct cnxk_ae_sess *sess;
++
++		sess = (struct cnxk_ae_sess *)cop->asym->session;
++		if (sess->xfrm_type == RTE_CRYPTO_ASYM_XFORM_ECDH &&
++		    cop->asym->ecdh.ke_type == RTE_CRYPTO_ASYM_KE_PUB_KEY_VERIFY) {
++			if (likely(compcode == CPT_COMP_GOOD)) {
++				if (uc_compcode == ROC_AE_ERR_ECC_POINT_NOT_ON_CURVE) {
++					cop->status = RTE_CRYPTO_OP_STATUS_ERROR;
++					return;
++				} else if (uc_compcode == ROC_AE_ERR_ECC_PAI) {
++					cop->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
++					return;
++				}
+ 			}
+ 		}
+ 	}
+diff --git a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+index ac9393eacfca6..92b4819ad4dc2 100644
+--- a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+@@ -523,14 +523,19 @@ cn9k_cpt_dequeue_post_process(struct cnxk_cpt_qp *qp, struct rte_crypto_op *cop,
+ 			if (res->uc_compcode == ROC_SE_ERR_GC_ICV_MISCOMPARE)
+ 				cop->status = RTE_CRYPTO_OP_STATUS_AUTH_FAILED;
+ 			else if (cop->type == RTE_CRYPTO_OP_TYPE_ASYMMETRIC &&
+-				 cop->sess_type == RTE_CRYPTO_OP_WITH_SESSION &&
+-				 cop->asym->ecdh.ke_type == RTE_CRYPTO_ASYM_KE_PUB_KEY_VERIFY) {
+-				if (res->uc_compcode == ROC_AE_ERR_ECC_POINT_NOT_ON_CURVE) {
+-					cop->status = RTE_CRYPTO_OP_STATUS_ERROR;
+-					return;
+-				} else if (res->uc_compcode == ROC_AE_ERR_ECC_PAI) {
+-					cop->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+-					return;
++				 cop->sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
++				struct cnxk_ae_sess *sess;
++
++				sess = (struct cnxk_ae_sess *)cop->asym->session;
++				if (sess->xfrm_type == RTE_CRYPTO_ASYM_XFORM_ECDH &&
++				    cop->asym->ecdh.ke_type == RTE_CRYPTO_ASYM_KE_PUB_KEY_VERIFY) {
++					if (res->uc_compcode == ROC_AE_ERR_ECC_POINT_NOT_ON_CURVE) {
++						cop->status = RTE_CRYPTO_OP_STATUS_ERROR;
++						return;
++					} else if (res->uc_compcode == ROC_AE_ERR_ECC_PAI) {
++						cop->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
++						return;
++					}
+ 				}
+ 			} else
+ 				cop->status = RTE_CRYPTO_OP_STATUS_ERROR;
+-- 
+2.25.1
+

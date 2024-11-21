@@ -1,0 +1,56 @@
+From ae9f5fff23df0f33d1b77cda25ef3db2227b2245 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 24 Apr 2023 06:26:23 +0000
+Subject: [PATCH 400/955] common/cnxk: set cipher key only for non-null cipher
+
+Set cipher key only for non-NULL cipher algorithms only.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I736b6e06adf97a32b38a461ed76283bed109b2e5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102750
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_se.c | 11 ++++-------
+ 1 file changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index cda1c5016d651..fe4c03696848a 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -58,9 +58,6 @@ cpt_ciph_type_set(roc_se_cipher_type type, struct roc_se_ctx *ctx, uint16_t key_
+ 	int fc_type = 0;
+ 
+ 	switch (type) {
+-	case ROC_SE_PASSTHROUGH:
+-		fc_type = ROC_SE_FC_GEN;
+-		break;
+ 	case ROC_SE_DES3_CBC:
+ 	case ROC_SE_DES3_ECB:
+ 	case ROC_SE_DES_DOCSISBPI:
+@@ -523,6 +520,10 @@ roc_se_ciph_key_set(struct roc_se_ctx *se_ctx, roc_se_cipher_type type, const ui
+ 	uint8_t *ci_key;
+ 	int i, ret;
+ 
++	/* For NULL cipher, no processing required. */
++	if (type == ROC_SE_PASSTHROUGH)
++		return 0;
++
+ 	zs_ch_ctx = &se_ctx->se_ctx.zs_ch_ctx;
+ 
+ 	if (roc_model_is_cn9k()) {
+@@ -552,10 +553,6 @@ roc_se_ciph_key_set(struct roc_se_ctx *se_ctx, roc_se_cipher_type type, const ui
+ 	}
+ 
+ 	switch (type) {
+-	case ROC_SE_PASSTHROUGH:
+-		se_ctx->enc_cipher = 0;
+-		fctx->enc.enc_cipher = 0;
+-		goto success;
+ 	case ROC_SE_DES3_CBC:
+ 		/* CPT performs DES using 3DES with the 8B DES-key
+ 		 * replicated 2 more times to match the 24B 3DES-key.
+-- 
+2.25.1
+

@@ -22,6 +22,11 @@ RUN apt-get --no-install-recommends -y install \
 	debootstrap libncurses-dev crossbuild-essential-arm64 \
 	openssl ca-certificates fakeroot
 
+# generate cross pkg-config
+ADD aarch64-linux-gnu.personality /usr/share/pkgconfig/personality.d
+RUN ln -sv pkgconf /usr/bin/aarch64-linux-gnu-pkg-config
+RUN ln -sv pkgconf /usr/bin/aarch64-linux-gnu-pkgconf
+
 # Set workdir
 WORKDIR /cn913x_build_dir
 

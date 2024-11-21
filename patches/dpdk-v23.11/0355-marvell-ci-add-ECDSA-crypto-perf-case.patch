@@ -1,0 +1,101 @@
+From 55c6c598d744e780b558da393ccf5bfcde4dc9c0 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Sat, 18 May 2024 00:26:53 +0530
+Subject: [PATCH 355/513] marvell-ci: add ECDSA crypto perf case
+
+Added perf case for ecdsa-sign crypto operation.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Ib481a647d5dcba5fc8686a374455240a9d2387ce
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128056
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../crypto_perf/cnxk_crypto_perf.sh           | 20 ++++++++++++++++++-
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx |  3 +++
+ .../ref_numbers/cn10k/rclk2700_sclk1200.106xx |  3 +++
+ .../cn9k/rclk2200_sclk1100_cptclk1000.96xx    |  4 ++++
+ 4 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh b/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
+index c0db83c78c362..77b7ea670703b 100755
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
+@@ -440,6 +440,20 @@ function ae_modex_perf()
+ 	crypto_perf_common "$optype" "--devtype $DEVTYPE --ptest throughput --optype $optype --pool-sz $POOLSZ --buffer-sz $BUFFERSZ --total-ops $NUMOPS --burst-sz $BURSTSZ --silent --csv-friendly"
+ }
+ 
++function ae_ecdsa_perf()
++{
++	local optype="ecdsa_p256r1"
++	local asymoptype="sign"
++	local algostr="ecdsa-sign"
++	BUFSIZE=(64)
++	BUFFERSZ="64"
++	NUMOPS=100000
++	crypto_perf_common "$algostr" "--devtype $DEVTYPE --ptest throughput --optype $optype --pool-sz $POOLSZ --buffer-sz $BUFFERSZ --total-ops $NUMOPS --burst-sz $BURSTSZ --asym-op $asymoptype --silent --csv-friendly"
++	BUFSIZE=(64 384 1504)
++	BUFFERSZ="64,384,1504"
++	NUMOPS=10000000
++}
++
+ function ae_sm2_perf()
+ {
+ 	local optype="sm2"
+@@ -482,7 +496,11 @@ aead_ipsec_perf
+ zuc_eia3_perf
+ zuc_eea3_perf
+ ae_modex_perf
+-ae_sm2_perf
++ae_ecdsa_perf
++
++if [[ $PART_106B0 == "B0" ]]; then
++	ae_sm2_perf
++fi
+ 
+ if [[ $IS_CN103 -ne 0 ]] || [[ $PART_106B0 == "B0" ]]; then
+ 	aead_tls12_perf
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+index ea4c795e99804..14a98804436d8 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+@@ -58,6 +58,9 @@ aes-gcm-dtls1.2
+ 384: 29.12 30.26 31.41
+ 1504: 9.28 9.369 9.61
+ <end>
++ecdsa-sign
++64: 0.070 0.070 0.070
++<end>
+ sm2-sign
+ 64: 0.109 0.109 0.109
+ <end>
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx
+index 7b24e93cfcba4..06152e9ceecd5 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx
+@@ -58,6 +58,9 @@ aes-gcm-dtls1.2
+ 384: 31.77 34.26 36
+ 1504: 9.28 11.369 11.558
+ <end>
++ecdsa-sign
++64: 0.070 0.070 0.070
++<end>
+ sm2-sign
+ 64: 0.109 0.109 0.109
+ <end>
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx
+index 66e4610e3616e..55ec260d8669e 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx
+@@ -38,3 +38,7 @@ modex
+ 384: 1.601 1.606 1.604
+ 1504: 1.601 1.602 1.605
+ <end>
++ecdsa-sign
++64: 0.084 0.084 0.084
++<end>
++
+-- 
+2.25.1
+

@@ -1,0 +1,132 @@
+From 12d5ccbc335a4c504083d01b7bb9b9119750fbfc Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 19 Aug 2024 10:27:07 +0000
+Subject: [PATCH 914/955] crypto/cnxk: use opaque pointer for PMD APIs
+
+Use opaque pointer instead of void * for PMD APIs. Usage of forward
+declaration and opaque pointer would allow compiler to prevent
+unintended usage which cannot be prevented with void *.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: If897f599d9299373dc6ff1ea5e14175df115c646
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133743
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134287
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  | 12 ++++++------
+ drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h | 20 +++++++++++++++++---
+ drivers/crypto/cnxk/version.map           |  8 ++++++++
+ 3 files changed, 31 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 47f5750cb4321..147c4ae336736 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -975,7 +975,7 @@ cnxk_cpt_queue_pair_event_error_query(struct rte_cryptodev *dev, uint16_t qp_id)
+ 	return 0;
+ }
+ 
+-void *
++struct rte_pmd_cnxk_crypto_qptr *
+ rte_pmd_cnxk_crypto_qptr_get(uint8_t dev_id, uint16_t qp_id)
+ {
+ 	const struct rte_crypto_fp_ops *fp_ops;
+@@ -988,9 +988,9 @@ rte_pmd_cnxk_crypto_qptr_get(uint8_t dev_id, uint16_t qp_id)
+ }
+ 
+ static inline void
+-cnxk_crypto_cn10k_submit(void *qptr, void *inst, uint16_t nb_inst)
++cnxk_crypto_cn10k_submit(struct rte_pmd_cnxk_crypto_qptr *qptr, void *inst, uint16_t nb_inst)
+ {
+-	struct cnxk_cpt_qp *qp = qptr;
++	struct cnxk_cpt_qp *qp = PLT_PTR_CAST(qptr);
+ 	uint64_t lmt_base, io_addr;
+ 	uint16_t lmt_id;
+ 	void *lmt_dst;
+@@ -1017,9 +1017,9 @@ cnxk_crypto_cn10k_submit(void *qptr, void *inst, uint16_t nb_inst)
+ }
+ 
+ static inline void
+-cnxk_crypto_cn9k_submit(void *qptr, void *inst, uint16_t nb_inst)
++cnxk_crypto_cn9k_submit(struct rte_pmd_cnxk_crypto_qptr *qptr, void *inst, uint16_t nb_inst)
+ {
+-	struct cnxk_cpt_qp *qp = qptr;
++	struct cnxk_cpt_qp *qp = PLT_PTR_CAST(qptr);
+ 
+ 	const uint64_t lmt_base = qp->lf.lmt_base;
+ 	const uint64_t io_addr = qp->lf.io_addr;
+@@ -1038,7 +1038,7 @@ cnxk_crypto_cn9k_submit(void *qptr, void *inst, uint16_t nb_inst)
+ }
+ 
+ void
+-rte_pmd_cnxk_crypto_submit(void *qptr, void *inst, uint16_t nb_inst)
++rte_pmd_cnxk_crypto_submit(struct rte_pmd_cnxk_crypto_qptr *qptr, void *inst, uint16_t nb_inst)
+ {
+ 	if (roc_model_is_cn10k())
+ 		return cnxk_crypto_cn10k_submit(qptr, inst, nb_inst);
+diff --git a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+index 64978a008b796..7af28480cd9b3 100644
+--- a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
++++ b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+@@ -13,6 +13,16 @@
+ 
+ #include <stdint.h>
+ 
++/* Forward declarations */
++
++/**
++ * @brief Crypto CNXK PMD QPTR opaque pointer.
++ *
++ * This structure represents the queue pair structure that would be the input to APIs that use
++ * hardware queues.
++ */
++struct rte_pmd_cnxk_crypto_qptr;
++
+ /**
+  * Get queue pointer of a specific queue in a cryptodev.
+  *
+@@ -21,9 +31,11 @@
+  * @param qp_id
+  *   Index of the queue pair.
+  * @return
+- *   Pointer to queue pair structure that would be the input to submit APIs.
++ *   - On success, pointer to queue pair structure that would be the input to submit APIs.
++ *   - NULL on error.
+  */
+-void *rte_pmd_cnxk_crypto_qptr_get(uint8_t dev_id, uint16_t qp_id);
++__rte_experimental
++struct rte_pmd_cnxk_crypto_qptr *rte_pmd_cnxk_crypto_qptr_get(uint8_t dev_id, uint16_t qp_id);
+ 
+ /**
+  * Submit CPT instruction (cpt_inst_s) to hardware (CPT).
+@@ -41,6 +53,8 @@ void *rte_pmd_cnxk_crypto_qptr_get(uint8_t dev_id, uint16_t qp_id);
+  * @param nb_inst
+  *   Number of instructions.
+  */
+-void rte_pmd_cnxk_crypto_submit(void *qptr, void *inst, uint16_t nb_inst);
++__rte_experimental
++void rte_pmd_cnxk_crypto_submit(struct rte_pmd_cnxk_crypto_qptr *qptr, void *inst,
++				uint16_t nb_inst);
+ 
+ #endif /* _PMD_CNXK_CRYPTO_H_ */
+diff --git a/drivers/crypto/cnxk/version.map b/drivers/crypto/cnxk/version.map
+index 5789a6bfc9862..7a776077748d0 100644
+--- a/drivers/crypto/cnxk/version.map
++++ b/drivers/crypto/cnxk/version.map
+@@ -1,3 +1,11 @@
++EXPERIMENTAL {
++	global:
++
++	# added in 24.03
++	rte_pmd_cnxk_crypto_submit;
++	rte_pmd_cnxk_crypto_qptr_get;
++};
++
+ INTERNAL {
+ 	global:
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,40 @@
+From 4232ec62680285efbe78877aa4dc1f554826ad77 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Tue, 15 Oct 2024 19:04:02 +0530
+Subject: [PATCH 11/12] crypto/cnxk: disable EdDSA capability on 103 board
+
+In some of 103 boards, EdDSA produced wrong pubkey and signatures.
+Disable EdDSA capability until exact cause is found out.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I869d741819c51ca4b2d76400fc90e707e302d8a6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/137226
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 8f918e74270da4472a88a29326ec9daeda6d36cc)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/137234
+Reviewed-by: Devapraba Muthumani <dmuthumani@marvell.com>
+Klocwork: Devapraba Muthumani <dmuthumani@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index 3897feacb8aae..be376e275f62e 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -1957,7 +1957,7 @@ cn10k_crypto_caps_add(struct rte_cryptodev_capabilities cnxk_caps[],
+ 	if (hw_caps[CPT_ENG_TYPE_AE].sm2)
+ 		CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, sm2);
+ 
+-	if (hw_caps[CPT_ENG_TYPE_AE].eddsa)
++	if (!roc_model_is_cn10kb() && hw_caps[CPT_ENG_TYPE_AE].eddsa)
+ 		CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, eddsa);
+ }
+ 
+-- 
+2.25.1
+

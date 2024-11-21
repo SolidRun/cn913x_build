@@ -1,0 +1,34 @@
+From b984fc2752d6937208917467547a38a0330cd7cd Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Thu, 30 Mar 2023 13:27:07 +0530
+Subject: [PATCH 402/955] common/cnxk: update minimum size of packet
+
+In case of MACsec, short packets may also come,
+hence reduced the minimum packet size to 40B.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I6386560214c67010a11f2e990d6545a7ebed186d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100900
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/hw/nix.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/hw/nix.h b/drivers/common/cnxk/hw/nix.h
+index fbdf1b64f63cc..26dcda680e15e 100644
+--- a/drivers/common/cnxk/hw/nix.h
++++ b/drivers/common/cnxk/hw/nix.h
+@@ -2128,7 +2128,7 @@ struct nix_lso_format {
+ #define NIX_SDP_MAX_HW_FRS  65535UL
+ #define NIX_SDP_16K_HW_FRS  16380UL
+ #define NIX_RPM_MAX_HW_FRS  16380UL
+-#define NIX_MIN_HW_FRS	    60UL
++#define NIX_MIN_HW_FRS	    40UL
+ 
+ /** NIX policer rate limits */
+ #define NIX_BPF_MAX_RATE_DIV_EXP  12
+-- 
+2.25.1
+

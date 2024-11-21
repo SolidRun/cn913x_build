@@ -1,0 +1,73 @@
+From 956ef3dc99fb05e3cf48d695e8b9138ff882b580 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Wed, 7 Jun 2023 17:11:31 +0530
+Subject: [PATCH 492/955] net/cnxk: skip flow destroy for MACsec flows
+
+MACsec flows need be freed separately and does not
+need subsequent processing. Hence, return after
+MCS flow is destroyed.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Ie183e75cc10763e8e0081033744d94079ac9fdeb
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105216
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 27dede87c593d53c2dacc4d84fa38f5c5fc74665)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105663
+---
+ drivers/net/cnxk/cn10k_flow.c      | 15 ++++++++-------
+ drivers/net/cnxk/cnxk_ethdev_mcs.c |  4 ++--
+ 2 files changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_flow.c b/drivers/net/cnxk/cn10k_flow.c
+index 5314054767ed3..4faed04c9ac18 100644
+--- a/drivers/net/cnxk/cn10k_flow.c
++++ b/drivers/net/cnxk/cn10k_flow.c
+@@ -266,13 +266,6 @@ cn10k_flow_destroy(struct rte_eth_dev *eth_dev, struct rte_flow *rte_flow,
+ 		}
+ 	}
+ 
+-	rc = cnxk_mcs_flow_destroy(dev, (void *)flow);
+-	if (rc < 0) {
+-		rte_flow_error_set(error, rc, RTE_FLOW_ERROR_TYPE_UNSPECIFIED, NULL,
+-					   "Failed to free mcs flow");
+-		return rc;
+-	}
+-
+ 	vtag_actions = roc_npc_vtag_actions_get(npc);
+ 	if (vtag_actions) {
+ 		if (flow->nix_intf == ROC_NPC_INTF_RX) {
+@@ -285,6 +278,14 @@ cn10k_flow_destroy(struct rte_eth_dev *eth_dev, struct rte_flow *rte_flow,
+ 		}
+ 	}
+ 
++	if (cnxk_eth_macsec_sess_get_by_sess(dev, (void *)flow) != NULL) {
++		rc = cnxk_mcs_flow_destroy(dev, (void *)flow);
++		if (rc < 0)
++			rte_flow_error_set(error, rc, RTE_FLOW_ERROR_TYPE_UNSPECIFIED,
++					NULL, "Failed to free mcs flow");
++		return rc;
++	}
++
+ 	mtr_id = flow->mtr_id;
+ 	rc = cnxk_flow_destroy(eth_dev, flow, error);
+ 	if (!rc && mtr_id != ROC_NIX_MTR_ID_INVALID) {
+diff --git a/drivers/net/cnxk/cnxk_ethdev_mcs.c b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+index e79b8279a7ae3..8983d8abb88cd 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_mcs.c
++++ b/drivers/net/cnxk/cnxk_ethdev_mcs.c
+@@ -512,9 +512,9 @@ cnxk_mcs_flow_destroy(struct cnxk_eth_dev *dev, void *flow)
+ 
+ 	ret = roc_mcs_free_rsrc(mcs_dev->mdev, &req);
+ 	if (ret)
+-		plt_err("Failed to free SC id.");
++		plt_err("Failed to free flow_id: %d.", s->flow_id);
+ 
+-	return (ret == 0) ? 1 : ret;
++	return ret;
+ }
+ 
+ int
+-- 
+2.25.1
+

@@ -1,0 +1,35 @@
+From 5545e14f6fa007b2698db3ca6057d37f56fc7641 Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Wed, 4 Jan 2023 19:03:16 +0100
+Subject: [PATCH 217/955] reorder: invalidate buf from ready queue in drain
+
+Set drained buffers from ready queue to NULL, since their ownership
+returned to user. Otherwise it's possible that both user and library
+will attempt to free the packet.
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: I61dde3fbd174f5d0d9759d844beec817733c6bfc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93837
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+---
+ lib/reorder/rte_reorder.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/lib/reorder/rte_reorder.c b/lib/reorder/rte_reorder.c
+index 385ee479da428..b38e71f460786 100644
+--- a/lib/reorder/rte_reorder.c
++++ b/lib/reorder/rte_reorder.c
+@@ -389,6 +389,7 @@ rte_reorder_drain(struct rte_reorder_buffer *b, struct rte_mbuf **mbufs,
+ 	/* Try to fetch requested number of mbufs from ready buffer */
+ 	while ((drain_cnt < max_mbufs) && (ready_buf->tail != ready_buf->head)) {
+ 		mbufs[drain_cnt++] = ready_buf->entries[ready_buf->tail];
++		ready_buf->entries[ready_buf->tail] = NULL;
+ 		ready_buf->tail = (ready_buf->tail + 1) & ready_buf->mask;
+ 	}
+ 
+-- 
+2.25.1
+

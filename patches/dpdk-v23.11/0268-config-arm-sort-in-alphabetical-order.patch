@@ -1,0 +1,58 @@
+From 673a98be263a15e70a6aed080487468c9a6a8cc6 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 7 Mar 2024 04:11:44 +0000
+Subject: [PATCH 268/513] config/arm: sort in alphabetical order
+
+Move 'soc_cn9k' to have the list alphabetically sorted.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I1ff8e7da390a5decec9410a346f9f95c4a028a1c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123373
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ config/arm/meson.build | 20 ++++++++++----------
+ 1 file changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index 0c24aa8293f35..3f5fb0f242b7e 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -382,6 +382,16 @@ soc_centriq2400 = {
+     'numa': false
+ }
+ 
++soc_cn9k = {
++    'description': 'Marvell OCTEON 9',
++    'implementer': '0x43',
++    'part_number': '0xb2',
++    'numa': false,
++    'flags': [
++        ['RTE_IOVA_IN_MBUF', 0]
++    ]
++}
++
+ soc_cn10k = {
+     'description' : 'Marvell OCTEON 10',
+     'implementer' : '0x41',
+@@ -516,16 +526,6 @@ soc_odyssey = {
+     ],
+ }
+ 
+-soc_cn9k = {
+-    'description': 'Marvell OCTEON 9',
+-    'implementer': '0x43',
+-    'part_number': '0xb2',
+-    'numa': false,
+-    'flags': [
+-        ['RTE_IOVA_IN_MBUF', 0]
+-    ]
+-}
+-
+ soc_stingray = {
+     'description': 'Broadcom Stingray',
+     'implementer': '0x41',
+-- 
+2.25.1
+

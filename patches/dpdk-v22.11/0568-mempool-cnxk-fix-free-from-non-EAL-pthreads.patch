@@ -1,0 +1,44 @@
+From 4d17727d7b604f717342de2dbf7f7d5453386e75 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 1 Aug 2023 14:55:05 +0530
+Subject: [PATCH 568/955] mempool/cnxk: fix free from non-EAL pthreads
+
+For non-EAL pthreads, rte_lcore_id() will not be valid.
+So, batch free cannot be used as those threads won't have
+dedicated lmtlines. So, fallback to bulk alloc in such cases.
+
+Fixes: ecbc731a2286 ("mempool/cnxk: add cn10k batch enqueue")
+
+Change-Id: I8aa5b9b57ecb4076934386719b541745337856b4
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108749
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit d45f190c7e2addf9ee294ee6173b28f7cbc624b7)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108777
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/mempool/cnxk/cn10k_mempool_ops.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/mempool/cnxk/cn10k_mempool_ops.c b/drivers/mempool/cnxk/cn10k_mempool_ops.c
+index 9594370ecd45b..2a5aad00086b1 100644
+--- a/drivers/mempool/cnxk/cn10k_mempool_ops.c
++++ b/drivers/mempool/cnxk/cn10k_mempool_ops.c
+@@ -162,6 +162,12 @@ cn10k_mempool_enq(struct rte_mempool *mp, void *const *obj_table,
+ 	 */
+ 	rte_io_wmb();
+ 
++	/* For non-EAL threads, rte_lcore_id() will not be valid. Hence
++	 * fallback to bulk alloc
++	 */
++	if (unlikely(rte_lcore_id() == LCORE_ID_ANY))
++		return cnxk_mempool_enq(mp, obj_table, n);
++
+ 	if (n == 1) {
+ 		roc_npa_aura_op_free(mp->pool_id, 1, ptr[0]);
+ 		return 0;
+-- 
+2.25.1
+

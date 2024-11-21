@@ -1,0 +1,33 @@
+From 6470eafff5360efcc6c68ba6359a4b6459b80e95 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Mon, 26 Jun 2023 16:03:57 +0530
+Subject: [PATCH 519/955] ci: enable IPsec LA_perf in CI
+
+Enable the test back.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I005e8cbb41ba675a1112587ad75497f72d41b678
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106482
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ marvell-ci/test/env/cn106-perf.env | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/marvell-ci/test/env/cn106-perf.env b/marvell-ci/test/env/cn106-perf.env
+index a7e7c16135271..b80f0189dd739 100644
+--- a/marvell-ci/test/env/cn106-perf.env
++++ b/marvell-ci/test/env/cn106-perf.env
+@@ -10,6 +10,7 @@ RUN_TESTS="
+ 	cnxk_ptp_test
+ 	cnxk_event_perf
+ 	cnxk_crypto_perf
++	cnxk_ipsec_la_perf
+ 	cnxk_ipsec_inline_perf
+ 	cnxk_ipsec_reassembly_perf
+ 	cnxk_mempool_perf
+-- 
+2.25.1
+

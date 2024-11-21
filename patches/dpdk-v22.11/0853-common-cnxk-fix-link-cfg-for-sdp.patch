@@ -1,0 +1,38 @@
+From 1ea2a7c45b4bf54766fcfc0efefd9994dcda939d Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Tue, 13 Feb 2024 23:36:37 +0530
+Subject: [PATCH 853/955] common/cnxk: fix link cfg for sdp
+
+Link configure registers are invalid and should not be accessed
+for SDP ports. But while on txq release which does SQ flush calls
+backpressure disable API which configures these link registers.
+
+Fixes: 58debb813a8d ("common/cnxk: enable TM to listen on Rx pause frames")
+
+Change-Id: Icd3aa55b2f203972ea237007a0c04b9082f3c09c
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121859
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_tm.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix_tm.c b/drivers/common/cnxk/roc_nix_tm.c
+index c6cfda7af6c95..ac522f82351ba 100644
+--- a/drivers/common/cnxk/roc_nix_tm.c
++++ b/drivers/common/cnxk/roc_nix_tm.c
+@@ -328,6 +328,9 @@ nix_tm_bp_config_set(struct roc_nix *roc_nix, uint16_t sq, uint16_t tc,
+ 	uint8_t k = 0;
+ 	int rc = 0, i;
+ 
++	if (roc_nix_is_sdp(roc_nix))
++		return 0;
++
+ 	sq_s = nix->sqs[sq];
+ 	if (!sq_s)
+ 		return -ENOENT;
+-- 
+2.25.1
+

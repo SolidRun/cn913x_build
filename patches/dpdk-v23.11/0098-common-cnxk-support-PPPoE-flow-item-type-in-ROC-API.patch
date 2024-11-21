@@ -1,0 +1,50 @@
+From 31e831cf4e5bce072fb271efe2295e4b14de9c1e Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Wed, 13 Dec 2023 13:46:14 +0530
+Subject: [PATCH 098/513] common/cnxk: support PPPoE flow item type in ROC API
+
+Added ROC API changes to parse RTE_FLOW_ITEM_TYPE_PPPOES
+rte_flow item type.
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I74f2919255ca769c528d6802b088677b170c420e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118150
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.h       | 1 +
+ drivers/common/cnxk/roc_npc_parse.c | 5 +++++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index ac50a10e6e211..6e129336efc63 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -33,6 +33,7 @@ enum roc_npc_item_type {
+ 	ROC_NPC_ITEM_TYPE_VXLAN_GPE,
+ 	ROC_NPC_ITEM_TYPE_IPV6_EXT,
+ 	ROC_NPC_ITEM_TYPE_GRE_KEY,
++	ROC_NPC_ITEM_TYPE_PPPOES,
+ 	ROC_NPC_ITEM_TYPE_HIGIG2,
+ 	ROC_NPC_ITEM_TYPE_CPT_HDR,
+ 	ROC_NPC_ITEM_TYPE_L3_CUSTOM,
+diff --git a/drivers/common/cnxk/roc_npc_parse.c b/drivers/common/cnxk/roc_npc_parse.c
+index 40ed3a55c678a..0fa045e2125e3 100644
+--- a/drivers/common/cnxk/roc_npc_parse.c
++++ b/drivers/common/cnxk/roc_npc_parse.c
+@@ -536,6 +536,11 @@ npc_parse_lb(struct npc_parse_state *pst)
+ 		info.len = pattern->size;
+ 		lt = NPC_LT_LB_STAG_QINQ;
+ 		lflags = NPC_F_STAG_CTAG;
++	} else if (pst->pattern->type == ROC_NPC_ITEM_TYPE_PPPOES) {
++		info.hw_mask = NULL;
++		info.len = pattern->size;
++		info.hw_hdr_len = 2;
++		lt = NPC_LT_LB_PPPOE;
+ 	} else if (pst->pattern->type == ROC_NPC_ITEM_TYPE_RAW) {
+ 		raw_spec = pst->pattern->spec;
+ 		if (raw_spec->relative)
+-- 
+2.25.1
+

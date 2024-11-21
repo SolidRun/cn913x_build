@@ -1,0 +1,75 @@
+From 19297efbf5eb0aaf270986107a267e7fdc022265 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Mon, 12 Dec 2022 21:09:49 +0530
+Subject: [PATCH 082/955] ci: set library path before running command
+
+Set LD_LIBRARY_PATH before running command to find shared lib.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: Ieaed162e91e55f87e7514d77b7b8574f3a6e1e6d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92412
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh   | 7 +++++--
+ .../test/cnxk-tests/mempool_perf/cnxk_mempool_perf.sh      | 5 +++--
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+index ae6cf1e5c8afc..3d0ee1379e883 100755
+--- a/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
++++ b/marvell-ci/test/cnxk-tests/event_perf/cnxk_event_perf.sh
+@@ -17,6 +17,7 @@ GENERATOR_SCRIPT=${GENERATOR_SCRIPT:-cnxk_event_perf_gen.sh}
+ TARGET_SSH_CMD=${TARGET_SSH_CMD:-"ssh -o LogLevel=ERROR -o ServerAliveInterval=30 \
+ 	-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"}
+ TARGET_SSH_CMD="$TARGET_SSH_CMD -n"
++LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-"/tmp/dpdk/deps/lib"}
+ RES_SEPERATOR="------------------------------------------------------------------------"
+ if [[ $PLAT == cn10k ]]; then
+ 	REF_FILE=${REF_FILE:-ref_numbers/cn106xx_rclk2000_sclk1000.csv}
+@@ -114,7 +115,8 @@ exec_testpmd_cmd()
+ launch_testpmd()
+ {
+ 	$TARGET_SSH_CMD $GENERATOR_BOARD "cd $REMOTE_DIR;" \
+-		"sudo PLAT=$PLAT TESTPMD_OP=launch $(find_exec $GENERATOR_BOARD $GENERATOR_SCRIPT)"
++		"sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH PLAT=$PLAT TESTPMD_OP=launch " \
++		"$(find_exec $GENERATOR_BOARD $GENERATOR_SCRIPT)"
+ }
+ 
+ gen_needed()
+@@ -186,7 +188,8 @@ measure_test_perf()
+ 	for num_cores in "${CORES[@]}"; do
+ 		printf "$num_cores, " >> $out_file
+ 		test_args=$(get_test_args $test_name $num_cores $sched_mode)
+-		sudo $timeout $unbuffer $test_path $test_args &> $test_log &
++		sudo LD_LIBRARY_PATH=$LD_LIBRARY_PATH $timeout $unbuffer \
++			$test_path $test_args &> $test_log &
+ 		while ! (tail -n1 $test_log | grep -q "$pattern"); do
+ 			sleep 1
+ 		done
+diff --git a/marvell-ci/test/cnxk-tests/mempool_perf/cnxk_mempool_perf.sh b/marvell-ci/test/cnxk-tests/mempool_perf/cnxk_mempool_perf.sh
+index 3d7a057a62838..a04e0c5eb2de2 100755
+--- a/marvell-ci/test/cnxk-tests/mempool_perf/cnxk_mempool_perf.sh
++++ b/marvell-ci/test/cnxk-tests/mempool_perf/cnxk_mempool_perf.sh
+@@ -9,6 +9,7 @@ TEST_LOG=cnxk_mempool_perf.log
+ PREFIX="cmpt"
+ TOLERANCE=${TOLERANCE:-3}
+ SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
++LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-"/tmp/dpdk/deps/lib"}
+ 
+ # Find the cnxk_mempool_perf application
+ if [[ -f $SCRIPTPATH/cnxk_mempool_perf ]]; then
+@@ -37,8 +38,8 @@ function test_mempool_perf()
+ 	local result
+ 
+ 	# Run the cnxk_mempool_perf application
+-	$SUDO DPDK_TEST=cnxk_mempool_perf $unbuffer $TEST_BIN \
+-		--file-prefix $PREFIX |& tee $TEST_LOG
++	$SUDO LD_LIBRARY_PATH=$LD_LIBRARY_PATH DPDK_TEST=cnxk_mempool_perf \
++		$unbuffer $TEST_BIN --file-prefix $PREFIX |& tee $TEST_LOG
+ 
+ 	result=$(grep "$pattern" $TEST_LOG | awk -F '=' '{print $8}' | sort -g | tail -n1)
+ 	echo "Result=$result"
+-- 
+2.25.1
+

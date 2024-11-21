@@ -1,0 +1,55 @@
+From 769f8c11fc7637465d674e72f281571eb93a734f Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Tue, 6 Feb 2024 20:52:11 +0530
+Subject: [PATCH 829/955] common/cnxk: sync VF root weight with kernel
+
+By default set VF root scheduling weight same as other kernel
+configured VFs.
+
+Change-Id: I3bd1162117618731af1be455d2aba2c05adf6fd7
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121370
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+(cherry picked from commit 08c54935a84d74c210689f80c0408ad0809a1c20)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122904
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h    | 1 +
+ drivers/common/cnxk/roc_nix_tm.c | 6 +++++-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index bd3e540f457ba..63bcd5b25ee40 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -473,6 +473,7 @@ struct roc_nix {
+ 	bool force_rx_aura_bp;
+ 	bool custom_meta_aura_ena;
+ 	bool rx_inj_ena;
++	uint32_t root_sched_weight;
+ 	/* End of input parameters */
+ 	/* LMT line base for "Per Core Tx LMT line" mode*/
+ 	uintptr_t lmt_base;
+diff --git a/drivers/common/cnxk/roc_nix_tm.c b/drivers/common/cnxk/roc_nix_tm.c
+index 6a61e448a107d..c6cfda7af6c95 100644
+--- a/drivers/common/cnxk/roc_nix_tm.c
++++ b/drivers/common/cnxk/roc_nix_tm.c
+@@ -1586,7 +1586,11 @@ nix_tm_prepare_default_tree(struct roc_nix *roc_nix)
+ 		node->id = nonleaf_id;
+ 		node->parent_id = parent;
+ 		node->priority = 0;
+-		node->weight = NIX_TM_DFLT_RR_WT;
++		/* Default VF root RR_QUANTUM is in sync with kernel */
++		if (lvl == ROC_TM_LVL_ROOT && !nix_tm_have_tl1_access(nix))
++			node->weight = roc_nix->root_sched_weight;
++		else
++			node->weight = NIX_TM_DFLT_RR_WT;
+ 		node->shaper_profile_id = ROC_NIX_TM_SHAPER_PROFILE_NONE;
+ 		node->lvl = lvl;
+ 		node->tree = ROC_NIX_TM_DEFAULT;
+-- 
+2.25.1
+

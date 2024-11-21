@@ -1,0 +1,35 @@
+From 15b7ebf4b634e0e2ca124cb11c0fd96d3d8c2527 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 14 Dec 2023 12:50:47 +0000
+Subject: [PATCH 129/513] examples/ipsec-secgw: update stats when freeing
+ packets
+
+Instead of freeing directly, use commonly used function which also
+updates stats.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I38960aefdff93dc947102d344e3ce8c1e5a38627
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118316
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ examples/ipsec-secgw/ipsec_process.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/examples/ipsec-secgw/ipsec_process.c b/examples/ipsec-secgw/ipsec_process.c
+index b0cece3ad185e..ddbe30745becf 100644
+--- a/examples/ipsec-secgw/ipsec_process.c
++++ b/examples/ipsec-secgw/ipsec_process.c
+@@ -22,7 +22,7 @@ free_cops(struct rte_crypto_op *cop[], uint32_t n)
+ 	uint32_t i;
+ 
+ 	for (i = 0; i != n; i++)
+-		rte_pktmbuf_free(cop[i]->sym->m_src);
++		free_pkts(&cop[i]->sym->m_src, 1);
+ }
+ 
+ /* helper routine to enqueue bulk of crypto ops */
+-- 
+2.25.1
+

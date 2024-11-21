@@ -1,0 +1,100 @@
+From a4c20aa734c54213697261407b010646470365fe Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 6 Feb 2024 05:36:50 +0000
+Subject: [PATCH 220/513] crypto/cnxk: move metadata to second cacheline
+
+In security session, move PMD metadata to second cacheline. Also
+optimize the fields to minimize the memory usage.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I0b95a605d76f6f0347ebf18a306519367592877a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121635
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_sec.h | 10 ++++++----
+ drivers/crypto/cnxk/cn10k_ipsec.c         |  4 ++--
+ drivers/crypto/cnxk/cn10k_tls.c           |  2 +-
+ 3 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_sec.h b/drivers/crypto/cnxk/cn10k_cryptodev_sec.h
+index ddfcdd9e5aaf6..d4ece045a0621 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_sec.h
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_sec.h
+@@ -5,6 +5,7 @@
+ #ifndef __CN10K_CRYPTODEV_SEC_H__
+ #define __CN10K_CRYPTODEV_SEC_H__
+ 
++#include <rte_common.h>
+ #include <rte_security.h>
+ 
+ #include "roc_constants.h"
+@@ -17,23 +18,24 @@ struct cn10k_sec_session {
+ 	struct rte_security_session rte_sess;
+ 
+ 	/** PMD private space */
++	RTE_MARKER cacheline1 __rte_cache_min_aligned;
+ 
+-	enum rte_security_session_protocol proto;
+ 	/** Pre-populated CPT inst words */
+ 	struct cnxk_cpt_inst_tmpl inst;
+ 	uint16_t max_extended_len;
+ 	uint16_t iv_offset;
++	uint8_t proto;
+ 	uint8_t iv_length;
+ 	union {
+ 		struct {
+ 			uint8_t ip_csum;
+-			bool is_outbound;
++			uint8_t is_outbound : 1;
+ 		} ipsec;
+ 		struct {
+ 			uint8_t enable_padding : 1;
+ 			uint8_t tail_fetch_len : 2;
+-			uint8_t rvsd : 5;
+-			bool is_write;
++			uint8_t is_write : 1;
++			uint8_t rvsd : 4;
+ 		} tls;
+ 	};
+ 	/** Queue pair */
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.c b/drivers/crypto/cnxk/cn10k_ipsec.c
+index 74d6cd70d19ae..ef5f0ff4aa09f 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.c
++++ b/drivers/crypto/cnxk/cn10k_ipsec.c
+@@ -76,7 +76,7 @@ cn10k_ipsec_outb_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 	}
+ #endif
+ 
+-	sec_sess->ipsec.is_outbound = true;
++	sec_sess->ipsec.is_outbound = 1;
+ 
+ 	/* Get Rlen calculation data */
+ 	ret = cnxk_ipsec_outb_rlens_get(&rlens, ipsec_xfrm, crypto_xfrm);
+@@ -177,7 +177,7 @@ cn10k_ipsec_inb_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 		goto sa_dptr_free;
+ 	}
+ 
+-	sec_sess->ipsec.is_outbound = false;
++	sec_sess->ipsec.is_outbound = 0;
+ 	sec_sess->inst.w7 = cpt_inst_w7_get(roc_cpt, in_sa);
+ 
+ 	/* Save index/SPI in cookie, specific required for Rx Inject */
+diff --git a/drivers/crypto/cnxk/cn10k_tls.c b/drivers/crypto/cnxk/cn10k_tls.c
+index 19d79a28dca0d..a9d2b6c7c33c1 100644
+--- a/drivers/crypto/cnxk/cn10k_tls.c
++++ b/drivers/crypto/cnxk/cn10k_tls.c
+@@ -727,7 +727,7 @@ cn10k_tls_write_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 		sec_sess->iv_length = crypto_xfrm->next->cipher.iv.length;
+ 	}
+ 
+-	sec_sess->tls.is_write = true;
++	sec_sess->tls.is_write = 1;
+ 	sec_sess->tls.enable_padding = tls_xfrm->options.extra_padding_enable;
+ 	sec_sess->max_extended_len = tls_write_rlens_get(tls_xfrm, crypto_xfrm);
+ 	sec_sess->proto = RTE_SECURITY_PROTOCOL_TLS_RECORD;
+-- 
+2.25.1
+

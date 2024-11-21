@@ -1,0 +1,83 @@
+From ac5fa415d207e69d0eafcd0df07f20627e5811c6 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Mon, 29 Jan 2024 21:02:28 +0530
+Subject: [PATCH 808/955] net/cnxk: fix check cookies for multi-seg offload
+
+Fix missing check cookies with multi-seg offload case
+
+Fixes: 3626d5195d49 ("net/cnxk: add multi-segment Tx for CN10K")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I4f611cbccb88c9270f7c785a6bce81ea70195499
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120687
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cn10k_tx.h | 21 ++++++++++++++++++++-
+ 1 file changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index fbd3ab502c499..f1a5ef5d65db7 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -1812,6 +1812,9 @@ cn10k_nix_prepare_mseg_vec_list(struct rte_mbuf *m, uint64_t *cmd,
+ 	len -= dlen;
+ 	sg_u = sg_u | ((uint64_t)dlen);
+ 
++	/* Mark mempool object as "put" since it is freed by NIX */
++	RTE_MEMPOOL_CHECK_COOKIES(m->pool, (void **)&m, 1, 0);
++
+ 	nb_segs = m->nb_segs - 1;
+ 	m_next = m->next;
+ 	m->next = NULL;
+@@ -1837,6 +1840,9 @@ cn10k_nix_prepare_mseg_vec_list(struct rte_mbuf *m, uint64_t *cmd,
+ 			slist++;
+ 		}
+ 		m->next = NULL;
++		/* Mark mempool object as "put" since it is freed by NIX */
++		RTE_MEMPOOL_CHECK_COOKIES(m->pool, (void **)&m, 1, 0);
++
+ 		m = m_next;
+ 	} while (nb_segs);
+ 
+@@ -1860,8 +1866,11 @@ cn10k_nix_prepare_mseg_vec(struct rte_mbuf *m, uint64_t *cmd, uint64x2_t *cmd0,
+ 	union nix_send_hdr_w0_u sh;
+ 	union nix_send_sg_s sg;
+ 
+-	if (m->nb_segs == 1)
++	if (m->nb_segs == 1) {
++		/* Mark mempool object as "put" since it is freed by NIX */
++		RTE_MEMPOOL_CHECK_COOKIES(m->pool, (void **)&m, 1, 0);
+ 		return;
++	}
+ 
+ 	sh.u = vgetq_lane_u64(cmd0[0], 0);
+ 	sg.u = vgetq_lane_u64(cmd1[0], 0);
+@@ -1921,6 +1930,11 @@ cn10k_nix_prep_lmt_mseg_vector(struct cn10k_eth_txq *txq,
+ 			*data128 |= ((__uint128_t)7) << *shift;
+ 			*shift += 3;
+ 
++			/* Mark mempool object as "put" since it is freed by NIX */
++			RTE_MEMPOOL_CHECK_COOKIES(mbufs[0]->pool, (void **)&mbufs[0], 1, 0);
++			RTE_MEMPOOL_CHECK_COOKIES(mbufs[1]->pool, (void **)&mbufs[1], 1, 0);
++			RTE_MEMPOOL_CHECK_COOKIES(mbufs[2]->pool, (void **)&mbufs[2], 1, 0);
++			RTE_MEMPOOL_CHECK_COOKIES(mbufs[3]->pool, (void **)&mbufs[3], 1, 0);
+ 			return 1;
+ 		}
+ 	}
+@@ -1939,6 +1953,11 @@ cn10k_nix_prep_lmt_mseg_vector(struct cn10k_eth_txq *txq,
+ 				vst1q_u64(lmt_addr + 10, cmd2[j + 1]);
+ 				vst1q_u64(lmt_addr + 12, cmd1[j + 1]);
+ 				vst1q_u64(lmt_addr + 14, cmd3[j + 1]);
++
++				/* Mark mempool object as "put" since it is freed by NIX */
++				RTE_MEMPOOL_CHECK_COOKIES(mbufs[j]->pool, (void **)&mbufs[j], 1, 0);
++				RTE_MEMPOOL_CHECK_COOKIES(mbufs[j + 1]->pool,
++							  (void **)&mbufs[j + 1], 1, 0);
+ 			} else if (flags & NIX_TX_NEED_EXT_HDR) {
+ 				/* EXT header take 3 each, space for 2 segs.*/
+ 				cn10k_nix_prepare_mseg_vec(mbufs[j],
+-- 
+2.25.1
+

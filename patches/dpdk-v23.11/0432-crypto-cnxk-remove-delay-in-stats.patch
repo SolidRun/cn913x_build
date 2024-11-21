@@ -1,0 +1,43 @@
+From ec44a4df4f9c4fc745f6347d6717cd87aad95907 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 19 Jul 2024 06:51:03 +0000
+Subject: [PATCH 432/513] crypto/cnxk: remove delay in stats
+
+Having 1 ms delay for retrieving stats per session would mean
+significant delay for a system with large number of sessions. If
+accurate stats are required, application can call stats again
+after a delay  and get most updated stats.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I82a62505e92fcd4ab5e63445346e25e7e96ecb28
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131691
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133610
+---
+ drivers/crypto/cnxk/cn10k_ipsec.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.c b/drivers/crypto/cnxk/cn10k_ipsec.c
+index 7517602fa4373..8123a5f97b33a 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.c
++++ b/drivers/crypto/cnxk/cn10k_ipsec.c
+@@ -350,13 +350,11 @@ cn10k_ipsec_stats_get(struct cnxk_cpt_qp *qp, struct cn10k_sec_session *sess,
+ 	if (sess->ipsec.is_outbound) {
+ 		out_sa = &sa->out_sa;
+ 		roc_cpt_lf_ctx_flush(&qp->lf, out_sa, false);
+-		rte_delay_ms(1);
+ 		stats->ipsec.opackets = out_sa->ctx.mib_pkts;
+ 		stats->ipsec.obytes = out_sa->ctx.mib_octs;
+ 	} else {
+ 		in_sa = &sa->in_sa;
+ 		roc_cpt_lf_ctx_flush(&qp->lf, in_sa, false);
+-		rte_delay_ms(1);
+ 		stats->ipsec.ipackets = in_sa->ctx.mib_pkts;
+ 		stats->ipsec.ibytes = in_sa->ctx.mib_octs;
+ 	}
+-- 
+2.25.1
+

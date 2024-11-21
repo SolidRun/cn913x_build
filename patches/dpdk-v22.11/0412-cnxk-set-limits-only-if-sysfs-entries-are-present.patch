@@ -1,0 +1,112 @@
+From 22c132ecdf23bc53b949fd9ed42b7cc038d79907 Mon Sep 17 00:00:00 2001
+From: Nawal Kishor <nkishor@marvell.com>
+Date: Thu, 11 May 2023 17:36:48 +0530
+Subject: [PATCH 412/955] cnxk: set limits only if sysfs entries are present
+
+Avoid setting limits if the corresponding limits
+entries are missing in the sysfs.
+
+Signed-off-by: Nawal Kishor <nkishor@marvell.com>
+Change-Id: Ie460ddbe7635524c48ba05dc9ddc7ce92a012381
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103279
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Ashwin Sekhar T K
+Reviewed-by: Shijith Thotton <sthotton@marvell.com>
+Reviewed-by: Ashwin Sekhar T K
+---
+ marvell-ci/test/board/cnxk-target-setup.sh | 49 ++++++++++++++--------
+ 1 file changed, 32 insertions(+), 17 deletions(-)
+
+diff --git a/marvell-ci/test/board/cnxk-target-setup.sh b/marvell-ci/test/board/cnxk-target-setup.sh
+index f10d2ac08f46d..ceb53e240b89b 100755
+--- a/marvell-ci/test/board/cnxk-target-setup.sh
++++ b/marvell-ci/test/board/cnxk-target-setup.sh
+@@ -94,12 +94,12 @@ function setup_devices() {
+ 	fi
+ 
+ 	# Set KVF Limits
+-	sh -c "echo 24 > /sys/bus/pci/devices/$cpt_pf/kvf_limits"
++	echo 24 > /sys/bus/pci/devices/$cpt_pf/kvf_limits
+ 
+ 	# Disable existing VFs and enable CPT VFs
+ 	if [[ -e /sys/bus/pci/devices/$cpt_pf/sriov_numvfs ]]; then
+-		sh -c "echo 0 > /sys/bus/pci/devices/$cpt_pf/sriov_numvfs"
+-		sh -c "echo 2 > /sys/bus/pci/devices/$cpt_pf/sriov_numvfs"
++		echo 0 > /sys/bus/pci/devices/$cpt_pf/sriov_numvfs
++		echo 2 > /sys/bus/pci/devices/$cpt_pf/sriov_numvfs
+ 		devlink dev info pci/$cpt_pf
+ 		devs+=" $cpt_vf"
+ 	fi
+@@ -137,20 +137,27 @@ function setup_devices() {
+ 	fi
+ 	set +euo pipefail
+ 	for d in $pcid;  do
+-		echo 0 > /sys/bus/pci/devices/0002\:$d\:00.0/limits/ssow
+-		echo 0 > /sys/bus/pci/devices/0002\:$d\:00.0/limits/sso
++		path=/sys/bus/pci/devices/0002\:$d\:00.0/limits/
++		if [[ -d $path ]]; then
++			echo 0 > ${path}ssow
++			echo 0 > ${path}sso
++		fi
+ 	done
+ 
+-	sh -c "echo 256 > /sys/bus/pci/devices/$sso_pf/limits/sso"
++	path=/sys/bus/pci/devices/$sso_pf/limits/
++	if [[ ! -d $path ]]; then
++		set -euo pipefail
++		return
++	fi
++	echo 256 > ${path}sso
+ 	# Max number of available work slots are (2 x num_core) + 4.
+ 	# Max limit needs to be set for tests to run in dual workslot mode.
+ 	if [[ $CPU == "96xx" ]] || [[ $CPU == "95xx" ]]; then
+-		sh -c "echo 46 > /sys/bus/pci/devices/$sso_pf/limits/ssow"
++		echo 46 > ${path}ssow
+ 	elif [[ $CPU == "98xx" ]]; then
+-		sh -c "echo 76 > /sys/bus/pci/devices/$sso_pf/limits/ssow"
++		echo 76 > ${path}ssow
+ 	fi
+-
+-	sh -c "echo 8 > /sys/bus/pci/devices/$sso_pf/limits/tim"
++	echo 8 > ${path}tim
+ 	set -euo pipefail
+ }
+ 
+@@ -173,17 +180,25 @@ function setup_tm() {
+ 	for d in $pktio_pf_list; do
+ 		# Unbind before changing limits
+ 		$VFIO_DEVBIND -u $d || exit 1
+-		sh -c "echo 0 > /sys/bus/pci/devices/$d/limits/smq"
+-		sh -c "echo 0 > /sys/bus/pci/devices/$d/limits/tl4"
++		path=/sys/bus/pci/devices/$d/limits/
++		if [[ -d $path ]]; then
++			echo 0 > ${path}smq
++			echo 0 > ${path}tl4
++		fi
+ 	done
+ 
+ 	for d in $pktio_pf_list; do
+-		sh -c "echo $per_pf > /sys/bus/pci/devices/$d/limits/smq"
+-		sh -c "echo $per_pf > /sys/bus/pci/devices/$d/limits/tl4"
++		path=/sys/bus/pci/devices/$d/limits/
++		if [[ -d $path ]]; then
++			echo $per_pf > ${path}smq
++			echo $per_pf > ${path}tl4
++		fi
+ 	done
+-
+-	sh -c "echo 256 > /sys/bus/pci/devices/0002:01:00.0/limits/smq"
+-	sh -c "echo 256 > /sys/bus/pci/devices/0002:01:00.0/limits/tl4"
++	path=/sys/bus/pci/devices/0002:01:00.0/limits/
++	if [[ -d $path ]]; then
++		echo 256 > ${path}smq
++		echo 256 > ${path}tl4
++	fi
+ }
+ 
+ function setup_perf() {
+-- 
+2.25.1
+

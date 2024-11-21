@@ -1,0 +1,206 @@
+From 866c1c3b448ceeb05c37d2069fbd8b91ad035de1 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Thu, 29 Feb 2024 10:16:58 +0000
+Subject: [PATCH 285/513] dma/odm: add dev init and fini
+
+Add ODM device init and fini.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Ifa15514593ce09d4c6f03ca3e8c4f75e506782b0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122874
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/dma/odm/meson.build  |  2 +-
+ drivers/dma/odm/odm.c        | 97 ++++++++++++++++++++++++++++++++++++
+ drivers/dma/odm/odm.h        | 10 ++++
+ drivers/dma/odm/odm_dmadev.c | 13 +++++
+ 4 files changed, 121 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/dma/odm/odm.c
+
+diff --git a/drivers/dma/odm/meson.build b/drivers/dma/odm/meson.build
+index 227b10c890dd3..d597762d376e9 100644
+--- a/drivers/dma/odm/meson.build
++++ b/drivers/dma/odm/meson.build
+@@ -9,6 +9,6 @@ endif
+ 
+ deps += ['bus_pci', 'dmadev', 'eal', 'mempool', 'pci']
+ 
+-sources = files('odm_dmadev.c')
++sources = files('odm_dmadev.c', 'odm.c')
+ 
+ pmd_supports_disable_iova_as_pa = true
+diff --git a/drivers/dma/odm/odm.c b/drivers/dma/odm/odm.c
+new file mode 100644
+index 0000000000000..c0963da451d58
+--- /dev/null
++++ b/drivers/dma/odm/odm.c
+@@ -0,0 +1,97 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#include <stdint.h>
++
++#include <bus_pci_driver.h>
++
++#include <rte_io.h>
++
++#include "odm.h"
++#include "odm_priv.h"
++
++static void
++odm_vchan_resc_free(struct odm_dev *odm, int qno)
++{
++	RTE_SET_USED(odm);
++	RTE_SET_USED(qno);
++}
++
++static int
++send_mbox_to_pf(struct odm_dev *odm, union odm_mbox_msg *msg, union odm_mbox_msg *rsp)
++{
++	int retry_cnt = ODM_MBOX_RETRY_CNT;
++	union odm_mbox_msg pf_msg;
++
++	msg->d.err = ODM_MBOX_ERR_CODE_MAX;
++	odm_write64(msg->u[0], odm->rbase + ODM_MBOX_VF_PF_DATA(0));
++	odm_write64(msg->u[1], odm->rbase + ODM_MBOX_VF_PF_DATA(1));
++
++	pf_msg.u[0] = 0;
++	pf_msg.u[1] = 0;
++	pf_msg.u[0] = odm_read64(odm->rbase + ODM_MBOX_VF_PF_DATA(0));
++
++	while (pf_msg.d.rsp == 0 && retry_cnt > 0) {
++		pf_msg.u[0] = odm_read64(odm->rbase + ODM_MBOX_VF_PF_DATA(0));
++		--retry_cnt;
++	}
++
++	if (retry_cnt <= 0)
++		return -EBADE;
++
++	pf_msg.u[1] = odm_read64(odm->rbase + ODM_MBOX_VF_PF_DATA(1));
++
++	if (rsp) {
++		rsp->u[0] = pf_msg.u[0];
++		rsp->u[1] = pf_msg.u[1];
++	}
++
++	if (pf_msg.d.rsp == msg->d.err && pf_msg.d.err != 0)
++		return -EBADE;
++
++	return 0;
++}
++
++int
++odm_dev_init(struct odm_dev *odm)
++{
++	struct rte_pci_device *pci_dev = odm->pci_dev;
++	union odm_mbox_msg mbox_msg;
++	uint16_t vfid;
++	int rc;
++
++	odm->rbase = pci_dev->mem_resource[0].addr;
++	vfid = ((pci_dev->addr.devid & 0x1F) << 3) | (pci_dev->addr.function & 0x7);
++	vfid -= 1;
++	odm->vfid = vfid;
++	odm->num_qs = 0;
++
++	mbox_msg.u[0] = 0;
++	mbox_msg.u[1] = 0;
++	mbox_msg.q.vfid = odm->vfid;
++	mbox_msg.q.cmd = ODM_DEV_INIT;
++	rc = send_mbox_to_pf(odm, &mbox_msg, &mbox_msg);
++	if (!rc)
++		odm->max_qs = 1 << (4 - mbox_msg.d.nvfs);
++
++	return rc;
++}
++
++int
++odm_dev_fini(struct odm_dev *odm)
++{
++	union odm_mbox_msg mbox_msg;
++	int qno, rc = 0;
++
++	mbox_msg.u[0] = 0;
++	mbox_msg.u[1] = 0;
++	mbox_msg.q.vfid = odm->vfid;
++	mbox_msg.q.cmd = ODM_DEV_CLOSE;
++	rc = send_mbox_to_pf(odm, &mbox_msg, &mbox_msg);
++
++	for (qno = 0; qno < odm->num_qs; qno++)
++		odm_vchan_resc_free(odm, qno);
++
++	return rc;
++}
+diff --git a/drivers/dma/odm/odm.h b/drivers/dma/odm/odm.h
+index c121f0f8135e8..49951b219d34d 100644
+--- a/drivers/dma/odm/odm.h
++++ b/drivers/dma/odm/odm.h
+@@ -5,6 +5,10 @@
+ #ifndef _ODM_H_
+ #define _ODM_H_
+ 
++#include <stdint.h>
++
++#include <rte_common.h>
++#include <rte_compat.h>
+ #include <rte_log.h>
+ 
+ extern int odm_logtype;
+@@ -50,6 +54,9 @@ extern int odm_logtype;
+ 
+ #define ODM_MAX_QUEUES_PER_DEV 16
+ 
++#define odm_read64(addr)       rte_read64_relaxed((volatile void *)(addr))
++#define odm_write64(val, addr) rte_write64_relaxed((val), (volatile void *)(addr))
++
+ #define odm_err(fmt, args...)                                                                      \
+ 	rte_log(RTE_LOG_ERR, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
+ #define odm_info(fmt, args...)                                                                     \
+@@ -138,4 +145,7 @@ struct odm_dev {
+ 	uint8_t num_qs;
+ } __rte_cache_aligned;
+ 
++int odm_dev_init(struct odm_dev *odm);
++int odm_dev_fini(struct odm_dev *odm);
++
+ #endif /* _ODM_H_ */
+diff --git a/drivers/dma/odm/odm_dmadev.c b/drivers/dma/odm/odm_dmadev.c
+index cc3342cf7b92d..bef335c10cb10 100644
+--- a/drivers/dma/odm/odm_dmadev.c
++++ b/drivers/dma/odm/odm_dmadev.c
+@@ -23,6 +23,7 @@ odm_dmadev_probe(struct rte_pci_driver *pci_drv __rte_unused, struct rte_pci_dev
+ 	char name[RTE_DEV_NAME_MAX_LEN];
+ 	struct odm_dev *odm = NULL;
+ 	struct rte_dma_dev *dmadev;
++	int rc;
+ 
+ 	if (!pci_dev->mem_resource[0].addr)
+ 		return -ENODEV;
+@@ -37,8 +38,20 @@ odm_dmadev_probe(struct rte_pci_driver *pci_drv __rte_unused, struct rte_pci_dev
+ 	}
+ 
+ 	odm_info("DMA device %s probed", name);
++	odm = dmadev->data->dev_private;
++
++	odm->pci_dev = pci_dev;
++
++	rc = odm_dev_init(odm);
++	if (rc < 0)
++		goto dma_pmd_release;
+ 
+ 	return 0;
++
++dma_pmd_release:
++	rte_dma_pmd_release(name);
++
++	return rc;
+ }
+ 
+ static int
+-- 
+2.25.1
+

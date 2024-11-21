@@ -1,0 +1,86 @@
+From 16f5b994cb955ef0e5ded0c7a19fd18f80b7026b Mon Sep 17 00:00:00 2001
+From: Honnappa Nagarahalli <honnappa.nagarahalli@arm.com>
+Date: Tue, 20 Feb 2024 01:45:33 +0000
+Subject: [PATCH 836/955] config/arm: add AWS Graviton4 CPU
+
+Add meson build configuration for AWS Graviton4 platform
+with 64-bit Arm Neoverse V2 cores.
+
+Signed-off-by: Honnappa Nagarahalli <honnappa.nagarahalli@arm.com>
+Reviewed-by: Wathsala Vithanage <wathsala.vithanage@arm.com>
+Change-Id: I244091f9408b1b16509e97564feb4c8d6610956b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123209
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123362
+---
+ config/arm/arm64_graviton4_linux_gcc | 16 ++++++++++++++++
+ config/arm/meson.build               | 14 ++++++++++++++
+ 2 files changed, 30 insertions(+)
+ create mode 100644 config/arm/arm64_graviton4_linux_gcc
+
+diff --git a/config/arm/arm64_graviton4_linux_gcc b/config/arm/arm64_graviton4_linux_gcc
+new file mode 100644
+index 0000000000000..839224bca78b6
+--- /dev/null
++++ b/config/arm/arm64_graviton4_linux_gcc
+@@ -0,0 +1,16 @@
++[binaries]
++c = ['ccache', 'aarch64-linux-gnu-gcc']
++cpp = ['ccache', 'aarch64-linux-gnu-g++']
++ar = 'aarch64-linux-gnu-gcc-ar'
++strip = 'aarch64-linux-gnu-strip'
++pkgconfig = 'aarch64-linux-gnu-pkg-config'
++pcap-config = ''
++
++[host_machine]
++system = 'linux'
++cpu_family = 'aarch64'
++cpu = 'armv9-a'
++endian = 'little'
++
++[properties]
++platform = 'graviton4'
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index 6787a22ed4ca1..588d9e29f62c6 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -410,6 +410,18 @@ soc_graviton3 = {
+     'numa': false
+ }
+ 
++soc_graviton4 = {
++    'description': 'AWS Graviton4',
++    'implementer': '0x41',
++    'part_number': '0xd4f',
++    'extra_march_features': ['crypto'],
++    'flags': [
++        ['RTE_MAX_LCORE', 96],
++        ['RTE_MAX_NUMA_NODES', 1]
++    ],
++    'numa': false
++}
++
+ soc_kunpeng920 = {
+     'description': 'HiSilicon Kunpeng 920',
+     'implementer': '0x48',
+@@ -503,6 +515,7 @@ tys2500:         Phytium TengYun S2500
+ grace:           NVIDIA Grace
+ graviton2:       AWS Graviton2
+ graviton3:       AWS Graviton3
++graviton4:       AWS Graviton4
+ kunpeng920:      HiSilicon Kunpeng 920
+ kunpeng930:      HiSilicon Kunpeng 930
+ n1sdp:           Arm Neoverse N1SDP
+@@ -531,6 +544,7 @@ socs = {
+     'grace': soc_grace,
+     'graviton2': soc_graviton2,
+     'graviton3': soc_graviton3,
++    'graviton4': soc_graviton4,
+     'kunpeng920': soc_kunpeng920,
+     'kunpeng930': soc_kunpeng930,
+     'n1sdp': soc_n1sdp,
+-- 
+2.25.1
+

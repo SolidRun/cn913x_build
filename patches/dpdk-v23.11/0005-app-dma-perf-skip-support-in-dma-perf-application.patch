@@ -1,0 +1,95 @@
+From c903a3731c859c5dc403fdbfe175ed0f23bd367b Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Tue, 25 Jul 2023 17:25:53 +0530
+Subject: [PATCH 005/513] app/dma-perf: skip support in dma-perf application
+
+Add support to skip running a dma-perf test-case.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: Ife630b996c6b51e728dc5f23231f31258d686bc6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109098
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test-dma-perf/config.ini |  2 ++
+ app/test-dma-perf/main.c     | 23 +++++++++++++++++++++++
+ app/test-dma-perf/main.h     |  1 +
+ 3 files changed, 26 insertions(+)
+
+diff --git a/app/test-dma-perf/config.ini b/app/test-dma-perf/config.ini
+index b550f4b23fd46..4d59234b2a723 100644
+--- a/app/test-dma-perf/config.ini
++++ b/app/test-dma-perf/config.ini
+@@ -36,6 +36,8 @@
+ ; If you do not specify a result file, one will be generated with the same name as the configuration
+ ; file, with the addition of "_result.csv" at the end.
+ 
++; "skip" To skip a test-case set skip to 1.
++
+ [case1]
+ type=DMA_MEM_COPY
+ mem_size=10
+diff --git a/app/test-dma-perf/main.c b/app/test-dma-perf/main.c
+index 5f8bab8f45e85..c74f1d81bdd9b 100644
+--- a/app/test-dma-perf/main.c
++++ b/app/test-dma-perf/main.c
+@@ -320,6 +320,7 @@ load_configs(const char *path)
+ 	const char *case_type;
+ 	const char *lcore_dma;
+ 	const char *mem_size_str, *buf_size_str, *ring_size_str, *kick_batch_str;
++	const char *skip;
+ 	int args_nr, nb_vp;
+ 	bool is_dma;
+ 
+@@ -339,6 +340,13 @@ load_configs(const char *path)
+ 	for (i = 0; i < nb_sections; i++) {
+ 		snprintf(section_name, CFG_NAME_LEN, "case%d", i + 1);
+ 		test_case = &test_cases[i];
++
++		skip = rte_cfgfile_get_entry(cfgfile, section_name, "skip");
++		if (skip && (atoi(skip) == 1)) {
++			test_case->is_skip = true;
++			continue;
++		}
++
+ 		case_type = rte_cfgfile_get_entry(cfgfile, section_name, "type");
+ 		if (case_type == NULL) {
+ 			printf("Error: No case type in case %d, the test will be finished here.\n",
+@@ -523,6 +531,21 @@ main(int argc, char *argv[])
+ 
+ 	printf("Running cases...\n");
+ 	for (i = 0; i < case_nb; i++) {
++		if (test_cases[i].is_skip) {
++			printf("Test case %d configured to be skipped.\n\n", i + 1);
++			snprintf(output_str[0], MAX_OUTPUT_STR_LEN, "Skip the test-case %d\n",
++				 i + 1);
++
++			fd = fopen(rst_path_ptr, "a");
++			if (!fd) {
++				printf("Open output CSV file error.\n");
++				return 0;
++			}
++			output_csv(true);
++			fclose(fd);
++			continue;
++		}
++
+ 		if (!test_cases[i].is_valid) {
+ 			printf("Invalid test case %d.\n\n", i + 1);
+ 			snprintf(output_str[0], MAX_OUTPUT_STR_LEN, "Invalid case %d\n", i + 1);
+diff --git a/app/test-dma-perf/main.h b/app/test-dma-perf/main.h
+index 62085e6e8fac6..32670151afe43 100644
+--- a/app/test-dma-perf/main.h
++++ b/app/test-dma-perf/main.h
+@@ -40,6 +40,7 @@ struct lcore_dma_map_t {
+ 
+ struct test_configure {
+ 	bool is_valid;
++	bool is_skip;
+ 	uint8_t test_type;
+ 	const char *test_type_str;
+ 	uint16_t src_numa_node;
+-- 
+2.25.1
+

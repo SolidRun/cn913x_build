@@ -1,0 +1,120 @@
+From 329b39f2ff6e4f45d8e70b161f41217ecfffeba0 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 17 Aug 2023 11:13:20 +0530
+Subject: [PATCH 614/955] common/cnxk: reserve last LMT line for control ops
+
+As rte_eth_dev_configure() can be called from any EAL or non-EAL cores.
+And in case of non-EAL core, LMT address will not be a valid. So,
+reserving last LMT line 2047 for control path specific functionality.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I437410cb6e0faff67e52a7d66edb609f30379ecc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109982
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c      |  5 +++++
+ drivers/common/cnxk/roc_nix_inl.c  |  6 ++++--
+ drivers/common/cnxk/roc_platform.c | 21 +++++++++++++++++++++
+ drivers/common/cnxk/roc_platform.h |  5 +++++
+ drivers/common/cnxk/version.map    |  2 ++
+ 5 files changed, 37 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 335194ffef61a..8bce4071d739b 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -1385,6 +1385,11 @@ dev_init(struct dev *dev, struct plt_pci_device *pci_dev)
+ 	if (!dev_cache_line_size_valid())
+ 		return -EFAULT;
+ 
++	if (!roc_plt_lmt_validate()) {
++		plt_err("Failed to validate LMT line");
++		return -EFAULT;
++	}
++
+ 	bar2 = (uintptr_t)pci_dev->mem_resource[2].addr;
+ 	bar4 = (uintptr_t)pci_dev->mem_resource[4].addr;
+ 	if (bar2 == 0 || bar4 == 0) {
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 5cb1f11f534cb..09fc585435dec 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -779,8 +779,10 @@ nix_inl_eng_caps_get(struct nix *nix)
+ 
+ 		hw_res->cn10k.compcode = CPT_COMP_NOT_DONE;
+ 
+-		/* Use this lcore's LMT line as no one else is using it */
+-		ROC_LMT_BASE_ID_GET(lmt_base, lmt_id);
++		/* Use this reserved LMT line as no one else is using it */
++		lmt_id = roc_plt_get_control_lmt_id();
++		lmt_base += ((uint64_t)lmt_id << ROC_LMT_LINE_SIZE_LOG2);
++
+ 		memcpy((void *)lmt_base, &inst, sizeof(inst));
+ 
+ 		lmt_arg = ROC_CN10K_CPT_LMT_ARG | (uint64_t)lmt_id;
+diff --git a/drivers/common/cnxk/roc_platform.c b/drivers/common/cnxk/roc_platform.c
+index ce0f9b870c2ed..fd161cf3638db 100644
+--- a/drivers/common/cnxk/roc_platform.c
++++ b/drivers/common/cnxk/roc_platform.c
+@@ -21,6 +21,27 @@ roc_plt_init_cb_register(roc_plt_init_cb_t cb)
+ 	return 0;
+ }
+ 
++uint16_t
++roc_plt_get_control_lmt_id(void)
++{
++	/* Return Last LMT ID to be use in control path functionality */
++	return ROC_NUM_LMT_LINES - 1;
++}
++
++uint16_t
++roc_plt_lmt_validate(void)
++{
++	if (!roc_model_is_cn9k()) {
++		/* Last LMT line is reserved for control specific operation and can be
++		 * use from any EAL or non EAL cores.
++		 */
++		if ((RTE_MAX_LCORE << ROC_LMT_LINES_PER_CORE_LOG2) >
++		    (ROC_NUM_LMT_LINES - 1))
++			return 0;
++	}
++	return 1;
++}
++
+ int
+ roc_plt_init(void)
+ {
+diff --git a/drivers/common/cnxk/roc_platform.h b/drivers/common/cnxk/roc_platform.h
+index 958c72c121ac6..ad2d0acbddb8b 100644
+--- a/drivers/common/cnxk/roc_platform.h
++++ b/drivers/common/cnxk/roc_platform.h
+@@ -312,6 +312,11 @@ extern int cnxk_logtype_ree;
+ __rte_internal
+ int roc_plt_init(void);
+ 
++__rte_internal
++uint16_t roc_plt_get_control_lmt_id(void);
++__rte_internal
++uint16_t roc_plt_lmt_validate(void);
++
+ /* Init callbacks */
+ typedef int (*roc_plt_init_cb_t)(void);
+ int __roc_api roc_plt_init_cb_register(roc_plt_init_cb_t cb);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index d3036ba7a8689..00132c0d90e47 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -433,6 +433,8 @@ INTERNAL {
+ 	roc_ot_ipsec_outb_sa_init;
+ 	roc_plt_init;
+ 	roc_plt_init_cb_register;
++	roc_plt_lmt_validate;
++	roc_plt_get_control_lmt_id;
+ 	roc_sso_dev_fini;
+ 	roc_sso_dev_init;
+ 	roc_sso_dump;
+-- 
+2.25.1
+

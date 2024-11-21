@@ -1,0 +1,180 @@
+From 7f40f44de26d87067ad6d87c331cff66f7e78876 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Thu, 18 May 2023 11:20:04 +0530
+Subject: [PATCH 418/955] ethdev: add Tx queue flow matching item
+
+Adding support for Tx queue flow matching item.
+This item is valid only for egress rules.
+An example use case would be that application can
+set different vlan insert rules with different PCP
+values based on Tx queue number.
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Ie916afcb80a4f46e5b08c784b82e1200bd210a29
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103672
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test-pmd/cmdline_flow.c                 | 28 +++++++++++++++++++++
+ doc/guides/prog_guide/rte_flow.rst          |  7 ++++++
+ doc/guides/testpmd_app_ug/testpmd_funcs.rst |  4 +++
+ lib/ethdev/rte_flow.c                       |  1 +
+ lib/ethdev/rte_flow.h                       | 27 ++++++++++++++++++++
+ 5 files changed, 67 insertions(+)
+
+diff --git a/app/test-pmd/cmdline_flow.c b/app/test-pmd/cmdline_flow.c
+index fc003e00960ad..abd72a1837f79 100644
+--- a/app/test-pmd/cmdline_flow.c
++++ b/app/test-pmd/cmdline_flow.c
+@@ -465,6 +465,8 @@ enum index {
+ 	ITEM_METER,
+ 	ITEM_METER_COLOR,
+ 	ITEM_METER_COLOR_NAME,
++	ITEM_TX_QUEUE,
++	ITEM_TX_QUEUE_VALUE,
+ 
+ 	/* Validate/create actions. */
+ 	ACTIONS,
+@@ -1356,6 +1358,7 @@ static const enum index next_item[] = {
+ 	ITEM_L2TPV2,
+ 	ITEM_PPP,
+ 	ITEM_METER,
++	ITEM_TX_QUEUE,
+ 	END_SET,
+ 	ZERO,
+ };
+@@ -1822,6 +1825,12 @@ static const enum index item_meter[] = {
+ 	ZERO,
+ };
+ 
++static const enum index item_tx_queue[] = {
++	ITEM_TX_QUEUE_VALUE,
++	ITEM_NEXT,
++	ZERO,
++};
++
+ static const enum index next_action[] = {
+ 	ACTION_END,
+ 	ACTION_VOID,
+@@ -6452,6 +6461,22 @@ static const struct token token_list[] = {
+ 				ARGS_ENTRY(struct buffer, port)),
+ 		.call = parse_mp,
+ 	},
++	[ITEM_TX_QUEUE] = {
++		.name = "tx_queue",
++		.help = "match on the tx queue of send packet",
++		.priv = PRIV_ITEM(TX_QUEUE,
++				  sizeof(struct rte_flow_item_tx_queue)),
++		.next = NEXT(item_tx_queue),
++		.call = parse_vc,
++	},
++	[ITEM_TX_QUEUE_VALUE] = {
++		.name = "tx_queue_value",
++		.help = "tx queue value",
++		.next = NEXT(item_tx_queue, NEXT_ENTRY(COMMON_UNSIGNED),
++			     item_param),
++		.args = ARGS(ARGS_ENTRY(struct rte_flow_item_tx_queue,
++					tx_queue)),
++	},
+ };
+ 
+ /** Remove and return last entry from argument stack. */
+@@ -10990,6 +11015,9 @@ flow_item_default_mask(const struct rte_flow_item *item)
+ 	case RTE_FLOW_ITEM_TYPE_METER_COLOR:
+ 		mask = &rte_flow_item_meter_color_mask;
+ 		break;
++	case RTE_FLOW_ITEM_TYPE_TX_QUEUE:
++		mask = &rte_flow_item_tx_queue_mask;
++		break;
+ 	default:
+ 		break;
+ 	}
+diff --git a/doc/guides/prog_guide/rte_flow.rst b/doc/guides/prog_guide/rte_flow.rst
+index 4efadcc87bc55..da7985a81cd68 100644
+--- a/doc/guides/prog_guide/rte_flow.rst
++++ b/doc/guides/prog_guide/rte_flow.rst
+@@ -1487,6 +1487,13 @@ This item is meant to use the same structure as `Item: PORT_REPRESENTOR`_.
+ 
+ See also `Action: REPRESENTED_PORT`_.
+ 
++Item: ``TX_QUEUE``
++^^^^^^^^^^^^^^^^^^^^^^^
++
++Matches on the Tx queue of send packet .
++
++- ``tx_queue``: Tx queue.
++
+ Item: ``FLEX``
+ ^^^^^^^^^^^^^^
+ 
+diff --git a/doc/guides/testpmd_app_ug/testpmd_funcs.rst b/doc/guides/testpmd_app_ug/testpmd_funcs.rst
+index 67da3eea0d76a..a52058d1d14be 100644
+--- a/doc/guides/testpmd_app_ug/testpmd_funcs.rst
++++ b/doc/guides/testpmd_app_ug/testpmd_funcs.rst
+@@ -3712,6 +3712,10 @@ This section lists supported pattern items and their attributes, if any.
+ 
+   - ``color {value}``: meter color value (green/yellow/red).
+ 
++- ``tx_queue``: match tx queue of send packet.
++
++  - ``tx_queue {value}``: send queue value (starts from 0).
++
+ - ``send_to_kernel``: send packets to kernel.
+ 
+ 
+diff --git a/lib/ethdev/rte_flow.c b/lib/ethdev/rte_flow.c
+index 58b5162f39603..51cced8ab7cb5 100644
+--- a/lib/ethdev/rte_flow.c
++++ b/lib/ethdev/rte_flow.c
+@@ -159,6 +159,7 @@ static const struct rte_flow_desc_data rte_flow_desc_item[] = {
+ 	MK_FLOW_ITEM(L2TPV2, sizeof(struct rte_flow_item_l2tpv2)),
+ 	MK_FLOW_ITEM(PPP, sizeof(struct rte_flow_item_ppp)),
+ 	MK_FLOW_ITEM(METER_COLOR, sizeof(struct rte_flow_item_meter_color)),
++	MK_FLOW_ITEM(TX_QUEUE, sizeof(struct rte_flow_item_tx_queue)),
+ };
+ 
+ /** Generate flow_action[] entry. */
+diff --git a/lib/ethdev/rte_flow.h b/lib/ethdev/rte_flow.h
+index 6ab632df9d307..0bd015445d707 100644
+--- a/lib/ethdev/rte_flow.h
++++ b/lib/ethdev/rte_flow.h
+@@ -624,8 +624,35 @@ enum rte_flow_item_type {
+ 	 * See struct rte_flow_item_meter_color.
+ 	 */
+ 	RTE_FLOW_ITEM_TYPE_METER_COLOR,
++
++	/**
++	 * Match Tx queue number.
++	 * This is valid only for egress rules.
++	 *
++	 * @see struct rte_flow_item_tx_queue
++	 */
++	RTE_FLOW_ITEM_TYPE_TX_QUEUE,
++};
++
++/**
++ * RTE_FLOW_ITEM_TYPE_TX_QUEUE
++ *
++ * Tx queue number
++ *
++ * @see struct rte_flow_item_tx_queue
++ */
++struct rte_flow_item_tx_queue {
++	/** Tx queue number that packet is being transmitted */
++	uint16_t tx_queue;
+ };
+ 
++/** Default mask for RTE_FLOW_ITEM_TX_QUEUE. */
++#ifndef __cplusplus
++static const struct rte_flow_item_tx_queue rte_flow_item_tx_queue_mask = {
++	.tx_queue = RTE_BE16(0xffff),
++};
++#endif
++
+ /**
+  *
+  * RTE_FLOW_ITEM_TYPE_HIGIG2
+-- 
+2.25.1
+

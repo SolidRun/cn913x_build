@@ -1,0 +1,49 @@
+From a695fb17e5d1dae7c1d9c1d503d3cddc20f704d4 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Fri, 2 Jun 2023 13:13:02 +0530
+Subject: [PATCH 494/955] net/cnxk: support backpressure on SPB pool
+
+With current implementation, backpressure can be configured only
+on lpb_pool but a RQ can be configured with spb_pool too and
+spb_pool can also participate to assert backpressure.
+
+Enabling backpressure support on spb_pool for 802.3x and
+802.1qbb both.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: Ie93d40cf62338e5b600dfe21ae9f6559e56c5283
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104698
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index da5ee19c850de..3ade8eed36268 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -308,7 +308,9 @@ cnxk_nix_flow_ctrl_set(struct rte_eth_dev *eth_dev,
+ 		fc_cfg.rq_cfg.tc = 0;
+ 		fc_cfg.rq_cfg.rq = rq->qid;
+ 		fc_cfg.rq_cfg.pool = rq->aura_handle;
++		fc_cfg.rq_cfg.spb_pool = rq->spb_aura_handle;
+ 		fc_cfg.rq_cfg.cq_drop = cq->drop_thresh;
++		fc_cfg.rq_cfg.pool_drop_pct = ROC_NIX_AURA_THRESH;
+ 
+ 		rc = roc_nix_fc_config_set(nix, &fc_cfg);
+ 		if (rc)
+@@ -1198,7 +1200,9 @@ nix_priority_flow_ctrl_rq_conf(struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	fc_cfg.rq_cfg.enable = !!tx_pause;
+ 	fc_cfg.rq_cfg.rq = rq->qid;
+ 	fc_cfg.rq_cfg.pool = rxq->qconf.mp->pool_id;
++	fc_cfg.rq_cfg.spb_pool = rq->spb_aura_handle;
+ 	fc_cfg.rq_cfg.cq_drop = cq->drop_thresh;
++	fc_cfg.rq_cfg.pool_drop_pct = ROC_NIX_AURA_THRESH;
+ 	rc = roc_nix_fc_config_set(nix, &fc_cfg);
+ 	if (rc)
+ 		return rc;
+-- 
+2.25.1
+

@@ -1,0 +1,36 @@
+From f817ae3b7f46973a9a34f6addc8c79b065b2b2dc Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 29 Nov 2023 20:37:28 +0530
+Subject: [PATCH 696/955] net/octeon_ep: disable 32b build
+
+Disable 32b x86 build.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I3c8252e8806b936724cc89b9dd88d95639729b84
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117027
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/meson.build | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/net/octeon_ep/meson.build b/drivers/net/octeon_ep/meson.build
+index e8ae56018d332..23c66e890248d 100644
+--- a/drivers/net/octeon_ep/meson.build
++++ b/drivers/net/octeon_ep/meson.build
+@@ -2,6 +2,12 @@
+ # Copyright(C) 2021 Marvell.
+ #
+ 
++if not is_linux or not dpdk_conf.get('RTE_ARCH_64')
++    build = false
++    reason = 'only supported on 64-bit Linux'
++    subdir_done()
++endif
++
+ sources = files(
+         'otx_ep_ethdev.c',
+         'otx_ep_rxtx.c',
+-- 
+2.25.1
+

@@ -1,0 +1,37 @@
+From f37c7428d10fa1a7802da58fffae353cea568848 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Fri, 6 Jan 2023 04:38:26 -0800
+Subject: [PATCH 148/955] net/octeon_ep: address compilation error
+
+This patch addresses the cn83xx compilation
+error with DPDK-22.11
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I996df2dd8971afe94d19de26ca757c9c500736ea
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93990
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+(cherry picked from commit d89c5b5b58fe19b7b4f79500fc906136f8590d41)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94044
+Reviewed-by: Devapraba Muthumani <dmuthumani@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_vf.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_vf.c b/drivers/net/octeon_ep/otx_ep_vf.c
+index 5b29fd95be3db..3922b2ff415dc 100644
+--- a/drivers/net/octeon_ep/otx_ep_vf.c
++++ b/drivers/net/octeon_ep/otx_ep_vf.c
+@@ -2,6 +2,8 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
++#include <errno.h>
++
+ #include <rte_common.h>
+ #include <rte_cycles.h>
+ #include <rte_io.h>
+-- 
+2.25.1
+

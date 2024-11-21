@@ -1,0 +1,33 @@
+From c572e05f59b2ff8dbd90d784f71b7d16e6212273 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Wed, 4 Jan 2023 13:27:32 +0530
+Subject: [PATCH 178/955] ci: increase cores used for generator
+
+Generator requires 5 cores to reach the peak TX rate.
+So, increase the default generator fwd_cores to 5 cores.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: If8ced1b9e64b4b48a246fb89b181069a3f28071d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93779
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+index fb133846e2c53..0c739d3c0efbd 100755
+--- a/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
++++ b/marvell-ci/test/cnxk-tests/fwd_perf/cnxk_fwd_perf.sh
+@@ -75,7 +75,7 @@ then
+ 	IF1=0002:01:00.2
+ 	remote_ssh="sh -c "
+ 	GEN_PORT=$IF1
+-	G_ENV="GEN_CORES=4"
++	G_ENV="GEN_CORES=6"
+ 	SUDO=""
+ 	echo "Running locally without generator board"
+ else
+-- 
+2.25.1
+

@@ -1,0 +1,37 @@
+From 5a44070fad1b41403a78a7e867c6cb43440f9def Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Thu, 21 Dec 2023 03:44:12 +0000
+Subject: [PATCH 130/513] examples/ipsec-secgw: use bulk free
+
+Use rte_pktmbuf_free_bulk() API instead of looping through the packets
+and freeing individually.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I99448941298c38cd215cc04e0d6dca8267528a3c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118726
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ examples/ipsec-secgw/ipsec-secgw.h | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/examples/ipsec-secgw/ipsec-secgw.h b/examples/ipsec-secgw/ipsec-secgw.h
+index 53665adf0344e..8baab44ee7693 100644
+--- a/examples/ipsec-secgw/ipsec-secgw.h
++++ b/examples/ipsec-secgw/ipsec-secgw.h
+@@ -232,10 +232,7 @@ free_reassembly_fail_pkt(struct rte_mbuf *mb)
+ static inline void
+ free_pkts(struct rte_mbuf *mb[], uint32_t n)
+ {
+-	uint32_t i;
+-
+-	for (i = 0; i != n; i++)
+-		rte_pktmbuf_free(mb[i]);
++	rte_pktmbuf_free_bulk(mb, n);
+ 
+ 	core_stats_update_drop(n);
+ }
+-- 
+2.25.1
+

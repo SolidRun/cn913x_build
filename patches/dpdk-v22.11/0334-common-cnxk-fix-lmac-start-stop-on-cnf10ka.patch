@@ -1,0 +1,39 @@
+From a29054e4d7776cbb1286df97fdb249e22c0908c6 Mon Sep 17 00:00:00 2001
+From: Tomasz Duszynski <tduszynski@marvell.com>
+Date: Thu, 23 Mar 2023 09:03:26 +0100
+Subject: [PATCH 334/955] common/cnxk: fix lmac start/stop on cnf10ka
+
+Both cnf10ka and cnf10kb have same way of staring
+or stopping particular lmac i.e. they share register
+definition. Hence code responsible for accessing that
+register should not differ between both platforms.
+
+Fixes: 8d3ba6bf0ace ("common/cnxk: update register access for CNF10xxN")
+
+Signed-off-by: Tomasz Duszynski <tduszynski@marvell.com>
+Change-Id: I8a5c179564b947c6bbbabe1b8b14000d9185a27c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99769
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_bphy_cgx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_bphy_cgx.c b/drivers/common/cnxk/roc_bphy_cgx.c
+index e966494e21771..b2d35fee398a0 100644
+--- a/drivers/common/cnxk/roc_bphy_cgx.c
++++ b/drivers/common/cnxk/roc_bphy_cgx.c
+@@ -238,7 +238,7 @@ roc_bphy_cgx_start_stop_rxtx(struct roc_bphy_cgx *roc_cgx, unsigned int lmac,
+ 	if (!roc_bphy_cgx_lmac_exists(roc_cgx, lmac))
+ 		return -ENODEV;
+ 
+-	if (roc_model_is_cnf10kb()) {
++	if (roc_model_is_cnf10kb() || roc_model_is_cnf10ka()) {
+ 		reg = CGX_MTI_MAC100X_COMMAND_CONFIG;
+ 		rx_field = CGX_MTI_MAC100X_COMMAND_CONFIG_RX_ENA;
+ 		tx_field = CGX_MTI_MAC100X_COMMAND_CONFIG_TX_ENA;
+-- 
+2.25.1
+

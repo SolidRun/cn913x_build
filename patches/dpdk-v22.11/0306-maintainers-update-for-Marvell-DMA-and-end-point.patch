@@ -1,0 +1,47 @@
+From f1e0a6cf8e4a3d26bc5b584b1825f6df41497b0b Mon Sep 17 00:00:00 2001
+From: Sibaranjan Pattnayak <spattnayak@marvell.com>
+Date: Sun, 12 Mar 2023 12:29:48 -0700
+Subject: [PATCH 306/955] maintainers: update for Marvell DMA and end-point
+
+Added spattnayak as maintainer of Marvell DMA and
+end-point drivers.
+
+Change-Id: Iffbbf39e283f495c5cde3ed8cb0833326c6ce5d7
+Signed-off-by: Sibaranjan Pattnayak <spattnayak@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98967
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ .mailmap    | 1 +
+ MAINTAINERS | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/.mailmap b/.mailmap
+index b37258473b81e..f1299b7c8ab4f 100644
+--- a/.mailmap
++++ b/.mailmap
+@@ -1225,6 +1225,7 @@ Shu Shen <shu.shen@radisys.com>
+ Shweta Choudaha <shweta.choudaha@att.com>
+ Shyam Kumar Shrivastav <shrivastav.shyam@gmail.com>
+ Shy Shyman <shys@nvidia.com> <shys@mellanox.com>
++Sibaranjan Pattnayak <spattnayak@marvell.com>
+ Siddaraju DH <siddaraju.dh@intel.com>
+ Simei Su <simei.su@intel.com>
+ Simon Ellmann <simon.ellmann@tum.de>
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 22ef2ea4b9951..42a5b20fb7fc8 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -1229,6 +1229,8 @@ F: doc/guides/dmadevs/hisilicon.rst
+ Marvell CNXK DPI DMA
+ M: Radha Mohan Chintakuntla <radhac@marvell.com>
+ M: Veerasenareddy Burru <vburru@marvell.com>
++M: Sibaranjan Pattnayak <spattnayak@marvell.com>
++F: drivers/common/cnxk/roc_dpi*
+ F: drivers/dma/cnxk/
+ F: doc/guides/dmadevs/cnxk.rst
+ 
+-- 
+2.25.1
+

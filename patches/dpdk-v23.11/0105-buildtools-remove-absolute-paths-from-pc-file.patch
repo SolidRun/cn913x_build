@@ -1,0 +1,37 @@
+From 4d727f5a81b2394622014c32d7ef79beaf8e23f6 Mon Sep 17 00:00:00 2001
+From: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Date: Mon, 18 Dec 2023 05:29:14 -0800
+Subject: [PATCH 105/513] buildtools: remove absolute paths from pc file
+
+When linking with non-versioned libraries, absolute paths
+of the libraries are added to libdpdk.pc. This patch replaces
+the absolute path with correct linker flags, -l<libname>.
+
+Signed-off-by: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Change-Id: Iee38e9e905719a9f43a7a2df1fe0311fe4f8e617
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118439
+Reviewed-by: Shivah Shankar Shankar Narayan Rao <sshankarnara@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ buildtools/pkg-config/set-static-linker-flags.py | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/buildtools/pkg-config/set-static-linker-flags.py b/buildtools/pkg-config/set-static-linker-flags.py
+index 2745db34c2904..e880435338333 100644
+--- a/buildtools/pkg-config/set-static-linker-flags.py
++++ b/buildtools/pkg-config/set-static-linker-flags.py
+@@ -9,6 +9,8 @@
+ 
+ 
+ def fix_ldflag(f):
++    if (f.startswith('/') and (f.endswith('.so') or f.endswith('.a'))):
++        return f.split('/', -1)[-1].split('.', -1)[0].replace('lib', '-l', 1)
+     if not f.startswith('-lrte_'):
+         return f
+     return '-l:lib' + f[2:] + '.a'
+-- 
+2.25.1
+

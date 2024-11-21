@@ -1,0 +1,263 @@
+From 0321cdae17a98ee5c0db56d9a6f8366e6637ac46 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Fri, 23 Dec 2022 13:21:38 +0530
+Subject: [PATCH 245/955] pcapng: comment option support for epb
+
+This change enhances rte_pcapng_copy to have comment in enhanced
+packet block.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: Ib1f15571e933d7008029b1c0056caf579cc5b5ec
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93327
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test/test_pcapng.c                 |   4 +-
+ doc/guides/rel_notes/release_23_03.rst | 140 +++++++++++++++++++++++++
+ lib/pcapng/rte_pcapng.c                |  10 +-
+ lib/pcapng/rte_pcapng.h                |   4 +-
+ lib/pdump/rte_pdump.c                  |   2 +-
+ 5 files changed, 155 insertions(+), 5 deletions(-)
+ create mode 100644 doc/guides/rel_notes/release_23_03.rst
+
+diff --git a/app/test/test_pcapng.c b/app/test/test_pcapng.c
+index a7acbdc0586d8..303d3d66f990c 100644
+--- a/app/test/test_pcapng.c
++++ b/app/test/test_pcapng.c
+@@ -139,7 +139,7 @@ test_write_packets(void)
+ 		struct rte_mbuf *mc;
+ 
+ 		mc = rte_pcapng_copy(port_id, 0, orig, mp, pkt_len,
+-				rte_get_tsc_cycles(), 0);
++				rte_get_tsc_cycles(), 0, NULL);
+ 		if (mc == NULL) {
+ 			fprintf(stderr, "Cannot copy packet\n");
+ 			return -1;
+@@ -255,7 +255,7 @@ test_write_over_limit_iov_max(void)
+ 		struct rte_mbuf *mc;
+ 
+ 		mc = rte_pcapng_copy(port_id, 0, orig, mp, pkt_len,
+-				rte_get_tsc_cycles(), 0);
++				rte_get_tsc_cycles(), 0, NULL);
+ 		if (mc == NULL) {
+ 			fprintf(stderr, "Cannot copy packet\n");
+ 			return -1;
+diff --git a/doc/guides/rel_notes/release_23_03.rst b/doc/guides/rel_notes/release_23_03.rst
+new file mode 100644
+index 0000000000000..9b04339b105b2
+--- /dev/null
++++ b/doc/guides/rel_notes/release_23_03.rst
+@@ -0,0 +1,140 @@
++.. SPDX-License-Identifier: BSD-3-Clause
++   Copyright 2023 The DPDK contributors
++
++.. include:: <isonum.txt>
++
++DPDK Release 23.03
++==================
++
++.. **Read this first.**
++
++   The text in the sections below explains how to update the release notes.
++
++   Use proper spelling, capitalization and punctuation in all sections.
++
++   Variable and config names should be quoted as fixed width text:
++   ``LIKE_THIS``.
++
++   Build the docs and view the output file to ensure the changes are correct::
++
++      ninja -C build doc
++      xdg-open build/doc/guides/html/rel_notes/release_23_03.html
++
++
++New Features
++------------
++
++.. This section should contain new features added in this release.
++   Sample format:
++
++   * **Add a title in the past tense with a full stop.**
++
++     Add a short 1-2 sentence description in the past tense.
++     The description should be enough to allow someone scanning
++     the release notes to understand the new feature.
++
++     If the feature adds a lot of sub-features you can use a bullet list
++     like this:
++
++     * Added feature foo to do something.
++     * Enhanced feature bar to do something else.
++
++     Refer to the previous release notes for examples.
++
++     Suggested order in release notes items:
++     * Core libs (EAL, mempool, ring, mbuf, buses)
++     * Device abstraction libs and PMDs (ordered alphabetically by vendor name)
++       - ethdev (lib, PMDs)
++       - cryptodev (lib, PMDs)
++       - eventdev (lib, PMDs)
++       - etc
++     * Other libs
++     * Apps, Examples, Tools (if significant)
++
++     This section is a comment. Do not overwrite or remove it.
++     Also, make sure to start the actual text at the margin.
++     =======================================================
++
++
++Removed Items
++-------------
++
++.. This section should contain removed items in this release. Sample format:
++
++   * Add a short 1-2 sentence description of the removed item
++     in the past tense.
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
++
++
++API Changes
++-----------
++
++.. This section should contain API changes. Sample format:
++
++   * sample: Add a short 1-2 sentence description of the API change
++     which was announced in the previous releases and made in this release.
++     Start with a scope label like "ethdev:".
++     Use fixed width quotes for ``function_names`` or ``struct_names``.
++     Use the past tense.
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
++
++* Experimental function ``rte_pcapng_copy`` was updated to support comment
++  section in enhanced packet block in pcapng library.
++
++ABI Changes
++-----------
++
++.. This section should contain ABI changes. Sample format:
++
++   * sample: Add a short 1-2 sentence description of the ABI change
++     which was announced in the previous releases and made in this release.
++     Start with a scope label like "ethdev:".
++     Use fixed width quotes for ``function_names`` or ``struct_names``.
++     Use the past tense.
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
++
++* No ABI change that would break compatibility with 22.11.
++
++
++Known Issues
++------------
++
++.. This section should contain new known issues in this release. Sample format:
++
++   * **Add title in present tense with full stop.**
++
++     Add a short 1-2 sentence description of the known issue
++     in the present tense. Add information on any known workarounds.
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
++
++
++Tested Platforms
++----------------
++
++.. This section should contain a list of platforms that were tested
++   with this release.
++
++   The format is:
++
++   * <vendor> platform with <vendor> <type of devices> combinations
++
++     * List of CPU
++     * List of OS
++     * List of devices
++     * Other relevant details...
++
++   This section is a comment. Do not overwrite or remove it.
++   Also, make sure to start the actual text at the margin.
++   =======================================================
+diff --git a/lib/pcapng/rte_pcapng.c b/lib/pcapng/rte_pcapng.c
+index 80d08e1a3bdef..acb31a9d93091 100644
+--- a/lib/pcapng/rte_pcapng.c
++++ b/lib/pcapng/rte_pcapng.c
+@@ -450,7 +450,8 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 		const struct rte_mbuf *md,
+ 		struct rte_mempool *mp,
+ 		uint32_t length, uint64_t cycles,
+-		enum rte_pcapng_direction direction)
++		enum rte_pcapng_direction direction,
++		const char *comment)
+ {
+ 	struct pcapng_enhance_packet_block *epb;
+ 	uint32_t orig_len, data_len, padding, flags;
+@@ -511,6 +512,9 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 	if (rss_hash)
+ 		optlen += pcapng_optlen(sizeof(uint8_t) + sizeof(uint32_t));
+ 
++	if (comment)
++		optlen += pcapng_optlen(strlen(comment));
++
+ 	/* reserve trailing options and block length */
+ 	opt = (struct pcapng_option *)
+ 		rte_pktmbuf_append(mc, optlen + sizeof(uint32_t));
+@@ -548,6 +552,10 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 					&hash_opt, sizeof(hash_opt));
+ 	}
+ 
++	if (comment)
++		opt = pcapng_add_option(opt, PCAPNG_OPT_COMMENT, comment,
++					strlen(comment));
++
+ 	/* Note: END_OPT necessary here. Wireshark doesn't do it. */
+ 
+ 	/* Add PCAPNG packet header */
+diff --git a/lib/pcapng/rte_pcapng.h b/lib/pcapng/rte_pcapng.h
+index 7d2697c647ef4..6d286cda41c21 100644
+--- a/lib/pcapng/rte_pcapng.h
++++ b/lib/pcapng/rte_pcapng.h
+@@ -100,6 +100,8 @@ enum rte_pcapng_direction {
+  *   The timestamp in TSC cycles.
+  * @param direction
+  *   The direction of the packer: receive, transmit or unknown.
++ * @param comment
++ *   Packet comment.
+  *
+  * @return
+  *   - The pointer to the new mbuf formatted for pcapng_write
+@@ -111,7 +113,7 @@ struct rte_mbuf *
+ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 		const struct rte_mbuf *m, struct rte_mempool *mp,
+ 		uint32_t length, uint64_t timestamp,
+-		enum rte_pcapng_direction direction);
++		enum rte_pcapng_direction direction, const char *comment);
+ 
+ 
+ /**
+diff --git a/lib/pdump/rte_pdump.c b/lib/pdump/rte_pdump.c
+index a81544cb57729..9bc4bab4f2f60 100644
+--- a/lib/pdump/rte_pdump.c
++++ b/lib/pdump/rte_pdump.c
+@@ -122,7 +122,7 @@ pdump_copy(uint16_t port_id, uint16_t queue,
+ 		if (cbs->ver == V2)
+ 			p = rte_pcapng_copy(port_id, queue,
+ 					    pkts[i], mp, cbs->snaplen,
+-					    ts, direction);
++					    ts, direction, NULL);
+ 		else
+ 			p = rte_pktmbuf_copy(pkts[i], mp, 0, cbs->snaplen);
+ 
+-- 
+2.25.1
+

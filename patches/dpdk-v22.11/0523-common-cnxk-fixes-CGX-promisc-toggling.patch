@@ -1,0 +1,106 @@
+From a7c22ed7a56c876f698aa0158dc5836177f725a2 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Tue, 27 Jun 2023 17:58:31 +0530
+Subject: [PATCH 523/955] common/cnxk: fixes CGX promisc toggling
+
+This will allow CGX promisc toggling even when exact
+match feature is enabled.
+Also, In case of exact feature, CGX promisc enable/disable mbox
+response returns failure code -1101 in case if no change in the state.
+This failure code can be ignored and proceed further.
+
+Fixes: ccce4fbe5bd2 ("common/cnxk: skip CGX promisc mode with NPC exact match")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Id878b33e33f59af4919e84f4abaf7767df2e75a5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106466
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Sunil Kumar Kori <skori@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c     | 13 ++++++++++++-
+ drivers/common/cnxk/roc_mbox.h    | 15 +++++++++++++++
+ drivers/common/cnxk/roc_nix_mac.c |  8 --------
+ 3 files changed, 27 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 4b0ba218ed911..128b9751e437c 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -451,7 +451,6 @@ process_msgs(struct dev *dev, struct mbox *mbox)
+ 			 * while PFC already configured on other VFs. This is
+ 			 * not an error but a warning which can be ignored.
+ 			 */
+-#define LMAC_AF_ERR_PERM_DENIED -1103
+ 			if (msg->rc) {
+ 				if (msg->rc == LMAC_AF_ERR_PERM_DENIED) {
+ 					plt_mbox_dbg(
+@@ -464,6 +463,18 @@ process_msgs(struct dev *dev, struct mbox *mbox)
+ 				}
+ 			}
+ 			break;
++		case MBOX_MSG_CGX_PROMISC_DISABLE:
++		case MBOX_MSG_CGX_PROMISC_ENABLE:
++			if (msg->rc) {
++				if (msg->rc == LMAC_AF_ERR_INVALID_PARAM) {
++					plt_mbox_dbg("Already in same promisc state");
++					msg->rc = 0;
++				} else {
++					plt_err("Message (%s) response has err=%d",
++						mbox_id2name(msg->id), msg->rc);
++				}
++			}
++			break;
+ 
+ 		default:
+ 			if (msg->rc)
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index f038d3e02bad7..2fd01cd710aad 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -540,6 +540,21 @@ struct lmtst_tbl_setup_req {
+ };
+ 
+ /* CGX mbox message formats */
++/* CGX mailbox error codes
++ * Range 1101 - 1200.
++ */
++enum cgx_af_status {
++	LMAC_AF_ERR_INVALID_PARAM = -1101,
++	LMAC_AF_ERR_PF_NOT_MAPPED = -1102,
++	LMAC_AF_ERR_PERM_DENIED = -1103,
++	LMAC_AF_ERR_PFC_ENADIS_PERM_DENIED = -1104,
++	LMAC_AF_ERR_8023PAUSE_ENADIS_PERM_DENIED = -1105,
++	LMAC_AF_ERR_CMD_TIMEOUT = -1106,
++	LMAC_AF_ERR_FIRMWARE_DATA_NOT_MAPPED = -1107,
++	LMAC_AF_ERR_EXACT_MATCH_TBL_ADD_FAILED = -1108,
++	LMAC_AF_ERR_EXACT_MATCH_TBL_DEL_FAILED = -1109,
++	LMAC_AF_ERR_EXACT_MATCH_TBL_LOOK_UP_FAILED = -1110,
++};
+ 
+ struct cgx_stats_rsp {
+ 	struct mbox_msghdr hdr;
+diff --git a/drivers/common/cnxk/roc_nix_mac.c b/drivers/common/cnxk/roc_nix_mac.c
+index 754d75ac73c90..ac30fb52d1f1f 100644
+--- a/drivers/common/cnxk/roc_nix_mac.c
++++ b/drivers/common/cnxk/roc_nix_mac.c
+@@ -201,14 +201,6 @@ roc_nix_mac_promisc_mode_enable(struct roc_nix *roc_nix, int enable)
+ 		goto exit;
+ 	}
+ 
+-	/* Skip CGX promisc toggling if NPC exact match is enabled as
+-	 * CGX filtering is disabled permanently.
+-	 */
+-	if (nix->exact_match_ena) {
+-		rc = 0;
+-		goto exit;
+-	}
+-
+ 	if (enable)
+ 		mbox_alloc_msg_cgx_promisc_enable(mbox);
+ 	else
+-- 
+2.25.1
+

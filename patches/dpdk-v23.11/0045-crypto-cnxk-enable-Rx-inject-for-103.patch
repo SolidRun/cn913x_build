@@ -1,0 +1,33 @@
+From c0b029e782bf931ef117a36d68072b38a182aee5 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Fri, 17 Nov 2023 02:43:38 -0800
+Subject: [PATCH 045/513] crypto/cnxk: enable Rx inject for 103
+
+Enable Rx inject feature for 103XX
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Idda1b6614012065b4cb864cfa94ce0a7de0b31d7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116160
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117463
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_cryptodev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.c b/drivers/crypto/cnxk/cnxk_cryptodev.c
+index b1684e56a7f27..1eede2e59cce5 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.c
+@@ -24,7 +24,7 @@ cnxk_cpt_default_ff_get(void)
+ 	if (roc_model_is_cn10k())
+ 		ff |= RTE_CRYPTODEV_FF_SECURITY_INNER_CSUM | RTE_CRYPTODEV_FF_SYM_RAW_DP;
+ 
+-	if (roc_model_is_cn10ka_b0())
++	if (roc_model_is_cn10ka_b0() || roc_model_is_cn10kb())
+ 		ff |= RTE_CRYPTODEV_FF_SECURITY_RX_INJECT;
+ 
+ 	return ff;
+-- 
+2.25.1
+

@@ -1,0 +1,63 @@
+From 31fd14fb26a88352aeb202617a787400d5d6c589 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 14 Jul 2023 23:08:59 +0530
+Subject: [PATCH 537/955] net/cnxk: fix uninitialized variable
+
+sa_base may be uninitialized in some remote case.
+It is better to initialize it.
+
+Fixes: 4382a7ccf781 ("support Rx security offload on cn10k")
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I50f214a4b9bb4af5f7fc63f0d5eba63db4259d1b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107563
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_worker.h | 2 +-
+ drivers/net/cnxk/cn10k_rx.h       | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index 18bc82694de08..3af43e28eff20 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -61,9 +61,9 @@ cn10k_process_vwqe(uintptr_t vwqe, uint16_t port_id, const uint32_t flags, struc
+ 	uint16_t lmt_id, d_off;
+ 	struct rte_mbuf **wqe;
+ 	struct rte_mbuf *mbuf;
++	uint64_t sa_base = 0;
+ 	uintptr_t cpth = 0;
+ 	uint8_t loff = 0;
+-	uint64_t sa_base;
+ 	int i;
+ 
+ 	mbuf_init |= ((uint64_t)port_id) << 48;
+diff --git a/drivers/net/cnxk/cn10k_rx.h b/drivers/net/cnxk/cn10k_rx.h
+index 87495f8acfb31..0bc0adda67a02 100644
+--- a/drivers/net/cnxk/cn10k_rx.h
++++ b/drivers/net/cnxk/cn10k_rx.h
+@@ -1002,8 +1002,8 @@ cn10k_nix_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t pkts,
+ 	struct nix_cqe_hdr_s *cq;
+ 	struct rte_mbuf *mbuf;
+ 	uint64_t aura_handle;
++	uint64_t sa_base = 0;
+ 	uintptr_t cpth = 0;
+-	uint64_t sa_base;
+ 	uint16_t lmt_id;
+ 	uint64_t laddr;
+ 
+@@ -1151,9 +1151,9 @@ cn10k_nix_recv_pkts_vector(void *args, struct rte_mbuf **mbufs, uint16_t pkts,
+ 	uint8x16_t f0, f1, f2, f3;
+ 	uint16_t lmt_id, d_off;
+ 	uint64_t lbase, laddr;
++	uintptr_t sa_base = 0;
+ 	uint16_t packets = 0;
+ 	uint16_t pkts_left;
+-	uintptr_t sa_base;
+ 	uint32_t head;
+ 	uintptr_t cq0;
+ 
+-- 
+2.25.1
+

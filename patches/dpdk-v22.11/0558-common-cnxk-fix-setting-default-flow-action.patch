@@ -1,0 +1,92 @@
+From f6c814b8a4eec1a2736b6706913433183956d749 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Thu, 27 Jul 2023 12:23:08 +0530
+Subject: [PATCH 558/955] common/cnxk: fix setting default flow action
+
+For MCAM rules with PF/VF action, the PF's default rule action is
+is copied and overwritten over the user provided action. Fixing this
+by setting default action only if no other action (like queue) is
+specified by user.
+
+Fixes: a07f7ced436def ("common/cnxk: add NPC init and fini")
+Cc: stable@dpdk.org
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I18e6937c275afea728a8b6321d92c783bea73cb6
+Reviewed-by: Kiran Kumar K <kirankumark@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108621
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/hw/nix.h            |  1 +
+ drivers/common/cnxk/roc_npc.c           | 17 ++++++++++-------
+ drivers/common/cnxk/roc_npc_mcam_dump.c |  4 ++++
+ 3 files changed, 15 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/nix.h b/drivers/common/cnxk/hw/nix.h
+index 26dcda680e15e..d2c80f3c74786 100644
+--- a/drivers/common/cnxk/hw/nix.h
++++ b/drivers/common/cnxk/hw/nix.h
+@@ -619,6 +619,7 @@
+ #define NIX_RX_ACTIONOP_RSS	     (0x4ull)
+ #define NIX_RX_ACTIONOP_PF_FUNC_DROP (0x5ull)
+ #define NIX_RX_ACTIONOP_MIRROR	     (0x6ull)
++#define NIX_RX_ACTIONOP_DEFAULT	     (0xfull)
+ 
+ #define NIX_RX_VTAGACTION_VTAG0_RELPTR (0x0ull)
+ #define NIX_RX_VTAGACTION_VTAG1_RELPTR (0x4ull)
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index d5f61e2bda433..9df53318e4c76 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -741,11 +741,15 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	if (req_act == ROC_NPC_ACTION_TYPE_VLAN_STRIP) {
+ 		/* Only VLAN action is provided */
+ 		flow->npc_action = NIX_RX_ACTIONOP_UCAST;
+-	} else if (req_act &
+-		   (ROC_NPC_ACTION_TYPE_PF | ROC_NPC_ACTION_TYPE_VF)) {
+-		flow->npc_action = NIX_RX_ACTIONOP_UCAST;
+-		if (req_act & ROC_NPC_ACTION_TYPE_QUEUE)
+-			flow->npc_action |= (uint64_t)rq << 20;
++	} else if (req_act & (ROC_NPC_ACTION_TYPE_PF | ROC_NPC_ACTION_TYPE_VF)) {
++		/* Check if any other action is set */
++		if ((req_act == ROC_NPC_ACTION_TYPE_PF) || (req_act == ROC_NPC_ACTION_TYPE_VF)) {
++			flow->npc_action = NIX_RX_ACTIONOP_DEFAULT;
++		} else {
++			flow->npc_action = NIX_RX_ACTIONOP_UCAST;
++			if (req_act & ROC_NPC_ACTION_TYPE_QUEUE)
++				flow->npc_action |= (uint64_t)rq << 20;
++		}
+ 	} else if (req_act & ROC_NPC_ACTION_TYPE_DROP) {
+ 		flow->npc_action = NIX_RX_ACTIONOP_DROP;
+ 	} else if (req_act & ROC_NPC_ACTION_TYPE_QUEUE) {
+@@ -756,8 +760,7 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	} else if (req_act & ROC_NPC_ACTION_TYPE_SEC) {
+ 		flow->npc_action = NIX_RX_ACTIONOP_UCAST_IPSEC;
+ 		flow->npc_action |= (uint64_t)rq << 20;
+-	} else if (req_act &
+-		   (ROC_NPC_ACTION_TYPE_FLAG | ROC_NPC_ACTION_TYPE_MARK)) {
++	} else if (req_act & (ROC_NPC_ACTION_TYPE_FLAG | ROC_NPC_ACTION_TYPE_MARK)) {
+ 		flow->npc_action = NIX_RX_ACTIONOP_UCAST;
+ 	} else if (req_act & ROC_NPC_ACTION_TYPE_COUNT) {
+ 		/* Keep ROC_NPC_ACTION_TYPE_COUNT_ACT always at the end
+diff --git a/drivers/common/cnxk/roc_npc_mcam_dump.c b/drivers/common/cnxk/roc_npc_mcam_dump.c
+index a88e166fbeeb3..ff831b0a71dd6 100644
+--- a/drivers/common/cnxk/roc_npc_mcam_dump.c
++++ b/drivers/common/cnxk/roc_npc_mcam_dump.c
+@@ -496,6 +496,10 @@ npc_flow_dump_rx_action(FILE *file, uint64_t npc_action)
+ 		plt_strlcpy(index_name, "Multicast/mirror table index",
+ 			    NPC_MAX_FIELD_NAME_SIZE);
+ 		break;
++	case NIX_RX_ACTIONOP_DEFAULT:
++		fprintf(file, "NIX_RX_ACTIONOP_DEFAULT (%" PRIu64 ")\n",
++			(uint64_t)NIX_RX_ACTIONOP_DEFAULT);
++		break;
+ 	default:
+ 		plt_err("Unknown NIX_RX_ACTIONOP found");
+ 		return;
+-- 
+2.25.1
+

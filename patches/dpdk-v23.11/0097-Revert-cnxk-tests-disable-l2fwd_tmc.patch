@@ -1,0 +1,33 @@
+From 8c36912c95f12ea9380c5ddb759a64864b17cd69 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Mon, 11 Dec 2023 17:27:30 +0530
+Subject: [PATCH 097/513] Revert "cnxk-tests: disable l2fwd_tmc"
+
+This reverts commit 1ef7b1926aead0ff08f488d8bfe6b30316c1b124.
+
+Change-Id: I5d5c8f47229b83cd5e625c1135a593777533bd2c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117987
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index 4c50927e0c6f2..536204a8a5837 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -87,7 +87,7 @@ test_subdirs_arm = [
+         'trace_autotest',
+         'mbuf_perf',
+         'hotplug_test',
+-#        'l2fwd_tmc',
++        'l2fwd_tmc',
+         'l2fwd_event_pfc',
+         'tx_vlan',
+         'ipsec_reassembly_perf',
+-- 
+2.25.1
+

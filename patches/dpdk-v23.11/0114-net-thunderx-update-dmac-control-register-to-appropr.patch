@@ -1,0 +1,147 @@
+From 3c77d5e89d45765c026f02c93313b56831649caa Mon Sep 17 00:00:00 2001
+From: Hanumanth Pothula <hpothula@marvell.com>
+Date: Thu, 14 Dec 2023 11:21:32 +0530
+Subject: [PATCH 114/513] net/thunderx: update dmac control register to
+ appropriately
+
+By default dmac control register is set to reject packets
+on mac address match, leading all unicast packets to drop.
+
+Update DMAC control register to allow packets on MAC address
+match rather than dropping.
+
+Signed-off-by: Hanumanth Pothula <hpothula@marvell.com>
+Change-Id: I5b119e6429a5ae374309d224f61674e7f5a0c3f4
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118214
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+(cherry picked from commit 0ebcae910b3502d64a6117330ffca7b68fa0717b)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118798
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/thunderx/base/nicvf_mbox.c | 12 ++++++++++++
+ drivers/net/thunderx/base/nicvf_mbox.h | 10 ++++++++++
+ drivers/net/thunderx/nicvf_ethdev.c    | 26 ++++++++++++++++++++++++++
+ 3 files changed, 48 insertions(+)
+
+diff --git a/drivers/net/thunderx/base/nicvf_mbox.c b/drivers/net/thunderx/base/nicvf_mbox.c
+index 5993eec4e63fe..0e0176974d5cb 100644
+--- a/drivers/net/thunderx/base/nicvf_mbox.c
++++ b/drivers/net/thunderx/base/nicvf_mbox.c
+@@ -485,3 +485,15 @@ nicvf_mbox_reset_xcast(struct nicvf *nic)
+ 	mbx.msg.msg = NIC_MBOX_MSG_RESET_XCAST;
+ 	nicvf_mbox_send_msg_to_pf(nic, &mbx);
+ }
++
++int
++nicvf_mbox_set_xcast(struct nicvf *nic, uint8_t  mode, uint64_t mac)
++{
++	struct nic_mbx mbx = { .msg = { 0 } };
++
++	mbx.xcast.msg = NIC_MBOX_MSG_SET_XCAST;
++	mbx.xcast.mode = mode;
++	mbx.xcast.mac = mac;
++
++	return nicvf_mbox_send_msg_to_pf(nic, &mbx);
++}
+diff --git a/drivers/net/thunderx/base/nicvf_mbox.h b/drivers/net/thunderx/base/nicvf_mbox.h
+index 322c8159cb7a0..47f3d13755203 100644
+--- a/drivers/net/thunderx/base/nicvf_mbox.h
++++ b/drivers/net/thunderx/base/nicvf_mbox.h
+@@ -45,6 +45,8 @@
+ #define	NIC_MBOX_MSG_CFG_DONE		0xF0	/* VF configuration done */
+ #define	NIC_MBOX_MSG_SHUTDOWN		0xF1	/* VF is being shutdown */
+ #define NIC_MBOX_MSG_RESET_XCAST	0xF2    /* Reset DCAM filtering mode */
++#define	NIC_MBOX_MSG_ADD_MCAST		0xF3	/* ADD MAC to DCAM filters */
++#define	NIC_MBOX_MSG_SET_XCAST		0xF4	/* Set MCAST/BCAST Rx mode */
+ #define	NIC_MBOX_MSG_MAX		0x100	/* Maximum number of messages */
+ 
+ /* Get vNIC VF configuration */
+@@ -190,6 +192,12 @@ struct change_link_mode_msg {
+ 
+ };
+ 
++struct xcast {
++	uint8_t    msg;
++	uint8_t    mode;
++	uint64_t   mac:48;
++};
++
+ struct nic_mbx {
+ /* 128 bit shared memory between PF and each VF */
+ union {
+@@ -209,6 +217,7 @@ union {
+ 	struct reset_stat_cfg	reset_stat;
+ 	struct set_link_state	set_link;
+ 	struct change_link_mode_msg mode;
++	struct xcast xcast;
+ };
+ };
+ 
+@@ -239,5 +248,6 @@ void nicvf_mbox_cfg_done(struct nicvf *nic);
+ void nicvf_mbox_link_change(struct nicvf *nic);
+ void nicvf_mbox_reset_xcast(struct nicvf *nic);
+ int nicvf_mbox_change_mode(struct nicvf *nic, struct change_link_mode *cfg);
++int nicvf_mbox_set_xcast(struct nicvf *nic, uint8_t  mode, uint64_t mac);
+ 
+ #endif /* __THUNDERX_NICVF_MBOX__ */
+diff --git a/drivers/net/thunderx/nicvf_ethdev.c b/drivers/net/thunderx/nicvf_ethdev.c
+index a504d41dfe6c0..49016327a037e 100644
+--- a/drivers/net/thunderx/nicvf_ethdev.c
++++ b/drivers/net/thunderx/nicvf_ethdev.c
+@@ -58,6 +58,10 @@ RTE_LOG_REGISTER_SUFFIX(nicvf_logtype_driver, driver, NOTICE);
+ #define NICVF_QLM_MODE_SGMII  7
+ #define NICVF_QLM_MODE_XFI   12
+ 
++#define BCAST_ACCEPT      0x01
++#define CAM_ACCEPT        (1 << 3)
++#define BGX_MCAST_MODE(x) ((x) << 1)
++
+ enum nicvf_link_speed {
+ 	NICVF_LINK_SPEED_SGMII,
+ 	NICVF_LINK_SPEED_XAUI,
+@@ -2183,9 +2187,22 @@ nicvf_eth_dev_uninit(struct rte_eth_dev *dev)
+ 	nicvf_dev_close(dev);
+ 	return 0;
+ }
++
++static inline uint64_t ether_addr_to_u64(uint8_t *addr)
++{
++	uint64_t u = 0;
++	int i;
++
++	for (i = 0; i < RTE_ETHER_ADDR_LEN; i++)
++		u = u << 8 | addr[i];
++
++	return u;
++}
++
+ static int
+ nicvf_eth_dev_init(struct rte_eth_dev *eth_dev)
+ {
++	uint8_t dmac_ctrl_reg = 0;
+ 	int ret;
+ 	struct rte_pci_device *pci_dev;
+ 	struct nicvf *nic = nicvf_pmd_priv(eth_dev);
+@@ -2309,6 +2326,15 @@ nicvf_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 		goto malloc_fail;
+ 	}
+ 
++	/* set DMAC CTRL reg to allow MAC */
++	dmac_ctrl_reg = BCAST_ACCEPT | BGX_MCAST_MODE(2) | CAM_ACCEPT;
++	ret = nicvf_mbox_set_xcast(nic, dmac_ctrl_reg,
++			ether_addr_to_u64(nic->mac_addr));
++	if (ret) {
++		PMD_INIT_LOG(ERR, "Failed to set mac addr");
++		goto malloc_fail;
++	}
++
+ 	ret = nicvf_set_first_skip(eth_dev);
+ 	if (ret) {
+ 		PMD_INIT_LOG(ERR, "Failed to configure first skip");
+-- 
+2.25.1
+

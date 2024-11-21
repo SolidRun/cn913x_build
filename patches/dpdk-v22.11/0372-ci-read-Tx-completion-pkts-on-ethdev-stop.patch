@@ -1,0 +1,117 @@
+From fff514a13dd71ed4b8c455e6d4668162a569f172 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Wed, 12 Apr 2023 00:12:25 +0530
+Subject: [PATCH 372/955] ci: read Tx completion pkts on ethdev stop
+
+made changes to extbuf application to read
+leftover packets after device is stopped
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I3fb3ff1438dad0d6995f34c342ec9b77b3cb1b32
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101119
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/extbuf/extbuf.c | 31 ++++++++++++++++------
+ 1 file changed, 23 insertions(+), 8 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/extbuf/extbuf.c b/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
+index 4942fa7a983b1..789e6d4d956aa 100644
+--- a/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
++++ b/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
+@@ -104,6 +104,9 @@ struct thread_info {
+ 	bool launched;
+ } __rte_cache_aligned;
+ 
++struct rte_mempool *shinfo_pool;
++struct rte_mbuf_ext_shared_info *s[MAX_PKT_BURST];
++
+ static void
+ print_event_stats(struct global_event_resources *rsrc, bool show_pps)
+ {
+@@ -245,8 +248,16 @@ initialize(struct port_info *pinfo, struct app_arg *arg)
+ 	pinfo->pinned_pool =
+ 		rte_pktmbuf_pool_create(name, nb_mbufs, MEMPOOL_CACHE_SIZE, 0,
+ 				MTU, rte_socket_id());
+-	if (pinfo->pool == NULL)
+-		EXIT("Cannot init mbuf pool\n");
++	if (pinfo->pinned_pool == NULL)
++		EXIT("Cannot init mbuf pinned_pool\n");
++
++	snprintf(name, sizeof(name), "mbuf_shinfo_pool_%u", portid);
++	shinfo_pool =
++		rte_mempool_create(name, nb_mbufs, sizeof(struct rte_mbuf_ext_shared_info),
++				   MEMPOOL_CACHE_SIZE, 0, NULL, NULL, NULL, NULL,
++				   SOCKET_ID_ANY, 0);
++	if (shinfo_pool == NULL)
++		EXIT("Cannot init mbuf shinfo_pool\n");
+ 
+ 	NOTICE("Initializing port %u... ", portid);
+ 
+@@ -350,6 +361,8 @@ finalize(struct port_info *pinfo)
+ 
+ 	if (pinfo->pinned_pool)
+ 		rte_mempool_free(pinfo->pinned_pool);
++	if (shinfo_pool)
++		rte_mempool_free(shinfo_pool);
+ }
+ 
+ static void
+@@ -364,7 +377,7 @@ free_cb_compl(void *addr, void *opaque)
+ {
+ 	struct rte_mbuf *m = (struct rte_mbuf *)addr;
+ 	rte_pktmbuf_free(m);
+-	RTE_SET_USED(opaque);
++	rte_mempool_put(shinfo_pool, opaque);
+ }
+ 
+ static void
+@@ -379,7 +392,7 @@ static void
+ init_shinfo_compl(struct rte_mbuf_ext_shared_info *s)
+ {
+ 	s->free_cb = free_cb_compl;
+-	s->fcb_opaque = NULL;
++	s->fcb_opaque = s;
+ 	rte_mbuf_ext_refcnt_set(s, 1);
+ }
+ 
+@@ -619,7 +632,6 @@ launch_lcore_tx(void *args)
+ static int
+ launch_lcore_tx_perf_compl(void *args)
+ {
+-	struct rte_mbuf_ext_shared_info s[MAX_PKT_BURST];
+ 	unsigned int lcore, j, portid, qid;
+ 	struct rte_mbuf *m[MAX_PKT_BURST];
+ 	struct rte_mbuf *pinned_m[MAX_PKT_BURST];
+@@ -639,7 +651,7 @@ launch_lcore_tx_perf_compl(void *args)
+ 	fflush(stdout);
+ 	NOTICE("\nWARNING: Please use tx_compl_ena=1 as devargs to support");
+ 	NOTICE("\n         transmit completion else completion is invoked");
+-	NOTICE("\n         before packet is actually transmitted");
++	NOTICE("\n         before packet is actually transmitted\n");
+ 	fflush(stdout);
+ 
+ 	while (keep_running) {
+@@ -653,12 +665,15 @@ launch_lcore_tx_perf_compl(void *args)
+ 			break;
+ 		}
+ 
++		if (rte_mempool_get_bulk(shinfo_pool, (void **)s, MAX_PKT_BURST) != 0)
++			ERROR("Failed to allocate shinfo\n");
++
+ 		/* Attach the user memory to the segments */
+ 		for (j = 0; j < MAX_PKT_BURST; j++) {
+-			init_shinfo_compl(&s[j]);
++			init_shinfo_compl(s[j]);
+ 			rte_pktmbuf_attach_extbuf(
+ 				m[j], pinned_m[j], (uint64_t)pinned_m[j],
+-				sizeof(struct rte_mbuf), &s[j]);
++				sizeof(struct rte_mbuf), s[j]);
+ 			m[j]->data_len = sizeof(struct rte_mbuf);
+ 			m[j]->data_off = 0;
+ 			m[j]->next = NULL;
+-- 
+2.25.1
+

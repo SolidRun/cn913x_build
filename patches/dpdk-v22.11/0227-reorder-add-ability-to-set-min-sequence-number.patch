@@ -1,0 +1,193 @@
+From b71672c7f2b87ecc55d76e85d8f894113fa3a60a Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Mon, 9 Jan 2023 17:02:18 +0100
+Subject: [PATCH 227/955] reorder: add ability to set min sequence number
+
+Add API `rte_reorder_min_seqn_set` to allow user to specify minimum
+sequence number.
+Currently sequence number of first inserted packet is used as minimum
+sequence number. But for case when we want to wait for packets before
+the received one this will not work.
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: Id800a7498391e80a4e4818c4538996141cc64b94
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94142
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_reorder.c   | 69 +++++++++++++++++++++++++++++++++++++++
+ lib/reorder/rte_reorder.c | 31 ++++++++++++++++++
+ lib/reorder/rte_reorder.h | 18 ++++++++++
+ lib/reorder/version.map   |  1 +
+ 4 files changed, 119 insertions(+)
+
+diff --git a/app/test/test_reorder.c b/app/test/test_reorder.c
+index a37dc28f65fe5..f391597a78363 100644
+--- a/app/test/test_reorder.c
++++ b/app/test/test_reorder.c
+@@ -427,6 +427,74 @@ test_reorder_drain_up_to_seqn(void)
+ 	return ret;
+ }
+ 
++static int
++test_reorder_set_seqn(void)
++{
++	struct rte_mempool *p = test_params->p;
++	struct rte_reorder_buffer *b = NULL;
++	const unsigned int num_bufs = 7;
++	const unsigned int size = 4;
++	unsigned int i;
++	int ret = 0;
++
++	struct rte_mbuf *bufs[num_bufs];
++
++	/* This would create a reorder buffer instance consisting of:
++	 * reorder_seq = 0
++	 * ready_buf: RB[size] = {NULL, NULL, NULL, NULL}
++	 * order_buf: OB[size] = {NULL, NULL, NULL, NULL}
++	 */
++	b = rte_reorder_create("test_min_seqn_set", rte_socket_id(), size);
++	TEST_ASSERT_NOT_NULL(b, "Failed to create reorder buffer");
++
++	for (i = 0; i < num_bufs; i++) {
++		bufs[i] = rte_pktmbuf_alloc(p);
++		if (bufs[i] == NULL) {
++			printf("Packet allocation failed\n");
++			goto exit;
++		}
++		*rte_reorder_seqn(bufs[i]) = i;
++	}
++
++	ret = rte_reorder_min_seqn_set(b, 5);
++	if (ret != 0) {
++		printf("%s:%d: Error in setting min sequence number\n", __func__, __LINE__);
++		ret = -1;
++		goto exit;
++	}
++
++	ret = rte_reorder_insert(b, bufs[0]);
++	if (ret >= 0) {
++		printf("%s:%d: Insertion with value less the min seq number\n", __func__, __LINE__);
++		ret = -1;
++		goto exit;
++	}
++
++	ret = rte_reorder_insert(b, bufs[5]);
++	if (ret != 0) {
++		printf("%s:%d: Error inserting packet with valid seqn\n", __func__, __LINE__);
++		ret = -1;
++		goto exit;
++	}
++	bufs[5] = NULL;
++
++	ret = rte_reorder_min_seqn_set(b, 0);
++	if (ret >= 0) {
++		printf("%s:%d: Error in setting min sequence number with non-empty buffer\n",
++				__func__, __LINE__);
++		ret = -1;
++		goto exit;
++	}
++
++	ret = 0;
++exit:
++	rte_reorder_free(b);
++	for (i = 0; i < num_bufs; i++)
++		rte_pktmbuf_free(bufs[i]);
++
++	return ret;
++}
++
+ static int
+ test_setup(void)
+ {
+@@ -478,6 +546,7 @@ static struct unit_test_suite reorder_test_suite  = {
+ 		TEST_CASE(test_reorder_insert),
+ 		TEST_CASE(test_reorder_drain),
+ 		TEST_CASE(test_reorder_drain_up_to_seqn),
++		TEST_CASE(test_reorder_set_seqn),
+ 		TEST_CASES_END()
+ 	}
+ };
+diff --git a/lib/reorder/rte_reorder.c b/lib/reorder/rte_reorder.c
+index bd0e1f879393c..6e029c9e02fd7 100644
+--- a/lib/reorder/rte_reorder.c
++++ b/lib/reorder/rte_reorder.c
+@@ -485,3 +485,34 @@ rte_reorder_drain_up_to_seqn(struct rte_reorder_buffer *b, struct rte_mbuf **mbu
+ 
+ 	return drain_cnt;
+ }
++
++static bool
++rte_reorder_is_empty(const struct rte_reorder_buffer *b)
++{
++	const struct cir_buffer *order_buf = &b->order_buf, *ready_buf = &b->ready_buf;
++	unsigned int i;
++
++	/* Ready buffer does not have gaps */
++	if (ready_buf->tail != ready_buf->head)
++		return false;
++
++	/* Order buffer could have gaps, iterate */
++	for (i = 0; i < order_buf->size; i++) {
++		if (order_buf->entries[i] != NULL)
++			return false;
++	}
++
++	return true;
++}
++
++unsigned int
++rte_reorder_min_seqn_set(struct rte_reorder_buffer *b, rte_reorder_seqn_t min_seqn)
++{
++	if (!rte_reorder_is_empty(b))
++		return -ENOTEMPTY;
++
++	b->min_seqn = min_seqn;
++	b->is_initialized = true;
++
++	return 0;
++}
+diff --git a/lib/reorder/rte_reorder.h b/lib/reorder/rte_reorder.h
+index db740495bec2b..cc95015fa60d0 100644
+--- a/lib/reorder/rte_reorder.h
++++ b/lib/reorder/rte_reorder.h
+@@ -193,6 +193,24 @@ unsigned int
+ rte_reorder_drain_up_to_seqn(struct rte_reorder_buffer *b, struct rte_mbuf **mbufs,
+ 		unsigned int max_mbufs, rte_reorder_seqn_t seqn);
+ 
++/**
++ * @warning
++ * @b EXPERIMENTAL: this API may change without prior notice
++ *
++ * Set minimum sequence number of packet allowed to be buffered.
++ * To successfully set new value reorder buffer has to be empty(after create, reset or drain_all).
++ *
++ * @param b
++ *   Empty reorder buffer instance to modify.
++ * @param min_seqn
++ *   New sequence number to set.
++ * @return
++ *   0 on success, a negative value otherwise.
++ */
++__rte_experimental
++unsigned int
++rte_reorder_min_seqn_set(struct rte_reorder_buffer *b, rte_reorder_seqn_t min_seqn);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/reorder/version.map b/lib/reorder/version.map
+index d322da03bdfdf..e21b91f5269cc 100644
+--- a/lib/reorder/version.map
++++ b/lib/reorder/version.map
+@@ -18,4 +18,5 @@ EXPERIMENTAL {
+ 	rte_reorder_seqn_dynfield_offset;
+ 	# added in 23.03
+ 	rte_reorder_drain_up_to_seqn;
++	rte_reorder_min_seqn_set;
+ };
+-- 
+2.25.1
+

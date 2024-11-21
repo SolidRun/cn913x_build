@@ -1,0 +1,164 @@
+From 84ab9436e1baa2ca7ee70e39693d3de98c96f15b Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Thu, 17 Aug 2023 01:44:52 -0700
+Subject: [PATCH 589/955] net/octeon_ep: add workaround for zero len packets
+
+When rx pkt descriptor buffer reports len zero for the
+received packet, current driver polls for non-zero len
+and reports an assertion after multiple retires.
+
+Patch adds an workaround to drop those packets and also
+uses pkt count register read scheme instead of ISM memory
+for getting the pending rx packet count.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: Iaa2b5b5c8ba32d47ed467e8631042b8ef615ea1e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109969
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit e15fa78e3b8b619a562d6e6bc69aaf0e92b85a86)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110144
+Reviewed-by: Devapraba Muthumani <dmuthumani@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_rxtx.c | 50 +++++++++++++++++++++--------
+ drivers/net/octeon_ep/otx_ep_rxtx.h |  2 +-
+ 2 files changed, 37 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 26929f4251468..b137cb3bd25fc 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -807,29 +807,34 @@ otx_ep_droq_read_packet(struct otx_ep_device *otx_ep,
+ 	info = rte_pktmbuf_mtod(mbuf, struct otx_ep_droq_info *);
+ 
+ 	/* make sure info is available */
++	rte_rmb();
+ 	if (unlikely(!info->length)) {
+ 		int retry = OTX_EP_MAX_DELAYED_PKT_RETRIES;
+ 		/* otx_ep_dbg("OCTEON DROQ[%d]: read_idx: %d; Data not ready "
+ 		 * "yet, Retry; pending=%lu\n", droq->q_no, droq->read_idx,
+ 		 * droq->pkts_pending);
+ 		 */
+-		rte_rmb();
+ 		droq->stats.pkts_delayed_data++;
+ 		while (retry && !info->length) {
+ 			retry--;
+ 			rte_delay_us_block(50);
+ 		}
+ 		if (!retry && !info->length) {
+-			otx_ep_err("OCTEON DROQ[%d]: read_idx: %d; Retry failed !!\n",
++			otx_ep_dbg("OCTEON DROQ[%d]: read_idx: %d; Retry failed !!\n",
+ 				   droq->q_no, droq->read_idx);
+ 			/* May be zero length packet; drop it */
+-			assert(0);
++			rte_pktmbuf_free(mbuf);
++			droq->recv_buf_list[droq->read_idx] = NULL;
++			droq->read_idx = otx_ep_incr_index(droq->read_idx, 1,
++							   droq->nb_desc);
++			droq->refill_count++;
++			return NULL;
+ 		}
+ 	}
+ 
+ 	if (next_fetch) {
+ 		next_idx = otx_ep_incr_index(droq->read_idx, 1, droq->nb_desc);
+-		mbuf_next  = droq->recv_buf_list[next_idx];
++		mbuf_next = droq->recv_buf_list[next_idx];
+ 		rte_prefetch0(rte_pktmbuf_mtod(mbuf_next, void *));
+ 	}
+ 
+@@ -923,7 +928,11 @@ otx_ep_check_droq_pkts(struct otx_ep_droq *droq)
+ 	 * This adds an extra local variable, but almost halves the
+ 	 * number of PCIe writes.
+ 	 */
++#ifdef OTX_DROQ_USE_ISM
+ 	val = *droq->pkts_sent_ism;
++#else
++	val = rte_read32(droq->pkts_sent_reg);
++#endif
+ 	new_pkts = val - droq->pkts_sent_ism_prev;
+ 	droq->pkts_sent_ism_prev = val;
+ 
+@@ -933,10 +942,14 @@ otx_ep_check_droq_pkts(struct otx_ep_droq *droq)
+ 		 * when count above halfway to saturation.
+ 		 */
+ 		rte_write32(val, droq->pkts_sent_reg);
++#ifdef OTX_DROQ_USE_ISM
+ 		*droq->pkts_sent_ism = 0;
++#endif
+ 		droq->pkts_sent_ism_prev = 0;
+ 	}
++#ifdef OTX_DROQ_USE_ISM
+ 	rte_write64(OTX2_SDP_REQUEST_ISM, droq->pkts_sent_reg);
++#endif
+ 	droq->pkts_pending += new_pkts;
+ 
+ 	return new_pkts;
+@@ -961,7 +974,9 @@ otx_ep_recv_pkts(void *rx_queue,
+ {
+ 	struct otx_ep_droq *droq = rx_queue;
+ 	struct otx_ep_device *otx_ep;
++	struct rte_mbuf *oq_pkt;
+ 	uint16_t pkts, new_pkts;
++	uint32_t valid_pkts = 0;
+ 	int next_fetch;
+ 
+ 	otx_ep = droq->otx_ep_dev;
+@@ -970,16 +985,23 @@ otx_ep_recv_pkts(void *rx_queue,
+ 	for (pkts = 0; pkts < new_pkts; pkts++) {
+ 		/* Push the received pkt to application */
+ 		next_fetch = (pkts == new_pkts - 1) ? 0 : 1;
+-		rx_pkts[pkts] = otx_ep_droq_read_packet(otx_ep, droq, next_fetch);
+-		/* Stats */
+-		droq->stats.bytes_received += rx_pkts[pkts]->pkt_len;
+-	}
+-
+-	if (likely(new_pkts)) {
+-		droq->pkts_pending -= pkts;
+-		/* Stats */
+-		droq->stats.pkts_received += pkts;
++		oq_pkt = otx_ep_droq_read_packet(otx_ep, droq, next_fetch);
++		if (!oq_pkt) {
++			otx_ep_dbg("DROQ read pkt failed pending 0x%016lx,"
++				   " last_pkt_count 0x%016lx, new_pkts %d.\n",
++				   (unsigned long)droq->pkts_pending,
++				   (unsigned long)droq->last_pkt_count, new_pkts);
++			droq->stats.rx_err++;
++			continue;
++		} else {
++			rx_pkts[valid_pkts] = oq_pkt;
++			valid_pkts++;
++			/* Stats */
++			droq->stats.pkts_received++;
++			droq->stats.bytes_received += oq_pkt->pkt_len;
++		}
+ 	}
++	droq->pkts_pending -= pkts;
+ 
+ 	/* Refill DROQ buffers */
+ 	if (droq->refill_count >= DROQ_REFILL_THRESHOLD) {
+@@ -1003,5 +1025,5 @@ otx_ep_recv_pkts(void *rx_queue,
+ 
+ 		rte_write32(0, droq->pkts_credit_reg);
+ 	}
+-	return new_pkts;
++	return valid_pkts;
+ }
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.h b/drivers/net/octeon_ep/otx_ep_rxtx.h
+index 3f125270046ee..2c555f8fe88e3 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.h
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.h
+@@ -13,7 +13,7 @@
+ #define OTX_EP_IQ_SEND_FAILED      (-1)
+ #define OTX_EP_IQ_SEND_SUCCESS     (0)
+ 
+-#define OTX_EP_MAX_DELAYED_PKT_RETRIES 10000
++#define OTX_EP_MAX_DELAYED_PKT_RETRIES 10
+ 
+ #define OTX_EP_FSZ 28
+ #define OTX2_EP_FSZ 24
+-- 
+2.25.1
+

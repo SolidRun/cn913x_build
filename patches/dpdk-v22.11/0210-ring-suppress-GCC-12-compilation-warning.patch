@@ -1,0 +1,73 @@
+From 2333040ac436795e9fff5cd06303efb3825c6844 Mon Sep 17 00:00:00 2001
+From: Mohammad Iqbal Ahmad <mahmad@marvell.com>
+Date: Tue, 14 Feb 2023 01:43:46 +0530
+Subject: [PATCH 210/955] ring: suppress GCC 12 compilation warning
+
+Suppress gcc 12 warning -Werror=stringop-overread and
+-Werror=stringop-overflow using #pragma
+Fixes: 1fc73390bcf5 ("ring: refactor exported headers")
+
+Signed-off-by: Mohammad Iqbal Ahmad <mahmad@marvell.com>
+Change-Id: Iebbbfd280745b63b64c605764dcb1d93c82b0cb0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96880
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ lib/ring/rte_ring_elem_pvt.h | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/lib/ring/rte_ring_elem_pvt.h b/lib/ring/rte_ring_elem_pvt.h
+index 83788c56e60fe..9d3fec9f7203e 100644
+--- a/lib/ring/rte_ring_elem_pvt.h
++++ b/lib/ring/rte_ring_elem_pvt.h
+@@ -86,6 +86,11 @@ __rte_ring_enqueue_elems_64(struct rte_ring *r, uint32_t prod_head,
+ 	}
+ }
+ 
++#if defined(RTE_TOOLCHAIN_GCC) && (GCC_VERSION >= 120000)
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wstringop-overflow"
++#pragma GCC diagnostic ignored "-Wstringop-overread"
++#endif
+ static __rte_always_inline void
+ __rte_ring_enqueue_elems_128(struct rte_ring *r, uint32_t prod_head,
+ 		const void *obj_table, uint32_t n)
+@@ -115,6 +120,10 @@ __rte_ring_enqueue_elems_128(struct rte_ring *r, uint32_t prod_head,
+ 	}
+ }
+ 
++#if defined(RTE_TOOLCHAIN_GCC) && (GCC_VERSION >= 120000)
++#pragma GCC diagnostic pop
++#endif
++
+ /* the actual enqueue of elements on the ring.
+  * Placed here since identical code needed in both
+  * single and multi producer enqueue functions.
+@@ -220,6 +229,11 @@ __rte_ring_dequeue_elems_64(struct rte_ring *r, uint32_t prod_head,
+ 	}
+ }
+ 
++#if defined(RTE_TOOLCHAIN_GCC) && (GCC_VERSION >= 120000)
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wstringop-overflow"
++#pragma GCC diagnostic ignored "-Wstringop-overread"
++#endif
+ static __rte_always_inline void
+ __rte_ring_dequeue_elems_128(struct rte_ring *r, uint32_t prod_head,
+ 		void *obj_table, uint32_t n)
+@@ -245,6 +259,10 @@ __rte_ring_dequeue_elems_128(struct rte_ring *r, uint32_t prod_head,
+ 	}
+ }
+ 
++#if defined(RTE_TOOLCHAIN_GCC) && (GCC_VERSION >= 120000)
++#pragma GCC diagnostic pop
++#endif
++
+ /* the actual dequeue of elements from the ring.
+  * Placed here since identical code needed in both
+  * single and multi producer enqueue functions.
+-- 
+2.25.1
+

@@ -1,0 +1,34 @@
+From 2378bc38166d8c6a69c06652b0862c3d1f51a696 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Fri, 29 Sep 2023 15:06:18 +0530
+Subject: [PATCH 640/955] ci/inline_ipsec_autotest: remove repeated test
+
+Removes repeated tests in inline IPsec autotest.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I6afecf2a84439a82f04e1c7f26a1e358fe6b63a6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/112883
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../cnxk-tests/inline_ipsec_autotest/inline_ipsec_autotest.sh | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/inline_ipsec_autotest/inline_ipsec_autotest.sh b/marvell-ci/test/cnxk-tests/inline_ipsec_autotest/inline_ipsec_autotest.sh
+index c2462339886ef..60fb51f4ab5f8 100755
+--- a/marvell-ci/test/cnxk-tests/inline_ipsec_autotest/inline_ipsec_autotest.sh
++++ b/marvell-ci/test/cnxk-tests/inline_ipsec_autotest/inline_ipsec_autotest.sh
+@@ -50,10 +50,6 @@ run_inline_ipsec_tests() {
+ 	case $PLAT in
+ 		cn10*) run_cn10k_inline_ipsec_tests ;;
+ 	esac
+-
+-	for test in ${!cn10k_inline_ipsec_test_args[@]}; do
+-		DPDK_TEST=$test $DPDK_TEST_BIN ${cn10k_inline_ipsec_test_args[$test]}
+-	done
+ }
+ 
+ 
+-- 
+2.25.1
+

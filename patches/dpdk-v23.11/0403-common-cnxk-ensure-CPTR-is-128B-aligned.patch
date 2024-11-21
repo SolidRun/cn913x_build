@@ -1,0 +1,52 @@
+From 9d2158edde7fc0bbd83834c67853ca6772749fce Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 22 Jul 2024 10:34:48 +0000
+Subject: [PATCH 403/513] common/cnxk: ensure CPTR is 128B aligned
+
+Make sure CPTR is 128B aligned.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ia9dccd05721b1a2a55e537fde1cffdf608dd85a6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131708
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit cde7f7eb52f122613368d81072b777de80ffdf70)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131863
+---
+ drivers/common/cnxk/roc_cpt.c      | 5 +++++
+ drivers/common/cnxk/roc_platform.h | 1 +
+ 2 files changed, 6 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index 3855d5e7a54bd..1a86fa7c08702 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -1188,6 +1188,11 @@ roc_cpt_ctx_write(struct roc_cpt_lf *lf, void *sa_dptr, void *sa_cptr,
+ 	uint64_t *dptr;
+ 	int i;
+ 
++	if (!plt_is_aligned(sa_cptr, 128)) {
++		plt_err("Context pointer should be 128B aligned");
++		return -EINVAL;
++	}
++
+ 	/* Use this lcore's LMT line as no one else is using it */
+ 	ROC_LMT_BASE_ID_GET(lmt_base, lmt_id);
+ 	inst = (struct cpt_inst_s *)lmt_base;
+diff --git a/drivers/common/cnxk/roc_platform.h b/drivers/common/cnxk/roc_platform.h
+index 4e99146e41c51..4df31dd5338d2 100644
+--- a/drivers/common/cnxk/roc_platform.h
++++ b/drivers/common/cnxk/roc_platform.h
+@@ -183,6 +183,7 @@ plt_thread_is_valid(plt_thread_t thr)
+ #define plt_intr_efds_index_set		rte_intr_efds_index_set
+ #define plt_intr_elist_index_get	rte_intr_elist_index_get
+ #define plt_intr_elist_index_set	rte_intr_elist_index_set
++#define plt_is_aligned			rte_is_aligned
+ 
+ #define plt_alarm_set	 rte_eal_alarm_set
+ #define plt_alarm_cancel rte_eal_alarm_cancel
+-- 
+2.25.1
+

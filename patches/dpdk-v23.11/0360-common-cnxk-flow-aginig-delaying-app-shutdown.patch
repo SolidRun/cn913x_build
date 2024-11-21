@@ -1,0 +1,71 @@
+From b7ed7e9acb33988240f4f6e553452836dddb070d Mon Sep 17 00:00:00 2001
+From: Kiran Kumar K <kirankumark@marvell.com>
+Date: Thu, 13 Jun 2024 17:15:07 +0530
+Subject: [PATCH 360/513] common/cnxk: flow aginig delaying app shutdown
+
+If flow aging is enabled application termination may take time
+equivalent to aging timeout. This is because on termination flow
+thread uses a sleep call which is uninterruptible.
+
+Signed-off-by: Kiran Kumar K <kirankumark@marvell.com>
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Change-Id: I4e0ebc9ff8f299b6fed7c75f89823185ecb29084
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129563
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npc_aging.c | 23 ++++++++++++++++-------
+ 1 file changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+index ebceac47c649b..66c953135aa57 100644
+--- a/drivers/common/cnxk/roc_npc_aging.c
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -133,13 +133,27 @@ npc_mcam_get_hit_status(struct npc *npc, uint64_t *mcam_ids, uint16_t start_id,
+ 	return rc;
+ }
+ 
++static void
++npc_age_wait_until(struct roc_npc_flow_age *flow_age)
++{
++#define NPC_AGE_WAIT_TIMEOUT_MS 1000
++#define NPC_AGE_WAIT_TIMEOUT_US (NPC_AGE_WAIT_TIMEOUT_MS * NPC_AGE_WAIT_TIMEOUT_MS)
++	uint64_t timeout = 0;
++	uint64_t sleep = 10 * NPC_AGE_WAIT_TIMEOUT_MS;
++
++	do {
++		plt_delay_us(sleep);
++		timeout += sleep;
++	} while (!flow_age->aged_flows_get_thread_exit &&
++		 (timeout < (flow_age->aging_poll_freq * NPC_AGE_WAIT_TIMEOUT_US)));
++}
++
+ uint32_t
+ npc_aged_flows_get(void *args)
+ {
+ 	uint64_t hit_status[MCAM_ARR_SIZE] = {0};
+ 	uint64_t mcam_ids[MCAM_ARR_SIZE] = {0};
+ 	struct npc_age_flow_list_head *list;
+-	uint64_t timeout, sleep = 10 * 1000;
+ 	struct npc_age_flow_entry *fl_iter;
+ 	struct roc_npc *roc_npc = args;
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+@@ -198,12 +212,7 @@ npc_aged_flows_get(void *args)
+ 		plt_seqcount_write_end(&flow_age->seq_cnt);
+ 
+ lbl_sleep:
+-		timeout = 0;
+-		do {
+-			plt_delay_us(sleep);
+-			timeout += sleep;
+-		} while (!flow_age->aged_flows_get_thread_exit &&
+-			 timeout < (flow_age->aging_poll_freq * 1000 * 1000));
++	npc_age_wait_until(flow_age);
+ 	}
+ 
+ 	return 0;
+-- 
+2.25.1
+

@@ -1,0 +1,38 @@
+From 3d5c27158ad3ddeb531759b43c1957317cb354f3 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 15 Feb 2023 12:52:11 +0530
+Subject: [PATCH 235/955] examples/ipsec-secgw: fix uninitialized offload
+ variable
+
+Fix uninitialized hw_reassembly offload variable.
+
+Fixes: d8d51d4f9bf5 ("examples/ipsec-secgw: support per SA HW reassembly")
+Cc: rbhansali@marvell.com
+
+Change-Id: I0e579c608de9247c5306aef66c628703dbcd80d5
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96908
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+---
+ examples/ipsec-secgw/sa.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/examples/ipsec-secgw/sa.c b/examples/ipsec-secgw/sa.c
+index b59128ebc3e6b..42a4a064993cc 100644
+--- a/examples/ipsec-secgw/sa.c
++++ b/examples/ipsec-secgw/sa.c
+@@ -1834,6 +1834,7 @@ sa_check_offloads(uint16_t port_id, uint64_t *rx_offloads,
+ 
+ 	*rx_offloads = 0;
+ 	*tx_offloads = 0;
++	*hw_reassembly = 0;
+ 
+ 	ret = rte_eth_dev_info_get(port_id, &dev_info);
+ 	if (ret != 0)
+-- 
+2.25.1
+

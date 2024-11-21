@@ -1,0 +1,55 @@
+From 2f1cdfe0a5bd0d57dd2daa955d56dd442fe1a2e0 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 2 Mar 2023 23:32:35 +0530
+Subject: [PATCH 266/955] ci/cnxk-tests: fix CI for IPsec perf
+
+Testpmd prefix updated for port operations.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ie647187808e6929ba9a419f419206e7f3cd16f89
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98356
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh      | 4 ++--
+ .../ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh       | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+index 03fa6d01dfc27..66dfc97966448 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+@@ -562,10 +562,10 @@ function pmd_rx_launch()
+ 		testpmd_launch "$TPMD_RX_PREFIX" \
+ 			"-c 0x700 -a $LIF4" \
+ 			"--nb-cores=2 --forward-mode=rxonly"
+-		testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
++		testpmd_cmd $TPMD_RX_PREFIX "port stop 0"
+ 		testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl rx off 0"
+ 		testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl tx off 0"
+-		testpmd_cmd $TPMD_TX_PREFIX "port start 0"
++		testpmd_cmd $TPMD_RX_PREFIX "port start 0"
+ 	fi
+ }
+ 
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh
+index 56ae42835588f..30d2c26f1a063 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh
+@@ -242,10 +242,10 @@ function pmd_rx_launch()
+ 	testpmd_launch "$TPMD_RX_PREFIX" \
+ 		"-c 0x700 -a $LIF4" \
+ 		"--nb-cores=2 --forward-mode=rxonly"
+-	testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
++	testpmd_cmd $TPMD_RX_PREFIX "port stop 0"
+ 	testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl rx off 0"
+ 	testpmd_cmd $TPMD_RX_PREFIX "set flow_ctrl tx off 0"
+-	testpmd_cmd $TPMD_TX_PREFIX "port start 0"
++	testpmd_cmd $TPMD_RX_PREFIX "port start 0"
+ 
+ }
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,137 @@
+From 72e1e69aa31d4e6c4f510bec73502da37dd84fb4 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 18 Oct 2023 23:18:23 +0530
+Subject: [PATCH 663/955] net/octeon_ep: optimize Rx and Tx routines
+
+Preset rearm data to avoid writing multiple fields in fastpath,
+Increase maximum outstanding Tx instructions from 128 to 256.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ib86fd7b07a79ce8e3a3f194c9a56d9f70c84fe7d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114207
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_rx.c    | 11 +++++++----
+ drivers/net/octeon_ep/otx_ep_common.h |  3 +++
+ drivers/net/octeon_ep/otx_ep_rxtx.c   | 27 +++++++++++++++++++++++++++
+ drivers/net/octeon_ep/otx_ep_rxtx.h   |  2 +-
+ 4 files changed, 38 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx.c b/drivers/net/octeon_ep/cnxk_ep_rx.c
+index 74f0011283494..a61acf93cff9a 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_rx.c
++++ b/drivers/net/octeon_ep/cnxk_ep_rx.c
+@@ -93,7 +93,7 @@ cnxk_ep_check_rx_pkts(struct otx_ep_droq *droq)
+ 	new_pkts = val - droq->pkts_sent_ism_prev;
+ 	droq->pkts_sent_ism_prev = val;
+ 
+-	if (val > (uint32_t)(1 << 31)) {
++	if (val > RTE_BIT32(31)) {
+ 		/* Only subtract the packet count in the HW counter
+ 		 * when count above halfway to saturation.
+ 		 */
+@@ -128,7 +128,6 @@ cnxk_ep_process_pkts_scalar(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq,
+ {
+ 	struct rte_mbuf **recv_buf_list = droq->recv_buf_list;
+ 	uint32_t bytes_rsvd = 0, read_idx = droq->read_idx;
+-	uint16_t port_id = droq->otx_ep_dev->port_id;
+ 	uint16_t nb_desc = droq->nb_desc;
+ 	uint16_t pkts;
+ 
+@@ -137,14 +136,18 @@ cnxk_ep_process_pkts_scalar(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq,
+ 		struct rte_mbuf *mbuf;
+ 		uint16_t pkt_len;
+ 
++		rte_prefetch0(recv_buf_list[otx_ep_incr_index(read_idx, 2, nb_desc)]);
++		rte_prefetch0(rte_pktmbuf_mtod(
++			recv_buf_list[otx_ep_incr_index(read_idx, 2, nb_desc)], void *));
++
+ 		mbuf = recv_buf_list[read_idx];
+ 		info = rte_pktmbuf_mtod(mbuf, struct otx_ep_droq_info *);
+ 		read_idx = otx_ep_incr_index(read_idx, 1, nb_desc);
+ 		pkt_len = rte_bswap16(info->length >> 48);
+-		mbuf->data_off += OTX_EP_INFO_SIZE;
+ 		mbuf->pkt_len = pkt_len;
+ 		mbuf->data_len = pkt_len;
+-		mbuf->port = port_id;
++
++		*(uint64_t *)&mbuf->rearm_data = droq->rearm_data;
+ 		rx_pkts[pkts] = mbuf;
+ 		bytes_rsvd += pkt_len;
+ 	}
+diff --git a/drivers/net/octeon_ep/otx_ep_common.h b/drivers/net/octeon_ep/otx_ep_common.h
+index 82e57520d38d2..299b5122d8a22 100644
+--- a/drivers/net/octeon_ep/otx_ep_common.h
++++ b/drivers/net/octeon_ep/otx_ep_common.h
+@@ -365,6 +365,9 @@ struct otx_ep_droq {
+ 	/* receive buffer list contains mbuf ptr list */
+ 	struct rte_mbuf **recv_buf_list;
+ 
++	/* Packet re-arm data. */
++	uint64_t rearm_data;
++
+ 	/* Packets pending to be processed */
+ 	uint64_t pkts_pending;
+ 
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.c b/drivers/net/octeon_ep/otx_ep_rxtx.c
+index 2fa41710dcfd2..727f67e1c87f0 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.c
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.c
+@@ -284,6 +284,32 @@ otx_ep_droq_setup_ring_buffers(struct otx_ep_droq *droq)
+ 	return 0;
+ }
+ 
++static inline uint64_t
++otx_ep_set_rearm_data(struct otx_ep_device *otx_ep)
++{
++	uint16_t port_id = otx_ep->port_id;
++	struct rte_mbuf mb_def;
++	uint64_t *tmp;
++
++	RTE_BUILD_BUG_ON(offsetof(struct rte_mbuf, data_off) % 8 != 0);
++	RTE_BUILD_BUG_ON(offsetof(struct rte_mbuf, refcnt) - offsetof(struct rte_mbuf, data_off) !=
++			 2);
++	RTE_BUILD_BUG_ON(offsetof(struct rte_mbuf, nb_segs) - offsetof(struct rte_mbuf, data_off) !=
++			 4);
++	RTE_BUILD_BUG_ON(offsetof(struct rte_mbuf, port) - offsetof(struct rte_mbuf, data_off) !=
++			 6);
++	mb_def.nb_segs = 1;
++	mb_def.data_off = RTE_PKTMBUF_HEADROOM + OTX_EP_INFO_SIZE;
++	mb_def.port = port_id;
++	rte_mbuf_refcnt_set(&mb_def, 1);
++
++	/* Prevent compiler reordering: rearm_data covers previous fields */
++	rte_compiler_barrier();
++	tmp = (uint64_t *)&mb_def.rearm_data;
++
++	return *tmp;
++}
++
+ /* OQ initialization */
+ static int
+ otx_ep_init_droq(struct otx_ep_device *otx_ep, uint32_t q_no,
+@@ -340,6 +366,7 @@ otx_ep_init_droq(struct otx_ep_device *otx_ep, uint32_t q_no,
+ 		goto init_droq_fail;
+ 
+ 	droq->refill_threshold = c_refill_threshold;
++	droq->rearm_data = otx_ep_set_rearm_data(otx_ep);
+ 
+ 	/* Set up OQ registers */
+ 	ret = otx_ep->fn_list.setup_oq_regs(otx_ep, q_no);
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.h b/drivers/net/octeon_ep/otx_ep_rxtx.h
+index cb68ef3b41cb3..b159c32cae8e1 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.h
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.h
+@@ -17,7 +17,7 @@
+ 
+ #define OTX_EP_FSZ 28
+ #define OTX2_EP_FSZ 24
+-#define OTX_EP_MAX_INSTR 128
++#define OTX_EP_MAX_INSTR 256
+ 
+ /* SDP_LENGTH_S specifies packet length and is of 8-byte size */
+ #define OTX_EP_INFO_SIZE 8
+-- 
+2.25.1
+

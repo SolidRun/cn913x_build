@@ -1,0 +1,259 @@
+From 5935de5e62f26207308f912b05b66c45b78fe68c Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Tue, 16 May 2023 11:27:14 +0530
+Subject: [PATCH 419/955] common/cnxk: support Tx queue flow pattern in ROC API
+
+Added ROC API changes to support Tx queue flow
+pattern item.
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I451e622579b6403d140542eb754a7915a3f56e56
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103673
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c       | 16 +++++---
+ drivers/common/cnxk/roc_npc.h       |  1 +
+ drivers/common/cnxk/roc_npc_mcam.c  | 61 +++++++++++++++++++++++------
+ drivers/common/cnxk/roc_npc_parse.c | 52 ++++++++++++++++++++++++
+ drivers/common/cnxk/roc_npc_priv.h  |  2 +
+ 5 files changed, 115 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 954861e7e835e..aa312230122a4 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -780,11 +780,10 @@ npc_parse_pattern(struct npc *npc, const struct roc_npc_item_info pattern[],
+ 		  struct roc_npc_flow *flow, struct npc_parse_state *pst)
+ {
+ 	npc_parse_stage_func_t parse_stage_funcs[] = {
+-		npc_parse_meta_items, npc_parse_mark_item,  npc_parse_pre_l2,
+-		npc_parse_cpt_hdr,    npc_parse_higig2_hdr, npc_parse_la,
+-		npc_parse_lb,	      npc_parse_lc,	    npc_parse_ld,
+-		npc_parse_le,	      npc_parse_lf,	    npc_parse_lg,
+-		npc_parse_lh,
++		npc_parse_meta_items, npc_parse_mark_item, npc_parse_pre_l2, npc_parse_cpt_hdr,
++		npc_parse_higig2_hdr, npc_parse_tx_queue,  npc_parse_la,     npc_parse_lb,
++		npc_parse_lc,	      npc_parse_ld,	   npc_parse_le,     npc_parse_lf,
++		npc_parse_lg,	      npc_parse_lh,
+ 	};
+ 	uint8_t layer = 0;
+ 	int key_offset;
+@@ -793,9 +792,9 @@ npc_parse_pattern(struct npc *npc, const struct roc_npc_item_info pattern[],
+ 	if (pattern == NULL)
+ 		return NPC_ERR_PARAM;
+ 
+-	memset(pst, 0, sizeof(*pst));
+ 	pst->npc = npc;
+ 	pst->flow = flow;
++	pst->nix_intf = flow->nix_intf;
+ 
+ 	/* Use integral byte offset */
+ 	key_offset = pst->npc->keyx_len[flow->nix_intf];
+@@ -865,8 +864,12 @@ npc_parse_rule(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	       struct npc_parse_state *pst)
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++	struct roc_nix *roc_nix = roc_npc->roc_nix;
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	int err;
+ 
++	pst->nb_tx_queues = nix->nb_tx_queues;
++
+ 	/* Check attr */
+ 	err = npc_parse_attr(npc, attr, flow);
+ 	if (err)
+@@ -1446,6 +1449,7 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		return NULL;
+ 	}
+ 	memset(flow, 0, sizeof(*flow));
++	memset(&parse_state, 0, sizeof(parse_state));
+ 
+ 	rc = npc_parse_rule(roc_npc, attr, pattern, actions, flow,
+ 			    &parse_state);
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 26a43c12cb0f9..5984da1c1a352 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -39,6 +39,7 @@ enum roc_npc_item_type {
+ 	ROC_NPC_ITEM_TYPE_QINQ,
+ 	ROC_NPC_ITEM_TYPE_RAW,
+ 	ROC_NPC_ITEM_TYPE_MARK,
++	ROC_NPC_ITEM_TYPE_TX_QUEUE,
+ 	ROC_NPC_ITEM_TYPE_END,
+ };
+ 
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index 46f0b9c33da79..62e0ce21b2a3a 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -588,9 +588,47 @@ npc_mcam_set_channel(struct roc_npc_flow *flow,
+ 	flow->mcam_mask[0] |= (uint64_t)mask;
+ }
+ 
++static int
++npc_mcam_set_pf_func(struct npc *npc, struct roc_npc_flow *flow, uint16_t pf_func)
++{
++#define NPC_PF_FUNC_WIDTH    2
++#define NPC_KEX_PF_FUNC_MASK 0xFFFF
++	uint16_t nr_bytes, hdr_offset, key_offset, pf_func_offset;
++	uint8_t *flow_mcam_data, *flow_mcam_mask;
++	struct npc_lid_lt_xtract_info *xinfo;
++	bool pffunc_found = false;
++	uint16_t mask = 0xFFFF;
++	int i;
++
++	flow_mcam_data = (uint8_t *)flow->mcam_data;
++	flow_mcam_mask = (uint8_t *)flow->mcam_mask;
++
++	xinfo = &npc->prx_dxcfg[NIX_INTF_TX][NPC_LID_LA][NPC_LT_LA_IH_NIX_ETHER];
++
++	for (i = 0; i < NPC_MAX_LD; i++) {
++		nr_bytes = xinfo->xtract[i].len;
++		hdr_offset = xinfo->xtract[i].hdr_off;
++		key_offset = xinfo->xtract[i].key_off;
++
++		if (hdr_offset > 0 || nr_bytes < NPC_PF_FUNC_WIDTH)
++			continue;
++		else
++			pffunc_found = true;
++
++		pf_func_offset = key_offset + nr_bytes - NPC_PF_FUNC_WIDTH;
++		memcpy((void *)&flow_mcam_data[pf_func_offset], (uint8_t *)&pf_func,
++		       NPC_PF_FUNC_WIDTH);
++		memcpy((void *)&flow_mcam_mask[pf_func_offset], (uint8_t *)&mask,
++		       NPC_PF_FUNC_WIDTH);
++	}
++	if (!pffunc_found)
++		return -EINVAL;
++
++	return 0;
++}
++
+ int
+-npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow,
+-			 struct npc_parse_state *pst)
++npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_parse_state *pst)
+ {
+ 	struct npc_mcam_write_entry_req *req;
+ 	struct nix_inl_dev *inl_dev = NULL;
+@@ -669,6 +707,16 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow,
+ 	 */
+ 	req->entry_data.vtag_action = flow->vtag_action;
+ 
++	if (flow->nix_intf == NIX_INTF_TX) {
++		uint16_t pf_func = (flow->npc_action >> 4) & 0xffff;
++
++		pf_func = plt_cpu_to_be_16(pf_func);
++
++		rc = npc_mcam_set_pf_func(npc, flow, pf_func);
++		if (rc)
++			return rc;
++	}
++
+ 	for (idx = 0; idx < ROC_NPC_MAX_MCAM_WIDTH_DWORDS; idx++) {
+ 		req->entry_data.kw[idx] = flow->mcam_data[idx];
+ 		req->entry_data.kw_mask[idx] = flow->mcam_mask[idx];
+@@ -719,15 +767,6 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow,
+ 				flow->mcam_mask[0] |= (0x7ULL << la_offset);
+ 			}
+ 		}
+-	} else {
+-		uint16_t pf_func = (flow->npc_action >> 4) & 0xffff;
+-
+-		pf_func = plt_cpu_to_be_16(pf_func);
+-		req->entry_data.kw[0] |= ((uint64_t)pf_func << 32);
+-		req->entry_data.kw_mask[0] |= ((uint64_t)0xffff << 32);
+-
+-		flow->mcam_data[0] |= ((uint64_t)pf_func << 32);
+-		flow->mcam_mask[0] |= ((uint64_t)0xffff << 32);
+ 	}
+ 
+ 	rc = mbox_process_msg(mbox, (void *)&rsp);
+diff --git a/drivers/common/cnxk/roc_npc_parse.c b/drivers/common/cnxk/roc_npc_parse.c
+index f746b9cb6dfb7..126bbd5358a2b 100644
+--- a/drivers/common/cnxk/roc_npc_parse.c
++++ b/drivers/common/cnxk/roc_npc_parse.c
+@@ -180,6 +180,58 @@ npc_parse_higig2_hdr(struct npc_parse_state *pst)
+ 	return npc_update_parse_state(pst, &info, lid, lt, 0);
+ }
+ 
++int
++npc_parse_tx_queue(struct npc_parse_state *pst)
++{
++	struct nix_inst_hdr_s nix_inst_hdr, nix_inst_hdr_mask;
++	uint8_t hw_mask[NPC_MAX_EXTRACT_HW_LEN];
++	struct npc_parse_item_info parse_info;
++	const uint16_t *send_queue;
++	int lid, lt, rc = 0;
++
++	memset(&nix_inst_hdr, 0, sizeof(nix_inst_hdr));
++	memset(&nix_inst_hdr_mask, 0, sizeof(nix_inst_hdr_mask));
++	memset(&parse_info, 0, sizeof(parse_info));
++
++	if (pst->pattern->type != ROC_NPC_ITEM_TYPE_TX_QUEUE)
++		return 0;
++
++	if (pst->flow->nix_intf != NIX_INTF_TX)
++		return NPC_ERR_INVALID_SPEC;
++
++	lid = NPC_LID_LA;
++	lt = NPC_LT_LA_IH_NIX_ETHER;
++	send_queue = (const uint16_t *)pst->pattern->spec;
++
++	if (*send_queue >= pst->nb_tx_queues)
++		return NPC_ERR_INVALID_SPEC;
++
++	nix_inst_hdr.sq = *send_queue;
++	nix_inst_hdr_mask.sq = 0xFFFF;
++
++	parse_info.def_mask = NULL;
++	parse_info.spec = &nix_inst_hdr;
++	parse_info.mask = &nix_inst_hdr_mask;
++	parse_info.len = sizeof(nix_inst_hdr);
++	parse_info.def_mask = NULL;
++	parse_info.hw_hdr_len = 0;
++
++	memset(hw_mask, 0, sizeof(hw_mask));
++
++	parse_info.hw_mask = &hw_mask;
++	npc_get_hw_supp_mask(pst, &parse_info, lid, lt);
++
++	rc = npc_mask_is_supported(parse_info.mask, parse_info.hw_mask, parse_info.len);
++	if (!rc)
++		return NPC_ERR_INVALID_MASK;
++
++	rc = npc_update_parse_state(pst, &parse_info, lid, lt, 0);
++	if (rc)
++		return rc;
++
++	return 0;
++}
++
+ int
+ npc_parse_la(struct npc_parse_state *pst)
+ {
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 82c2d0aa06e64..30274e837bc09 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -200,6 +200,7 @@ struct npc_parse_state {
+ 	bool set_ipv6ext_ltype_mask;
+ 	bool is_second_pass_rule;
+ 	bool has_eth_type;
++	uint16_t nb_tx_queues;
+ };
+ 
+ enum npc_kpu_parser_flag {
+@@ -449,6 +450,7 @@ int npc_parse_mark_item(struct npc_parse_state *pst);
+ int npc_parse_pre_l2(struct npc_parse_state *pst);
+ int npc_parse_higig2_hdr(struct npc_parse_state *pst);
+ int npc_parse_cpt_hdr(struct npc_parse_state *pst);
++int npc_parse_tx_queue(struct npc_parse_state *pst);
+ int npc_parse_la(struct npc_parse_state *pst);
+ int npc_parse_lb(struct npc_parse_state *pst);
+ int npc_parse_lc(struct npc_parse_state *pst);
+-- 
+2.25.1
+

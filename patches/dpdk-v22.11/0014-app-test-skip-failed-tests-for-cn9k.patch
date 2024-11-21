@@ -1,0 +1,96 @@
+From 12befa9a6a7237763b3bac00a4d87211ab0d6ef6 Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Wed, 25 May 2022 12:37:11 +0200
+Subject: [PATCH 014/955] app/test: skip failed tests for cn9k
+
+Mark failed due to capabilities tests as skipped.
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Ic21794afb536e763d0f56e06d19522b5b5f96b9b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91615
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_security_inline_proto.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/app/test/test_security_inline_proto.c b/app/test/test_security_inline_proto.c
+index 79858e559f46a..304f11c97e563 100644
+--- a/app/test/test_security_inline_proto.c
++++ b/app/test/test_security_inline_proto.c
+@@ -62,6 +62,12 @@ test_inline_ipsec_sg(void)
+ #define ENCAP_DECAP_BURST_SZ		33
+ #define APP_REASS_TIMEOUT		10
+ 
++#define SKIP_ON_CN9K() do { \
++	if (rte_cryptodev_device_count_by_driver( \
++		rte_cryptodev_driver_id_get("crypto_cn9k")) > 0) \
++		return TEST_SKIPPED; \
++} while (0)
++
+ extern struct ipsec_test_data pkt_aes_128_gcm;
+ extern struct ipsec_test_data pkt_aes_192_gcm;
+ extern struct ipsec_test_data pkt_aes_256_gcm;
+@@ -2291,6 +2297,8 @@ test_ipsec_inline_proto_ipv4_set_dscp_0_inner_1(const void *data __rte_unused)
+ {
+ 	struct ipsec_test_flags flags;
+ 
++	SKIP_ON_CN9K();
++
+ 	memset(&flags, 0, sizeof(flags));
+ 
+ 	flags.dscp = TEST_IPSEC_SET_DSCP_0_INNER_1;
+@@ -2304,6 +2312,8 @@ test_ipsec_inline_proto_ipv4_set_dscp_1_inner_0(const void *data __rte_unused)
+ {
+ 	struct ipsec_test_flags flags;
+ 
++	SKIP_ON_CN9K();
++
+ 	memset(&flags, 0, sizeof(flags));
+ 
+ 	flags.dscp = TEST_IPSEC_SET_DSCP_1_INNER_0;
+@@ -2347,6 +2357,8 @@ test_ipsec_inline_proto_ipv6_set_dscp_0_inner_1(const void *data __rte_unused)
+ {
+ 	struct ipsec_test_flags flags;
+ 
++	SKIP_ON_CN9K();
++
+ 	memset(&flags, 0, sizeof(flags));
+ 
+ 	flags.ipv6 = true;
+@@ -2362,6 +2374,8 @@ test_ipsec_inline_proto_ipv6_set_dscp_1_inner_0(const void *data __rte_unused)
+ {
+ 	struct ipsec_test_flags flags;
+ 
++	SKIP_ON_CN9K();
++
+ 	memset(&flags, 0, sizeof(flags));
+ 
+ 	flags.ipv6 = true;
+@@ -2471,8 +2485,12 @@ test_ipsec_inline_proto_sa_pkt_soft_expiry(const void *data __rte_unused)
+ 		.sa_expiry_pkts_soft = true,
+ 		.plaintext_len = plaintext_len,
+ 	};
++
++	SKIP_ON_CN9K();
++
+ 	return test_ipsec_inline_proto_all(&flags);
+ }
++
+ static int
+ test_ipsec_inline_proto_sa_byte_soft_expiry(const void *data __rte_unused)
+ {
+@@ -2480,6 +2498,9 @@ test_ipsec_inline_proto_sa_byte_soft_expiry(const void *data __rte_unused)
+ 		.sa_expiry_bytes_soft = true,
+ 		.plaintext_len = plaintext_len,
+ 	};
++
++	SKIP_ON_CN9K();
++
+ 	return test_ipsec_inline_proto_all(&flags);
+ }
+ 
+-- 
+2.25.1
+

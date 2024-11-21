@@ -1,0 +1,179 @@
+From 3f10dd9523ee0f3519035fab4c92cf3469ee6250 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 30 Jun 2023 10:39:46 +0530
+Subject: [PATCH 611/955] marvell-ci: add MACsec autotest
+
+Added MACsec autotest to CI for 103 platform.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I939f35fef8971c50a8a550b6cba5d69422dde99d
+---
+ .../inline_macsec_autotest.sh                 | 58 +++++++++++++++++++
+ .../inline_macsec_autotest/meson.build        | 32 ++++++++++
+ marvell-ci/test/cnxk-tests/meson.build        |  1 +
+ marvell-ci/test/env/cn103.env                 | 11 ++++
+ marvell-ci/test/env/cn10k.env                 |  1 +
+ marvell-ci/test/env/cn9k.env                  |  1 +
+ 6 files changed, 104 insertions(+)
+ create mode 100755 marvell-ci/test/cnxk-tests/inline_macsec_autotest/inline_macsec_autotest.sh
+ create mode 100644 marvell-ci/test/cnxk-tests/inline_macsec_autotest/meson.build
+ create mode 100644 marvell-ci/test/env/cn103.env
+
+diff --git a/marvell-ci/test/cnxk-tests/inline_macsec_autotest/inline_macsec_autotest.sh b/marvell-ci/test/cnxk-tests/inline_macsec_autotest/inline_macsec_autotest.sh
+new file mode 100755
+index 0000000000000..ad95bd1735a0c
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/inline_macsec_autotest/inline_macsec_autotest.sh
+@@ -0,0 +1,58 @@
++#!/bin/bash
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++set -euo pipefail
++
++SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
++
++ETH_DEV=${ETH_DEV:-$(lspci -d :a063 | tail -1 | awk -e '{ print $1 }')}
++ETHERNET_DEVICE="$ETH_DEV"
++
++TEST_TYPE=$1
++
++if [[ -f $SCRIPTPATH/../../../../app/test/dpdk-test ]]; then
++	# This is running from build directory
++	DPDK_TEST_BIN=$SCRIPTPATH/../../../../app/test/dpdk-test
++elif [[ -f $SCRIPTPATH/../../dpdk-test ]]; then
++	# This is running from install directory
++	DPDK_TEST_BIN=$SCRIPTPATH/../../dpdk-test
++else
++	DPDK_TEST_BIN=$(which dpdk-test)
++	if [[ -z $DPDK_TEST_BIN ]]; then
++		echo "dpdk-test not found !!"
++		exit 1
++	fi
++fi
++
++declare -A cn103_inline_macsec_test_args
++
++register_cn103_inline_macsec_test() {
++        cn103_inline_macsec_test_args[$1]="${2-}"
++}
++
++run_cn103_inline_macsec_tests() {
++	for test in ${!cn103_inline_macsec_test_args[@]}; do
++		DPDK_TEST=$test $DPDK_TEST_BIN ${cn103_inline_macsec_test_args[$test]}
++	done
++}
++
++run_inline_macsec_tests() {
++	case $PLAT in
++		cn10*) run_cn103_inline_macsec_tests ;;
++	esac
++
++	for test in ${!cn103_inline_macsec_test_args[@]}; do
++		DPDK_TEST=$test $DPDK_TEST_BIN ${cn103_inline_macsec_test_args[$test]}
++	done
++}
++
++
++#					DPDK TEST NAME		TEST ARGS
++register_cn103_inline_macsec_test	inline_macsec_autotest	"-a $ETHERNET_DEVICE "
++
++case $TEST_TYPE in
++	inline_macsec_tests)
++		run_inline_macsec_tests
++		;;
++esac
+diff --git a/marvell-ci/test/cnxk-tests/inline_macsec_autotest/meson.build b/marvell-ci/test/cnxk-tests/inline_macsec_autotest/meson.build
+new file mode 100644
+index 0000000000000..12a74a657b979
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/inline_macsec_autotest/meson.build
+@@ -0,0 +1,32 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2023 Marvell.
++
++# Test script
++test_script = 'inline_macsec_autotest.sh'
++
++# Test name
++test_name = 'inline_macsec_autotest'
++
++# Test arguments
++test_args = 'inline_macsec_tests'
++
++# Test directory name relative to build directory.
++test_dir = meson.current_build_dir()
++
++# Copy the required scripts to build directory.
++run_command(copy_data, test_script)
++
++# Add the meson event test
++test(
++    test_name,
++    cnxk_test_script_wrapper,
++    env : ['DPDK_TEST=' + test_name, 'TEST_DIR=' + test_dir],
++    args : [test_script, test_args],
++    is_parallel : false,
++    suite : 'cnxk-tests')
++
++# Install the sample script
++install_data(
++    'inline_macsec_autotest.sh',
++    install_mode : 'rwxr-xr-x',
++    install_dir : 'bin/cnxk/inline_macsec_autotest')
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index e3a362a5a52ce..057f96f5aa669 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -53,6 +53,7 @@ test_subdirs = [
+         'port_ctrl',
+         'crypto_autotest',
+         'inline_ipsec_autotest',
++        'inline_macsec_autotest',
+         'tm_test',
+         'flow_perf',
+         'txrx_stats',
+diff --git a/marvell-ci/test/env/cn103.env b/marvell-ci/test/env/cn103.env
+new file mode 100644
+index 0000000000000..ef8800458e1cb
+--- /dev/null
++++ b/marvell-ci/test/env/cn103.env
+@@ -0,0 +1,11 @@
++#!/bin/bash
++
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
++
++RUN_TESTS="inline_macsec_autotest"
++
++# Export the path to this conf so that other scripts can source this conf.
++export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn103.env
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index acf643ce90775..d9f71b4b2d487 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -147,6 +147,7 @@ DEFAULT_SKIP_TESTS="
+ 	fib6_autotest
+ 	func_reentrancy_autotest
+ 	hash_autotest
++	inline_macsec_autotest
+ 	interrupt_autotest
+ 	ipfrag_autotest
+ 	lcores_autotest
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index 49382dee64a2b..cfce274b75afe 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -115,6 +115,7 @@ DEFAULT_SKIP_TESTS="
+ 	cpt_2nd_pass_flow
+ 	cnxk_mbuf_perf
+ 	inline_ipsec_autotest
++	inline_macsec_autotest
+ 	cnxk_ipsec_reassembly_perf
+ 	cnxk_multi_pool_pkt_tx
+ 	cnxk_multi_pool_pkt_tx_scalar
+-- 
+2.25.1
+

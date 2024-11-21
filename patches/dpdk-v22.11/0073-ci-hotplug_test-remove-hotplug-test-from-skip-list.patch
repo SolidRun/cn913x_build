@@ -1,0 +1,42 @@
+From 13bbaa08a94225f0b2a5478e338a485d50a8e77f Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Mon, 12 Dec 2022 17:34:02 +0530
+Subject: [PATCH 073/955] ci/hotplug_test: remove hotplug test from skip list
+
+Change-Id: I67ed9f7640d04a8062084f8de5349f5f87949ea2
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92398
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn10k.env | 1 -
+ marvell-ci/test/env/cn9k.env  | 1 -
+ 2 files changed, 2 deletions(-)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index bd714b2f9ca71..012e7fe1b0e68 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -70,7 +70,6 @@ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
+ 	cnxk_dpdk_event_tests
+-	cnxk_hotplug_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index 6f7b4900c406f..1b206fa0bd43c 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -69,7 +69,6 @@ TM_SETUP=${TM_SETUP:-1}
+ 
+ FIXME_SKIP_TESTS="
+ 	cnxk_dpdk_event_tests
+-	cnxk_hotplug_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+-- 
+2.25.1
+

@@ -1,0 +1,316 @@
+From 3e0f6ee407583236d0207241c04a9a1e5caebf90 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Fri, 21 Jul 2023 15:34:30 +0530
+Subject: [PATCH 006/513] app/dma-perf: add PCI device support
+
+Add support to test performance for "device to memory" and
+"memory to device" data transfer.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I428d2576586e670c8d8c8e0d4261a5f2a5d9d30f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109099
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ app/test-dma-perf/benchmark.c | 67 +++++++++++++++++++++++++++++++----
+ app/test-dma-perf/config.ini  | 37 +++++++++++++++++++
+ app/test-dma-perf/main.c      | 67 +++++++++++++++++++++++++++++++++++
+ app/test-dma-perf/main.h      |  6 ++++
+ 4 files changed, 170 insertions(+), 7 deletions(-)
+
+diff --git a/app/test-dma-perf/benchmark.c b/app/test-dma-perf/benchmark.c
+index 9b1f58c78c384..062c7d3699a2f 100644
+--- a/app/test-dma-perf/benchmark.c
++++ b/app/test-dma-perf/benchmark.c
+@@ -127,17 +127,54 @@ cache_flush_buf(__rte_unused struct rte_mbuf **array,
+ #endif
+ }
+ 
++static int
++vchan_data_populate(uint32_t dev_id, struct rte_dma_vchan_conf *qconf,
++		    struct test_configure *cfg)
++{
++	struct rte_dma_info info;
++
++	qconf->direction = cfg->transfer_dir;
++
++	rte_dma_info_get(dev_id, &info);
++	if (!(RTE_BIT64(qconf->direction) & info.dev_capa))
++		return -1;
++
++	qconf->nb_desc = cfg->ring_size.cur;
++
++	switch (qconf->direction) {
++	case RTE_DMA_DIR_MEM_TO_DEV:
++		qconf->dst_port.pcie.vfen = 1;
++		qconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
++		qconf->dst_port.pcie.coreid = cfg->dcoreid;
++		qconf->dst_port.pcie.vfid = cfg->vfid;
++		qconf->dst_port.pcie.pfid = cfg->pfid;
++		break;
++	case RTE_DMA_DIR_DEV_TO_MEM:
++		qconf->src_port.pcie.vfen = 1;
++		qconf->src_port.port_type = RTE_DMA_PORT_PCIE;
++		qconf->src_port.pcie.coreid = cfg->scoreid;
++		qconf->src_port.pcie.vfid = cfg->vfid;
++		qconf->src_port.pcie.pfid = cfg->pfid;
++		break;
++	case RTE_DMA_DIR_MEM_TO_MEM:
++	case RTE_DMA_DIR_DEV_TO_DEV:
++		break;
++	}
++
++	return 0;
++}
++
+ /* Configuration of device. */
+ static void
+-configure_dmadev_queue(uint32_t dev_id, uint32_t ring_size)
++configure_dmadev_queue(uint32_t dev_id, struct test_configure *cfg)
+ {
+ 	uint16_t vchan = 0;
+ 	struct rte_dma_info info;
+ 	struct rte_dma_conf dev_config = { .nb_vchans = 1 };
+-	struct rte_dma_vchan_conf qconf = {
+-		.direction = RTE_DMA_DIR_MEM_TO_MEM,
+-		.nb_desc = ring_size
+-	};
++	struct rte_dma_vchan_conf qconf = { 0 };
++
++	if (vchan_data_populate(dev_id, &qconf, cfg) != 0)
++		rte_exit(EXIT_FAILURE, "Error with vchan data populate.\n");
+ 
+ 	if (rte_dma_configure(dev_id, &dev_config) != 0)
+ 		rte_exit(EXIT_FAILURE, "Error with dma configure.\n");
+@@ -159,7 +196,6 @@ configure_dmadev_queue(uint32_t dev_id, uint32_t ring_size)
+ static int
+ config_dmadevs(struct test_configure *cfg)
+ {
+-	uint32_t ring_size = cfg->ring_size.cur;
+ 	struct lcore_dma_map_t *ldm = &cfg->lcore_dma_map;
+ 	uint32_t nb_workers = ldm->cnt;
+ 	uint32_t i;
+@@ -176,7 +212,7 @@ config_dmadevs(struct test_configure *cfg)
+ 		}
+ 
+ 		ldm->dma_ids[i] = dev_id;
+-		configure_dmadev_queue(dev_id, ring_size);
++		configure_dmadev_queue(dev_id, cfg);
+ 		++nb_dmadevs;
+ 	}
+ 
+@@ -309,6 +345,7 @@ setup_memory_env(struct test_configure *cfg, struct rte_mbuf ***srcs,
+ 	unsigned int buf_size = cfg->buf_size.cur;
+ 	unsigned int nr_sockets;
+ 	uint32_t nr_buf = cfg->nr_buf;
++	uint32_t i;
+ 
+ 	nr_sockets = rte_socket_count();
+ 	if (cfg->src_numa_node >= nr_sockets ||
+@@ -361,6 +398,22 @@ setup_memory_env(struct test_configure *cfg, struct rte_mbuf ***srcs,
+ 		return -1;
+ 	}
+ 
++	if (cfg->transfer_dir == RTE_DMA_DIR_DEV_TO_MEM) {
++		for (i = 0; i < nr_buf; i++) {
++			/* Using mbuf structure to hold remote iova address. */
++			rte_mbuf_iova_set(*srcs[i], (rte_iova_t)cfg->raddr);
++			((*srcs)[i])->data_off = 0;
++		}
++	}
++
++	if (cfg->transfer_dir == RTE_DMA_DIR_MEM_TO_DEV) {
++		for (i = 0; i < nr_buf; i++) {
++			/* Using mbuf structure to hold remote iova address. */
++			rte_mbuf_iova_set(*dsts[i], (rte_iova_t)cfg->raddr);
++			((*dsts)[i])->data_off = 0;
++		}
++	}
++
+ 	return 0;
+ }
+ 
+diff --git a/app/test-dma-perf/config.ini b/app/test-dma-perf/config.ini
+index 4d59234b2a723..cddcf93c6eaf7 100644
+--- a/app/test-dma-perf/config.ini
++++ b/app/test-dma-perf/config.ini
+@@ -38,6 +38,23 @@
+ 
+ ; "skip" To skip a test-case set skip to 1.
+ 
++; Parameters to be configured for data transfers from "mem to dev" and "dev to mem":
++; ==================================================================================
++; "direction" denotes the direction of data transfer. It can take 3 values:
++;    0 - mem to mem transfer
++;    1 - mem to dev transfer
++;    2 - dev to mem transfer
++; If not specified the default value is 0 (mem to mem transfer).
++
++; "raddr" remote iova address for "mem to dev" and "dev to mem" transfer.
++
++; "scoreid" denotes source PCIe core index.
++; "dcoreid" denotes destination PCIe core index.
++; "pfid" denotes PF-id to be used for data transfer
++; "vfid" denotes VF-id of PF-id to be used for data transfer.
++
++; =========== End of "mem to dev" and "dev to mem" config parameters. ==============
++
+ [case1]
+ type=DMA_MEM_COPY
+ mem_size=10
+@@ -52,6 +69,26 @@ lcore_dma=lcore10@0000:00:04.2, lcore11@0000:00:04.3
+ eal_args=--in-memory --file-prefix=test
+ 
+ [case2]
++skip=1
++type=DMA_MEM_COPY
++direction=2
++raddr=0x200000000
++scoreid=0
++dcoreid=0
++pfid=0
++vfid=0
++mem_size=10
++buf_size=64,4096,2,MUL
++dma_ring_size=1024
++kick_batch=32
++src_numa_node=0
++dst_numa_node=0
++cache_flush=0
++test_seconds=2
++lcore_dma=lcore10@0000:00:04.2, lcore11@0000:00:04.3
++eal_args=--in-memory --file-prefix=test
++
++[case3]
+ type=CPU_MEM_COPY
+ mem_size=10
+ buf_size=64,8192,2,MUL
+diff --git a/app/test-dma-perf/main.c b/app/test-dma-perf/main.c
+index c74f1d81bdd9b..4671ca53354dc 100644
+--- a/app/test-dma-perf/main.c
++++ b/app/test-dma-perf/main.c
+@@ -16,6 +16,7 @@
+ #include <rte_cfgfile.h>
+ #include <rte_string_fns.h>
+ #include <rte_lcore.h>
++#include <rte_dmadev.h>
+ 
+ #include "main.h"
+ 
+@@ -318,9 +319,11 @@ load_configs(const char *path)
+ 	struct test_configure *test_case;
+ 	char section_name[CFG_NAME_LEN];
+ 	const char *case_type;
++	const char *transfer_dir;
+ 	const char *lcore_dma;
+ 	const char *mem_size_str, *buf_size_str, *ring_size_str, *kick_batch_str;
+ 	const char *skip;
++	const char *raddr, *scoreid, *dcoreid, *vfid, *pfid;
+ 	int args_nr, nb_vp;
+ 	bool is_dma;
+ 
+@@ -358,6 +361,20 @@ load_configs(const char *path)
+ 		if (strcmp(case_type, DMA_MEM_COPY) == 0) {
+ 			test_case->test_type = TEST_TYPE_DMA_MEM_COPY;
+ 			test_case->test_type_str = DMA_MEM_COPY;
++
++			transfer_dir = rte_cfgfile_get_entry(cfgfile, section_name, "direction");
++			if (transfer_dir == NULL) {
++				printf("Transfer direction not configured."
++					" Defaulting it to MEM to MEM transfer.\n");
++				test_case->transfer_dir = RTE_DMA_DIR_MEM_TO_MEM;
++			} else
++				test_case->transfer_dir = (uint8_t)atoi(transfer_dir);
++
++			if (test_case->transfer_dir >= RTE_DMA_DIR_DEV_TO_DEV) {
++				printf("Error: Invalid transfer direction configured.\n");
++				test_case->is_valid = false;
++				continue;
++			}
+ 			is_dma = true;
+ 		} else if (strcmp(case_type, CPU_MEM_COPY) == 0) {
+ 			test_case->test_type = TEST_TYPE_CPU_MEM_COPY;
+@@ -369,6 +386,56 @@ load_configs(const char *path)
+ 			continue;
+ 		}
+ 
++		if (test_case->transfer_dir == RTE_DMA_DIR_MEM_TO_DEV ||
++			test_case->transfer_dir == RTE_DMA_DIR_DEV_TO_MEM) {
++			char *endptr;
++
++			raddr = rte_cfgfile_get_entry(cfgfile, section_name, "raddr");
++			if (raddr == NULL) {
++				printf("Error: No raddr configured for case%d.\n", i + 1);
++				test_case->is_valid = false;
++				continue;
++			}
++			test_case->raddr = strtoull(raddr, &endptr, 16);
++
++			vfid = rte_cfgfile_get_entry(cfgfile, section_name, "vfid");
++			if (vfid == NULL) {
++				printf("Error: No vfid configured for case%d.\n", i + 1);
++				test_case->is_valid = false;
++				continue;
++			}
++			test_case->vfid = (uint16_t)atoi(vfid);
++
++			pfid = rte_cfgfile_get_entry(cfgfile, section_name, "pfid");
++			if (pfid == NULL) {
++				printf("Error: No pfid configured for case%d.\n", i + 1);
++				test_case->is_valid = false;
++				continue;
++			}
++			test_case->pfid = (uint8_t)atoi(pfid);
++
++		}
++
++		if (test_case->transfer_dir == RTE_DMA_DIR_DEV_TO_MEM) {
++			scoreid = rte_cfgfile_get_entry(cfgfile, section_name, "scoreid");
++			if (scoreid == NULL) {
++				printf("Error: No scoreid configured for case%d.\n", i + 1);
++				test_case->is_valid = false;
++				continue;
++			}
++			test_case->scoreid = (uint8_t)atoi(scoreid);
++		}
++
++		if (test_case->transfer_dir == RTE_DMA_DIR_MEM_TO_DEV) {
++			dcoreid = rte_cfgfile_get_entry(cfgfile, section_name, "dcoreid");
++			if (dcoreid == NULL) {
++				printf("Error: No dcoreid configured for case%d.\n", i + 1);
++				test_case->is_valid = false;
++				continue;
++			}
++			test_case->dcoreid = (uint8_t)atoi(dcoreid);
++		}
++
+ 		test_case->src_numa_node = (int)atoi(rte_cfgfile_get_entry(cfgfile,
+ 								section_name, "src_numa_node"));
+ 		test_case->dst_numa_node = (int)atoi(rte_cfgfile_get_entry(cfgfile,
+diff --git a/app/test-dma-perf/main.h b/app/test-dma-perf/main.h
+index 32670151afe43..43860d62480cd 100644
+--- a/app/test-dma-perf/main.h
++++ b/app/test-dma-perf/main.h
+@@ -42,6 +42,7 @@ struct test_configure {
+ 	bool is_valid;
+ 	bool is_skip;
+ 	uint8_t test_type;
++	uint8_t transfer_dir;
+ 	const char *test_type_str;
+ 	uint16_t src_numa_node;
+ 	uint16_t dst_numa_node;
+@@ -57,6 +58,11 @@ struct test_configure {
+ 	uint16_t test_secs;
+ 	const char *eal_args;
+ 	uint8_t scenario_id;
++	uint8_t scoreid;
++	uint8_t dcoreid;
++	uint8_t pfid;
++	uint16_t vfid;
++	uint64_t raddr;
+ };
+ 
+ void mem_copy_benchmark(struct test_configure *cfg, bool is_dma);
+-- 
+2.25.1
+

@@ -1,0 +1,69 @@
+From f98db52a58664c8e78694a190c91ea0ac5418a85 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Fri, 15 Dec 2023 08:10:16 -0800
+Subject: [PATCH 766/955] ci: reduce zuc eea3 and eia3 crypto numbers
+
+Reduce zuc eea3 and eia3 crypto numbers.
+Dip is due to pdcp chain migration changes.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I3cb27f4f790cca2e1bf8ffeedbc4901bdc0ca1cb
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118350
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 4f5fda16d4addf082a824df990fbdebec8fcd33a)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119759
+---
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx        |  6 +++---
+ .../cn9k/rclk2200_sclk1100_cptclk1000.96xx           | 12 ++++++------
+ 2 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+index b0b27214a4c9e..ccd74cae6d0d9 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx
+@@ -24,13 +24,13 @@ aes-gcm-ipsec
+ 1504: 11.28 11.869 12.558
+ <end>
+ zuc-eia3
+-64: 18.147 25.186 24.776
++64: 17.412 25.186 24.776
+ 384: 18.001 18.588 18.446
+ 1504: 9.948 9.983 9.955
+ <end>
+ zuc-eea3
+-64: 27.808 52.624 52.692
+-384: 27.363 30.495 30.583
++64: 27.808 44.165 44.257
++384: 27.363 27.868 27.805
+ 1504: 12.041 12.06 12.068
+ <end>
+ modex
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx
+index 3cd22a86cc13e..08fb571d02f72 100644
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx
+@@ -24,14 +24,14 @@ aes-gcm-ipsec
+ 1504: 11.250 13.922 13.518
+ <end>
+ zuc-eia3
+-64: 5.071 10.026 19.638
+-384: 5.012 9.776 15.343
+-1504: 4.685 8.337 8.376
++64: 5.071 10.026 17.877
++384: 5.012 9.776 13.950
++1504: 4.685 7.560 7.490
+ <end>
+ zuc-eea3
+-64: 11.933 22.785 36.117
+-384: 11.818 20.689 23.455
+-1504: 9.348 9.756 9.260
++64: 11.933 22.785 34.211
++384: 11.818 20.689 22.068
++1504: 6.292 6.050 6.312
+ <end>
+ modex
+ 64: 1.601 1.604 1.604
+-- 
+2.25.1
+

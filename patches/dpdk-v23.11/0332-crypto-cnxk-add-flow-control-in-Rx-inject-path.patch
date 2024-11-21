@@ -1,0 +1,72 @@
+From f2b0a91b0885e659ae417b657fb6dc868c962999 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 8 May 2024 06:47:29 +0000
+Subject: [PATCH 332/513] crypto/cnxk: add flow control in Rx inject path
+
+Add flow control in Rx inject path to avoid over submission to CPT.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I9ffe379cb50572852fed43bd6ea55271babf87f7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/127641
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+(cherry picked from commit a380aa0dcd67c110c8fbf2eaf06300d00b3ceb7e)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128140
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 9ceeda7d1a4b2..b06f5015e0b40 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -1400,8 +1400,10 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 	struct rte_cryptodev *cdev = dev;
+ 	union cpt_res_s *hw_res = NULL;
+ 	struct cpt_inst_s *inst;
++	union cpt_fc_write_s fc;
+ 	struct cnxk_cpt_vf *vf;
+ 	struct rte_mbuf *m;
++	uint64_t *fc_addr;
+ 	uint64_t dptr;
+ 	int i;
+ 
+@@ -1413,13 +1415,24 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 
+ 	lmt_base = vf->rx_inj_lmtline.lmt_base;
+ 	io_addr = vf->rx_inj_lmtline.io_addr;
++	fc_addr = vf->rx_inj_lmtline.fc_addr;
+ 
+ 	ROC_LMT_BASE_ID_GET(lmt_base, lmt_id);
+ 	pf_func = vf->rx_inj_pf_func;
+ 
++	const uint32_t fc_thresh = vf->rx_inj_lmtline.fc_thresh;
++
+ again:
++	fc.u64[0] =
++		rte_atomic_load_explicit((RTE_ATOMIC(uint64_t) *)fc_addr, rte_memory_order_relaxed);
+ 	inst = (struct cpt_inst_s *)lmt_base;
+-	for (i = 0; i < RTE_MIN(CN10K_PKTS_PER_LOOP, nb_pkts); i++) {
++
++	i = 0;
++
++	if (unlikely(fc.s.qsize > fc_thresh))
++		goto exit;
++
++	for (; i < RTE_MIN(CN10K_PKTS_PER_LOOP, nb_pkts); i++) {
+ 
+ 		m = pkts[i];
+ 		sec_sess = (struct cn10k_sec_session *)sess[i];
+@@ -1486,6 +1499,7 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 		goto again;
+ 	}
+ 
++exit:
+ 	return count + i;
+ }
+ 
+-- 
+2.25.1
+

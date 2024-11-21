@@ -1,0 +1,99 @@
+From 6bdd17da0e7193c20c0ebd4b8a6f45cbaa5287b4 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Fri, 16 Feb 2024 03:34:09 -0800
+Subject: [PATCH 244/513] test/crypto: unit tests for padding in DTLS-1.2
+
+Add unit tests to verify the padding for DTLS-1.2.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Idafae2c7c9e0c6b9b0d01aa53380a7d55791fb06
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121910
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c | 60 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 60 insertions(+)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index e7bc5328b42cb..a1ecf6ec38e29 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12531,6 +12531,42 @@ test_dtls_1_2_record_proto_zero_len_non_app(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_dtls_1_2_record_proto_dm_opt_padding(void)
++{
++	return test_tls_record_proto_opt_padding(1, 0, RTE_SECURITY_VERSION_DTLS_1_2);
++}
++
++static int
++test_dtls_1_2_record_proto_dm_opt_padding_1(void)
++{
++	return test_tls_record_proto_opt_padding(25, 0, RTE_SECURITY_VERSION_DTLS_1_2);
++}
++
++static int
++test_dtls_1_2_record_proto_sg_opt_padding(void)
++{
++	return test_tls_record_proto_opt_padding(1, 5, RTE_SECURITY_VERSION_DTLS_1_2);
++}
++
++static int
++test_dtls_1_2_record_proto_sg_opt_padding_1(void)
++{
++	return test_tls_record_proto_opt_padding(8, 4, RTE_SECURITY_VERSION_DTLS_1_2);
++}
++
++static int
++test_dtls_1_2_record_proto_sg_opt_padding_2(void)
++{
++	return test_tls_record_proto_opt_padding(8, 5, RTE_SECURITY_VERSION_DTLS_1_2);
++}
++
++static int
++test_dtls_1_2_record_proto_sg_opt_padding_max(void)
++{
++	return test_tls_record_proto_opt_padding(33, 4, RTE_SECURITY_VERSION_DTLS_1_2);
++}
++
+ static int
+ test_tls_1_3_record_proto_corrupt_pkt(void)
+ {
+@@ -17852,6 +17888,30 @@ static struct unit_test_suite dtls12_record_proto_testsuite  = {
+ 			"Antireplay with window size 4096",
+ 			ut_setup_security, ut_teardown,
+ 			test_dtls_1_2_record_proto_antireplay4096),
++		TEST_CASE_NAMED_ST(
++			"DTLS record DM mode with optional padding < 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_dm_opt_padding),
++		TEST_CASE_NAMED_ST(
++			"DTLS record DM mode with optional padding > 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_dm_opt_padding_1),
++		TEST_CASE_NAMED_ST(
++			"DTLS record SG mode with optional padding < 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_sg_opt_padding),
++		TEST_CASE_NAMED_ST(
++			"DTLS record SG mode with optional padding > 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_sg_opt_padding_1),
++		TEST_CASE_NAMED_ST(
++			"DTLS record SG mode with optional padding > 2 blocks",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_sg_opt_padding_2),
++		TEST_CASE_NAMED_ST(
++			"DTLS record SG mode with optional padding > max range",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_sg_opt_padding_max),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+-- 
+2.25.1
+

@@ -1,0 +1,400 @@
+From 524e792d5a5a901fb8560c58d9b4743403c56cd8 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Fri, 3 Nov 2023 19:00:47 +0530
+Subject: [PATCH 707/955] common/cnxk: reserve CPT LF for Rx inject
+
+An additional CPT LF will be reserved and attached with
+inline device to enable RXC and use for Rx inject purpose.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I3cd4d2d8db4262565f6cc2ba18a9c21415e17630
+---
+ drivers/common/cnxk/roc_features.h     |  7 +++
+ drivers/common/cnxk/roc_nix.h          |  1 +
+ drivers/common/cnxk/roc_nix_inl.c      | 71 ++++++++++++++++++++++++--
+ drivers/common/cnxk/roc_nix_inl.h      |  5 +-
+ drivers/common/cnxk/roc_nix_inl_dev.c  | 61 +++++++++++++---------
+ drivers/common/cnxk/roc_nix_inl_priv.h |  7 ++-
+ drivers/common/cnxk/version.map        |  2 +
+ 7 files changed, 123 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index f4807ee271972..3b512be132b8f 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -83,4 +83,11 @@ roc_feature_nix_has_inl_ipsec(void)
+ {
+ 	return !roc_model_is_cnf10kb();
+ }
++
++static inline bool
++roc_feature_nix_has_rx_inject(void)
++{
++	return (roc_model_is_cn10ka_b0() || roc_model_is_cn10kb());
++}
++
+ #endif
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index c8d8f7e388914..0f0c974be57c1 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -473,6 +473,7 @@ struct roc_nix {
+ 	uint32_t meta_buf_sz;
+ 	bool force_rx_aura_bp;
+ 	bool custom_meta_aura_ena;
++	bool rx_inj_ena;
+ 	/* End of input parameters */
+ 	/* LMT line base for "Per Core Tx LMT line" mode*/
+ 	uintptr_t lmt_base;
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 07a90133ca69b..de8fd2a6054e8 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -474,6 +474,34 @@ roc_nix_inl_outb_lf_base_get(struct roc_nix *roc_nix)
+ 	return (struct roc_cpt_lf *)nix->cpt_lf_base;
+ }
+ 
++struct roc_cpt_lf *
++roc_nix_inl_inb_inj_lf_get(struct roc_nix *roc_nix)
++{
++	struct nix *nix;
++	struct idev_cfg *idev = idev_get_cfg();
++	struct nix_inl_dev *inl_dev = NULL;
++	struct roc_cpt_lf *lf = NULL;
++
++	if (!idev)
++		return NULL;
++
++	inl_dev = idev->nix_inl_dev;
++
++	if (!inl_dev && roc_nix == NULL)
++		return NULL;
++
++	nix = roc_nix_to_nix_priv(roc_nix);
++
++	if (nix->inb_inl_dev && inl_dev && inl_dev->attach_cptlf &&
++	    inl_dev->rx_inj_ena)
++		return &inl_dev->cpt_lf[inl_dev->nb_cptlf - 1];
++
++	lf = roc_nix_inl_outb_lf_base_get(roc_nix);
++	if (lf)
++		lf += roc_nix->outb_nb_crypto_qs;
++	return lf;
++}
++
+ uintptr_t
+ roc_nix_inl_outb_sa_base_get(struct roc_nix *roc_nix)
+ {
+@@ -512,6 +540,35 @@ roc_nix_inl_inb_sa_base_get(struct roc_nix *roc_nix, bool inb_inl_dev)
+ 	return (uintptr_t)nix->inb_sa_base;
+ }
+ 
++bool
++roc_nix_inl_inb_rx_inject_enable(struct roc_nix *roc_nix, bool inb_inl_dev)
++{
++	struct idev_cfg *idev = idev_get_cfg();
++	struct nix_inl_dev *inl_dev;
++	struct nix *nix = NULL;
++
++	if (idev == NULL)
++		return 0;
++
++	if (!inb_inl_dev && roc_nix == NULL)
++		return 0;
++
++	if (roc_nix) {
++		nix = roc_nix_to_nix_priv(roc_nix);
++		if (!nix->inl_inb_ena)
++			return 0;
++	}
++
++	if (inb_inl_dev) {
++		inl_dev = idev->nix_inl_dev;
++		if (inl_dev && inl_dev->attach_cptlf && inl_dev->rx_inj_ena &&
++		    roc_nix->rx_inj_ena)
++			return true;
++	}
++
++	return roc_nix->rx_inj_ena;
++}
++
+ uint32_t
+ roc_nix_inl_inb_spi_range(struct roc_nix *roc_nix, bool inb_inl_dev,
+ 			  uint32_t *min_spi, uint32_t *max_spi)
+@@ -941,6 +998,7 @@ roc_nix_inl_outb_init(struct roc_nix *roc_nix)
+ 	bool ctx_ilen_valid = false;
+ 	size_t sa_sz, ring_sz;
+ 	uint8_t ctx_ilen = 0;
++	bool rx_inj = false;
+ 	uint16_t sso_pffunc;
+ 	uint8_t eng_grpmask;
+ 	uint64_t blkaddr, i;
+@@ -958,6 +1016,12 @@ roc_nix_inl_outb_init(struct roc_nix *roc_nix)
+ 
+ 	/* Retrieve inline device if present */
+ 	inl_dev = idev->nix_inl_dev;
++	if (roc_nix->rx_inj_ena && !(nix->inb_inl_dev && inl_dev && inl_dev->attach_cptlf &&
++				     inl_dev->rx_inj_ena)) {
++		nb_lf++;
++		rx_inj = true;
++	}
++
+ 	sso_pffunc = inl_dev ? inl_dev->dev.pf_func : idev_sso_pffunc_get();
+ 	/* Use sso_pffunc if explicitly requested */
+ 	if (roc_nix->ipsec_out_sso_pffunc)
+@@ -986,7 +1050,8 @@ roc_nix_inl_outb_init(struct roc_nix *roc_nix)
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_SE_IE |
+ 		       1ULL << ROC_CPT_DFLT_ENG_GRP_AE);
+ 	rc = cpt_lfs_alloc(dev, eng_grpmask, blkaddr,
+-			   !roc_nix->ipsec_out_sso_pffunc, ctx_ilen_valid, ctx_ilen, false, 0);
++			   !roc_nix->ipsec_out_sso_pffunc, ctx_ilen_valid, ctx_ilen,
++			   rx_inj, nb_lf - 1);
+ 	if (rc) {
+ 		plt_err("Failed to alloc CPT LF resources, rc=%d", rc);
+ 		goto lf_detach;
+@@ -1632,7 +1697,7 @@ roc_nix_inl_sa_sync(struct roc_nix *roc_nix, void *sa, bool inb,
+ 	if (inb && get_inl_lf) {
+ 		outb_lf = NULL;
+ 		if (inl_dev && inl_dev->attach_cptlf)
+-			outb_lf = &inl_dev->cpt_lf;
++			outb_lf = &inl_dev->cpt_lf[0];
+ 	}
+ 
+ 	if (outb_lf) {
+@@ -1696,7 +1761,7 @@ roc_nix_inl_ctx_write(struct roc_nix *roc_nix, void *sa_dptr, void *sa_cptr,
+ 	if (inb && get_inl_lf) {
+ 		outb_lf = NULL;
+ 		if (inl_dev && inl_dev->attach_cptlf)
+-			outb_lf = &inl_dev->cpt_lf;
++			outb_lf = &inl_dev->cpt_lf[0];
+ 	}
+ 
+ 	if (outb_lf) {
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index f5ce26f03f8b1..8acd7e054565b 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -96,9 +96,10 @@ struct roc_nix_inl_dev {
+ 	uint32_t nb_meta_bufs;
+ 	uint32_t meta_buf_sz;
+ 	uint32_t max_ipsec_rules;
++	uint8_t rx_inj_ena; /* Rx Inject Enable */
+ 	/* End of input parameters */
+ 
+-#define ROC_NIX_INL_MEM_SZ (1280)
++#define ROC_NIX_INL_MEM_SZ (1408)
+ 	uint8_t reserved[ROC_NIX_INL_MEM_SZ] __plt_cache_aligned;
+ } __plt_cache_aligned;
+ 
+@@ -121,6 +122,7 @@ int __roc_api roc_nix_inl_inb_fini(struct roc_nix *roc_nix);
+ bool __roc_api roc_nix_inl_inb_is_enabled(struct roc_nix *roc_nix);
+ uintptr_t __roc_api roc_nix_inl_inb_sa_base_get(struct roc_nix *roc_nix,
+ 						bool inl_dev_sa);
++bool __roc_api roc_nix_inl_inb_rx_inject_enable(struct roc_nix *roc_nix, bool inl_dev_sa);
+ uint32_t __roc_api roc_nix_inl_inb_spi_range(struct roc_nix *roc_nix,
+ 					     bool inl_dev_sa, uint32_t *min,
+ 					     uint32_t *max);
+@@ -150,6 +152,7 @@ bool __roc_api roc_nix_inl_outb_is_enabled(struct roc_nix *roc_nix);
+ uintptr_t __roc_api roc_nix_inl_outb_sa_base_get(struct roc_nix *roc_nix);
+ struct roc_cpt_lf *__roc_api
+ roc_nix_inl_outb_lf_base_get(struct roc_nix *roc_nix);
++struct roc_cpt_lf *__roc_api roc_nix_inl_inb_inj_lf_get(struct roc_nix *roc_nix);
+ uint16_t __roc_api roc_nix_inl_outb_sso_pffunc_get(struct roc_nix *roc_nix);
+ int __roc_api roc_nix_inl_cb_register(roc_nix_inl_sso_work_cb_t cb, void *args);
+ int __roc_api roc_nix_inl_cb_unregister(roc_nix_inl_sso_work_cb_t cb,
+diff --git a/drivers/common/cnxk/roc_nix_inl_dev.c b/drivers/common/cnxk/roc_nix_inl_dev.c
+index a30bb55412aeb..7f6ca1232a3d7 100644
+--- a/drivers/common/cnxk/roc_nix_inl_dev.c
++++ b/drivers/common/cnxk/roc_nix_inl_dev.c
+@@ -174,9 +174,9 @@ nix_inl_nix_ipsec_cfg(struct nix_inl_dev *inl_dev, bool ena)
+ static int
+ nix_inl_cpt_setup(struct nix_inl_dev *inl_dev, bool inl_dev_sso)
+ {
+-	struct roc_cpt_lf *lf = &inl_dev->cpt_lf;
+ 	struct dev *dev = &inl_dev->dev;
+ 	bool ctx_ilen_valid = false;
++	struct roc_cpt_lf *lf;
+ 	uint8_t eng_grpmask;
+ 	uint8_t ctx_ilen = 0;
+ 	int rc;
+@@ -194,27 +194,29 @@ nix_inl_cpt_setup(struct nix_inl_dev *inl_dev, bool inl_dev_sso)
+ 	}
+ 
+ 	rc = cpt_lfs_alloc(dev, eng_grpmask, RVU_BLOCK_ADDR_CPT0, inl_dev_sso, ctx_ilen_valid,
+-			   ctx_ilen, false, 0);
++			   ctx_ilen, inl_dev->rx_inj_ena, inl_dev->nb_cptlf - 1);
+ 	if (rc) {
+ 		plt_err("Failed to alloc CPT LF resources, rc=%d", rc);
+ 		return rc;
+ 	}
+ 
+-	/* Setup CPT LF for submitting control opcode */
+-	lf = &inl_dev->cpt_lf;
+-	lf->lf_id = 0;
+-	lf->nb_desc = 0; /* Set to default */
+-	lf->dev = &inl_dev->dev;
+-	lf->msixoff = inl_dev->cpt_msixoff;
+-	lf->pci_dev = inl_dev->pci_dev;
++	for (int i = 0; i < inl_dev->nb_cptlf; i++) {
++		/* Setup CPT LF for submitting control opcode */
++		lf = &inl_dev->cpt_lf[i];
++		lf->lf_id = i;
++		lf->nb_desc = 0; /* Set to default */
++		lf->dev = &inl_dev->dev;
++		lf->msixoff = inl_dev->cpt_msixoff[i];
++		lf->pci_dev = inl_dev->pci_dev;
+ 
+-	rc = cpt_lf_init(lf);
+-	if (rc) {
+-		plt_err("Failed to initialize CPT LF, rc=%d", rc);
+-		goto lf_free;
+-	}
++		rc = cpt_lf_init(lf);
++		if (rc) {
++			plt_err("Failed to initialize CPT LF, rc=%d", rc);
++			goto lf_free;
++		}
+ 
+-	roc_cpt_iq_enable(lf);
++		roc_cpt_iq_enable(lf);
++	}
+ 	return 0;
+ lf_free:
+ 	rc |= cpt_lfs_free(dev);
+@@ -224,21 +226,22 @@ nix_inl_cpt_setup(struct nix_inl_dev *inl_dev, bool inl_dev_sso)
+ static int
+ nix_inl_cpt_release(struct nix_inl_dev *inl_dev)
+ {
+-	struct roc_cpt_lf *lf = &inl_dev->cpt_lf;
+ 	struct dev *dev = &inl_dev->dev;
+-	int rc;
++	int rc, i;
+ 
+ 	if (!inl_dev->attach_cptlf)
+ 		return 0;
+ 
+ 	/* Cleanup CPT LF queue */
+-	cpt_lf_fini(lf);
++	for (i = 0; i < inl_dev->nb_cptlf; i++)
++		cpt_lf_fini(&inl_dev->cpt_lf[i]);
+ 
+ 	/* Free LF resources */
+ 	rc = cpt_lfs_free(dev);
+-	if (!rc)
+-		lf->dev = NULL;
+-	else
++	if (!rc) {
++		for (i = 0; i < inl_dev->nb_cptlf; i++)
++			inl_dev->cpt_lf[i].dev = NULL;
++	} else
+ 		plt_err("Failed to free CPT LF resources, rc=%d", rc);
+ 	return rc;
+ }
+@@ -533,7 +536,7 @@ nix_inl_lf_attach(struct nix_inl_dev *inl_dev)
+ 	req->ssow = 1;
+ 	req->sso = 1;
+ 	if (inl_dev->attach_cptlf) {
+-		req->cptlfs = 1;
++		req->cptlfs = inl_dev->nb_cptlf;
+ 		req->cpt_blkaddr = RVU_BLOCK_ADDR_CPT0;
+ 	}
+ 
+@@ -550,7 +553,9 @@ nix_inl_lf_attach(struct nix_inl_dev *inl_dev)
+ 	inl_dev->nix_msixoff = msix_rsp->nix_msixoff;
+ 	inl_dev->ssow_msixoff = msix_rsp->ssow_msixoff[0];
+ 	inl_dev->sso_msixoff = msix_rsp->sso_msixoff[0];
+-	inl_dev->cpt_msixoff = msix_rsp->cptlf_msixoff[0];
++
++	for (int i = 0; i < inl_dev->nb_cptlf; i++)
++		inl_dev->cpt_msixoff[i] = msix_rsp->cptlf_msixoff[i];
+ 
+ 	nix_blkaddr = nix_get_blkaddr(dev);
+ 	inl_dev->is_nix1 = (nix_blkaddr == RVU_BLOCK_ADDR_NIX1);
+@@ -913,6 +918,12 @@ roc_nix_inl_dev_init(struct roc_nix_inl_dev *roc_inl_dev)
+ 	inl_dev->meta_buf_sz = roc_inl_dev->meta_buf_sz;
+ 	inl_dev->soft_exp_poll_freq = roc_inl_dev->soft_exp_poll_freq;
+ 
++	if (roc_inl_dev->rx_inj_ena) {
++		inl_dev->rx_inj_ena = 1;
++		inl_dev->nb_cptlf = NIX_INL_CPT_LF;
++	} else
++		inl_dev->nb_cptlf = 1;
++
+ 	if (roc_inl_dev->spb_drop_pc)
+ 		inl_dev->spb_drop_pc = roc_inl_dev->spb_drop_pc;
+ 	if (roc_inl_dev->lpb_drop_pc)
+@@ -1069,7 +1080,7 @@ roc_nix_inl_dev_cpt_setup(bool use_inl_dev_sso)
+ 		return -ENOENT;
+ 	inl_dev = idev->nix_inl_dev;
+ 
+-	if (inl_dev->cpt_lf.dev != NULL)
++	if (inl_dev->cpt_lf[0].dev != NULL)
+ 		return -EBUSY;
+ 
+ 	return nix_inl_cpt_setup(inl_dev, use_inl_dev_sso);
+@@ -1085,7 +1096,7 @@ roc_nix_inl_dev_cpt_release(void)
+ 		return -ENOENT;
+ 	inl_dev = idev->nix_inl_dev;
+ 
+-	if (inl_dev->cpt_lf.dev == NULL)
++	if (inl_dev->cpt_lf[0].dev == NULL)
+ 		return 0;
+ 
+ 	return nix_inl_cpt_release(inl_dev);
+diff --git a/drivers/common/cnxk/roc_nix_inl_priv.h b/drivers/common/cnxk/roc_nix_inl_priv.h
+index 3217f4ebc17b3..5afc7d665511a 100644
+--- a/drivers/common/cnxk/roc_nix_inl_priv.h
++++ b/drivers/common/cnxk/roc_nix_inl_priv.h
+@@ -7,6 +7,7 @@
+ #include <sys/types.h>
+ 
+ #define NIX_INL_META_SIZE 384u
++#define NIX_INL_CPT_LF	2
+ 
+ struct nix_inl_dev;
+ struct nix_inl_qint {
+@@ -31,7 +32,7 @@ struct nix_inl_dev {
+ 	uint16_t nix_msixoff;
+ 	uint16_t ssow_msixoff;
+ 	uint16_t sso_msixoff;
+-	uint16_t cpt_msixoff;
++	uint16_t cpt_msixoff[NIX_INL_CPT_LF];
+ 
+ 	/* SSO data */
+ 	uint32_t xaq_buf_size;
+@@ -62,9 +63,10 @@ struct nix_inl_dev {
+ 	/* NIX/CPT data */
+ 	void *inb_sa_base;
+ 	uint16_t inb_sa_sz;
++	uint8_t nb_cptlf;
+ 
+ 	/* CPT data */
+-	struct roc_cpt_lf cpt_lf;
++	struct roc_cpt_lf cpt_lf[NIX_INL_CPT_LF];
+ 
+ 	/* OUTB soft expiry poll thread */
+ 	plt_thread_t soft_exp_poll_thread;
+@@ -91,6 +93,7 @@ struct nix_inl_dev {
+ 	bool ts_ena;
+ 	uint32_t nb_meta_bufs;
+ 	uint32_t meta_buf_sz;
++	uint8_t rx_inj_ena; /* Rx Inject Enable */
+ 
+ 	/* NPC */
+ 	int *ipsec_index;
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index f42b66126df3e..dd0cfb998d4f8 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -210,6 +210,8 @@ INTERNAL {
+ 	roc_nix_inl_eng_caps_get;
+ 	roc_nix_inl_inb_is_enabled;
+ 	roc_nix_inl_inb_init;
++	roc_nix_inl_inb_inj_lf_get;
++	roc_nix_inl_inb_rx_inject_enable;
+ 	roc_nix_inl_inb_sa_base_get;
+ 	roc_nix_inl_inb_sa_get;
+ 	roc_nix_inl_inb_spi_range;
+-- 
+2.25.1
+

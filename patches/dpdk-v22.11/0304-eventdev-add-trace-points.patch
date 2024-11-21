@@ -1,0 +1,1277 @@
+From 8a8c76d75726ed96ff981ee45ae02ab08458ef15 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Mon, 23 Jan 2023 12:32:57 +0530
+Subject: [PATCH 304/955] eventdev: add trace points
+
+Add trace points for eventdev functions.
+
+Change-Id: I124e4f9726da2555d161d5f980038e3287305e7e
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94994
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ lib/eventdev/eventdev_trace.h           | 495 +++++++++++++++++++++++-
+ lib/eventdev/eventdev_trace_points.c    | 159 ++++++++
+ lib/eventdev/rte_event_crypto_adapter.c |  18 +-
+ lib/eventdev/rte_event_eth_rx_adapter.c |  31 +-
+ lib/eventdev/rte_event_eth_tx_adapter.c |  21 +-
+ lib/eventdev/rte_event_ring.c           |   9 +
+ lib/eventdev/rte_event_timer_adapter.c  |  13 +
+ lib/eventdev/rte_eventdev.c             |  49 ++-
+ 8 files changed, 782 insertions(+), 13 deletions(-)
+
+diff --git a/lib/eventdev/eventdev_trace.h b/lib/eventdev/eventdev_trace.h
+index cf3b2b0cd8845..f008ef0091320 100644
+--- a/lib/eventdev/eventdev_trace.h
++++ b/lib/eventdev/eventdev_trace.h
+@@ -63,6 +63,7 @@ RTE_TRACE_POINT(
+ 	rte_trace_point_emit_u16(port_conf->enqueue_depth);
+ 	rte_trace_point_emit_u32(port_conf->event_port_cfg);
+ 	rte_trace_point_emit_int(rc);
++	rte_trace_point_emit_ptr(port_conf);
+ )
+ 
+ RTE_TRACE_POINT(
+@@ -250,16 +251,17 @@ RTE_TRACE_POINT(
+ 
+ RTE_TRACE_POINT(
+ 	rte_eventdev_trace_crypto_adapter_create,
+-	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint8_t dev_id, void *adapter,
+-		struct rte_event_port_conf *port_conf, uint8_t mode),
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint8_t dev_id,
++		struct rte_event_port_conf *port_config, int mode, int ret),
+ 	rte_trace_point_emit_u8(adptr_id);
+ 	rte_trace_point_emit_u8(dev_id);
+-	rte_trace_point_emit_ptr(adapter);
+-	rte_trace_point_emit_u8(mode);
+-	rte_trace_point_emit_i32(port_conf->new_event_threshold);
+-	rte_trace_point_emit_u16(port_conf->dequeue_depth);
+-	rte_trace_point_emit_u16(port_conf->enqueue_depth);
+-	rte_trace_point_emit_u32(port_conf->event_port_cfg);
++	rte_trace_point_emit_ptr(port_config);
++	rte_trace_point_emit_i32(port_config->new_event_threshold);
++	rte_trace_point_emit_u16(port_config->dequeue_depth);
++	rte_trace_point_emit_u16(port_config->enqueue_depth);
++	rte_trace_point_emit_u32(port_config->event_port_cfg);
++	rte_trace_point_emit_int(mode);
++	rte_trace_point_emit_int(ret);
+ )
+ 
+ RTE_TRACE_POINT(
+@@ -303,6 +305,483 @@ RTE_TRACE_POINT(
+ 	rte_trace_point_emit_u8(adptr_id);
+ )
+ 
++RTE_TRACE_POINT(
++	rte_eventdev_trace_crypto_adapter_event_port_get,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint8_t event_port_id),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u8(event_port_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_crypto_adapter_service_id_get,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint32_t service_id),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u32(service_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_attr_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev, uint32_t attr_id,
++		uint32_t attr_value),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev);
++	rte_trace_point_emit_u32(attr_id);
++	rte_trace_point_emit_u32(attr_value);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_get_dev_id,
++	RTE_TRACE_POINT_ARGS(const char *name, int dev_id),
++	rte_trace_point_emit_string(name);
++	rte_trace_point_emit_int(dev_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_info_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev_info, const void *dev),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev_info);
++	rte_trace_point_emit_ptr(dev);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_service_id_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint32_t service_id),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u32(service_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_socket_id,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev, int socket_id),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev);
++	rte_trace_point_emit_int(socket_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_stop_flush_callback_register,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *callback, const void *userdata),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(callback);
++	rte_trace_point_emit_ptr(userdata);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_caps_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint16_t eth_port_id),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u16(eth_port_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_cb_register,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint16_t eth_dev_id, const void *cb_fn,
++		const void *cb_arg),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u16(eth_dev_id);
++	rte_trace_point_emit_ptr(cb_fn);
++	rte_trace_point_emit_ptr(cb_arg);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_create_with_params,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint8_t dev_id,
++		const struct rte_event_port_conf *port_config,
++		const struct rte_event_eth_rx_adapter_params *rxa_params,
++		int ret),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(port_config);
++	rte_trace_point_emit_i32(port_config->new_event_threshold);
++	rte_trace_point_emit_u16(port_config->dequeue_depth);
++	rte_trace_point_emit_u16(port_config->enqueue_depth);
++	rte_trace_point_emit_u32(port_config->event_port_cfg);
++	rte_trace_point_emit_ptr(rxa_params);
++	rte_trace_point_emit_u16(rxa_params->event_buf_size);
++	rte_trace_point_emit_int(ret);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_service_id_get,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint32_t service_id),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u32(service_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_event_port_get,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint8_t event_port_id),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u8(event_port_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_vector_limits_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint16_t eth_port_id,
++		uint16_t min_sz, uint16_t max_sz, uint8_t log2_sz,
++		uint64_t min_timeout_ns, uint64_t max_timeout_ns, int ret),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u16(eth_port_id);
++	rte_trace_point_emit_u16(min_sz);
++	rte_trace_point_emit_u16(max_sz);
++	rte_trace_point_emit_u8(log2_sz);
++	rte_trace_point_emit_u64(min_timeout_ns);
++	rte_trace_point_emit_u64(max_timeout_ns);
++	rte_trace_point_emit_int(ret);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_tx_adapter_caps_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev, uint16_t eth_port_id,
++		const void *eth_dev),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev);
++	rte_trace_point_emit_u16(eth_port_id);
++	rte_trace_point_emit_ptr(eth_dev);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_tx_adapter_event_port_get,
++	RTE_TRACE_POINT_ARGS(uint8_t id),
++	rte_trace_point_emit_u8(id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_tx_adapter_service_id_get,
++	RTE_TRACE_POINT_ARGS(uint8_t id, uint32_t service_id),
++	rte_trace_point_emit_u8(id);
++	rte_trace_point_emit_u32(service_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_port_attr_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev, uint8_t port_id,
++		uint32_t attr_id, uint32_t attr_value),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev);
++	rte_trace_point_emit_u8(port_id);
++	rte_trace_point_emit_u32(attr_id);
++	rte_trace_point_emit_u32(attr_value);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_port_default_conf_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev, uint8_t port_id,
++		const struct rte_event_port_conf *port_conf),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev);
++	rte_trace_point_emit_u8(port_id);
++	rte_trace_point_emit_ptr(port_conf);
++	rte_trace_point_emit_i32(port_conf->new_event_threshold);
++	rte_trace_point_emit_u16(port_conf->dequeue_depth);
++	rte_trace_point_emit_u16(port_conf->enqueue_depth);
++	rte_trace_point_emit_u32(port_conf->event_port_cfg);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_port_links_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t port_id, int count),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u8(port_id);
++	rte_trace_point_emit_int(count);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_port_unlinks_in_progress,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t port_id),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u8(port_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_queue_attr_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev, uint8_t queue_id,
++		uint32_t attr_id, uint32_t attr_value),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev);
++	rte_trace_point_emit_u8(queue_id);
++	rte_trace_point_emit_u32(attr_id);
++	rte_trace_point_emit_u32(attr_value);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_queue_default_conf_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev, uint8_t queue_id,
++		const struct rte_event_queue_conf *queue_conf),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev);
++	rte_trace_point_emit_u8(queue_id);
++	rte_trace_point_emit_ptr(queue_conf);
++	rte_trace_point_emit_u32(queue_conf->nb_atomic_flows);
++	rte_trace_point_emit_u32(queue_conf->nb_atomic_order_sequences);
++	rte_trace_point_emit_u32(queue_conf->event_queue_cfg);
++	rte_trace_point_emit_u8(queue_conf->schedule_type);
++	rte_trace_point_emit_u8(queue_conf->priority);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_ring_create,
++	RTE_TRACE_POINT_ARGS(const char *name, unsigned int count,
++		int socket_id, unsigned int flags),
++	rte_trace_point_emit_string(name);
++	rte_trace_point_emit_u32(count);
++	rte_trace_point_emit_int(socket_id);
++	rte_trace_point_emit_u32(flags);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_ring_free,
++	RTE_TRACE_POINT_ARGS(const char *name),
++	rte_trace_point_emit_string(name);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_ring_init,
++	RTE_TRACE_POINT_ARGS(const void *r, const char *name,
++		unsigned int count, unsigned int flags),
++	rte_trace_point_emit_ptr(r);
++	rte_trace_point_emit_string(name);
++	rte_trace_point_emit_u32(count);
++	rte_trace_point_emit_u32(flags);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_ring_lookup,
++	RTE_TRACE_POINT_ARGS(const char *name),
++	rte_trace_point_emit_string(name);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_timer_adapter_caps_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id),
++	rte_trace_point_emit_u8(dev_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_timer_adapter_get_info,
++	RTE_TRACE_POINT_ARGS(const void *adapter,
++		const struct rte_event_timer_adapter_info *adapter_info),
++	rte_trace_point_emit_ptr(adapter);
++	rte_trace_point_emit_ptr(adapter_info);
++	rte_trace_point_emit_u64(adapter_info->min_resolution_ns);
++	rte_trace_point_emit_u64(adapter_info->max_tmo_ns);
++	rte_trace_point_emit_u32(adapter_info->caps);
++	rte_trace_point_emit_u16(adapter_info->event_dev_port_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_timer_adapter_lookup,
++	RTE_TRACE_POINT_ARGS(uint16_t adapter_id, const void *adapter),
++	rte_trace_point_emit_u16(adapter_id);
++	rte_trace_point_emit_ptr(adapter);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_timer_adapter_service_id_get,
++	RTE_TRACE_POINT_ARGS(const struct rte_event_timer_adapter *adapter,
++		uint32_t service_id),
++	rte_trace_point_emit_ptr(adapter);
++	rte_trace_point_emit_u32(service_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_vector_pool_create,
++	RTE_TRACE_POINT_ARGS(const void *mp, const char *name, int socket_id,
++		uint32_t size, uint32_t cache_size, uint32_t elt_size),
++	rte_trace_point_emit_ptr(mp);
++	rte_trace_point_emit_string(name);
++	rte_trace_point_emit_int(socket_id);
++	rte_trace_point_emit_u32(size);
++	rte_trace_point_emit_u32(cache_size);
++	rte_trace_point_emit_u32(elt_size);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_queue_conf_get,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint16_t eth_dev_id,
++		uint16_t rx_queue_id, const void *queue_conf),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u16(eth_dev_id);
++	rte_trace_point_emit_u16(rx_queue_id);
++	rte_trace_point_emit_ptr(queue_conf);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_queue_attr_set,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint8_t queue_id, uint32_t attr_id,
++		uint64_t attr_value),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u8(queue_id);
++	rte_trace_point_emit_u32(attr_id);
++	rte_trace_point_emit_u64(attr_value);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_port_quiesce,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev, uint8_t port_id, const void *args),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev);
++	rte_trace_point_emit_u8(port_id);
++	rte_trace_point_emit_ptr(args);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_crypto_adapter_caps_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, const void *dev, uint8_t cdev_id,
++		const void *cdev),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_ptr(dev);
++	rte_trace_point_emit_u8(cdev_id);
++	rte_trace_point_emit_ptr(cdev);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_dequeue_timeout_ticks,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint64_t ns,
++		const void *timeout_ticks),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u64(ns);
++	rte_trace_point_emit_ptr(timeout_ticks);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_crypto_adapter_stats_get,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, const void *stats,
++		uint64_t event_poll_count, uint64_t event_deq_count,
++		uint64_t crypto_enq_count, uint64_t crypto_enq_fail,
++		uint64_t crypto_deq_count, uint64_t event_enq_count,
++		uint64_t event_enq_retry_count, uint64_t event_enq_fail_count),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_ptr(stats);
++	rte_trace_point_emit_u64(event_poll_count);
++	rte_trace_point_emit_u64(event_deq_count);
++	rte_trace_point_emit_u64(crypto_enq_count);
++	rte_trace_point_emit_u64(crypto_enq_fail);
++	rte_trace_point_emit_u64(crypto_deq_count);
++	rte_trace_point_emit_u64(event_enq_count);
++	rte_trace_point_emit_u64(event_enq_retry_count);
++	rte_trace_point_emit_u64(event_enq_fail_count);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_crypto_adapter_stats_reset,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id),
++	rte_trace_point_emit_u8(adptr_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_stats_get,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, const void *stats),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_ptr(stats);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_crypto_adapter_vector_limits_get,
++	RTE_TRACE_POINT_ARGS(uint8_t dev_id, uint16_t cdev_id,
++		const void *limits),
++	rte_trace_point_emit_u8(dev_id);
++	rte_trace_point_emit_u16(cdev_id);
++	rte_trace_point_emit_ptr(limits);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_queue_stats_get,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint16_t eth_dev_id,
++		uint16_t rx_queue_id, const void *stats),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u16(eth_dev_id);
++	rte_trace_point_emit_u16(rx_queue_id);
++	rte_trace_point_emit_ptr(stats);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_stats_reset,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id),
++	rte_trace_point_emit_u8(adptr_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_queue_stats_reset,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint16_t eth_dev_id,
++		uint16_t rx_queue_id),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u16(eth_dev_id);
++	rte_trace_point_emit_u16(rx_queue_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_rx_adapter_instance_get,
++	RTE_TRACE_POINT_ARGS(uint16_t eth_dev_id, uint16_t rx_queue_id,
++		uint8_t rxa_inst_id),
++	rte_trace_point_emit_u16(eth_dev_id);
++	rte_trace_point_emit_u16(rx_queue_id);
++	rte_trace_point_emit_u8(rxa_inst_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_tx_adapter_stats_get,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, uint64_t tx_retry,
++		uint64_t tx_packets, uint64_t tx_dropped, int ret),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_u64(tx_retry);
++	rte_trace_point_emit_u64(tx_packets);
++	rte_trace_point_emit_u64(tx_dropped);
++	rte_trace_point_emit_int(ret);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_tx_adapter_stats_reset,
++	RTE_TRACE_POINT_ARGS(uint8_t adptr_id, int ret),
++	rte_trace_point_emit_u8(adptr_id);
++	rte_trace_point_emit_int(ret);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_tx_adapter_instance_get,
++	RTE_TRACE_POINT_ARGS(uint16_t eth_dev_id, uint16_t tx_queue_id,
++		uint8_t txa_inst_id),
++	rte_trace_point_emit_u16(eth_dev_id);
++	rte_trace_point_emit_u16(tx_queue_id);
++	rte_trace_point_emit_u8(txa_inst_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_tx_adapter_queue_start,
++	RTE_TRACE_POINT_ARGS(uint16_t eth_dev_id, uint16_t tx_queue_id),
++	rte_trace_point_emit_u16(eth_dev_id);
++	rte_trace_point_emit_u16(tx_queue_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_eth_tx_adapter_queue_stop,
++	RTE_TRACE_POINT_ARGS(uint16_t eth_dev_id, uint16_t tx_queue_id),
++	rte_trace_point_emit_u16(eth_dev_id);
++	rte_trace_point_emit_u16(tx_queue_id);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_timer_adapter_stats_get,
++	RTE_TRACE_POINT_ARGS(const void *adapter, const void *stats),
++	rte_trace_point_emit_ptr(adapter);
++	rte_trace_point_emit_ptr(stats);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_timer_adapter_stats_reset,
++	RTE_TRACE_POINT_ARGS(const void *adapter),
++	rte_trace_point_emit_ptr(adapter);
++)
++
++RTE_TRACE_POINT(
++	rte_eventdev_trace_timer_remaining_ticks_get,
++	RTE_TRACE_POINT_ARGS(const void *adapter, const void *evtim, const void *ticks_remaining),
++	rte_trace_point_emit_ptr(adapter);
++	rte_trace_point_emit_ptr(evtim);
++	rte_trace_point_emit_ptr(ticks_remaining);
++)
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/eventdev/eventdev_trace_points.c b/lib/eventdev/eventdev_trace_points.c
+index de6b1f44173d4..76144cfe75384 100644
+--- a/lib/eventdev/eventdev_trace_points.c
++++ b/lib/eventdev/eventdev_trace_points.c
+@@ -124,3 +124,162 @@ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_crypto_adapter_stop,
+ 
+ RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_crypto_adapter_enqueue,
+ 	lib.eventdev.crypto.enq)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_crypto_adapter_event_port_get,
++	lib.eventdev.crypto.adapter_event_port_get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_crypto_adapter_service_id_get,
++	lib.eventdev.crypto.adapter_service_id_get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_crypto_adapter_vector_limits_get,
++	lib.eventdev.crypto.adapter_vector_limits_get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_attr_get,
++	lib.eventdev.attr_get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_get_dev_id,
++	lib.eventdev.get_dev_id)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_info_get,
++	lib.eventdev.info_get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_service_id_get,
++	lib.eventdev.service_id_get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_socket_id,
++	lib.eventdev.socket.id)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_stop_flush_callback_register,
++	lib.eventdev.stop.flush.callback.register)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_caps_get,
++	lib.eventdev.eth.rx.adapter.caps.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_cb_register,
++	lib.eventdev.eth.rx.adapter.cb.register)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_service_id_get,
++	lib.eventdev.eth.rx.adapter.service.id.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_event_port_get,
++	lib.eventdev.eth.rx.adapter.event.port.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_vector_limits_get,
++	lib.eventdev.eth.rx.adapter.vector.limits.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_queue_stats_get,
++	lib.eventdev.eth.rx.adapter.queue.stats.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_stats_reset,
++	lib.eventdev.eth.rx.adapter.stats.reset)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_queue_stats_reset,
++	lib.eventdev.eth.rx.adapter.queue.stats.reset)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_instance_get,
++	lib.eventdev.eth.rx.adapter.instance.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_tx_adapter_caps_get,
++	lib.eventdev.eth.tx.adapter.caps.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_tx_adapter_event_port_get,
++	lib.eventdev.eth.tx.adapter.event.port.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_tx_adapter_service_id_get,
++	lib.eventdev.eth.tx.adapter.service.id.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_tx_adapter_stats_get,
++	lib.eventdev.eth.tx.adapter.stats.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_tx_adapter_stats_reset,
++	lib.eventdev.eth.tx.adapter.stats.reset)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_tx_adapter_instance_get,
++	lib.eventdev.eth.tx.adapter.instance.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_attr_get,
++	lib.eventdev.port.attr.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_default_conf_get,
++	lib.eventdev.port.default.conf.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_links_get,
++	lib.eventdev.port.links.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_unlinks_in_progress,
++	lib.eventdev.port.unlinks.in.progress)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_queue_attr_get,
++	lib.eventdev.queue.attr.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_queue_default_conf_get,
++	lib.eventdev.queue.default.conf.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_ring_create,
++	lib.eventdev.ring.create)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_ring_free,
++	lib.eventdev.ring.free)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_ring_init,
++	lib.eventdev.ring.init)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_ring_lookup,
++	lib.eventdev.ring.lookup)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_timer_adapter_caps_get,
++	lib.eventdev.timer.adapter.caps.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_timer_adapter_get_info,
++	lib.eventdev.timer.adapter.get.info)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_timer_adapter_lookup,
++	lib.eventdev.timer.adapter.lookup)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_timer_adapter_service_id_get,
++	lib.eventdev.timer.adapter.service.id.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_vector_pool_create,
++	lib.eventdev.vector.pool.create)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_create_with_params,
++	lib.eventdev.eth.rx.adapter.create.with.params)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_queue_conf_get,
++	lib.eventdev.eth.rx.adapter.queue.conf.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_queue_attr_set,
++	lib.eventdev.queue.attr.set)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_port_quiesce,
++	lib.eventdev.port.quiesce)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_crypto_adapter_caps_get,
++	lib.eventdev.crypto.adapter.caps.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_dequeue_timeout_ticks,
++	lib.eventdev.dequeue.timeout.ticks)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_crypto_adapter_stats_get,
++	lib.eventdev.crypto.adapter.stats.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_crypto_adapter_stats_reset,
++	lib.eventdev.crypto.adapter.stats.reset)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_rx_adapter_stats_get,
++	lib.eventdev.rx.adapter.stats.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_tx_adapter_queue_start,
++	lib.eventdev.tx.adapter.queue.start)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_eth_tx_adapter_queue_stop,
++	lib.eventdev.tx.adapter.queue.stop)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_timer_adapter_stats_get,
++	lib.eventdev.timer.adapter.stats.get)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_timer_adapter_stats_reset,
++	lib.eventdev.timer.adapter.stats.reset)
++
++RTE_TRACE_POINT_REGISTER(rte_eventdev_trace_timer_remaining_ticks_get,
++	lib.eventdev.timer.remaining.ticks.get)
+diff --git a/lib/eventdev/rte_event_crypto_adapter.c b/lib/eventdev/rte_event_crypto_adapter.c
+index 3c585d7b0d1ac..36f206e8ff2d5 100644
+--- a/lib/eventdev/rte_event_crypto_adapter.c
++++ b/lib/eventdev/rte_event_crypto_adapter.c
+@@ -395,8 +395,6 @@ rte_event_crypto_adapter_create_ext(uint8_t id, uint8_t dev_id,
+ 
+ 	event_crypto_adapter[id] = adapter;
+ 
+-	rte_eventdev_trace_crypto_adapter_create(id, dev_id, adapter, conf_arg,
+-		mode);
+ 	return 0;
+ }
+ 
+@@ -424,6 +422,8 @@ rte_event_crypto_adapter_create(uint8_t id, uint8_t dev_id,
+ 	if (ret)
+ 		rte_free(pc);
+ 
++	rte_eventdev_trace_crypto_adapter_create(id, dev_id, port_config, mode,	ret);
++
+ 	return ret;
+ }
+ 
+@@ -1289,6 +1289,12 @@ rte_event_crypto_adapter_stats_get(uint8_t id,
+ 	stats->crypto_deq_count += dev_stats_sum.crypto_deq_count;
+ 	stats->event_enq_count += dev_stats_sum.event_enq_count;
+ 
++	rte_eventdev_trace_crypto_adapter_stats_get(id, stats,
++		stats->event_poll_count, stats->event_deq_count,
++		stats->crypto_enq_count, stats->crypto_enq_fail,
++		stats->crypto_deq_count, stats->event_enq_count,
++		stats->event_enq_retry_count, stats->event_enq_fail_count);
++
+ 	return 0;
+ }
+ 
+@@ -1300,6 +1306,8 @@ rte_event_crypto_adapter_stats_reset(uint8_t id)
+ 	struct rte_eventdev *dev;
+ 	uint32_t i;
+ 
++	rte_eventdev_trace_crypto_adapter_stats_reset(id);
++
+ 	if (eca_memzone_lookup())
+ 		return -ENOMEM;
+ 
+@@ -1337,6 +1345,8 @@ rte_event_crypto_adapter_service_id_get(uint8_t id, uint32_t *service_id)
+ 	if (adapter->service_inited)
+ 		*service_id = adapter->service_id;
+ 
++	rte_eventdev_trace_crypto_adapter_service_id_get(id, *service_id);
++
+ 	return adapter->service_inited ? 0 : -ESRCH;
+ }
+ 
+@@ -1353,6 +1363,8 @@ rte_event_crypto_adapter_event_port_get(uint8_t id, uint8_t *event_port_id)
+ 
+ 	*event_port_id = adapter->event_port_id;
+ 
++	rte_eventdev_trace_crypto_adapter_event_port_get(id, *event_port_id);
++
+ 	return 0;
+ }
+ 
+@@ -1366,6 +1378,8 @@ rte_event_crypto_adapter_vector_limits_get(
+ 	uint32_t cap;
+ 	int ret;
+ 
++	rte_eventdev_trace_crypto_adapter_vector_limits_get(dev_id, cdev_id, limits);
++
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
+ 
+ 	if (!rte_cryptodev_is_valid_dev(cdev_id)) {
+diff --git a/lib/eventdev/rte_event_eth_rx_adapter.c b/lib/eventdev/rte_event_eth_rx_adapter.c
+index 170823a03c84c..0e39b580dd75e 100644
+--- a/lib/eventdev/rte_event_eth_rx_adapter.c
++++ b/lib/eventdev/rte_event_eth_rx_adapter.c
+@@ -2538,6 +2538,9 @@ rte_event_eth_rx_adapter_create_with_params(uint8_t id, uint8_t dev_id,
+ 	if (ret)
+ 		rte_free(pc);
+ 
++	rte_eventdev_trace_eth_rx_adapter_create_with_params(id, dev_id,
++		port_config, rxa_params, ret);
++
+ 	return ret;
+ }
+ 
+@@ -2926,6 +2929,9 @@ rte_event_eth_rx_adapter_vector_limits_get(
+ 		ret = rxa_sw_vector_limits(limits);
+ 	}
+ 
++	rte_eventdev_trace_eth_rx_adapter_vector_limits_get(dev_id, eth_port_id,
++		limits->min_sz, limits->max_sz, limits->log2_sz,
++		limits->min_timeout_ns, limits->max_timeout_ns, ret);
+ 	return ret;
+ }
+ 
+@@ -2967,6 +2973,8 @@ rte_event_eth_rx_adapter_stats_get(uint8_t id,
+ 	uint32_t i, j;
+ 	int ret;
+ 
++	rte_eventdev_trace_eth_rx_adapter_stats_get(id, stats);
++
+ 	if (rxa_memzone_lookup())
+ 		return -ENOMEM;
+ 
+@@ -3038,6 +3046,9 @@ rte_event_eth_rx_adapter_queue_stats_get(uint8_t id,
+ 	struct rte_event_eth_rx_adapter_stats *q_stats;
+ 	struct rte_eventdev *dev;
+ 
++	rte_eventdev_trace_eth_rx_adapter_queue_stats_get(id, eth_dev_id,
++							  rx_queue_id, stats);
++
+ 	if (rxa_memzone_lookup())
+ 		return -ENOMEM;
+ 
+@@ -3095,6 +3106,8 @@ rte_event_eth_rx_adapter_stats_reset(uint8_t id)
+ 	struct eth_rx_queue_info *queue_info;
+ 	uint32_t i, j;
+ 
++	rte_eventdev_trace_eth_rx_adapter_stats_reset(id);
++
+ 	if (rxa_memzone_lookup())
+ 		return -ENOMEM;
+ 
+@@ -3142,6 +3155,9 @@ rte_event_eth_rx_adapter_queue_stats_reset(uint8_t id,
+ 	struct eth_rx_queue_info *queue_info;
+ 	struct rte_eventdev *dev;
+ 
++	rte_eventdev_trace_eth_rx_adapter_queue_stats_reset(id, eth_dev_id,
++							    rx_queue_id);
++
+ 	if (rxa_memzone_lookup())
+ 		return -ENOMEM;
+ 
+@@ -3200,6 +3216,8 @@ rte_event_eth_rx_adapter_service_id_get(uint8_t id, uint32_t *service_id)
+ 	if (rx_adapter->service_inited)
+ 		*service_id = rx_adapter->service_id;
+ 
++	rte_eventdev_trace_eth_rx_adapter_service_id_get(id, *service_id);
++
+ 	return rx_adapter->service_inited ? 0 : -ESRCH;
+ }
+ 
+@@ -3220,6 +3238,8 @@ rte_event_eth_rx_adapter_event_port_get(uint8_t id, uint8_t *event_port_id)
+ 	if (rx_adapter->service_inited)
+ 		*event_port_id = rx_adapter->event_port_id;
+ 
++	rte_eventdev_trace_eth_rx_adapter_event_port_get(id, *event_port_id);
++
+ 	return rx_adapter->service_inited ? 0 : -ESRCH;
+ }
+ 
+@@ -3234,6 +3254,9 @@ rte_event_eth_rx_adapter_cb_register(uint8_t id,
+ 	uint32_t cap;
+ 	int ret;
+ 
++	rte_eventdev_trace_eth_rx_adapter_cb_register(id, eth_dev_id, cb_fn,
++						      cb_arg);
++
+ 	RTE_EVENT_ETH_RX_ADAPTER_ID_VALID_OR_ERR_RET(id, -EINVAL);
+ 	RTE_ETH_VALID_PORTID_OR_ERR_RET(eth_dev_id, -EINVAL);
+ 
+@@ -3281,6 +3304,9 @@ rte_event_eth_rx_adapter_queue_conf_get(uint8_t id,
+ 	struct eth_rx_queue_info *queue_info;
+ 	int ret;
+ 
++	rte_eventdev_trace_eth_rx_adapter_queue_conf_get(id, eth_dev_id,
++							 rx_queue_id, queue_conf);
++
+ 	if (rxa_memzone_lookup())
+ 		return -ENOMEM;
+ 
+@@ -3422,8 +3448,11 @@ rte_event_eth_rx_adapter_instance_get(uint16_t eth_dev_id,
+ 		}
+ 
+ 		/* return if entry found */
+-		if (ret == 0)
++		if (ret == 0) {
++			rte_eventdev_trace_eth_rx_adapter_instance_get(eth_dev_id, rx_queue_id,
++								       *rxa_inst_id);
+ 			return ret;
++		}
+ 	}
+ 
+ 	return -EINVAL;
+diff --git a/lib/eventdev/rte_event_eth_tx_adapter.c b/lib/eventdev/rte_event_eth_tx_adapter.c
+index 88309d2aaa34c..fbb01ac58bfdd 100644
+--- a/lib/eventdev/rte_event_eth_tx_adapter.c
++++ b/lib/eventdev/rte_event_eth_tx_adapter.c
+@@ -993,6 +993,8 @@ txa_service_id_get(uint8_t id, uint32_t *service_id)
+ 		return -EINVAL;
+ 
+ 	*service_id = txa->service_id;
++
++	rte_eventdev_trace_eth_tx_adapter_service_id_get(id, *service_id);
+ 	return 0;
+ }
+ 
+@@ -1121,6 +1123,8 @@ rte_event_eth_tx_adapter_create_ext(uint8_t id, uint8_t dev_id,
+ int
+ rte_event_eth_tx_adapter_event_port_get(uint8_t id, uint8_t *event_port_id)
+ {
++	rte_eventdev_trace_eth_tx_adapter_event_port_get(id);
++
+ 	TXA_CHECK_OR_ERR_RET(id);
+ 
+ 	return txa_service_event_port_get(id, event_port_id);
+@@ -1262,6 +1266,9 @@ rte_event_eth_tx_adapter_stats_get(uint8_t id,
+ 			ret = txa_service_stats_get(id, stats);
+ 	}
+ 
++	rte_eventdev_trace_eth_tx_adapter_stats_get(id, stats->tx_retry, stats->tx_packets,
++						    stats->tx_dropped, ret);
++
+ 	return ret;
+ }
+ 
+@@ -1276,6 +1283,9 @@ rte_event_eth_tx_adapter_stats_reset(uint8_t id)
+ 		txa_dev_stats_reset(id)(id, txa_evdev(id)) : 0;
+ 	if (ret == 0)
+ 		ret = txa_service_stats_reset(id);
++
++	rte_eventdev_trace_eth_tx_adapter_stats_reset(id, ret);
++
+ 	return ret;
+ }
+ 
+@@ -1339,8 +1349,11 @@ rte_event_eth_tx_adapter_instance_get(uint16_t eth_dev_id,
+ 								 tx_queue_id,
+ 								 txa_inst_id)
+ 							: -EINVAL;
+-			if (ret == 0)
++			if (ret == 0) {
++				rte_eventdev_trace_eth_tx_adapter_instance_get(eth_dev_id,
++								tx_queue_id, *txa_inst_id);
+ 				return ret;
++			}
+ 		} else {
+ 			struct rte_eth_dev *eth_dev;
+ 
+@@ -1349,6 +1362,8 @@ rte_event_eth_tx_adapter_instance_get(uint16_t eth_dev_id,
+ 			if (txa_service_is_queue_added(txa, eth_dev,
+ 						       tx_queue_id)) {
+ 				*txa_inst_id = txa->id;
++				rte_eventdev_trace_eth_tx_adapter_instance_get(eth_dev_id,
++								tx_queue_id, *txa_inst_id);
+ 				return 0;
+ 			}
+ 		}
+@@ -1424,11 +1439,15 @@ txa_queue_start_state_set(uint16_t eth_dev_id, uint16_t tx_queue_id,
+ int
+ rte_event_eth_tx_adapter_queue_start(uint16_t eth_dev_id, uint16_t tx_queue_id)
+ {
++	rte_eventdev_trace_eth_tx_adapter_queue_start(eth_dev_id, tx_queue_id);
++
+ 	return txa_queue_start_state_set(eth_dev_id, tx_queue_id, true);
+ }
+ 
+ int
+ rte_event_eth_tx_adapter_queue_stop(uint16_t eth_dev_id, uint16_t tx_queue_id)
+ {
++	rte_eventdev_trace_eth_tx_adapter_queue_stop(eth_dev_id, tx_queue_id);
++
+ 	return txa_queue_start_state_set(eth_dev_id, tx_queue_id, false);
+ }
+diff --git a/lib/eventdev/rte_event_ring.c b/lib/eventdev/rte_event_ring.c
+index c07071514825c..b965970cf93dd 100644
+--- a/lib/eventdev/rte_event_ring.c
++++ b/lib/eventdev/rte_event_ring.c
+@@ -5,6 +5,7 @@
+ 
+ 
+ #include "rte_event_ring.h"
++#include "eventdev_trace.h"
+ 
+ int
+ rte_event_ring_init(struct rte_event_ring *r, const char *name,
+@@ -14,6 +15,8 @@ rte_event_ring_init(struct rte_event_ring *r, const char *name,
+ 	RTE_BUILD_BUG_ON((sizeof(struct rte_event_ring) &
+ 			  RTE_CACHE_LINE_MASK) != 0);
+ 
++	rte_eventdev_trace_ring_init(r, name, count, flags);
++
+ 	/* init the ring structure */
+ 	return rte_ring_init(&r->r, name, count, flags);
+ }
+@@ -23,6 +26,8 @@ struct rte_event_ring *
+ rte_event_ring_create(const char *name, unsigned int count, int socket_id,
+ 		unsigned int flags)
+ {
++	rte_eventdev_trace_ring_create(name, count, socket_id, flags);
++
+ 	return (struct rte_event_ring *)rte_ring_create_elem(name,
+ 						sizeof(struct rte_event),
+ 						count, socket_id, flags);
+@@ -32,6 +37,8 @@ rte_event_ring_create(const char *name, unsigned int count, int socket_id,
+ struct rte_event_ring *
+ rte_event_ring_lookup(const char *name)
+ {
++	rte_eventdev_trace_ring_lookup(name);
++
+ 	return (struct rte_event_ring *)rte_ring_lookup(name);
+ }
+ 
+@@ -39,5 +46,7 @@ rte_event_ring_lookup(const char *name)
+ void
+ rte_event_ring_free(struct rte_event_ring *r)
+ {
++	rte_eventdev_trace_ring_free(r->r.name);
++
+ 	rte_ring_free((struct rte_ring *)r);
+ }
+diff --git a/lib/eventdev/rte_event_timer_adapter.c b/lib/eventdev/rte_event_timer_adapter.c
+index cae75c9945fe3..1111c40e0b70d 100644
+--- a/lib/eventdev/rte_event_timer_adapter.c
++++ b/lib/eventdev/rte_event_timer_adapter.c
+@@ -272,6 +272,8 @@ rte_event_timer_adapter_get_info(const struct rte_event_timer_adapter *adapter,
+ 	adapter_info->event_dev_port_id = adapter->data->event_port_id;
+ 	adapter_info->caps = adapter->data->caps;
+ 
++	rte_eventdev_trace_timer_adapter_get_info(adapter, adapter_info);
++
+ 	return 0;
+ }
+ 
+@@ -383,6 +385,8 @@ rte_event_timer_adapter_lookup(uint16_t adapter_id)
+ 
+ 	adapter->allocated = 1;
+ 
++	rte_eventdev_trace_timer_adapter_lookup(adapter_id, adapter);
++
+ 	return adapter;
+ }
+ 
+@@ -433,9 +437,14 @@ rte_event_timer_adapter_service_id_get(struct rte_event_timer_adapter *adapter,
+ {
+ 	ADAPTER_VALID_OR_ERR_RET(adapter, -EINVAL);
+ 
++	if (service_id == NULL)
++		return -EINVAL;
++
+ 	if (adapter->data->service_inited && service_id != NULL)
+ 		*service_id = adapter->data->service_id;
+ 
++	rte_eventdev_trace_timer_adapter_service_id_get(adapter, *service_id);
++
+ 	return adapter->data->service_inited ? 0 : -ESRCH;
+ }
+ 
+@@ -443,6 +452,8 @@ int
+ rte_event_timer_adapter_stats_get(struct rte_event_timer_adapter *adapter,
+ 				  struct rte_event_timer_adapter_stats *stats)
+ {
++	rte_eventdev_trace_timer_adapter_stats_get(adapter, stats);
++
+ 	ADAPTER_VALID_OR_ERR_RET(adapter, -EINVAL);
+ 	FUNC_PTR_OR_ERR_RET(adapter->ops->stats_get, -EINVAL);
+ 	if (stats == NULL)
+@@ -454,6 +465,8 @@ rte_event_timer_adapter_stats_get(struct rte_event_timer_adapter *adapter,
+ int
+ rte_event_timer_adapter_stats_reset(struct rte_event_timer_adapter *adapter)
+ {
++	rte_eventdev_trace_timer_adapter_stats_reset(adapter);
++
+ 	ADAPTER_VALID_OR_ERR_RET(adapter, -EINVAL);
+ 	FUNC_PTR_OR_ERR_RET(adapter->ops->stats_reset, -EINVAL);
+ 	return adapter->ops->stats_reset(adapter);
+diff --git a/lib/eventdev/rte_eventdev.c b/lib/eventdev/rte_eventdev.c
+index b0414206d95c8..245b1d2d4e84f 100644
+--- a/lib/eventdev/rte_eventdev.c
++++ b/lib/eventdev/rte_eventdev.c
+@@ -62,8 +62,10 @@ rte_event_dev_get_dev_id(const char *name)
+ 				rte_event_devices[i].dev->driver->name, name,
+ 					 RTE_EVENTDEV_NAME_MAX_LEN) == 0) : 0);
+ 		if (cmp && (rte_event_devices[i].attached ==
+-					RTE_EVENTDEV_ATTACHED))
++					RTE_EVENTDEV_ATTACHED)) {
++			rte_eventdev_trace_get_dev_id(name, i);
+ 			return i;
++		}
+ 	}
+ 	return -ENODEV;
+ }
+@@ -76,6 +78,8 @@ rte_event_dev_socket_id(uint8_t dev_id)
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
+ 	dev = &rte_eventdevs[dev_id];
+ 
++	rte_eventdev_trace_socket_id(dev_id, dev, dev->data->socket_id);
++
+ 	return dev->data->socket_id;
+ }
+ 
+@@ -99,6 +103,9 @@ rte_event_dev_info_get(uint8_t dev_id, struct rte_event_dev_info *dev_info)
+ 	dev_info->dequeue_timeout_ns = dev->data->dev_conf.dequeue_timeout_ns;
+ 
+ 	dev_info->dev = dev->dev;
++
++	rte_eventdev_trace_info_get(dev_id, dev_info, dev_info->dev);
++
+ 	return 0;
+ }
+ 
+@@ -108,6 +115,8 @@ rte_event_eth_rx_adapter_caps_get(uint8_t dev_id, uint16_t eth_port_id,
+ {
+ 	struct rte_eventdev *dev;
+ 
++	rte_eventdev_trace_eth_rx_adapter_caps_get(dev_id, eth_port_id);
++
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
+ 	RTE_ETH_VALID_PORTID_OR_ERR_RET(eth_port_id, -EINVAL);
+ 
+@@ -134,6 +143,8 @@ rte_event_timer_adapter_caps_get(uint8_t dev_id, uint32_t *caps)
+ 	struct rte_eventdev *dev;
+ 	const struct event_timer_adapter_ops *ops;
+ 
++	rte_eventdev_trace_timer_adapter_caps_get(dev_id);
++
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
+ 
+ 	dev = &rte_eventdevs[dev_id];
+@@ -168,6 +179,8 @@ rte_event_crypto_adapter_caps_get(uint8_t dev_id, uint8_t cdev_id,
+ 	dev = &rte_eventdevs[dev_id];
+ 	cdev = rte_cryptodev_pmd_get_dev(cdev_id);
+ 
++	rte_eventdev_trace_crypto_adapter_caps_get(dev_id, dev, cdev_id, cdev);
++
+ 	if (caps == NULL)
+ 		return -EINVAL;
+ 
+@@ -194,6 +207,8 @@ rte_event_eth_tx_adapter_caps_get(uint8_t dev_id, uint16_t eth_port_id,
+ 	dev = &rte_eventdevs[dev_id];
+ 	eth_dev = &rte_eth_devices[eth_port_id];
+ 
++	rte_eventdev_trace_eth_tx_adapter_caps_get(dev_id, dev, eth_port_id, eth_dev);
++
+ 	if (caps == NULL)
+ 		return -EINVAL;
+ 
+@@ -524,6 +539,9 @@ rte_event_queue_default_conf_get(uint8_t dev_id, uint8_t queue_id,
+ 		return -ENOTSUP;
+ 	memset(queue_conf, 0, sizeof(struct rte_event_queue_conf));
+ 	(*dev->dev_ops->queue_def_conf)(dev, queue_id, queue_conf);
++
++	rte_eventdev_trace_queue_default_conf_get(dev_id, dev, queue_id, queue_conf);
++
+ 	return 0;
+ }
+ 
+@@ -652,6 +670,9 @@ rte_event_port_default_conf_get(uint8_t dev_id, uint8_t port_id,
+ 		return -ENOTSUP;
+ 	memset(port_conf, 0, sizeof(struct rte_event_port_conf));
+ 	(*dev->dev_ops->port_def_conf)(dev, port_id, port_conf);
++
++	rte_eventdev_trace_port_default_conf_get(dev_id, dev, port_id, port_conf);
++
+ 	return 0;
+ }
+ 
+@@ -754,6 +775,8 @@ rte_event_port_quiesce(uint8_t dev_id, uint8_t port_id,
+ 	RTE_EVENTDEV_VALID_DEVID_OR_RET(dev_id);
+ 	dev = &rte_eventdevs[dev_id];
+ 
++	rte_eventdev_trace_port_quiesce(dev_id, dev, port_id, args);
++
+ 	if (!is_valid_port(dev, port_id)) {
+ 		RTE_EDEV_LOG_ERR("Invalid port_id=%" PRIu8, port_id);
+ 		return;
+@@ -789,6 +812,8 @@ rte_event_dev_attr_get(uint8_t dev_id, uint32_t attr_id,
+ 		return -EINVAL;
+ 	}
+ 
++	rte_eventdev_trace_attr_get(dev_id, dev, attr_id, *attr_value);
++
+ 	return 0;
+ }
+ 
+@@ -829,6 +854,9 @@ rte_event_port_attr_get(uint8_t dev_id, uint8_t port_id, uint32_t attr_id,
+ 	default:
+ 		return -EINVAL;
+ 	};
++
++	rte_eventdev_trace_port_attr_get(dev_id, dev, port_id, attr_id, *attr_value);
++
+ 	return 0;
+ }
+ 
+@@ -885,6 +913,9 @@ rte_event_queue_attr_get(uint8_t dev_id, uint8_t queue_id, uint32_t attr_id,
+ 	default:
+ 		return -EINVAL;
+ 	};
++
++	rte_eventdev_trace_queue_attr_get(dev_id, dev, queue_id, attr_id, *attr_value);
++
+ 	return 0;
+ }
+ 
+@@ -894,6 +925,8 @@ rte_event_queue_attr_set(uint8_t dev_id, uint8_t queue_id, uint32_t attr_id,
+ {
+ 	struct rte_eventdev *dev;
+ 
++	rte_eventdev_trace_queue_attr_set(dev_id, queue_id, attr_id, attr_value);
++
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
+ 	dev = &rte_eventdevs[dev_id];
+ 	if (!is_valid_queue(dev, queue_id)) {
+@@ -1048,6 +1081,8 @@ rte_event_port_unlinks_in_progress(uint8_t dev_id, uint8_t port_id)
+ {
+ 	struct rte_eventdev *dev;
+ 
++	rte_eventdev_trace_port_unlinks_in_progress(dev_id, port_id);
++
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
+ 	dev = &rte_eventdevs[dev_id];
+ 	if (!is_valid_port(dev, port_id)) {
+@@ -1091,6 +1126,9 @@ rte_event_port_links_get(uint8_t dev_id, uint8_t port_id,
+ 			++count;
+ 		}
+ 	}
++
++	rte_eventdev_trace_port_links_get(dev_id, port_id, count);
++
+ 	return count;
+ }
+ 
+@@ -1100,6 +1138,8 @@ rte_event_dequeue_timeout_ticks(uint8_t dev_id, uint64_t ns,
+ {
+ 	struct rte_eventdev *dev;
+ 
++	rte_eventdev_trace_dequeue_timeout_ticks(dev_id, ns, timeout_ticks);
++
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
+ 	dev = &rte_eventdevs[dev_id];
+ 	if (*dev->dev_ops->timeout_ticks == NULL)
+@@ -1125,6 +1165,8 @@ rte_event_dev_service_id_get(uint8_t dev_id, uint32_t *service_id)
+ 	if (dev->data->service_inited)
+ 		*service_id = dev->data->service_id;
+ 
++	rte_eventdev_trace_service_id_get(dev_id, *service_id);
++
+ 	return dev->data->service_inited ? 0 : -ESRCH;
+ }
+ 
+@@ -1285,6 +1327,9 @@ rte_event_vector_pool_create(const char *name, unsigned int n,
+ 	if (ret < 0)
+ 		goto err;
+ 
++	rte_eventdev_trace_vector_pool_create(mp, mp->name, mp->socket_id,
++		mp->size, mp->cache_size, mp->elt_size);
++
+ 	return mp;
+ err:
+ 	rte_mempool_free(mp);
+@@ -1332,6 +1377,8 @@ rte_event_dev_stop_flush_callback_register(uint8_t dev_id,
+ 
+ 	RTE_EDEV_LOG_DEBUG("Stop flush register dev_id=%" PRIu8, dev_id);
+ 
++	rte_eventdev_trace_stop_flush_callback_register(dev_id, callback, userdata);
++
+ 	RTE_EVENTDEV_VALID_DEVID_OR_ERR_RET(dev_id, -EINVAL);
+ 	dev = &rte_eventdevs[dev_id];
+ 
+-- 
+2.25.1
+

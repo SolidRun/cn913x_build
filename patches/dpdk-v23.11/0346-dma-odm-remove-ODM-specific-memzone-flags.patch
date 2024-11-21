@@ -1,0 +1,61 @@
+From 78c3b184e6f7e7f91d01c1d0a588038a16542aa0 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 27 May 2024 08:42:57 +0000
+Subject: [PATCH 346/513] dma/odm: remove ODM specific memzone flags
+
+No specific requirement with respect to hugepages. Remove the same.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ic324095b8dd7fc66ce935f71b563e4bbef31024b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128480
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+(cherry picked from commit bb436a4025c0d8a4201c3a61ea5aee1322fd9162)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128528
+---
+ drivers/dma/odm/odm.c | 4 ++--
+ drivers/dma/odm/odm.h | 4 ----
+ 2 files changed, 2 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/dma/odm/odm.c b/drivers/dma/odm/odm.c
+index 6094ace9fdc6c..270808f4df4c0 100644
+--- a/drivers/dma/odm/odm.c
++++ b/drivers/dma/odm/odm.c
+@@ -154,7 +154,7 @@ odm_vchan_setup(struct odm_dev *odm, int vchan, int nb_desc)
+ 	isize = RTE_ALIGN_CEIL(nb_desc * ODM_IRING_ENTRY_SIZE_MAX * 8, 1024);
+ 	isize = RTE_MIN(isize, ODM_IRING_MAX_SIZE);
+ 	snprintf(name, sizeof(name), "vq%d_iring%d", odm->vfid, vchan);
+-	mz = rte_memzone_reserve_aligned(name, isize, 0, ODM_MEMZONE_FLAGS, 1024);
++	mz = rte_memzone_reserve_aligned(name, isize, SOCKET_ID_ANY, 0, 1024);
+ 	if (mz == NULL)
+ 		return -ENOMEM;
+ 	vq->iring_mz = mz;
+@@ -164,7 +164,7 @@ odm_vchan_setup(struct odm_dev *odm, int vchan, int nb_desc)
+ 	max_nb_desc = (isize / (ODM_IRING_ENTRY_SIZE_MIN * 8));
+ 	csize = RTE_ALIGN_CEIL(max_nb_desc * sizeof(union odm_cmpl_ent_s), 1024);
+ 	snprintf(name, sizeof(name), "vq%d_cring%d", odm->vfid, vchan);
+-	mz = rte_memzone_reserve_aligned(name, csize, 0, ODM_MEMZONE_FLAGS, 1024);
++	mz = rte_memzone_reserve_aligned(name, csize, SOCKET_ID_ANY, 0, 1024);
+ 	if (mz == NULL) {
+ 		rc = -ENOMEM;
+ 		goto iring_free;
+diff --git a/drivers/dma/odm/odm.h b/drivers/dma/odm/odm.h
+index 796a98d59d577..656a23c81f203 100644
+--- a/drivers/dma/odm/odm.h
++++ b/drivers/dma/odm/odm.h
+@@ -73,10 +73,6 @@ extern int odm_logtype;
+ #define odm_debug(fmt, args...)                                                                    \
+ 	rte_log(RTE_LOG_DEBUG, odm_logtype, "%s(): %u " fmt "\n", __func__, __LINE__, ##args)
+ 
+-#define ODM_MEMZONE_FLAGS                                                                          \
+-	(RTE_MEMZONE_1GB | RTE_MEMZONE_16MB | RTE_MEMZONE_16GB | RTE_MEMZONE_256MB |               \
+-	 RTE_MEMZONE_512MB | RTE_MEMZONE_4GB | RTE_MEMZONE_SIZE_HINT_ONLY)
+-
+ /*
+  * Structure odm_instr_hdr_s for ODM
+  *
+-- 
+2.25.1
+

@@ -1,0 +1,34 @@
+From 24f5aed8d6ff33447232554a1cee87b695a1c03a Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 6 Mar 2024 12:44:23 +0530
+Subject: [PATCH 260/513] config/arm: add crypto extension for t83
+
+Add crypto march feature for thunderxt83.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I6bb04969321881386464e14827484bf33d4ffed8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123290
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit 6931d9bbcc761363c88308e4711a83234d837b68)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123291
+---
+ config/arm/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index c1300a8ce8e26..0dd1bdbd350e1 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -140,7 +140,7 @@ implementer_cavium = {
+         },
+         '0xa3': {
+             'march': 'armv8-a',
+-            'march_features': ['crc'],
++            'march_features': ['crc', 'crypto'],
+             'mcpu': 'thunderxt83',
+             'flags': flags_part_number_thunderx
+         },
+-- 
+2.25.1
+

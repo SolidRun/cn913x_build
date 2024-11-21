@@ -1,0 +1,135 @@
+From e67368cff962e5fbfcbf56f31b05643dc9769172 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Thu, 6 Jul 2023 12:56:06 +0530
+Subject: [PATCH 527/955] ci: enabled meter test
+
+Enabled meter test with loopback port for configuration
+test .Enabled throughput test for ingress policer.
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Ie0abc722d5995255e9eda71a75aebca4f9306f28
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106849
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/meson.build        |  1 +
+ .../cnxk-tests/meter_test/cnxk_mtr_test.sh    |  3 +++
+ .../policer_test/cnxk_ingress_policer.sh      | 22 ++++++++++++-------
+ .../test/cnxk-tests/policer_test/meson.build  |  3 +++
+ marvell-ci/test/env/cn10k.env                 |  1 -
+ marvell-ci/test/env/cn9k.env                  |  1 +
+ 6 files changed, 22 insertions(+), 9 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index ed7428ecd5e8e..ac1d2a5eb0060 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -82,6 +82,7 @@ test_subdirs = [
+         'ipsec_msns',
+         'hwpool',
+         'cpt_t106_mode',
++        'policer_test',
+ ]
+ 
+ foreach dir:test_subdirs
+diff --git a/marvell-ci/test/cnxk-tests/meter_test/cnxk_mtr_test.sh b/marvell-ci/test/cnxk-tests/meter_test/cnxk_mtr_test.sh
+index 43411123726b6..daa3e6c8e72d7 100755
+--- a/marvell-ci/test/cnxk-tests/meter_test/cnxk_mtr_test.sh
++++ b/marvell-ci/test/cnxk-tests/meter_test/cnxk_mtr_test.sh
+@@ -130,6 +130,9 @@ function check_meter_rq_config()
+ 
+ 	debug_dir="/sys/kernel/debug/cn10k"
+ 	rq_ctx="$debug_dir/nix/rq_ctx"
++	rsrc_alloc="$debug_dir/rsrc_alloc"
++	nix_lf=$(echo "`$SUDO cat $rsrc_alloc`" | grep "PF1" | awk '{print $3}' | head -1)
++	$SUDO echo "$nix_lf 0" > $rq_ctx
+ 
+ 	if $SUDO test -f "$rq_ctx"; then
+ 		is_policer_ena=$(echo "`$SUDO cat $rq_ctx`" | grep policer_ena | awk '{print $3}')
+diff --git a/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh b/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh
+index 7bb2a98a725cc..e16918ee1a93a 100755
+--- a/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh
++++ b/marvell-ci/test/cnxk-tests/policer_test/cnxk_ingress_policer.sh
+@@ -171,25 +171,31 @@ function run_testpmd()
+         	"--no-flush-rx --nb-cores=4 --forward-mode=rxonly --txq=4 --rxq=4"
+ }
+ 
++function stop_testpmd()
++{
++        testpmd_quit $PRFX
++        sleep 1
++        testpmd_cleanup $PRFX
++        sleep 3
++        testpmd_quit $CAP_PRFX
++        sleep 1
++        testpmd_cleanup $CAP_PRFX
++        sleep 1
++}
++
+ echo "Ingress policer with 4 leaf nodes 2 mid nodes 1 root node"
+ run_testpmd
+ sleep 1
+ ingress_policer_test level_3
+ 
+-testpmd_cmd $PRFX "quit"
+-sleep 1
+-testpmd_cmd $CAP_PRFX "quit"
+-sleep 1
++stop_testpmd
+ 
+ echo "Ingress policer with single node"
+ run_testpmd
+ sleep 1
+ ingress_policer_test level_1
+ 
+-testpmd_cmd $PRFX "quit"
+-sleep 1
+-testpmd_cmd $CAP_PRFX "quit"
+-sleep 2
++stop_testpmd
+ 
+ echo "Configure RED to meter"
+ run_testpmd
+diff --git a/marvell-ci/test/cnxk-tests/policer_test/meson.build b/marvell-ci/test/cnxk-tests/policer_test/meson.build
+index b972afc0b0e91..6ebd964a94021 100644
+--- a/marvell-ci/test/cnxk-tests/policer_test/meson.build
++++ b/marvell-ci/test/cnxk-tests/policer_test/meson.build
+@@ -13,6 +13,9 @@ test_args = ''
+ # Test directory name relative to build directory.
+ test_dir = meson.current_build_dir()
+ 
++# Copy the required scripts to build directory.
++run_command(copy_data, test_script)
++
+ # Add the meson test
+ test(
+     test_name,
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index a5d80bfbb91ff..8f354007d9095 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -72,7 +72,6 @@ CONTINUE_ON_FAILURE=${CONTINUE_ON_FAILURE:-}
+ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
+-	cnxk_mtr_test_config
+ 	cnxk_fc_test_config
+ "
+ 
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index ce23b0bd0c19c..cc30187594606 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -218,6 +218,7 @@ DEFAULT_SKIP_TESTS="
+ 	rawdev_autotest
+ 	telemetry_all
+ 	cnxk_mac_test
++	cnxk_ingress_policer
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+-- 
+2.25.1
+

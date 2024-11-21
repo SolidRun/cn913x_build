@@ -1,0 +1,39 @@
+From b532a1177f6f0b6023289dbe2886635581d74c6d Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 27 Sep 2024 12:24:58 +0530
+Subject: [PATCH 509/513] interrupts: fix number of bytes read for vdev
+
+Correct the number of bytes to read during vdev interrupt processing.
+The driver sets this value, and the rxtx interrupt handling already
+performs this correctly.
+
+Fixes: 99998feec90 ("eal/linux: add interrupt type for vdev")
+
+Change-Id: I1fa048318149cc7c8ae3bd32c52100243f78b72b
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/124599
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ lib/eal/linux/eal_interrupts.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/lib/eal/linux/eal_interrupts.c b/lib/eal/linux/eal_interrupts.c
+index d4919dff45833..1226341deaf80 100644
+--- a/lib/eal/linux/eal_interrupts.c
++++ b/lib/eal/linux/eal_interrupts.c
+@@ -949,6 +949,10 @@ eal_intr_process_interrupts(struct epoll_event *events, int nfds)
+ 			break;
+ #endif
+ 		case RTE_INTR_HANDLE_VDEV:
++			/* For vdev, number of bytes to read is set by driver */
++			bytes_read = rte_intr_efd_counter_size_get(src->intr_handle);
++			call = true;
++			break;
+ 		case RTE_INTR_HANDLE_EXT:
+ 			bytes_read = 0;
+ 			call = true;
+-- 
+2.25.1
+

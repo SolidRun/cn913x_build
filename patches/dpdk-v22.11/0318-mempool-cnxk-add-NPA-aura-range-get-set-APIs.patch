@@ -1,0 +1,165 @@
+From 4e973d4149f88425cab2ee43c6e11ff02ebf7ebc Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 21 Feb 2023 14:23:27 +0530
+Subject: [PATCH 318/955] mempool/cnxk: add NPA aura range get/set APIs
+
+Current APIs to set range on auras modifies both the
+aura range limits in software and pool range limits
+in NPA hardware.
+
+Newly added ROC APIs allow to set/get aura range limits
+in software alone without modifying hardware.
+
+The existing aura range set functionality has been moved
+as a pool range set API.
+
+Change-Id: I44d02b6055264260bb46c233213ef571b26b50d3
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_queue.c     |  2 +-
+ drivers/common/cnxk/roc_npa.c           | 35 ++++++++++++++++++++++++-
+ drivers/common/cnxk/roc_npa.h           |  6 +++++
+ drivers/common/cnxk/roc_sso.c           |  2 +-
+ drivers/common/cnxk/version.map         |  2 ++
+ drivers/mempool/cnxk/cnxk_mempool_ops.c |  2 +-
+ 6 files changed, 45 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index bbb0e4a3b857b..d29fafa895805 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -1049,7 +1049,7 @@ sqb_pool_populate(struct roc_nix *roc_nix, struct roc_nix_sq *sq)
+ 		goto npa_fail;
+ 	}
+ 
+-	roc_npa_aura_op_range_set(sq->aura_handle, (uint64_t)sq->sqe_mem, iova);
++	roc_npa_pool_op_range_set(sq->aura_handle, (uint64_t)sq->sqe_mem, iova);
+ 	roc_npa_aura_limit_modify(sq->aura_handle, nb_sqb_bufs);
+ 	sq->aura_sqb_bufs = nb_sqb_bufs;
+ 
+diff --git a/drivers/common/cnxk/roc_npa.c b/drivers/common/cnxk/roc_npa.c
+index a47f16ad7d0c3..3f436221a88f2 100644
+--- a/drivers/common/cnxk/roc_npa.c
++++ b/drivers/common/cnxk/roc_npa.c
+@@ -18,7 +18,7 @@ roc_npa_lf_init_cb_register(roc_npa_lf_init_cb_t cb)
+ }
+ 
+ void
+-roc_npa_aura_op_range_set(uint64_t aura_handle, uint64_t start_iova,
++roc_npa_pool_op_range_set(uint64_t aura_handle, uint64_t start_iova,
+ 			  uint64_t end_iova)
+ {
+ 	const uint64_t start = roc_npa_aura_handle_to_base(aura_handle) +
+@@ -32,6 +32,7 @@ roc_npa_aura_op_range_set(uint64_t aura_handle, uint64_t start_iova,
+ 	PLT_ASSERT(lf);
+ 	lim = lf->aura_lim;
+ 
++	/* Change the range bookkeeping in software as well as in hardware */
+ 	lim[reg].ptr_start = PLT_MIN(lim[reg].ptr_start, start_iova);
+ 	lim[reg].ptr_end = PLT_MAX(lim[reg].ptr_end, end_iova);
+ 
+@@ -39,6 +40,38 @@ roc_npa_aura_op_range_set(uint64_t aura_handle, uint64_t start_iova,
+ 	roc_store_pair(lim[reg].ptr_end, reg, end);
+ }
+ 
++void
++roc_npa_aura_op_range_set(uint64_t aura_handle, uint64_t start_iova,
++			  uint64_t end_iova)
++{
++	uint64_t reg = roc_npa_aura_handle_to_aura(aura_handle);
++	struct npa_lf *lf = idev_npa_obj_get();
++	struct npa_aura_lim *lim;
++
++	PLT_ASSERT(lf);
++	lim = lf->aura_lim;
++
++	/* Change only the bookkeeping in software */
++	lim[reg].ptr_start = PLT_MIN(lim[reg].ptr_start, start_iova);
++	lim[reg].ptr_end = PLT_MAX(lim[reg].ptr_end, end_iova);
++}
++
++void
++roc_npa_aura_op_range_get(uint64_t aura_handle, uint64_t *start_iova,
++			  uint64_t *end_iova)
++{
++	uint64_t aura_id = roc_npa_aura_handle_to_aura(aura_handle);
++	struct npa_aura_lim *lim;
++	struct npa_lf *lf;
++
++	lf = idev_npa_obj_get();
++	PLT_ASSERT(lf);
++
++	lim = lf->aura_lim;
++	*start_iova = lim[aura_id].ptr_start;
++	*end_iova = lim[aura_id].ptr_end;
++}
++
+ static int
+ npa_aura_pool_init(struct mbox *m_box, uint32_t aura_id, struct npa_aura_s *aura,
+ 		   struct npa_pool_s *pool)
+diff --git a/drivers/common/cnxk/roc_npa.h b/drivers/common/cnxk/roc_npa.h
+index d45c0532fbdb8..a1511244db9c4 100644
+--- a/drivers/common/cnxk/roc_npa.h
++++ b/drivers/common/cnxk/roc_npa.h
+@@ -732,6 +732,12 @@ int __roc_api roc_npa_pool_range_update_check(uint64_t aura_handle);
+ void __roc_api roc_npa_aura_op_range_set(uint64_t aura_handle,
+ 					 uint64_t start_iova,
+ 					 uint64_t end_iova);
++void __roc_api roc_npa_aura_op_range_get(uint64_t aura_handle,
++					 uint64_t *start_iova,
++					 uint64_t *end_iova);
++void __roc_api roc_npa_pool_op_range_set(uint64_t aura_handle,
++					 uint64_t start_iova,
++					 uint64_t end_iova);
+ int __roc_api roc_npa_aura_create(uint64_t *aura_handle, uint32_t block_count,
+ 				  struct npa_aura_s *aura, int pool_id,
+ 				  uint32_t flags);
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index 4a6a5080f78e2..c376bd837f64d 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -523,7 +523,7 @@ sso_hwgrp_init_xaq_aura(struct dev *dev, struct roc_sso_xaq_data *xaq,
+ 		roc_npa_aura_op_free(xaq->aura_handle, 0, iova);
+ 		iova += xaq_buf_size;
+ 	}
+-	roc_npa_aura_op_range_set(xaq->aura_handle, (uint64_t)xaq->mem, iova);
++	roc_npa_pool_op_range_set(xaq->aura_handle, (uint64_t)xaq->mem, iova);
+ 
+ 	if (roc_npa_aura_op_available_wait(xaq->aura_handle, xaq->nb_xaq, 0) !=
+ 	    xaq->nb_xaq) {
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 752832b985ede..825923e14421c 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -332,6 +332,7 @@ INTERNAL {
+ 	roc_npa_buf_type_update;
+ 	roc_npa_aura_drop_set;
+ 	roc_npa_aura_limit_modify;
++	roc_npa_aura_op_range_get;
+ 	roc_npa_aura_op_range_set;
+ 	roc_npa_aura_bp_configure;
+ 	roc_npa_ctx_dump;
+@@ -344,6 +345,7 @@ INTERNAL {
+ 	roc_npa_pool_create;
+ 	roc_npa_pool_destroy;
+ 	roc_npa_pool_op_pc_reset;
++	roc_npa_pool_op_range_set;
+ 	roc_npa_pool_range_update_check;
+ 	roc_npa_zero_aura_handle;
+ 	roc_npc_fini;
+diff --git a/drivers/mempool/cnxk/cnxk_mempool_ops.c b/drivers/mempool/cnxk/cnxk_mempool_ops.c
+index 1b6c4591bb123..a1aeaee746f58 100644
+--- a/drivers/mempool/cnxk/cnxk_mempool_ops.c
++++ b/drivers/mempool/cnxk/cnxk_mempool_ops.c
+@@ -174,7 +174,7 @@ cnxk_mempool_populate(struct rte_mempool *mp, unsigned int max_objs,
+ 	plt_npa_dbg("requested objects %" PRIu64 ", possible objects %" PRIu64
+ 		    "", (uint64_t)max_objs, (uint64_t)num_elts);
+ 
+-	roc_npa_aura_op_range_set(mp->pool_id, iova,
++	roc_npa_pool_op_range_set(mp->pool_id, iova,
+ 				  iova + num_elts * total_elt_sz);
+ 
+ 	if (roc_npa_pool_range_update_check(mp->pool_id) < 0)
+-- 
+2.25.1
+

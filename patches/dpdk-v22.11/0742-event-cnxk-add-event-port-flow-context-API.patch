@@ -1,0 +1,280 @@
+From b0e9a4ecefcc10b7786f733317226df7b9a56419 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 29 Aug 2023 23:49:33 +0530
+Subject: [PATCH 742/955] event/cnxk: add event port flow context API
+
+Add event port flow context status APIs.
+
+rte_pmd_cnxk_eventdev_wait_head() - Allows application to wait
+for the flow context currently held by the event port to become
+the HEAD of the flow chain.
+
+rte_pmd_cnxk_eventdev_is_head() - Allows application to test if
+the flow context currently held by the event port is the HEAD
+of the flow chain.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Acked-by: Jerin Jacob <jerinj@marvell.com>
+Change-Id: I579cd62b97c9ac54a8c1fc5ea654fb2825459466
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117912
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ doc/api/doxy-api-index.md                  |  1 +
+ doc/api/doxy-api.conf.in                   |  1 +
+ drivers/common/cnxk/roc_sso_dp.h           |  8 ++++
+ drivers/event/cnxk/cn10k_eventdev.h        |  4 +-
+ drivers/event/cnxk/cnxk_worker.c           | 49 +++++++++++++++++++++
+ drivers/event/cnxk/meson.build             |  2 +
+ drivers/event/cnxk/rte_pmd_cnxk_eventdev.h | 50 ++++++++++++++++++++++
+ drivers/event/cnxk/version.map             |  9 ++++
+ drivers/net/cnxk/cn10k_tx.h                | 12 +++---
+ 9 files changed, 128 insertions(+), 8 deletions(-)
+ create mode 100644 drivers/event/cnxk/cnxk_worker.c
+ create mode 100644 drivers/event/cnxk/rte_pmd_cnxk_eventdev.h
+ create mode 100644 drivers/event/cnxk/version.map
+
+diff --git a/doc/api/doxy-api-index.md b/doc/api/doxy-api-index.md
+index e316328ed437e..e67af79442487 100644
+--- a/doc/api/doxy-api-index.md
++++ b/doc/api/doxy-api-index.md
+@@ -49,6 +49,7 @@ The public API headers are grouped by topics:
+   [bnxt](@ref rte_pmd_bnxt.h),
+   [cnxk](@ref rte_pmd_cnxk.h),
+   [cnxk_crypto](@ref rte_pmd_cnxk_crypto.h),
++  [cnxk_eventdev](@ref rte_pmd_cnxk_eventdev.h),
+   [cnxk_mempool](@ref rte_pmd_cnxk_mempool.h),
+   [dpaa](@ref rte_pmd_dpaa.h),
+   [dpaa2](@ref rte_pmd_dpaa2.h),
+diff --git a/doc/api/doxy-api.conf.in b/doc/api/doxy-api.conf.in
+index 047742e7d2bb3..49ebe7d9e6f2f 100644
+--- a/doc/api/doxy-api.conf.in
++++ b/doc/api/doxy-api.conf.in
+@@ -10,6 +10,7 @@ INPUT                   = @TOPDIR@/doc/api/doxy-api-index.md \
+                           @TOPDIR@/drivers/crypto/scheduler \
+                           @TOPDIR@/drivers/dma/dpaa2 \
+                           @TOPDIR@/drivers/event/dlb2 \
++                          @TOPDIR@/drivers/event/cnxk \
+                           @TOPDIR@/drivers/mempool/cnxk \
+                           @TOPDIR@/drivers/mempool/dpaa2 \
+                           @TOPDIR@/drivers/net/ark \
+diff --git a/drivers/common/cnxk/roc_sso_dp.h b/drivers/common/cnxk/roc_sso_dp.h
+index 03c5bdf7ee538..a860340c8fe10 100644
+--- a/drivers/common/cnxk/roc_sso_dp.h
++++ b/drivers/common/cnxk/roc_sso_dp.h
+@@ -30,4 +30,12 @@ roc_sso_hws_head_wait(uintptr_t base)
+ 	return tag;
+ }
+ 
++static __plt_always_inline uint8_t
++roc_sso_hws_is_head(uintptr_t base)
++{
++	uintptr_t tag_op = base + SSOW_LF_GWS_TAG;
++
++	return !!(plt_read64(tag_op) & BIT_ULL(35));
++}
++
+ #endif /* _ROC_SSO_DP_H_ */
+diff --git a/drivers/event/cnxk/cn10k_eventdev.h b/drivers/event/cnxk/cn10k_eventdev.h
+index 29567728cded3..e79b68e0ac974 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.h
++++ b/drivers/event/cnxk/cn10k_eventdev.h
+@@ -10,9 +10,9 @@
+ 
+ struct cn10k_sso_hws {
+ 	uint64_t base;
+-	uint64_t gw_rdata;
+-	void *lookup_mem;
+ 	uint32_t gw_wdata;
++	void *lookup_mem;
++	uint64_t gw_rdata;
+ 	uint8_t swtag_req;
+ 	uint8_t hws_id;
+ 	/* PTP timestamp */
+diff --git a/drivers/event/cnxk/cnxk_worker.c b/drivers/event/cnxk/cnxk_worker.c
+new file mode 100644
+index 0000000000000..60876abcffa0d
+--- /dev/null
++++ b/drivers/event/cnxk/cnxk_worker.c
+@@ -0,0 +1,49 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell.
++ */
++
++#include <rte_common.h>
++#include <rte_pmd_cnxk_eventdev.h>
++#include <rte_eventdev.h>
++
++#include "roc_platform.h"
++#include "roc_sso.h"
++#include "roc_sso_dp.h"
++
++struct pwords {
++	uint64_t u[5];
++};
++
++void
++rte_pmd_cnxk_eventdev_wait_head(uint8_t dev, uint8_t port)
++{
++	struct pwords *w = rte_event_fp_ops[dev].data[port];
++	uint8_t vws;
++
++	if (w->u[1] & 0x3) {
++		roc_sso_hws_head_wait(w->u[0]);
++	} else {
++		/* Dual WS case */
++		vws = (w->u[4] >> 8) & 0x1;
++		roc_sso_hws_head_wait(w->u[vws]);
++	}
++}
++
++
++uint8_t
++rte_pmd_cnxk_eventdev_is_head(uint8_t dev, uint8_t port)
++{
++	struct pwords *w = rte_event_fp_ops[dev].data[port];
++	uintptr_t base;
++	uint8_t vws;
++
++	if (w->u[1] & 0x3) {
++		base = w->u[0];
++	} else {
++		/* Dual WS case */
++		vws = (w->u[4] >> 8) & 0x1;
++		base = w->u[vws];
++	}
++
++	return roc_sso_hws_is_head(base);
++}
+diff --git a/drivers/event/cnxk/meson.build b/drivers/event/cnxk/meson.build
+index 992c2a0532cbe..502fe0c7c2d91 100644
+--- a/drivers/event/cnxk/meson.build
++++ b/drivers/event/cnxk/meson.build
+@@ -20,6 +20,7 @@ endif
+ 
+ sources = files(
+         'cnxk_eventdev.c',
++        'cnxk_worker.c',
+         'cnxk_eventdev_adptr.c',
+         'cnxk_eventdev_selftest.c',
+         'cnxk_eventdev_stats.c',
+@@ -310,5 +311,6 @@ foreach flag: extra_flags
+     endif
+ endforeach
+ 
++headers = files('rte_pmd_cnxk_eventdev.h')
+ deps += ['bus_pci', 'common_cnxk', 'net_cnxk', 'crypto_cnxk', 'dma_cnxk']
+ pmd_supports_disable_iova_as_pa = true
+diff --git a/drivers/event/cnxk/rte_pmd_cnxk_eventdev.h b/drivers/event/cnxk/rte_pmd_cnxk_eventdev.h
+new file mode 100644
+index 0000000000000..b7b56f5fa1b45
+--- /dev/null
++++ b/drivers/event/cnxk/rte_pmd_cnxk_eventdev.h
+@@ -0,0 +1,50 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2023 Marvell Inc.
++ */
++
++/**
++ * @file rte_pmd_cnxk_eventdev.h
++ * Marvell CNXK eventdev PMD specific functions.
++ *
++ **/
++
++#ifndef _PMD_CNXK_EVENTDEV_H_
++#define _PMD_CNXK_EVENTDEV_H_
++
++#include <rte_common.h>
++#include <rte_compat.h>
++
++/**
++ * Wait for the currently active flow context on the event port to become HEAD
++ * of the flow-chain.
++ *
++ * @param dev
++ *  Event device identifier.
++ *
++ * @param port
++ *   Event port identifier.
++ */
++__rte_experimental
++void
++rte_pmd_cnxk_eventdev_wait_head(uint8_t dev, uint8_t port);
++
++
++/**
++ * Check if the currently active flow context on the event port is the HEAD
++ * of the flow-chain.
++ *
++ * @param dev
++ *  Event device identifier.
++ *
++ * @param port
++ *   Event port identifier.
++ *
++ * @return Status of the currently held flow context
++ *   0 not the head of the flow-chain
++ *   1 head of the flow-chain
++ */
++__rte_experimental
++uint8_t
++rte_pmd_cnxk_eventdev_is_head(uint8_t dev, uint8_t port);
++
++#endif
+diff --git a/drivers/event/cnxk/version.map b/drivers/event/cnxk/version.map
+new file mode 100644
+index 0000000000000..9dbf8eb59d723
+--- /dev/null
++++ b/drivers/event/cnxk/version.map
+@@ -0,0 +1,9 @@
++ DPDK_23 {
++	local: *;
++ };
++
++ EXPERIMENTAL {
++	global:
++	rte_pmd_cnxk_eventdev_wait_head;
++	rte_pmd_cnxk_eventdev_is_head;
++ };
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index cc091748ab286..664e47e1fc8e7 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -1318,8 +1318,8 @@ cn10k_nix_xmit_pkts(void *tx_queue, uint64_t *ws, struct rte_mbuf **tx_pkts,
+ 			lnum++;
+ 	}
+ 
+-	if ((flags & NIX_TX_VWQE_F) && !(ws[1] & BIT_ULL(35)))
+-		ws[1] = roc_sso_hws_head_wait(ws[0]);
++	if ((flags & NIX_TX_VWQE_F) && !(ws[3] & BIT_ULL(35)))
++		ws[3] = roc_sso_hws_head_wait(ws[0]);
+ 
+ 	left -= burst;
+ 	tx_pkts += burst;
+@@ -1475,8 +1475,8 @@ cn10k_nix_xmit_pkts_mseg(void *tx_queue, uint64_t *ws,
+ 		}
+ 	}
+ 
+-	if ((flags & NIX_TX_VWQE_F) && !(ws[1] & BIT_ULL(35)))
+-		ws[1] = roc_sso_hws_head_wait(ws[0]);
++	if ((flags & NIX_TX_VWQE_F) && !(ws[3] & BIT_ULL(35)))
++		ws[3] = roc_sso_hws_head_wait(ws[0]);
+ 
+ 	left -= burst;
+ 	tx_pkts += burst;
+@@ -3066,8 +3066,8 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 	if (flags & (NIX_TX_MULTI_SEG_F | NIX_TX_OFFLOAD_SECURITY_F))
+ 		wd.data[0] >>= 16;
+ 
+-	if ((flags & NIX_TX_VWQE_F) && !(ws[1] & BIT_ULL(35)))
+-		ws[1] = roc_sso_hws_head_wait(ws[0]);
++	if ((flags & NIX_TX_VWQE_F) && !(ws[3] & BIT_ULL(35)))
++		ws[3] = roc_sso_hws_head_wait(ws[0]);
+ 
+ 	left -= burst;
+ 
+-- 
+2.25.1
+

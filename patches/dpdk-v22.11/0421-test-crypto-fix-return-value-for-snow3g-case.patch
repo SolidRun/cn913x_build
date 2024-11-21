@@ -1,0 +1,51 @@
+From 8f24e360ad7a8e5bbf60fe72eb4bbdc12e278282 Mon Sep 17 00:00:00 2001
+From: Saoirse O'Donovan <saoirse.odonovan@intel.com>
+Date: Fri, 14 Apr 2023 13:55:26 +0000
+Subject: [PATCH 421/955] test/crypto: fix return value for snow3g case
+
+Unit tests were failing due to the return value of the decryption and
+authentication functions not being handled correctly. This has now been
+modified to return the expected test status.
+
+Fixes: e23eccfd281e ("test/crypto: fix bitwise operator in a SNOW3G case")
+Cc: stable@dpdk.org
+
+Signed-off-by: Saoirse O'Donovan <saoirse.odonovan@intel.com>
+Acked-by: Ciara Power <ciara.power@intel.com>
+Change-Id: Id7790f76c7a321d9681611c7a75f39414a8aa2ea
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103585
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index d739c24ea5dfa..7144ab7496456 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -6852,6 +6852,7 @@ snow3g_hash_test_vector_setup(const struct snow3g_test_data *pattern,
+ static int
+ test_snow3g_decryption_with_digest_test_case_1(void)
+ {
++	int ret;
+ 	struct snow3g_hash_test_data snow3g_hash_data;
+ 	struct rte_cryptodev_info dev_info;
+ 	struct crypto_testsuite_params *ts_params = &testsuite_params;
+@@ -6870,8 +6871,9 @@ test_snow3g_decryption_with_digest_test_case_1(void)
+ 	 */
+ 	snow3g_hash_test_vector_setup(&snow3g_test_case_7, &snow3g_hash_data);
+ 
+-	if (test_snow3g_decryption(&snow3g_test_case_7))
+-		return TEST_FAILED;
++	ret = test_snow3g_decryption(&snow3g_test_case_7);
++	if (ret != 0)
++		return ret;
+ 
+ 	return test_snow3g_authentication_verify(&snow3g_hash_data);
+ }
+-- 
+2.25.1
+

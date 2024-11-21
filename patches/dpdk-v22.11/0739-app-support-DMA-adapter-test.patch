@@ -1,0 +1,761 @@
+From 60d06e21c47c20fb5d05496c93acdeab520765c7 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Mon, 16 Oct 2023 12:40:31 +0530
+Subject: [PATCH 739/955] app: support DMA adapter test
+
+Added performance test support for DMA adapter.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: Ic33b0b6e701c1c2a11863fec5292249c82eebba2
+---
+ app/test-eventdev/evt_common.h       |   3 +
+ app/test-eventdev/evt_main.c         |  11 +
+ app/test-eventdev/evt_options.c      |  28 +++
+ app/test-eventdev/evt_options.h      |  12 ++
+ app/test-eventdev/evt_test.h         |   6 +
+ app/test-eventdev/test_perf_atq.c    |  14 ++
+ app/test-eventdev/test_perf_common.c | 293 ++++++++++++++++++++++++++-
+ app/test-eventdev/test_perf_common.h |  18 +-
+ app/test-eventdev/test_perf_queue.c  |  18 +-
+ 9 files changed, 395 insertions(+), 8 deletions(-)
+
+diff --git a/app/test-eventdev/evt_common.h b/app/test-eventdev/evt_common.h
+index fcb35714386fe..dbe1e5c0c4875 100644
+--- a/app/test-eventdev/evt_common.h
++++ b/app/test-eventdev/evt_common.h
+@@ -9,6 +9,7 @@
+ #include <rte_crypto.h>
+ #include <rte_debug.h>
+ #include <rte_event_crypto_adapter.h>
++#include <rte_event_dma_adapter.h>
+ #include <rte_eventdev.h>
+ #include <rte_service.h>
+ 
+@@ -42,6 +43,7 @@ enum evt_prod_type {
+ 	EVT_PROD_TYPE_ETH_RX_ADPTR,  /* Producer type Eth Rx Adapter. */
+ 	EVT_PROD_TYPE_EVENT_TIMER_ADPTR,  /* Producer type Timer Adapter. */
+ 	EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR,  /* Producer type Crypto Adapter. */
++	EVT_PROD_TYPE_EVENT_DMA_ADPTR,  /* Producer type DMA Adapter. */
+ 	EVT_PROD_TYPE_MAX,
+ };
+ 
+@@ -86,6 +88,7 @@ struct evt_options {
+ 	uint64_t timer_tick_nsec;
+ 	uint64_t optm_timer_tick_nsec;
+ 	enum evt_prod_type prod_type;
++	enum rte_event_dma_adapter_mode dma_adptr_mode;
+ 	enum rte_event_crypto_adapter_mode crypto_adptr_mode;
+ 	enum rte_crypto_op_type crypto_op_type;
+ 	enum rte_crypto_cipher_algorithm crypto_cipher_alg;
+diff --git a/app/test-eventdev/evt_main.c b/app/test-eventdev/evt_main.c
+index 5c7ac2cce9aba..3aa0690e1f9eb 100644
+--- a/app/test-eventdev/evt_main.c
++++ b/app/test-eventdev/evt_main.c
+@@ -141,6 +141,14 @@ main(int argc, char **argv)
+ 		}
+ 	}
+ 
++	/* Test specific dmadev setup */
++	if (test->ops.dmadev_setup) {
++		if (test->ops.dmadev_setup(test, &opt)) {
++			evt_err("%s: dmadev setup failed", opt.test_name);
++			goto cryptodev_destroy;
++		}
++	}
++
+ 	/* Test specific eventdev setup */
+ 	if (test->ops.eventdev_setup) {
+ 		if (test->ops.eventdev_setup(test, &opt)) {
+@@ -174,6 +182,9 @@ main(int argc, char **argv)
+ 	if (test->ops.cryptodev_destroy)
+ 		test->ops.cryptodev_destroy(test, &opt);
+ 
++	if (test->ops.dmadev_destroy)
++		test->ops.dmadev_destroy(test, &opt);
++
+ 	if (test->ops.mempool_destroy)
+ 		test->ops.mempool_destroy(test, &opt);
+ 
+diff --git a/app/test-eventdev/evt_options.c b/app/test-eventdev/evt_options.c
+index 03fb3bfce0a36..c624433b47bde 100644
+--- a/app/test-eventdev/evt_options.c
++++ b/app/test-eventdev/evt_options.c
+@@ -146,6 +146,27 @@ evt_parse_timer_prod_type_burst(struct evt_options *opt,
+ 	return 0;
+ }
+ 
++static int
++evt_parse_dma_prod_type(struct evt_options *opt,
++			   const char *arg __rte_unused)
++{
++	opt->prod_type = EVT_PROD_TYPE_EVENT_DMA_ADPTR;
++	return 0;
++}
++
++static int
++evt_parse_dma_adptr_mode(struct evt_options *opt, const char *arg)
++{
++	uint8_t mode;
++	int ret;
++
++	ret = parser_read_uint8(&mode, arg);
++	opt->dma_adptr_mode = mode ? RTE_EVENT_DMA_ADAPTER_OP_FORWARD :
++					RTE_EVENT_DMA_ADAPTER_OP_NEW;
++	return ret;
++}
++
++
+ static int
+ evt_parse_crypto_prod_type(struct evt_options *opt,
+ 			   const char *arg __rte_unused)
+@@ -446,6 +467,7 @@ usage(char *program)
+ 		"\t--queue_priority   : enable queue priority\n"
+ 		"\t--deq_tmo_nsec     : global dequeue timeout\n"
+ 		"\t--prod_type_ethdev : use ethernet device as producer.\n"
++		"\t--prod_type_dmadev : use dma device as producer.\n"
+ 		"\t--prod_type_cryptodev : use crypto device as producer.\n"
+ 		"\t--prod_type_timerdev : use event timer device as producer.\n"
+ 		"\t                     expiry_nsec would be the timeout\n"
+@@ -457,6 +479,8 @@ usage(char *program)
+ 		"\t--timer_tick_nsec  : timer tick interval in ns.\n"
+ 		"\t--max_tmo_nsec     : max timeout interval in ns.\n"
+ 		"\t--expiry_nsec      : event timer expiry ns.\n"
++		"\t--dma_adptr_mode   : 0 for OP_NEW mode (default) and\n"
++		"\t                     1 for OP_FORWARD mode.\n"
+ 		"\t--crypto_adptr_mode : 0 for OP_NEW mode (default) and\n"
+ 		"\t                      1 for OP_FORWARD mode.\n"
+ 		"\t--crypto_op_type   : 0 for SYM ops (default) and\n"
+@@ -540,9 +564,11 @@ static struct option lgopts[] = {
+ 	{ EVT_QUEUE_PRIORITY,      0, 0, 0 },
+ 	{ EVT_DEQ_TMO_NSEC,        1, 0, 0 },
+ 	{ EVT_PROD_ETHDEV,         0, 0, 0 },
++	{ EVT_PROD_DMADEV,         0, 0, 0 },
+ 	{ EVT_PROD_CRYPTODEV,      0, 0, 0 },
+ 	{ EVT_PROD_TIMERDEV,       0, 0, 0 },
+ 	{ EVT_PROD_TIMERDEV_BURST, 0, 0, 0 },
++	{ EVT_DMA_ADPTR_MODE,      1, 0, 0 },
+ 	{ EVT_CRYPTO_ADPTR_MODE,   1, 0, 0 },
+ 	{ EVT_CRYPTO_OP_TYPE,	   1, 0, 0 },
+ 	{ EVT_CRYPTO_CIPHER_ALG,   1, 0, 0 },
+@@ -589,8 +615,10 @@ evt_opts_parse_long(int opt_idx, struct evt_options *opt)
+ 		{ EVT_DEQ_TMO_NSEC, evt_parse_deq_tmo_nsec},
+ 		{ EVT_PROD_ETHDEV, evt_parse_eth_prod_type},
+ 		{ EVT_PROD_CRYPTODEV, evt_parse_crypto_prod_type},
++		{ EVT_PROD_DMADEV, evt_parse_dma_prod_type},
+ 		{ EVT_PROD_TIMERDEV, evt_parse_timer_prod_type},
+ 		{ EVT_PROD_TIMERDEV_BURST, evt_parse_timer_prod_type_burst},
++		{ EVT_DMA_ADPTR_MODE, evt_parse_dma_adptr_mode},
+ 		{ EVT_CRYPTO_ADPTR_MODE, evt_parse_crypto_adptr_mode},
+ 		{ EVT_CRYPTO_OP_TYPE, evt_parse_crypto_op_type},
+ 		{ EVT_CRYPTO_CIPHER_ALG, evt_parse_crypto_cipher_alg},
+diff --git a/app/test-eventdev/evt_options.h b/app/test-eventdev/evt_options.h
+index 8bf0a2ff38ad7..646060c7c6e83 100644
+--- a/app/test-eventdev/evt_options.h
++++ b/app/test-eventdev/evt_options.h
+@@ -35,8 +35,10 @@
+ #define EVT_DEQ_TMO_NSEC         ("deq_tmo_nsec")
+ #define EVT_PROD_ETHDEV          ("prod_type_ethdev")
+ #define EVT_PROD_CRYPTODEV	 ("prod_type_cryptodev")
++#define EVT_PROD_DMADEV          ("prod_type_dmadev")
+ #define EVT_PROD_TIMERDEV        ("prod_type_timerdev")
+ #define EVT_PROD_TIMERDEV_BURST  ("prod_type_timerdev_burst")
++#define EVT_DMA_ADPTR_MODE       ("dma_adptr_mode")
+ #define EVT_CRYPTO_ADPTR_MODE	 ("crypto_adptr_mode")
+ #define EVT_CRYPTO_OP_TYPE	 ("crypto_op_type")
+ #define EVT_CRYPTO_CIPHER_ALG	 ("crypto_cipher_alg")
+@@ -260,6 +262,8 @@ evt_prod_id_to_name(enum evt_prod_type prod_type)
+ 		return "Event timer adapter";
+ 	case EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR:
+ 		return "Event crypto adapter";
++	case EVT_PROD_TYPE_EVENT_DMA_ADPTR:
++		return "Event dma adapter";
+ 	}
+ 
+ 	return "";
+@@ -316,6 +320,14 @@ evt_dump_producer_type(struct evt_options *opt)
+ 			evt_dump("cipher iv sz", "%u", opt->crypto_cipher_iv_sz);
+ 		}
+ 		break;
++	case EVT_PROD_TYPE_EVENT_DMA_ADPTR:
++		snprintf(name, EVT_PROD_MAX_NAME_LEN,
++			 "Event dma adapter producers");
++		evt_dump("dma adapter mode", "%s",
++			 opt->dma_adptr_mode ? "OP_FORWARD" : "OP_NEW");
++		evt_dump("nb_dmadev", "%u", rte_dma_count_avail());
++		break;
++
+ 	}
+ 	evt_dump("prod_type", "%s", name);
+ }
+diff --git a/app/test-eventdev/evt_test.h b/app/test-eventdev/evt_test.h
+index 1049f99ddca69..ad3f531dcf203 100644
+--- a/app/test-eventdev/evt_test.h
++++ b/app/test-eventdev/evt_test.h
+@@ -31,6 +31,8 @@ typedef int (*evt_test_ethdev_setup_t)
+ 		(struct evt_test *test, struct evt_options *opt);
+ typedef int (*evt_test_cryptodev_setup_t)
+ 		(struct evt_test *test, struct evt_options *opt);
++typedef int (*evt_test_dmadev_setup_t)
++		(struct evt_test *test, struct evt_options *opt);
+ typedef int (*evt_test_eventdev_setup_t)
+ 		(struct evt_test *test, struct evt_options *opt);
+ typedef int (*evt_test_launch_lcores_t)
+@@ -45,6 +47,8 @@ typedef void (*evt_test_ethdev_rx_stop_t)(struct evt_test *test,
+ 					  struct evt_options *opt);
+ typedef void (*evt_test_cryptodev_destroy_t)
+ 		(struct evt_test *test, struct evt_options *opt);
++typedef void (*evt_test_dmadev_destroy_t)
++		(struct evt_test *test, struct evt_options *opt);
+ typedef void (*evt_test_mempool_destroy_t)
+ 		(struct evt_test *test, struct evt_options *opt);
+ typedef void (*evt_test_destroy_t)
+@@ -59,12 +63,14 @@ struct evt_test_ops {
+ 	evt_test_ethdev_setup_t ethdev_setup;
+ 	evt_test_eventdev_setup_t eventdev_setup;
+ 	evt_test_cryptodev_setup_t cryptodev_setup;
++	evt_test_dmadev_setup_t dmadev_setup;
+ 	evt_test_launch_lcores_t launch_lcores;
+ 	evt_test_result_t test_result;
+ 	evt_test_eventdev_destroy_t eventdev_destroy;
+ 	evt_test_ethdev_rx_stop_t ethdev_rx_stop;
+ 	evt_test_ethdev_destroy_t ethdev_destroy;
+ 	evt_test_cryptodev_destroy_t cryptodev_destroy;
++	evt_test_dmadev_destroy_t dmadev_destroy;
+ 	evt_test_mempool_destroy_t mempool_destroy;
+ 	evt_test_destroy_t test_destroy;
+ };
+diff --git a/app/test-eventdev/test_perf_atq.c b/app/test-eventdev/test_perf_atq.c
+index 4ac60cc38b7cd..07f395a9b6fd4 100644
+--- a/app/test-eventdev/test_perf_atq.c
++++ b/app/test-eventdev/test_perf_atq.c
+@@ -329,6 +329,18 @@ perf_atq_eventdev_setup(struct evt_test *test, struct evt_options *opt)
+ 				return ret;
+ 			}
+ 		}
++	} else if (opt->prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR) {
++		uint8_t dma_dev_id, dma_dev_count;
++
++		dma_dev_count = rte_dma_count_avail();
++		for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++) {
++			ret = rte_dma_start(dma_dev_id);
++			if (ret) {
++				evt_err("Failed to start dmadev %u",
++					dma_dev_id);
++				return ret;
++			}
++		}
+ 	}
+ 
+ 	return 0;
+@@ -371,6 +383,7 @@ static const struct evt_test_ops perf_atq =  {
+ 	.test_setup         = perf_test_setup,
+ 	.ethdev_setup       = perf_ethdev_setup,
+ 	.cryptodev_setup    = perf_cryptodev_setup,
++	.dmadev_setup       = perf_dmadev_setup,
+ 	.ethdev_rx_stop     = perf_ethdev_rx_stop,
+ 	.mempool_setup      = perf_mempool_setup,
+ 	.eventdev_setup     = perf_atq_eventdev_setup,
+@@ -379,6 +392,7 @@ static const struct evt_test_ops perf_atq =  {
+ 	.mempool_destroy    = perf_mempool_destroy,
+ 	.ethdev_destroy     = perf_ethdev_destroy,
+ 	.cryptodev_destroy  = perf_cryptodev_destroy,
++	.dmadev_destroy     = perf_dmadev_destroy,
+ 	.test_result        = perf_test_result,
+ 	.test_destroy       = perf_test_destroy,
+ };
+diff --git a/app/test-eventdev/test_perf_common.c b/app/test-eventdev/test_perf_common.c
+index 5e0255cfebdcc..5f85584fe4cfe 100644
+--- a/app/test-eventdev/test_perf_common.c
++++ b/app/test-eventdev/test_perf_common.c
+@@ -559,6 +559,84 @@ crypto_adapter_enq_op_fwd(struct prod_data *p)
+ 		       __func__, rte_lcore_id(), alloc_failures);
+ }
+ 
++static inline void
++dma_adapter_enq_op_new(struct prod_data *p)
++{
++	struct test_perf *t = p->t;
++	const uint32_t nb_flows = t->nb_flows;
++	const uint64_t nb_pkts = t->nb_pkts;
++	struct rte_event_dma_adapter_op *op;
++	struct evt_options *opt = t->opt;
++	uint32_t flow_counter = 0;
++	uint64_t count = 0;
++
++	if (opt->verbose_level > 1)
++		printf("%s(): lcore %d queue %d dma_dev_id %u dma_dev_vhcan_id %u\n",
++		       __func__, rte_lcore_id(), p->queue_id, p->da.dma_dev_id,
++		       p->da.vchan_id);
++
++	while (count < nb_pkts && t->done == false) {
++		op = p->da.dma_op[flow_counter++ % nb_flows];
++		while (rte_dma_copy_sg(op->dma_dev_id, op->vchan, op->src_seg,
++				       op->dst_seg, op->nb_src, op->nb_dst,
++				       op->flags) < 0 && t->done == false)
++			rte_pause();
++
++		count++;
++	}
++}
++
++static inline void
++dma_adapter_enq_op_fwd(struct prod_data *p)
++{
++	struct test_perf *t = p->t;
++	const uint32_t nb_flows = t->nb_flows;
++	const uint64_t nb_pkts = t->nb_pkts;
++	struct rte_event_dma_adapter_op *op;
++	const uint8_t dev_id = p->dev_id;
++	struct evt_options *opt = t->opt;
++	const uint8_t port = p->port_id;
++	uint32_t flow_counter = 0;
++	struct rte_event ev;
++	uint64_t count = 0;
++
++	if (opt->verbose_level > 1)
++		printf("%s(): lcore %d port %d queue %d dma_dev_id %u dma_dev_vchan_id %u\n",
++		       __func__, rte_lcore_id(), port, p->queue_id,
++		       p->da.dma_dev_id, p->da.vchan_id);
++
++	ev.event = 0;
++	ev.op = RTE_EVENT_OP_NEW;
++	ev.queue_id = p->queue_id;
++	ev.sched_type = RTE_SCHED_TYPE_ATOMIC;
++	ev.event_type = RTE_EVENT_TYPE_CPU;
++
++	while (count < nb_pkts && t->done == false) {
++		op = p->da.dma_op[flow_counter++ % nb_flows];
++		ev.event_ptr = op;
++
++		while (rte_event_dma_adapter_enqueue(dev_id, port, &ev, 1) != 1 &&
++						     t->done == false)
++			rte_pause();
++
++		count++;
++	}
++}
++
++static inline int
++perf_event_dma_producer(void *arg)
++{
++	struct prod_data *p = arg;
++	struct evt_options *opt = p->t->opt;
++
++	if (opt->dma_adptr_mode == RTE_EVENT_DMA_ADAPTER_OP_NEW)
++		dma_adapter_enq_op_new(p);
++	else
++		dma_adapter_enq_op_fwd(p);
++
++	return 0;
++}
++
+ static inline int
+ perf_event_crypto_producer(void *arg)
+ {
+@@ -841,7 +919,9 @@ perf_producer_wrapper(void *arg)
+ 			return perf_event_crypto_producer_burst(arg);
+ 		else
+ 			return perf_event_crypto_producer(arg);
+-	}
++	} else if (t->opt->prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR)
++		return perf_event_dma_producer(arg);
++
+ 	return 0;
+ }
+ 
+@@ -952,7 +1032,9 @@ perf_launch_lcores(struct evt_test *test, struct evt_options *opt,
+ 				    opt->prod_type ==
+ 					    EVT_PROD_TYPE_EVENT_TIMER_ADPTR ||
+ 				    opt->prod_type ==
+-					    EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR) {
++					    EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR ||
++				    opt->prod_type ==
++					    EVT_PROD_TYPE_EVENT_DMA_ADPTR) {
+ 					t->done = true;
+ 					break;
+ 				}
+@@ -962,7 +1044,8 @@ perf_launch_lcores(struct evt_test *test, struct evt_options *opt,
+ 		if (new_cycles - dead_lock_cycles > dead_lock_sample &&
+ 		    (opt->prod_type == EVT_PROD_TYPE_SYNT ||
+ 		     opt->prod_type == EVT_PROD_TYPE_EVENT_TIMER_ADPTR ||
+-		     opt->prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR)) {
++		     opt->prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR ||
++		     opt->prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR)) {
+ 			remaining = t->outstand_pkts - processed_pkts(t);
+ 			if (dead_lock_remaining == remaining) {
+ 				rte_event_dev_dump(opt->dev_id, stdout);
+@@ -1162,6 +1245,39 @@ perf_event_crypto_adapter_setup(struct test_perf *t, struct prod_data *p)
+ 	return ret;
+ }
+ 
++static int
++perf_event_dma_adapter_setup(struct test_perf *t, struct prod_data *p)
++{
++	struct evt_options *opt = t->opt;
++	struct rte_event event;
++	uint32_t cap;
++	int ret;
++
++	ret = rte_event_dma_adapter_caps_get(p->dev_id, p->da.dma_dev_id, &cap);
++	if (ret) {
++		evt_err("Failed to get dma adapter capabilities");
++		return ret;
++	}
++
++	if (((opt->dma_adptr_mode == RTE_EVENT_DMA_ADAPTER_OP_NEW) &&
++	     !(cap & RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_OP_NEW)) ||
++	    ((opt->dma_adptr_mode == RTE_EVENT_DMA_ADAPTER_OP_FORWARD) &&
++	     !(cap & RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_OP_FWD))) {
++		evt_err("dma adapter %s mode unsupported\n",
++			opt->dma_adptr_mode ? "OP_FORWARD" : "OP_NEW");
++		return -ENOTSUP;
++	}
++
++	if (cap & RTE_EVENT_DMA_ADAPTER_CAP_INTERNAL_PORT_VCHAN_EV_BIND)
++		ret = rte_event_dma_adapter_vchan_add(TEST_PERF_DA_ID, p->da.dma_dev_id,
++						      p->da.vchan_id, &event);
++	else
++		ret = rte_event_dma_adapter_vchan_add(TEST_PERF_DA_ID, p->da.dma_dev_id,
++						      p->da.vchan_id, NULL);
++
++	return ret;
++}
++
+ static void *
+ cryptodev_sym_sess_create(struct prod_data *p, struct test_perf *t)
+ {
+@@ -1399,6 +1515,77 @@ perf_event_dev_port_setup(struct evt_test *test, struct evt_options *opt,
+ 			}
+ 
+ 			qp_id++;
++			prod++;
++		}
++	}  else if (opt->prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR) {
++		struct rte_event_port_conf conf = *port_conf;
++		struct rte_event_dma_adapter_op *op;
++		struct rte_mempool *pool = t->pool;
++		uint8_t dma_dev_id = 0;
++		uint16_t vchan_id = 0;
++
++		ret = rte_event_dma_adapter_create(TEST_PERF_DA_ID, opt->dev_id, &conf, 0);
++		if (ret) {
++			evt_err("Failed to create dma adapter");
++			return ret;
++		}
++
++		prod = 0;
++		for (; port < perf_nb_event_ports(opt); port++) {
++			struct prod_data *p = &t->prod[port];
++			struct rte_event *response_info;
++			uint32_t flow_id;
++
++			p->dev_id = opt->dev_id;
++			p->port_id = port;
++			p->queue_id = prod * stride;
++			p->da.dma_dev_id = dma_dev_id;
++			p->da.vchan_id = vchan_id;
++			p->da.dma_op = rte_zmalloc_socket(NULL, sizeof(void *) * t->nb_flows,
++					RTE_CACHE_LINE_SIZE, opt->socket_id);
++
++			p->t = t;
++
++			ret = perf_event_dma_adapter_setup(t, p);
++			if (ret)
++				return ret;
++
++			for (flow_id = 0; flow_id < t->nb_flows; flow_id++) {
++				rte_mempool_get(t->da_op_pool, (void **)&op);
++
++				op->src_seg = rte_malloc(NULL, sizeof(struct rte_dma_sge), 0);
++				op->dst_seg = rte_malloc(NULL, sizeof(struct rte_dma_sge), 0);
++
++				op->src_seg->addr = rte_pktmbuf_iova(rte_pktmbuf_alloc(pool));
++				op->dst_seg->addr = rte_pktmbuf_iova(rte_pktmbuf_alloc(pool));
++				op->src_seg->length = 1024;
++				op->dst_seg->length = 1024;
++				op->nb_src = 1;
++				op->nb_dst = 1;
++				op->flags = RTE_DMA_OP_FLAG_SUBMIT;
++				op->op_mp = t->da_op_pool;
++				op->dma_dev_id = dma_dev_id;
++				op->vchan = vchan_id;
++
++				response_info = (struct rte_event *)((uint8_t *)op +
++						 sizeof(struct rte_event_dma_adapter_op));
++				response_info->queue_id = p->queue_id;
++				response_info->sched_type = RTE_SCHED_TYPE_ATOMIC;
++				response_info->flow_id = flow_id;
++
++				p->da.dma_op[flow_id] = op;
++			}
++
++			conf.event_port_cfg |=
++				RTE_EVENT_PORT_CFG_HINT_PRODUCER |
++				RTE_EVENT_PORT_CFG_HINT_CONSUMER;
++
++			ret = rte_event_port_setup(opt->dev_id, port, &conf);
++			if (ret) {
++				evt_err("failed to setup port %d", port);
++				return ret;
++			}
++
+ 			prod++;
+ 		}
+ 	} else {
+@@ -1463,7 +1650,8 @@ perf_opt_check(struct evt_options *opt, uint64_t nb_queues)
+ 
+ 	if (opt->prod_type == EVT_PROD_TYPE_SYNT ||
+ 	    opt->prod_type == EVT_PROD_TYPE_EVENT_TIMER_ADPTR ||
+-	    opt->prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR) {
++	    opt->prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR ||
++	    opt->prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR) {
+ 		/* Validate producer lcores */
+ 		if (evt_lcores_has_overlap(opt->plcores,
+ 					rte_get_main_lcore())) {
+@@ -1855,6 +2043,103 @@ perf_cryptodev_destroy(struct evt_test *test, struct evt_options *opt)
+ 	rte_mempool_free(t->ca_vector_pool);
+ }
+ 
++int
++perf_dmadev_setup(struct evt_test *test, struct evt_options *opt)
++{
++	const struct rte_dma_conf conf = { .nb_vchans = 1};
++	const struct rte_dma_vchan_conf qconf = {
++			.direction = RTE_DMA_DIR_MEM_TO_MEM,
++			.nb_desc = 1024,
++	};
++	struct test_perf *t = evt_test_priv(test);
++	uint8_t dma_dev_count, dma_dev_id;
++	unsigned int elt_size;
++	int ret;
++
++	if (opt->prod_type != EVT_PROD_TYPE_EVENT_DMA_ADPTR)
++		return 0;
++
++	dma_dev_count = rte_dma_count_avail();
++	if (dma_dev_count == 0) {
++		evt_err("No dma devices available\n");
++		return -ENODEV;
++	}
++
++	elt_size = sizeof(struct rte_event_dma_adapter_op) + sizeof(struct rte_event);
++	t->da_op_pool = rte_mempool_create("dma_op_pool", opt->pool_sz, elt_size, 256,
++					   0, NULL, NULL, NULL, NULL, rte_socket_id(), 0);
++	if (t->da_op_pool == NULL) {
++		evt_err("Failed to create dma op pool");
++		return -ENOMEM;
++	}
++
++	for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++) {
++		int vchan_id;
++
++		ret = rte_dma_configure(dma_dev_id, &conf);
++		if (ret) {
++			evt_err("Failed to configure dma dev (%u)", dma_dev_id);
++			goto err;
++		}
++
++		for (vchan_id = 0; vchan_id < conf.nb_vchans; vchan_id++) {
++			ret = rte_dma_vchan_setup(dma_dev_id, vchan_id, &qconf);
++			if (ret) {
++				evt_err("Failed to setup vchan on dma dev %u\n",
++					dma_dev_id);
++				goto err;
++			}
++		}
++	}
++
++	return 0;
++err:
++	for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++)
++		rte_dma_close(dma_dev_id);
++
++	rte_mempool_free(t->da_op_pool);
++
++	return ret;
++}
++
++void
++perf_dmadev_destroy(struct evt_test *test, struct evt_options *opt)
++{
++	uint8_t dma_dev_id, dma_dev_count = rte_dma_count_avail();
++	struct test_perf *t = evt_test_priv(test);
++	uint16_t port;
++
++	if (opt->prod_type != EVT_PROD_TYPE_EVENT_DMA_ADPTR)
++		return;
++
++	for (port = t->nb_workers; port < perf_nb_event_ports(opt); port++) {
++		struct prod_data *p = &t->prod[port];
++		struct rte_event_dma_adapter_op *op;
++		uint32_t flow_id;
++
++		for (flow_id = 0; flow_id < t->nb_flows; flow_id++) {
++			op = p->da.dma_op[flow_id];
++
++			rte_pktmbuf_free((struct rte_mbuf *)op->src_seg->addr);
++			rte_pktmbuf_free((struct rte_mbuf *)op->dst_seg->addr);
++			rte_free(op->src_seg);
++			rte_free(op->dst_seg);
++			rte_mempool_put(op->op_mp, op);
++		}
++
++		rte_event_dma_adapter_vchan_del(TEST_PERF_DA_ID, p->da.dma_dev_id, p->da.vchan_id);
++	}
++
++	rte_event_dma_adapter_free(TEST_PERF_DA_ID);
++
++	for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++) {
++		rte_dma_stop(dma_dev_id);
++		rte_dma_close(dma_dev_id);
++	}
++
++	rte_mempool_free(t->da_op_pool);
++}
++
+ int
+ perf_mempool_setup(struct evt_test *test, struct evt_options *opt)
+ {
+diff --git a/app/test-eventdev/test_perf_common.h b/app/test-eventdev/test_perf_common.h
+index faedd471c6dc2..bff9c5faadfd9 100644
+--- a/app/test-eventdev/test_perf_common.h
++++ b/app/test-eventdev/test_perf_common.h
+@@ -27,6 +27,7 @@
+ #include "evt_test.h"
+ 
+ #define TEST_PERF_CA_ID 0
++#define TEST_PERF_DA_ID 0
+ 
+ struct test_perf;
+ 
+@@ -43,11 +44,19 @@ struct crypto_adptr_data {
+ 	uint16_t cdev_qp_id;
+ 	void **crypto_sess;
+ };
++
++struct dma_adptr_data {
++	uint8_t dma_dev_id;
++	uint16_t vchan_id;
++	void **dma_op;
++};
++
+ struct prod_data {
+ 	uint8_t dev_id;
+ 	uint8_t port_id;
+ 	uint8_t queue_id;
+ 	struct crypto_adptr_data ca;
++	struct dma_adptr_data da;
+ 	struct test_perf *t;
+ } __rte_cache_aligned;
+ 
+@@ -72,6 +81,7 @@ struct test_perf {
+ 	struct rte_mempool *ca_sess_pool;
+ 	struct rte_mempool *ca_asym_sess_pool;
+ 	struct rte_mempool *ca_vector_pool;
++	struct rte_mempool *da_op_pool;
+ } __rte_cache_aligned;
+ 
+ struct perf_elt {
+@@ -206,7 +216,7 @@ perf_handle_crypto_vector_ev(struct rte_event *ev, struct perf_elt **pe,
+ }
+ 
+ static __rte_always_inline int
+-perf_process_last_stage(struct rte_mempool *const pool, uint8_t prod_crypto_type,
++perf_process_last_stage(struct rte_mempool *const pool, uint8_t prod_type,
+ 		struct rte_event *const ev, struct worker_data *const w,
+ 		void *bufs[], int const buf_sz, uint8_t count)
+ {
+@@ -219,7 +229,7 @@ perf_process_last_stage(struct rte_mempool *const pool, uint8_t prod_crypto_type
+ 	rte_atomic_thread_fence(__ATOMIC_RELEASE);
+ 	w->processed_pkts++;
+ 
+-	if (prod_crypto_type) {
++	if (prod_type == EVT_PROD_TYPE_EVENT_CRYPTO_ADPTR) {
+ 		struct rte_crypto_op *op = ev->event_ptr;
+ 		struct rte_mbuf *m;
+ 
+@@ -234,6 +244,8 @@ perf_process_last_stage(struct rte_mempool *const pool, uint8_t prod_crypto_type
+ 			to_free_in_bulk = op->asym->modex.result.data;
+ 		}
+ 		rte_crypto_op_free(op);
++	} else if (prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR) {
++		return count;
+ 	} else {
+ 		to_free_in_bulk = ev->event_ptr;
+ 	}
+@@ -346,6 +358,7 @@ int perf_opt_check(struct evt_options *opt, uint64_t nb_queues);
+ int perf_test_setup(struct evt_test *test, struct evt_options *opt);
+ int perf_ethdev_setup(struct evt_test *test, struct evt_options *opt);
+ int perf_cryptodev_setup(struct evt_test *test, struct evt_options *opt);
++int perf_dmadev_setup(struct evt_test *test, struct evt_options *opt);
+ int perf_mempool_setup(struct evt_test *test, struct evt_options *opt);
+ int perf_event_dev_port_setup(struct evt_test *test, struct evt_options *opt,
+ 				uint8_t stride, uint8_t nb_queues,
+@@ -357,6 +370,7 @@ void perf_opt_dump(struct evt_options *opt, uint8_t nb_queues);
+ void perf_test_destroy(struct evt_test *test, struct evt_options *opt);
+ void perf_eventdev_destroy(struct evt_test *test, struct evt_options *opt);
+ void perf_cryptodev_destroy(struct evt_test *test, struct evt_options *opt);
++void perf_dmadev_destroy(struct evt_test *test, struct evt_options *opt);
+ void perf_ethdev_destroy(struct evt_test *test, struct evt_options *opt);
+ void perf_ethdev_rx_stop(struct evt_test *test, struct evt_options *opt);
+ void perf_mempool_destroy(struct evt_test *test, struct evt_options *opt);
+diff --git a/app/test-eventdev/test_perf_queue.c b/app/test-eventdev/test_perf_queue.c
+index 2399cfb69bcde..1a388e3e66c40 100644
+--- a/app/test-eventdev/test_perf_queue.c
++++ b/app/test-eventdev/test_perf_queue.c
+@@ -68,7 +68,7 @@ perf_queue_worker(void *arg, const int enable_fwd_latency)
+ 				cnt = perf_process_last_stage_latency(pool, prod_crypto_type,
+ 					&ev, w, bufs, sz, cnt);
+ 			else
+-				cnt = perf_process_last_stage(pool, prod_crypto_type,
++				cnt = perf_process_last_stage(pool, opt->prod_type,
+ 					&ev, w, bufs, sz, cnt);
+ 		} else {
+ 			fwd_event(&ev, sched_type_list, nb_stages);
+@@ -120,7 +120,7 @@ perf_queue_worker_burst(void *arg, const int enable_fwd_latency)
+ 					cnt = perf_process_last_stage_latency(pool,
+ 						prod_crypto_type, &ev[i], w, bufs, sz, cnt);
+ 				else
+-					cnt = perf_process_last_stage(pool, prod_crypto_type,
++					cnt = perf_process_last_stage(pool, opt->prod_type,
+ 						&ev[i], w, bufs, sz, cnt);
+ 
+ 				ev[i].op = RTE_EVENT_OP_RELEASE;
+@@ -346,6 +346,18 @@ perf_queue_eventdev_setup(struct evt_test *test, struct evt_options *opt)
+ 				return ret;
+ 			}
+ 		}
++	} else if (opt->prod_type == EVT_PROD_TYPE_EVENT_DMA_ADPTR) {
++		uint8_t dma_dev_id, dma_dev_count;
++
++		dma_dev_count = rte_dma_count_avail();
++		for (dma_dev_id = 0; dma_dev_id < dma_dev_count; dma_dev_id++) {
++			ret = rte_dma_start(dma_dev_id);
++			if (ret) {
++				evt_err("Failed to start dmadev %u",
++					dma_dev_id);
++				return ret;
++			}
++		}
+ 	}
+ 
+ 	return 0;
+@@ -389,6 +401,7 @@ static const struct evt_test_ops perf_queue =  {
+ 	.mempool_setup      = perf_mempool_setup,
+ 	.ethdev_setup	    = perf_ethdev_setup,
+ 	.cryptodev_setup    = perf_cryptodev_setup,
++	.dmadev_setup       = perf_dmadev_setup,
+ 	.ethdev_rx_stop     = perf_ethdev_rx_stop,
+ 	.eventdev_setup     = perf_queue_eventdev_setup,
+ 	.launch_lcores      = perf_queue_launch_lcores,
+@@ -396,6 +409,7 @@ static const struct evt_test_ops perf_queue =  {
+ 	.mempool_destroy    = perf_mempool_destroy,
+ 	.ethdev_destroy	    = perf_ethdev_destroy,
+ 	.cryptodev_destroy  = perf_cryptodev_destroy,
++	.dmadev_destroy     = perf_dmadev_destroy,
+ 	.test_result        = perf_test_result,
+ 	.test_destroy       = perf_test_destroy,
+ };
+-- 
+2.25.1
+

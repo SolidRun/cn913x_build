@@ -1,0 +1,53 @@
+From 31cb6efd8da09b4ce9b4df7da5713efd4d3897e6 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Thu, 12 Jan 2023 08:58:31 +0530
+Subject: [PATCH 155/955] ci: add env file needed to define cn10k a0 stage
+
+Added cnxk_dpdk_event_tests to new env file. Added the same to default
+skip list in cn10k env file. This is because of a HW bug in cn10k
+related to SCLK. Because of that, timer adapter tests require SCLK to be
+1000.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I37f57f9b3f14322b689dcb4367d653eec678a98a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94365
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/env/cn10k-a0.env | 11 +++++++++++
+ marvell-ci/test/env/cn10k.env    |  1 +
+ 2 files changed, 12 insertions(+)
+ create mode 100644 marvell-ci/test/env/cn10k-a0.env
+
+diff --git a/marvell-ci/test/env/cn10k-a0.env b/marvell-ci/test/env/cn10k-a0.env
+new file mode 100644
+index 0000000000000..50e9930d2c473
+--- /dev/null
++++ b/marvell-ci/test/env/cn10k-a0.env
+@@ -0,0 +1,11 @@
++#!/bin/bash
++
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
++
++RUN_TESTS="cnxk_dpdk_event_tests"
++
++# Export the path to this conf so that other scripts can source this conf.
++export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn10k-a0.env
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index c1f84e9393846..0f08d3aefcdda 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -105,6 +105,7 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_gpio_test
+ 	cnxk_mbuf_perf
+ 	cnxk_ipsec_reassembly_perf
++	cnxk_dpdk_event_tests
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+-- 
+2.25.1
+

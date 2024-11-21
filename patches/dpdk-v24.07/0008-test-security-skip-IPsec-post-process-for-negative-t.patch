@@ -1,0 +1,82 @@
+From 907f52b2a9fc232469c6afca5bba844873f6a16e Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Fri, 8 Sep 2023 14:52:32 +0530
+Subject: [PATCH 08/12] test/security: skip IPsec post process for negative
+ tests
+
+Skips calling test_ipsec_post_process for negative inline IPsec tests
+as received packet might not be valid for a negative case.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I7975ea4f3ceec43e1978a2729df351fb19875890
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/111634
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit c0c9c83def362f8e315666fdc536273e0f054028)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/112106
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit f274542c857c65d35ad6216d4e264bb16f7ec56b)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118434
+(cherry picked from commit 878dc1ecd54ba1ba8c2806ed493571be3b7b8402)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/135766
+---
+ app/test/test_cryptodev_security_ipsec.c |  1 +
+ app/test/test_security_inline_proto.c    | 25 +++++++++++++++++++-----
+ 2 files changed, 21 insertions(+), 5 deletions(-)
+
+diff --git a/app/test/test_cryptodev_security_ipsec.c b/app/test/test_cryptodev_security_ipsec.c
+index e6a81ca186acf..2576afbd9987a 100644
+--- a/app/test/test_cryptodev_security_ipsec.c
++++ b/app/test/test_cryptodev_security_ipsec.c
+@@ -916,6 +916,7 @@ test_ipsec_post_process(const struct rte_mbuf *m, const struct ipsec_test_data *
+ 		seg = seg->next;
+ 	}
+ 	len = RTE_MIN(len, data_len);
++	TEST_ASSERT(len <= IPSEC_TEXT_MAX_LEN, "Invalid packet length: %u", len);
+ 	/* Copy mbuf payload to continuous buffer */
+ 	output = rte_pktmbuf_read(m, 0, len, output_text);
+ 	if (output != output_text)
+diff --git a/app/test/test_security_inline_proto.c b/app/test/test_security_inline_proto.c
+index 10f7e58caa468..480469f672dd5 100644
+--- a/app/test/test_security_inline_proto.c
++++ b/app/test/test_security_inline_proto.c
+@@ -1449,12 +1449,27 @@ test_ipsec_inline_proto_process(struct ipsec_test_data *td,
+ 	for (i = 0; i < nb_rx; i++) {
+ 		rte_pktmbuf_adj(rx_pkts_burst[i], RTE_ETHER_HDR_LEN);
+ 
+-		ret = test_ipsec_post_process(rx_pkts_burst[i], td,
+-					      res_d, silent, flags);
+-		if (ret != TEST_SUCCESS) {
+-			for ( ; i < nb_rx; i++)
++		/* For tests with status as error for test success,
++		 * skip verification
++		 */
++		if (td->ipsec_xform.direction ==
++		    RTE_SECURITY_IPSEC_SA_DIR_INGRESS && (flags->icv_corrupt ||
++		    flags->sa_expiry_pkts_hard || flags->tunnel_hdr_verify ||
++		    td->ar_packet)) {
++			if (!(rx_pkts_burst[i]->ol_flags &
++			    RTE_MBUF_F_RX_SEC_OFFLOAD_FAILED)) {
+ 				rte_pktmbuf_free(rx_pkts_burst[i]);
+-			goto out;
++				rx_pkts_burst[i] = NULL;
++				return TEST_FAILED;
++			}
++		} else {
++			ret = test_ipsec_post_process(rx_pkts_burst[i], td,
++						      res_d, silent, flags);
++			if (ret != TEST_SUCCESS) {
++				for ( ; i < nb_rx; i++)
++					rte_pktmbuf_free(rx_pkts_burst[i]);
++				goto out;
++			}
+ 		}
+ 
+ 		ret = test_ipsec_stats_verify(ctx, ses, flags,
+-- 
+2.25.1
+

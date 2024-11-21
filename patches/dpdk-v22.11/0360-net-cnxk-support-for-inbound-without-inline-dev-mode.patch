@@ -1,0 +1,123 @@
+From 9fa57bf06d6f0cb73a6cd5865b25172fc74e9835 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Tue, 4 Apr 2023 12:42:00 +0530
+Subject: [PATCH 360/955] net/cnxk: support for inbound without inline dev mode
+
+Support for inbound Inline IPsec without Inline device
+RQ i.e both first pass and second pass hitting same
+ethdev RQ in poll mode. Remove the switching from
+inline dev to non inline dev mode as inline dev mode
+is default and can only be overridden by devargs.
+
+Change-Id: I60473c87f2255da297eaaf18f1d590edc67866ee
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100587
+Reviewed-by: Rahul Bhansali <rbhansali@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_queue.c      |  3 +++
+ drivers/event/cnxk/cnxk_eventdev_adptr.c | 15 ---------------
+ drivers/net/cnxk/cnxk_ethdev.c           | 15 ++++++++++-----
+ 3 files changed, 13 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index d29fafa895805..08e8bf7ea2df6 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -473,6 +473,9 @@ nix_rq_cfg(struct dev *dev, struct roc_nix_rq *rq, uint16_t qints, bool cfg,
+ 	if (rq->ipsech_ena) {
+ 		aq->rq.ipsech_ena = 1;
+ 		aq->rq.ipsecd_drop_en = 1;
++		aq->rq.ena_wqwd = 1;
++		aq->rq.wqe_skip = rq->wqe_skip;
++		aq->rq.wqe_caching = 1;
+ 	}
+ 
+ 	aq->rq.lpb_aura = roc_npa_aura_handle_to_aura(rq->aura_handle);
+diff --git a/drivers/event/cnxk/cnxk_eventdev_adptr.c b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+index 81e61ed856ee1..946f56f63ec69 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_adptr.c
++++ b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+@@ -273,15 +273,6 @@ cnxk_sso_rx_adapter_queue_add(
+ 	}
+ 
+ 	dev->rx_offloads |= cnxk_eth_dev->rx_offload_flags;
+-
+-	/* Switch to use PF/VF's NIX LF instead of inline device for inbound
+-	 * when all the RQ's are switched to event dev mode. We do this only
+-	 * when dev arg no_inl_dev=1 is selected.
+-	 */
+-	if (cnxk_eth_dev->inb.no_inl_dev &&
+-	    cnxk_eth_dev->nb_rxq_sso == cnxk_eth_dev->nb_rxq)
+-		cnxk_nix_inb_mode_set(cnxk_eth_dev, false);
+-
+ 	return 0;
+ }
+ 
+@@ -309,12 +300,6 @@ cnxk_sso_rx_adapter_queue_del(const struct rte_eventdev *event_dev,
+ 	if (rc < 0)
+ 		plt_err("Failed to clear Rx adapter config port=%d, q=%d",
+ 			eth_dev->data->port_id, rx_queue_id);
+-
+-	/* Removing RQ from Rx adapter implies need to use
+-	 * inline device for CQ/Poll mode.
+-	 */
+-	cnxk_nix_inb_mode_set(cnxk_eth_dev, true);
+-
+ 	return rc;
+ }
+ 
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index aaa10144798a6..916198d802965 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -81,9 +81,6 @@ cnxk_nix_inb_mode_set(struct cnxk_eth_dev *dev, bool use_inl_dev)
+ {
+ 	struct roc_nix *nix = &dev->nix;
+ 
+-	if (dev->inb.inl_dev == use_inl_dev)
+-		return 0;
+-
+ 	plt_nix_dbg("Security sessions(%u) still active, inl=%u!!!",
+ 		    dev->inb.nb_sess, !!dev->inb.inl_dev);
+ 
+@@ -119,7 +116,7 @@ nix_security_setup(struct cnxk_eth_dev *dev)
+ 		/* By default pick using inline device for poll mode.
+ 		 * Will be overridden when event mode rq's are setup.
+ 		 */
+-		cnxk_nix_inb_mode_set(dev, true);
++		cnxk_nix_inb_mode_set(dev, !dev->inb.no_inl_dev);
+ 
+ 		/* Allocate memory to be used as dptr for CPT ucode
+ 		 * WRITE_SA op.
+@@ -633,6 +630,7 @@ cnxk_nix_rx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	struct roc_nix_rq *rq;
+ 	struct roc_nix_cq *cq;
+ 	uint16_t first_skip;
++	uint16_t wqe_skip;
+ 	int rc = -EINVAL;
+ 	size_t rxq_sz;
+ 	struct rte_mempool *lpb_pool = mp;
+@@ -712,8 +710,15 @@ cnxk_nix_rx_queue_setup(struct rte_eth_dev *eth_dev, uint16_t qid,
+ 		rq->lpb_drop_ena = !(dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY);
+ 
+ 	/* Enable Inline IPSec on RQ, will not be used for Poll mode */
+-	if (roc_nix_inl_inb_is_enabled(nix))
++	if (roc_nix_inl_inb_is_enabled(nix) && !dev->inb.inl_dev) {
+ 		rq->ipsech_ena = true;
++		/* WQE skip is needed when poll mode is enabled in CN10KA_B0 and above
++		 * for Inline IPsec traffic to CQ without inline device.
++		 */
++		wqe_skip = RTE_ALIGN_CEIL(sizeof(struct rte_mbuf), ROC_CACHE_LINE_SZ);
++		wqe_skip = wqe_skip / ROC_CACHE_LINE_SZ;
++		rq->wqe_skip = wqe_skip;
++	}
+ 
+ 	if (spb_pool) {
+ 		rq->spb_ena = 1;
+-- 
+2.25.1
+

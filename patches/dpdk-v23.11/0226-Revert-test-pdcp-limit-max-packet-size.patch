@@ -1,0 +1,36 @@
+From 721001840ef9b98f4f53df2f9844cf5115493c26 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Thu, 18 Jan 2024 15:07:49 +0530
+Subject: [PATCH 226/513] Revert "test/pdcp: limit max packet size"
+
+This reverts commit 2e8cff4b5bc4a47bcd8b52b97dafe1395bdb716d.
+
+Change-Id: Ifc155c7d64a4cb695e584baee7cf2dcf903d9bdf
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120389
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_pdcp.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/app/test/test_pdcp.c b/app/test/test_pdcp.c
+index b885727691638..0a2827f2ef17e 100644
+--- a/app/test/test_pdcp.c
++++ b/app/test/test_pdcp.c
+@@ -2069,8 +2069,8 @@ test_combined(struct pdcp_test_conf *ul_conf)
+ 	return ret;
+ }
+ 
+-#define MIN_DATA_LEN 32
+-#define MAX_DATA_LEN 8100
++#define MIN_DATA_LEN 0
++#define MAX_DATA_LEN 9000
+ 
+ static int
+ test_combined_data_walkthrough(struct pdcp_test_conf *test_conf)
+-- 
+2.25.1
+

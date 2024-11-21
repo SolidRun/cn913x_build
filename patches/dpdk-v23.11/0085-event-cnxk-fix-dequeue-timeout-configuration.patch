@@ -1,0 +1,62 @@
+From 1faf2c7b6546a311a865128855da0ec7d678a944 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 28 Nov 2023 00:43:08 +0530
+Subject: [PATCH 085/513] event/cnxk: fix dequeue timeout configuration
+
+Allow dequeue timeout to be configured as zero, when
+RTE_EVENT_DEV_CFG_PER_DEQUEUE_TIMEOUT is disabled.
+
+Fixes: 5512c7de85cd ("event/cnxk: add common configuration validation")
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ib964754c8fd6cfc50c03ba0a9da138178bf8b08c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116782
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117628
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cnxk_eventdev.c | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index 0c61f4c20eec9..2ffa686f9379c 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -162,16 +162,17 @@ cnxk_sso_dev_validate(const struct rte_eventdev *event_dev, uint32_t deq_depth,
+ 
+ 	deq_tmo_ns = conf->dequeue_timeout_ns;
+ 
+-	if (deq_tmo_ns == 0)
+-		deq_tmo_ns = dev->min_dequeue_timeout_ns;
+-	if (deq_tmo_ns < dev->min_dequeue_timeout_ns ||
+-	    deq_tmo_ns > dev->max_dequeue_timeout_ns) {
++	if (deq_tmo_ns && (deq_tmo_ns < dev->min_dequeue_timeout_ns ||
++			   deq_tmo_ns > dev->max_dequeue_timeout_ns)) {
+ 		plt_err("Unsupported dequeue timeout requested");
+ 		return -EINVAL;
+ 	}
+ 
+-	if (conf->event_dev_cfg & RTE_EVENT_DEV_CFG_PER_DEQUEUE_TIMEOUT)
++	if (conf->event_dev_cfg & RTE_EVENT_DEV_CFG_PER_DEQUEUE_TIMEOUT) {
++		if (deq_tmo_ns == 0)
++			deq_tmo_ns = dev->min_dequeue_timeout_ns;
+ 		dev->is_timeout_deq = 1;
++	}
+ 
+ 	dev->deq_tmo_ns = deq_tmo_ns;
+ 
+@@ -663,7 +664,7 @@ cnxk_sso_init(struct rte_eventdev *event_dev)
+ 	}
+ 
+ 	dev->is_timeout_deq = 0;
+-	dev->min_dequeue_timeout_ns = 0;
++	dev->min_dequeue_timeout_ns = USEC2NSEC(1);
+ 	dev->max_dequeue_timeout_ns = USEC2NSEC(0x3FF);
+ 	dev->max_num_events = -1;
+ 	dev->nb_event_queues = 0;
+-- 
+2.25.1
+

@@ -1,0 +1,33 @@
+From 345a1333a55e84500b7ed3e472a56f7f74d42815 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Tue, 3 Jan 2023 11:37:37 +0530
+Subject: [PATCH 124/955] ci: enable event_eth_rx_adapter_autotest
+
+Re-enabled event_eth_rx_adapter_autotest on cn9k and cn10k.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I36754249bb31a991dbda9162ad27bea928037e09
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93534
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh b/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
+index 4d85aa855d2f3..17e21eef43579 100755
+--- a/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
++++ b/marvell-ci/test/cnxk-tests/dpdk_test/dpdk_test.sh
+@@ -66,8 +66,7 @@ register_cn9k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE
+ register_cn9k_event_test	eventdev_selftest_cn9k		"-l $ISOLCPUS"
+ register_cn10k_event_test	eventdev_selftest_cn10k		"-l $ISOLCPUS"
+ register_cn10k_event_test	event_timer_adapter_test	"-l $ISOLCPUS -a $EVENT_DEVICE,gw_mode=0,tim_stats_ena=1"
+-#FIXME: re-enable event_eth_rx_adapter_autotest
+-#register_cnxk_event_test	event_eth_rx_adapter_autotest	"-l $ISOLCPUS"
++register_cnxk_event_test	event_eth_rx_adapter_autotest	"-l $ISOLCPUS"
+ register_cnxk_event_test	event_crypto_adapter_autotest	"-l 0,1"
+ 
+ case $TEST_TYPE in
+-- 
+2.25.1
+

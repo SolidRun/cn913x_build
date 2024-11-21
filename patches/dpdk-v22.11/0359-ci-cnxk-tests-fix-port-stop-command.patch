@@ -1,0 +1,34 @@
+From 617ac65a996222918db4ca07cb1561020363c242 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 6 Apr 2023 16:37:36 +0530
+Subject: [PATCH 359/955] ci/cnxk-tests: fix port stop command
+
+Correct the port stop command.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I98d10fb4881fa0074300f65901ac39f260ae22a0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100847
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ .../ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh         | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh
+index 30d2c26f1a063..53593cbb0a54f 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/cnxk_ipsec_reassembly_perf.sh
+@@ -229,7 +229,7 @@ function pmd_tx_launch_for_inb()
+ 		"-c 0x3800 --vdev net_pcap0,rx_pcap=$pcap1,infinite_rx=1 -a $LIF1" \
+ 		"--nb-cores=2 --no-flush-rx"
+ 	fi
+-	testpmd_cmd $TPMD_TX_PREFIX "port start 0"
++	testpmd_cmd $TPMD_TX_PREFIX "port stop 0"
+ 	testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl rx off 0"
+ 	testpmd_cmd $TPMD_TX_PREFIX "set flow_ctrl tx off 0"
+ 	testpmd_cmd $TPMD_TX_PREFIX "port start 0"
+-- 
+2.25.1
+

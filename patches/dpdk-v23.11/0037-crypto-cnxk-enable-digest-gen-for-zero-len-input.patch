@@ -1,0 +1,37 @@
+From a7fe717bbe5e2d3647e004ae68b799579fb10d56 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Fri, 17 Nov 2023 14:41:25 +0530
+Subject: [PATCH 037/513] crypto/cnxk: enable digest gen for zero len input
+
+With zero length input, digest generation fails with incorrect
+value. Fix this by completely avoiding the gather component
+when the input packet has zero data length.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: Ib4b8402143dfec21b32c7d62c2466ab357dfde11
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116151
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117462
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_se.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index c2a807fa94283..1aec7dea9fe6f 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -2479,7 +2479,7 @@ prepare_iov_from_pkt(struct rte_mbuf *pkt, struct roc_se_iov_ptr *iovec, uint32_
+ 	void *seg_data = NULL;
+ 	int32_t seg_size = 0;
+ 
+-	if (!pkt) {
++	if (!pkt || pkt->data_len == 0) {
+ 		iovec->buf_cnt = 0;
+ 		return 0;
+ 	}
+-- 
+2.25.1
+

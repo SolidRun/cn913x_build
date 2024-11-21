@@ -1,0 +1,45 @@
+From 91af32d5f9c562a8fda451347fab0fb6ab0d42f2 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Tue, 2 May 2023 06:05:25 -0400
+Subject: [PATCH 499/955] common/cnxk: use only user sqb slack when provided
+
+This patch preferred user provided argument while configuring slack.
+If no platform argument given then by default MAX(24, 30% of SQ size)
+was configured as slack. Currently even if user provided SQB slack,
+we take max of internally calculated value and user given one
+
+Change-Id: I952a3bf50a1212501cc2631b5e9704339916e3e3
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_queue.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 08e8bf7ea2df6..5e689d08befb4 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -7,6 +7,9 @@
+ #include "roc_api.h"
+ #include "roc_priv.h"
+ 
++/* Default SQB slack per SQ */
++#define ROC_NIX_SQB_SLACK_DFLT 24
++
+ static inline uint32_t
+ nix_qsize_to_val(enum nix_q_size qsize)
+ {
+@@ -1012,7 +1015,10 @@ sqb_pool_populate(struct roc_nix *roc_nix, struct roc_nix_sq *sq)
+ 	sq->sqes_per_sqb_log2 = (uint16_t)plt_log2_u32(sqes_per_sqb);
+ 	sq->nb_sqb_bufs_adj = nb_sqb_bufs;
+ 
+-	nb_sqb_bufs += PLT_MAX(thr, roc_nix->sqb_slack);
++	if (roc_nix->sqb_slack)
++		nb_sqb_bufs += roc_nix->sqb_slack;
++	else
++		nb_sqb_bufs += PLT_MAX((int)thr, (int)ROC_NIX_SQB_SLACK_DFLT);
+ 	/* Explicitly set nat_align alone as by default pool is with both
+ 	 * nat_align and buf_offset = 1 which we don't want for SQB.
+ 	 */
+-- 
+2.25.1
+

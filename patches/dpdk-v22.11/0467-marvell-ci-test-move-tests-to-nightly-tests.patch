@@ -1,0 +1,366 @@
+From 46816a081023dd37e1694e6afa2e63c6998e05ed Mon Sep 17 00:00:00 2001
+From: Nawal Kishor <nkishor@marvell.com>
+Date: Tue, 30 May 2023 11:11:45 +0530
+Subject: [PATCH 467/955] marvell-ci/test: move tests to nightly tests
+
+Skipped the tests for fast-test and moved them to nightly run.
+
+Signed-off-by: Nawal Kishor <nkishor@marvell.com>
+Change-Id: Ia3cbacd55d4fa173dcc8101d0e7c5b6e58c778af
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104354
+Reviewed-by: Ashwin Sekhar T K
+Tested-by: Ashwin Sekhar T K
+---
+ marvell-ci/test/env/cn10k-nightly.env | 52 ++++++++++++++
+ marvell-ci/test/env/cn10k.env         | 99 +++++++++++++++++++++++++++
+ marvell-ci/test/env/cn9k-nightly.env  | 58 ++++++++++++++++
+ marvell-ci/test/env/cn9k.env          | 99 +++++++++++++++++++++++++++
+ 4 files changed, 308 insertions(+)
+ create mode 100644 marvell-ci/test/env/cn10k-nightly.env
+ create mode 100644 marvell-ci/test/env/cn9k-nightly.env
+
+diff --git a/marvell-ci/test/env/cn10k-nightly.env b/marvell-ci/test/env/cn10k-nightly.env
+new file mode 100644
+index 0000000000000..fe561dca53491
+--- /dev/null
++++ b/marvell-ci/test/env/cn10k-nightly.env
+@@ -0,0 +1,52 @@
++#!/bin/bash
++
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
++
++DEFAULT_SKIP_TESTS="
++	distributor_autotest
++	func_reentrancy_autotest
++	ipsec_autotest
++	kni_autotest
++	power_cpufreq_autotest
++	power_kvm_vm_autotest
++	cryptodev_aesni_mb_autotest
++	cryptodev_aesni_gcm_autotest
++	cryptodev_cn9k_asym_autotest
++	cryptodev_cn9k_autotest
++	cryptodev_cn10k_asym_autotest
++	cryptodev_cn10k_autotest
++	cryptodev_dpaa_sec_autotest
++	cryptodev_dpaa2_sec_autotest
++	cryptodev_openssl_asym_autotest
++	cryptodev_qat_autotest
++	cryptodev_sw_armv8_autotest
++	cryptodev_sw_kasumi_autotest
++	cryptodev_sw_mvsam_autotest
++	cryptodev_sw_zuc_autotest
++	eventdev_selftest_octeontx
++	link_bonding_mode4_autotest
++	cryptodev_scheduler_autotest
++	cnxk_crypto_perf
++	cnxk_event_perf
++	cnxk_ipsec_la_perf
++	cnxk_ipsec_inline_perf
++	cnxk_mempool_perf
++	cnxk_fwd_perf
++	cnxk_ptp_test
++	flow_perf
++	flow_regression
++	cnxk_gpio_test
++	cnxk_mbuf_perf
++	cnxk_ipsec_reassembly_perf
++	cnxk_dpdk_event_tests
++	${FIXME_SKIP_TESTS}
++"
++
++# Tests to skipped.
++SKIP_TESTS=${SKIP_TESTS:-$DEFAULT_SKIP_TESTS}
++
++# Export the path to this conf so that other scripts can source this conf.
++export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn10k-nightly.env
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index d4239bc2bda4a..342488fa41855 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -110,6 +110,105 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_mbuf_perf
+ 	cnxk_ipsec_reassembly_perf
+ 	cnxk_dpdk_event_tests
++	acl_autotest
++	atomic_autotest
++	bitmap_autotest
++	bpf_autotest
++	bpf_convert_autotest
++	bitops_autotest
++	byteorder_autotest
++	cksum_autotest
++	cmdline_autotest
++	common_autotest
++	cpuflags_autotest
++	debug_autotest
++	devargs_autotest
++	eal_flags_c_opt_autotest
++	eal_flags_main_opt_autotest
++	eal_flags_n_opt_autotest
++	eal_flags_hpet_autotest
++	eal_flags_no_huge_autotest
++	eal_flags_a_opt_autotest
++	eal_flags_b_opt_autotest
++	eal_flags_vdev_opt_autotest
++	eal_flags_r_opt_autotest
++	eal_flags_mem_autotest
++	eal_flags_file_prefix_autotest
++	eal_flags_misc_autotest
++	eal_fs_autotest
++	errno_autotest
++	ethdev_link_status
++	event_ring_autotest
++	fib_autotest
++	fib6_autotest
++	func_reentrancy_autotest
++	hash_autotest
++	interrupt_autotest
++	ipfrag_autotest
++	lcores_autotest
++	logs_autotest
++	lpm_autotest
++	lpm6_autotest
++	malloc_autotest
++	mbuf_autotest
++	mcslock_autotest
++	memcpy_autotest
++	memory_autotest
++	mempool_autotest
++	memzone_autotest
++	meter_autotest
++	multiprocess_autotest
++	per_lcore_autotest
++	pflock_autotest
++	prefetch_autotest
++	rcu_qsbr_autotest
++	pie_autotest
++	rib_autotest
++	rib6_autotest
++	ring_autotest
++	rwlock_test1_autotest
++	rwlock_rda_autotest
++	rwlock_rds_wrm_autotest
++	rwlock_rde_wro_autotest
++	sched_autotest
++	security_autotest
++	seqlock_autotest
++	spinlock_autotest
++	stack_autotest
++	stack_lf_autotest
++	string_autotest
++	tailq_autotest
++	ticketlock_autotest
++	timer_autotest
++	user_delay_us
++	version_autotest
++	crc_autotest
++	distributor_autotest
++	eventdev_common_autotest
++	fbarray_autotest
++	hash_readwrite_func_autotest
++	kni_autotest
++	kvargs_autotest
++	member_autotest
++	power_cpufreq_autotest
++	power_autotest
++	power_kvm_vm_autotest
++	power_intel_uncore_autotest
++	reorder_autotest
++	service_autotest
++	thash_autotest
++	threads_autotest
++	metrics_autotest
++	telemetry_json_autotest
++	telemetry_data_autotest
++	table_autotest
++	ring_pmd_autotest
++	bitratestats_autotest
++	latencystats_autotest
++	pdump_autotest
++	vdev_autotest
++	rawdev_autotest
++	telemetry_all
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+diff --git a/marvell-ci/test/env/cn9k-nightly.env b/marvell-ci/test/env/cn9k-nightly.env
+new file mode 100644
+index 0000000000000..72710bd7c9ca4
+--- /dev/null
++++ b/marvell-ci/test/env/cn9k-nightly.env
+@@ -0,0 +1,58 @@
++#!/bin/bash
++
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++source $PROJECT_ROOT/marvell-ci/test/env/cn9k.env
++
++DEFAULT_SKIP_TESTS="
++	distributor_autotest
++	func_reentrancy_autotest
++	ipsec_autotest
++	kni_autotest
++	power_cpufreq_autotest
++	power_kvm_vm_autotest
++	cryptodev_aesni_mb_autotest
++	cryptodev_aesni_gcm_autotest
++	cryptodev_cn9k_asym_autotest
++	cryptodev_cn9k_autotest
++	cryptodev_cn10k_asym_autotest
++	cryptodev_cn10k_autotest
++	cryptodev_dpaa_sec_autotest
++	cryptodev_dpaa2_sec_autotest
++	cryptodev_openssl_asym_autotest
++	cryptodev_qat_autotest
++	cryptodev_sw_armv8_autotest
++	cryptodev_sw_kasumi_autotest
++	cryptodev_sw_mvsam_autotest
++	cryptodev_sw_zuc_autotest
++	eventdev_selftest_octeontx
++	link_bonding_mode4_autotest
++	cryptodev_scheduler_autotest
++	cnxk_crypto_perf
++	cnxk_event_perf
++	cnxk_ipsec_la_perf
++	cnxk_ipsec_inline_perf
++	cnxk_mempool_perf
++	cnxk_fwd_perf
++	cnxk_ptp_test
++	flow_perf
++	cnxk_ipsec_msns
++	cnxk_gpio_test
++	cnxk_mtr_test_config
++	cpt_2nd_pass_flow
++	cnxk_mbuf_perf
++	inline_ipsec_autotest
++	cnxk_ipsec_reassembly_perf
++	cnxk_multi_pool_pkt_tx
++	cnxk_multi_pool_pkt_tx_scalar
++	cnxk_multi_mempool
++	cnxk_hwpool_tests
++	${FIXME_SKIP_TESTS}
++"
++
++# Tests to skipped.
++SKIP_TESTS=${SKIP_TESTS:-$DEFAULT_SKIP_TESTS}
++
++# Export the path to this conf so that other scripts can source this conf.
++export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn9k-nightly.env
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index c8916a111cc36..adbd35d2fc1b5 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -115,6 +115,105 @@ DEFAULT_SKIP_TESTS="
+ 	cnxk_multi_pool_pkt_tx_scalar
+ 	cnxk_multi_mempool
+ 	cnxk_hwpool_tests
++	acl_autotest
++	atomic_autotest
++	bitmap_autotest
++	bpf_autotest
++	bpf_convert_autotest
++	bitops_autotest
++	byteorder_autotest
++	cksum_autotest
++	cmdline_autotest
++	common_autotest
++	cpuflags_autotest
++	debug_autotest
++	devargs_autotest
++	eal_flags_c_opt_autotest
++	eal_flags_main_opt_autotest
++	eal_flags_n_opt_autotest
++	eal_flags_hpet_autotest
++	eal_flags_no_huge_autotest
++	eal_flags_a_opt_autotest
++	eal_flags_b_opt_autotest
++	eal_flags_vdev_opt_autotest
++	eal_flags_r_opt_autotest
++	eal_flags_mem_autotest
++	eal_flags_file_prefix_autotest
++	eal_flags_misc_autotest
++	eal_fs_autotest
++	errno_autotest
++	ethdev_link_status
++	event_ring_autotest
++	fib_autotest
++	fib6_autotest
++	func_reentrancy_autotest
++	hash_autotest
++	interrupt_autotest
++	ipfrag_autotest
++	lcores_autotest
++	logs_autotest
++	lpm_autotest
++	lpm6_autotest
++	malloc_autotest
++	mbuf_autotest
++	mcslock_autotest
++	memcpy_autotest
++	memory_autotest
++	mempool_autotest
++	memzone_autotest
++	meter_autotest
++	multiprocess_autotest
++	per_lcore_autotest
++	pflock_autotest
++	prefetch_autotest
++	rcu_qsbr_autotest
++	pie_autotest
++	rib_autotest
++	rib6_autotest
++	ring_autotest
++	rwlock_test1_autotest
++	rwlock_rda_autotest
++	rwlock_rds_wrm_autotest
++	rwlock_rde_wro_autotest
++	sched_autotest
++	security_autotest
++	seqlock_autotest
++	spinlock_autotest
++	stack_autotest
++	stack_lf_autotest
++	string_autotest
++	tailq_autotest
++	ticketlock_autotest
++	timer_autotest
++	user_delay_us
++	version_autotest
++	crc_autotest
++	distributor_autotest
++	eventdev_common_autotest
++	fbarray_autotest
++	hash_readwrite_func_autotest
++	kni_autotest
++	kvargs_autotest
++	member_autotest
++	power_cpufreq_autotest
++	power_autotest
++	power_kvm_vm_autotest
++	power_intel_uncore_autotest
++	reorder_autotest
++	service_autotest
++	thash_autotest
++	threads_autotest
++	metrics_autotest
++	telemetry_json_autotest
++	telemetry_data_autotest
++	table_autotest
++	ring_pmd_autotest
++	bitratestats_autotest
++	latencystats_autotest
++	pdump_autotest
++	vdev_autotest
++	rawdev_autotest
++	telemetry_all
+ 	${FIXME_SKIP_TESTS}
+ "
+ 
+-- 
+2.25.1
+

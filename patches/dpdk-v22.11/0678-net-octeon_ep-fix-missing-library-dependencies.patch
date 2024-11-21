@@ -1,0 +1,35 @@
+From 0f4e15d03df7b998b4142172db5dea0d839ec9c3 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Tue, 7 Nov 2023 09:44:47 +0530
+Subject: [PATCH 678/955] net/octeon_ep: fix missing library dependencies
+
+Fix missing static library dependencies for AVX2 fastpath
+library compilation.
+
+Fixes: 65b8a7afae15 ("net/octeon_ep: fix avx2 compilation")
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ia818b700903c05e5faf1f16bf90cb8b09fc9e291
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115421
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/net/octeon_ep/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/octeon_ep/meson.build b/drivers/net/octeon_ep/meson.build
+index ffdf8e635c342..97b5538aabf52 100644
+--- a/drivers/net/octeon_ep/meson.build
++++ b/drivers/net/octeon_ep/meson.build
+@@ -20,7 +20,7 @@ elif cc.has_argument('-mavx2')
+     cflags += ['-DCC_AVX2_SUPPORT']
+     otx_ep_avx2_lib = static_library('otx_ep_avx2_lib',
+                     'cnxk_ep_rx_avx.c',
+-                    dependencies: [static_rte_ethdev],
++                    dependencies: [static_rte_ethdev, static_rte_pci, static_rte_bus_pci],
+                     include_directories: includes,
+                     c_args: [cflags, '-mavx2'])
+     objs += otx_ep_avx2_lib.extract_objects('cnxk_ep_rx_avx.c')
+-- 
+2.25.1
+

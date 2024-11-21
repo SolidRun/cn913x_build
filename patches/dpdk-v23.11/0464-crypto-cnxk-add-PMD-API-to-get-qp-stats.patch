@@ -1,0 +1,125 @@
+From 4bf63f710205a812e0be42dc48447a7508eb2d86 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 24 Jul 2024 10:49:29 +0000
+Subject: [PATCH 464/513] crypto/cnxk: add PMD API to get qp stats
+
+Add PMD API to get CPT LF(QP) stats.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Ida5d8fd644bb1177a4e1c701284df077aaf44e9b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131955
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134279
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  | 32 +++++++++++++++++++++
+ drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h | 34 +++++++++++++++++++++++
+ drivers/crypto/cnxk/version.map           |  1 +
+ 3 files changed, 67 insertions(+)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 4d70caaf650b7..ff782f65f2cdb 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -1182,3 +1182,35 @@ rte_pmd_cnxk_crypto_cptr_write(struct rte_pmd_cnxk_crypto_qptr *qptr,
+ 
+ 	return 0;
+ }
++
++int
++rte_pmd_cnxk_crypto_qp_stats_get(struct rte_pmd_cnxk_crypto_qptr *qptr,
++				 struct rte_pmd_cnxk_crypto_qp_stats *stats)
++{
++	struct cnxk_cpt_qp *qp = PLT_PTR_CAST(qptr);
++	struct roc_cpt_lf *lf;
++
++	if (unlikely(qptr == NULL)) {
++		plt_err("Invalid queue pair pointer");
++		return -EINVAL;
++	}
++
++	if (unlikely(stats == NULL)) {
++		plt_err("Invalid stats pointer");
++		return -EINVAL;
++	}
++
++	if (unlikely(roc_model_is_cn9k())) {
++		plt_err("Invalid cnxk model");
++		return -EINVAL;
++	}
++
++	lf = &qp->lf;
++
++	stats->ctx_enc_pkts = plt_read64(lf->rbase + CPT_LF_CTX_ENC_PKT_CNT);
++	stats->ctx_enc_bytes = plt_read64(lf->rbase + CPT_LF_CTX_ENC_BYTE_CNT);
++	stats->ctx_dec_bytes = plt_read64(lf->rbase + CPT_LF_CTX_DEC_BYTE_CNT);
++	stats->ctx_dec_bytes = plt_read64(lf->rbase + CPT_LF_CTX_DEC_BYTE_CNT);
++
++	return 0;
++}
+diff --git a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+index b94a293b7a566..0127fd30b5db6 100644
+--- a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
++++ b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+@@ -30,6 +30,23 @@ struct rte_pmd_cnxk_crypto_qptr;
+  */
+ struct rte_pmd_cnxk_crypto_cptr;
+ 
++/**
++ *
++ * @brief Crypto CNXK queue pair stats.
++ *
++ * This structure represents the queue pair stats retrieved from CPT HW queue.
++ */
++struct rte_pmd_cnxk_crypto_qp_stats {
++	/** Packet counter of the packets that used CPT context cache and was encrypted */
++	uint64_t ctx_enc_pkts;
++	/** Byte counter of the packets that used CPT context cache and was encrypted */
++	uint64_t ctx_enc_bytes;
++	/** Packet counter of the packets that used CPT context cache and was decrypted */
++	uint64_t ctx_dec_pkts;
++	/** Byte counter of the packets that used CPT context cache and was decrypted */
++	uint64_t ctx_dec_bytes;
++};
++
+ /**
+  * @brief Crypto CNXK PMD session structure.
+  *
+@@ -176,4 +193,21 @@ int rte_pmd_cnxk_crypto_cptr_write(struct rte_pmd_cnxk_crypto_qptr *qptr,
+ 				   struct rte_pmd_cnxk_crypto_cptr *cptr, void *data,
+ 				   uint32_t len);
+ 
++/**
++ * Get the HW Queue Pair (LF) stats.
++ *
++ * @param qptr
++ *  Pointer obtained with ``rte_pmd_cnxk_crypto_qptr_get``.
++ * @param[out] stats
++ *  Pointer to the structure where stats will be copied.
++ *
++ * @return
++ *   - 0 On success.
++ *   - Negative value on error.
++ *     - -EINVAL if the input parameters are invalid.
++ */
++__rte_experimental
++int rte_pmd_cnxk_crypto_qp_stats_get(struct rte_pmd_cnxk_crypto_qptr *qptr,
++				     struct rte_pmd_cnxk_crypto_qp_stats *stats);
++
+ #endif /* _PMD_CNXK_CRYPTO_H_ */
+diff --git a/drivers/crypto/cnxk/version.map b/drivers/crypto/cnxk/version.map
+index 6e51f7be1a6b0..05724e69e4bdc 100644
+--- a/drivers/crypto/cnxk/version.map
++++ b/drivers/crypto/cnxk/version.map
+@@ -10,6 +10,7 @@ EXPERIMENTAL {
+ 	rte_pmd_cnxk_crypto_cptr_get;
+ 	rte_pmd_cnxk_crypto_cptr_read;
+ 	rte_pmd_cnxk_crypto_cptr_write;
++	rte_pmd_cnxk_crypto_qp_stats_get;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

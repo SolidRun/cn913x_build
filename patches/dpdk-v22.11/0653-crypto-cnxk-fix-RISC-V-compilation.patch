@@ -1,0 +1,49 @@
+From d3d7fceecd7a41219c19bac335c9030a86934ddf Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Wed, 11 Oct 2023 11:12:34 +0530
+Subject: [PATCH 653/955] crypto/cnxk: fix RISC-V compilation
+
+Fixing RISC-V compilation observed with upstream.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I009e2b43c8f011abec6a9901bac4f4dc8745019e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113567
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 6a153f5743dfc18b9b4128b73979e7345fc28a6d)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113855
+---
+ drivers/crypto/cnxk/cnxk_se.h | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index c8ee4c8543cd7..4a28d7a7e6db4 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -1833,6 +1833,10 @@ cpt_kasumi_enc_prep(uint32_t req_flags, uint64_t d_offs, uint64_t d_lens,
+ 	cpt_inst_w4.s.param2 = auth_data_len;
+ 
+ 	inst->w4.u64 = cpt_inst_w4.u64;
++
++	if (unlikely(iv_s == NULL))
++		return -1;
++
+ 	if (is_sg_ver2)
+ 		sg2_inst_prep(params, inst, offset_ctrl, iv_s, iv_len, 0, 0, inputlen, outputlen, 0,
+ 			      req_flags, 0, 0);
+@@ -1889,6 +1893,10 @@ cpt_kasumi_dec_prep(uint64_t d_offs, uint64_t d_lens, struct roc_se_fc_params *p
+ 	}
+ 
+ 	inst->w4.u64 = cpt_inst_w4.u64;
++
++	if (unlikely(params->iv_buf == NULL))
++		return -1;
++
+ 	if (is_sg_ver2)
+ 		sg2_inst_prep(params, inst, offset_ctrl, params->iv_buf, iv_len, 0, 0, inputlen,
+ 			      outputlen, 0, 0, 0, 1);
+-- 
+2.25.1
+

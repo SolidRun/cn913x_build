@@ -1,0 +1,121 @@
+From e67f1e1d6a0163691dd8215ebc1bab4420e591fe Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Thu, 17 Aug 2023 23:28:06 -0700
+Subject: [PATCH 605/955] drivers/common: sync from 23.07 release
+
+sync sdp & dpi related changes with from 23.07 release.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: I454bf9cf31c744ce4c37e920e7b0488cdbbdcbb6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110054
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/hw/sdp.h        | 35 ++++++++---------------------
+ drivers/common/cnxk/roc_constants.h |  5 ++---
+ 2 files changed, 11 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/sdp.h b/drivers/common/cnxk/hw/sdp.h
+index 19eca2766ff40..4b772f2b23cdf 100644
+--- a/drivers/common/cnxk/hw/sdp.h
++++ b/drivers/common/cnxk/hw/sdp.h
+@@ -57,7 +57,6 @@
+ #define SDP_VF_R_IN_INT_LEVELS_START  (0x10060)
+ #define SDP_VF_R_IN_PKT_CNT_START     (0x10080)
+ #define SDP_VF_R_IN_BYTE_CNT_START    (0x10090)
+-#define SDP_VF_R_IN_CNTS_ISM_START    (0x10520)
+ 
+ #define SDP_VF_R_IN_CONTROL(ring) (SDP_VF_R_IN_CONTROL_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+@@ -80,22 +79,19 @@
+ 
+ #define SDP_VF_R_IN_BYTE_CNT(ring) (SDP_VF_R_IN_BYTE_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_IN_CNTS_ISM(ring) (SDP_VF_R_IN_CNTS_ISM_START + (SDP_VF_RING_OFFSET * (ring)))
+-
+ /* SDP VF IQ Masks */
+ #define SDP_VF_R_IN_CTL_RPVF_MASK (0xF)
+ #define SDP_VF_R_IN_CTL_RPVF_POS  (48)
+ 
+-#define SDP_VF_R_IN_CTL_IDLE	 (0x1ull << 28)
+-#define SDP_VF_R_IN_CTL_RDSIZE	 (0x3ull << 25) /* Setting to max(4) */
+-#define SDP_VF_R_IN_CTL_IS_64B	 (0x1ull << 24)
+-#define SDP_VF_R_IN_CTL_D_NSR	 (0x1ull << 8)
+-#define SDP_VF_R_IN_CTL_D_ESR	 (0x1ull << 6)
+-#define SDP_VF_R_IN_CTL_D_ROR	 (0x1ull << 5)
+-#define SDP_VF_R_IN_CTL_NSR	 (0x1ull << 3)
+-#define SDP_VF_R_IN_CTL_ESR	 (0x1ull << 1)
+-#define SDP_VF_R_IN_CTL_ROR	 (0x1ull << 0)
+-#define SDP_VF_R_IN_CNTS_OUT_INT (0x1ull << 62)
++#define SDP_VF_R_IN_CTL_IDLE   (0x1ull << 28)
++#define SDP_VF_R_IN_CTL_RDSIZE (0x3ull << 25) /* Setting to max(4) */
++#define SDP_VF_R_IN_CTL_IS_64B (0x1ull << 24)
++#define SDP_VF_R_IN_CTL_D_NSR  (0x1ull << 8)
++#define SDP_VF_R_IN_CTL_D_ESR  (0x1ull << 6)
++#define SDP_VF_R_IN_CTL_D_ROR  (0x1ull << 5)
++#define SDP_VF_R_IN_CTL_NSR    (0x1ull << 3)
++#define SDP_VF_R_IN_CTL_ESR    (0x1ull << 1)
++#define SDP_VF_R_IN_CTL_ROR    (0x1ull << 0)
+ 
+ #define SDP_VF_R_IN_CTL_MASK (SDP_VF_R_IN_CTL_RDSIZE | SDP_VF_R_IN_CTL_IS_64B)
+ 
+@@ -109,9 +105,6 @@
+ #define SDP_VF_R_OUT_ENABLE_START      (0x10160)
+ #define SDP_VF_R_OUT_PKT_CNT_START     (0x10180)
+ #define SDP_VF_R_OUT_BYTE_CNT_START    (0x10190)
+-#define SDP_VF_R_OUT_CNTS_ISM_START    (0x10510)
+-#define SDP_VF_R_MBOX_PF_VF_DATA_START (0x10210)
+-#define SDP_VF_R_MBOX_VF_PF_DATA_START (0x10230)
+ 
+ #define SDP_VF_R_OUT_CONTROL(ring) (SDP_VF_R_OUT_CONTROL_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+@@ -135,14 +128,6 @@
+ 
+ #define SDP_VF_R_OUT_BYTE_CNT(ring) (SDP_VF_R_OUT_BYTE_CNT_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+-#define SDP_VF_R_OUT_CNTS_ISM(ring) (SDP_VF_R_OUT_CNTS_ISM_START + (SDP_VF_RING_OFFSET * (ring)))
+-
+-#define SDP_VF_R_MBOX_PF_VF_DATA(ring)                                                             \
+-	(SDP_VF_R_MBOX_PF_VF_DATA_START + ((ring)*SDP_VF_RING_OFFSET))
+-
+-#define SDP_VF_R_MBOX_VF_PF_DATA(ring)                                                             \
+-	(SDP_VF_R_MBOX_VF_PF_DATA_START + ((ring)*SDP_VF_RING_OFFSET))
+-
+ /* SDP VF OQ Masks */
+ #define SDP_VF_R_OUT_CTL_IDLE  (1ull << 40)
+ #define SDP_VF_R_OUT_CTL_ES_I  (1ull << 34)
+@@ -158,8 +143,6 @@
+ 
+ #define SDP_VF_R_OUT_INT_LEVELS_BMODE (1ull << 63)
+ #define SDP_VF_R_OUT_INT_LEVELS_TIMET (32)
+-#define SDP_VF_R_OUT_CNTS_IN_INT      (1ull << 61)
+-#define SDP_VF_R_OUT_CNTS_OUT_INT     (1ull << 62)
+ 
+ /* SDP Instruction Header */
+ struct sdp_instr_ih {
+diff --git a/drivers/common/cnxk/roc_constants.h b/drivers/common/cnxk/roc_constants.h
+index 2491b4458365c..291b6a4bc97aa 100644
+--- a/drivers/common/cnxk/roc_constants.h
++++ b/drivers/common/cnxk/roc_constants.h
+@@ -36,9 +36,6 @@
+ #define PCI_DEVID_CNXK_RVU_AF_VF      0xA0f8
+ #define PCI_DEVID_CNXK_DPI_VF	      0xA081
+ #define PCI_DEVID_CNXK_EP_VF	      0xB203
+-#define PCI_DEVID_CNF95XXN_EP_NET_VF  0xB403
+-#define PCI_DEVID_CNF95XXO_EP_NET_VF  0xB603
+-#define PCI_DEVID_LIO3_EP_NET_VF      0x3383
+ #define PCI_DEVID_CNXK_RVU_SDP_PF     0xA0f6
+ #define PCI_DEVID_CNXK_RVU_SDP_VF     0xA0f7
+ #define PCI_DEVID_CNXK_BPHY	      0xA089
+@@ -55,6 +52,8 @@
+ #define PCI_DEVID_CN10K_RVU_CPT_PF 0xA0F2
+ #define PCI_DEVID_CN10K_RVU_CPT_VF 0xA0F3
+ 
++#define PCI_DEVID_CN10K_ML_PF 0xA092
++
+ #define PCI_SUBSYSTEM_DEVID_CN10KA  0xB900
+ #define PCI_SUBSYSTEM_DEVID_CN10KAS 0xB900
+ #define PCI_SUBSYSTEM_DEVID_CNF10KA 0xBA00
+-- 
+2.25.1
+

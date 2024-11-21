@@ -1,0 +1,552 @@
+From 861a9b19eb67bf1d0a66f95b4af6d77703ad63f9 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Fri, 1 Dec 2023 11:48:27 +0530
+Subject: [PATCH 024/513] common/cnxk: support mirror flow action
+
+Add ROC API to support mirror flow action.
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Iedfde742da24567222644a667b59c2e1a7b350e6
+---
+ drivers/common/cnxk/roc_mbox.h      | 56 +++++++++++++++++
+ drivers/common/cnxk/roc_nix.h       |  8 ++-
+ drivers/common/cnxk/roc_nix_mcast.c | 86 ++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_npc.c       | 94 +++++++++++++++++++++++++----
+ drivers/common/cnxk/roc_npc.h       | 17 +++++-
+ drivers/common/cnxk/roc_npc_mcam.c  | 57 +++++++++++++----
+ drivers/common/cnxk/roc_npc_priv.h  |  4 +-
+ drivers/common/cnxk/version.map     |  2 +
+ 8 files changed, 294 insertions(+), 30 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 05434aec5a2e1..3257a370bcdaa 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -298,6 +298,11 @@ struct mbox_msghdr {
+ 	M(NIX_FREE_BPIDS, 0x8029, nix_free_bpids, nix_bpids, msg_rsp)          \
+ 	M(NIX_RX_CHAN_CFG, 0x802a, nix_rx_chan_cfg, nix_rx_chan_cfg,           \
+ 	  nix_rx_chan_cfg)                                                     \
++	M(NIX_MCAST_GRP_CREATE, 0x802b, nix_mcast_grp_create, nix_mcast_grp_create_req,            \
++	  nix_mcast_grp_create_rsp)                                                                \
++	M(NIX_MCAST_GRP_DESTROY, 0x802c, nix_mcast_grp_destroy, nix_mcast_grp_destroy_req, msg_rsp)\
++	M(NIX_MCAST_GRP_UPDATE, 0x802d, nix_mcast_grp_update, nix_mcast_grp_update_req,            \
++	  nix_mcast_grp_update_rsp)                                                                \
+ 	/* MCS mbox IDs (range 0xa000 - 0xbFFF) */                                                 \
+ 	M(MCS_ALLOC_RESOURCES, 0xa000, mcs_alloc_resources, mcs_alloc_rsrc_req,                    \
+ 	  mcs_alloc_rsrc_rsp)                                                                      \
+@@ -1768,6 +1773,57 @@ struct nix_rx_chan_cfg {
+ 	uint64_t __io rsvd;
+ };
+ 
++struct nix_mcast_grp_create_req {
++	struct mbox_msghdr hdr;
++#define NIX_MCAST_INGRESS 0
++#define NIX_MCAST_EGRESS  1
++	uint8_t __io dir;
++	uint8_t __io reserved[11];
++	/* Reserving few bytes for future requirement */
++};
++
++struct nix_mcast_grp_create_rsp {
++	struct mbox_msghdr hdr;
++	/* This mcast_grp_idx should be passed during MCAM
++	 * write entry for multicast. AF will identify the
++	 * corresponding multicast table index associated
++	 * with the group id and program the same to MCAM entry.
++	 * This group id is also needed during group delete
++	 * and update request.
++	 */
++	uint32_t __io mcast_grp_idx;
++};
++struct nix_mcast_grp_destroy_req {
++	struct mbox_msghdr hdr;
++	/* Group id returned by nix_mcast_grp_create_rsp */
++	uint32_t __io mcast_grp_idx;
++};
++
++struct nix_mcast_grp_update_req {
++	struct mbox_msghdr hdr;
++	/* Group id returned by nix_mcast_grp_create_rsp */
++	uint32_t __io mcast_grp_idx;
++	/* Number of multicast/mirror entries requested */
++	uint32_t __io num_mce_entry;
++#define NIX_MCE_ENTRY_MAX 64
++#define NIX_RX_RQ	  0
++#define NIX_RX_RSS	  1
++	/* Receive queue or RSS index within pf_func */
++	uint32_t __io rq_rss_index[NIX_MCE_ENTRY_MAX];
++	uint16_t __io pcifunc[NIX_MCE_ENTRY_MAX];
++	uint16_t __io channel[NIX_MCE_ENTRY_MAX];
++#define NIX_MCAST_OP_ADD_ENTRY 0
++#define NIX_MCAST_OP_DEL_ENTRY 1
++	/* Destination type. 0:Receive queue, 1:RSS*/
++	uint8_t __io dest_type[NIX_MCE_ENTRY_MAX];
++	uint8_t __io op;
++};
++
++struct nix_mcast_grp_update_rsp {
++	struct mbox_msghdr hdr;
++	uint32_t __io mce_start_index;
++};
++
+ /* Global NIX inline IPSec configuration */
+ struct nix_inline_ipsec_cfg {
+ 	struct mbox_msghdr hdr;
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index acdd1c4cbcb07..ae8aebd2a73aa 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -1003,6 +1003,10 @@ int __roc_api roc_nix_mcast_mcam_entry_write(struct roc_nix *roc_nix,
+ 					     struct mcam_entry *entry,
+ 					     uint32_t index, uint8_t intf,
+ 					     uint64_t action);
+-int __roc_api roc_nix_mcast_mcam_entry_ena_dis(struct roc_nix *roc_nix,
+-					       uint32_t index, bool enable);
++int __roc_api roc_nix_mcast_mcam_entry_ena_dis(struct roc_nix *roc_nix, uint32_t index,
++					       bool enable);
++int __roc_api roc_nix_mcast_list_setup(struct mbox *mbox, uint8_t intf, int nb_entries,
++				       uint16_t *pf_funcs, uint16_t *channels, uint32_t *rqs,
++				       uint32_t *grp_index, uint32_t *start_index);
++int __roc_api roc_nix_mcast_list_free(struct mbox *mbox, uint32_t mcast_grp_index);
+ #endif /* _ROC_NIX_H_ */
+diff --git a/drivers/common/cnxk/roc_nix_mcast.c b/drivers/common/cnxk/roc_nix_mcast.c
+index 3d741112742c9..615014e820cfb 100644
+--- a/drivers/common/cnxk/roc_nix_mcast.c
++++ b/drivers/common/cnxk/roc_nix_mcast.c
+@@ -107,3 +107,89 @@ roc_nix_mcast_mcam_entry_ena_dis(struct roc_nix *roc_nix, uint32_t index,
+ 	mbox_put(mbox);
+ 	return rc;
+ }
++
++int
++roc_nix_mcast_list_setup(struct mbox *mbox, uint8_t intf, int nb_entries, uint16_t *pf_funcs,
++			 uint16_t *channels, uint32_t *rqs, uint32_t *grp_index,
++			 uint32_t *start_index)
++{
++	struct nix_mcast_grp_create_req *mce_grp_create_req;
++	struct nix_mcast_grp_create_rsp *mce_grp_create_rsp;
++	struct nix_mcast_grp_update_req *mce_grp_update_req;
++	struct nix_mcast_grp_update_rsp *mce_grp_update_rsp;
++	int rc = 0, i;
++
++	mbox_get(mbox);
++
++	mce_grp_create_req = mbox_alloc_msg_nix_mcast_grp_create(mbox);
++	if (mce_grp_create_req == NULL) {
++		rc = -ENOSPC;
++		goto exit;
++	}
++
++	mce_grp_create_req->dir = intf;
++	rc = mbox_process_msg(mbox, (void *)&mce_grp_create_rsp);
++	if (rc) {
++		plt_err("Failed to create mirror list");
++		goto exit;
++	}
++
++	*grp_index = mce_grp_create_rsp->mcast_grp_idx;
++
++	mce_grp_update_req = mbox_alloc_msg_nix_mcast_grp_update(mbox);
++	if (mce_grp_update_req == NULL) {
++		rc = -ENOSPC;
++		goto exit;
++	}
++
++	mce_grp_update_req->mcast_grp_idx = *grp_index;
++	mce_grp_update_req->op = NIX_MCAST_OP_ADD_ENTRY;
++	mce_grp_update_req->num_mce_entry = nb_entries;
++	for (i = 0; i < nb_entries; i++) {
++		mce_grp_update_req->pcifunc[i] = pf_funcs[i];
++		mce_grp_update_req->channel[i] = channels[i];
++		mce_grp_update_req->rq_rss_index[i] = rqs[i];
++		mce_grp_update_req->dest_type[i] = NIX_RX_RQ;
++	}
++
++	rc = mbox_process_msg(mbox, (void *)&mce_grp_update_rsp);
++	if (rc) {
++		plt_err("Failed to create mirror list");
++		goto exit;
++	}
++
++	*start_index = (mce_grp_update_rsp->mce_start_index & 0xFFFFF);
++
++	rc = 0;
++exit:
++	mbox_put(mbox);
++	return rc;
++}
++
++int
++roc_nix_mcast_list_free(struct mbox *mbox, uint32_t mcast_grp_index)
++{
++	struct nix_mcast_grp_destroy_req *mce_grp_destroy_req;
++	struct nix_mcast_grp_destroy_rsp *mce_grp_destroy_rsp;
++	int rc = 0;
++
++	mbox_get(mbox);
++
++	mce_grp_destroy_req = mbox_alloc_msg_nix_mcast_grp_destroy(mbox);
++	if (mce_grp_destroy_req == NULL) {
++		rc = -ENOSPC;
++		goto exit;
++	}
++
++	mce_grp_destroy_req->mcast_grp_idx = mcast_grp_index;
++	rc = mbox_process_msg(mbox, (void *)&mce_grp_destroy_rsp);
++	if (rc) {
++		plt_err("Failed to destroy mirror group index");
++		goto exit;
++	}
++
++	rc = 0;
++exit:
++	mbox_put(mbox);
++	return rc;
++}
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index b650d73342995..69d74c8827f26 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -473,6 +473,39 @@ npc_parse_spi_to_sa_action(struct roc_npc *roc_npc, const struct roc_npc_action
+ 	return 0;
+ }
+ 
++static int
++roc_npc_process_sample_action(struct roc_npc *roc_npc,
++			      const struct roc_npc_action_sample *sample_action,
++			      struct roc_npc_flow *flow)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_npc->roc_nix);
++	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
++
++	flow->is_sampling_rule = true;
++
++	switch (sample_action->action_type) {
++	case ROC_NPC_ACTION_TYPE_PORT_ID:
++		flow->mcast_pf_funcs[0] = sample_action->pf_func;
++		flow->mcast_channels[0] = sample_action->channel;
++		break;
++	case ROC_NPC_ACTION_TYPE_PF:
++		flow->mcast_pf_funcs[0] = roc_npc->pf_func;
++		flow->mcast_channels[0] = npc->channel;
++		break;
++	case ROC_NPC_ACTION_TYPE_VF:
++		if (sample_action->pf_func >= nix->dev.maxvf)
++			return -EINVAL;
++		flow->mcast_pf_funcs[0] =
++			((roc_npc->pf_func & 0xfc00) | (sample_action->pf_func + 1));
++		flow->mcast_channels[0] = npc->channel;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
+ static int
+ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		  const struct roc_npc_action actions[], struct roc_npc_flow *flow,
+@@ -480,6 +513,7 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ {
+ 	struct npc *npc = roc_npc_to_npc_priv(roc_npc);
+ 	const struct roc_npc_action *sec_action = NULL;
++	const struct roc_npc_action_sample *act_sample;
+ 	const struct roc_npc_action_mark *act_mark;
+ 	const struct roc_npc_action_meter *act_mtr;
+ 	const struct roc_npc_action_queue *act_q;
+@@ -540,8 +574,7 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			break;
+ 
+ 		case ROC_NPC_ACTION_TYPE_VF:
+-			vf_act =
+-				(const struct roc_npc_action_vf *)actions->conf;
++			vf_act = (const struct roc_npc_action_vf *)actions->conf;
+ 			req_act |= ROC_NPC_ACTION_TYPE_VF;
+ 			vf_id = vf_act->id & RVU_PFVF_FUNC_MASK;
+ 			pf_func &= (0xfc00);
+@@ -554,9 +587,8 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			break;
+ 
+ 		case ROC_NPC_ACTION_TYPE_QUEUE:
+-			act_q = (const struct roc_npc_action_queue *)
+-					actions->conf;
+-			rq = act_q->index;
++			act_q = (const struct roc_npc_action_queue *)actions->conf;
++			rq = act_q->index & 0xFFFFF;
+ 			req_act |= ROC_NPC_ACTION_TYPE_QUEUE;
+ 			break;
+ 
+@@ -626,6 +658,13 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 				goto err_exit;
+ 			req_act |= ROC_NPC_ACTION_TYPE_AGE;
+ 			break;
++		case ROC_NPC_ACTION_TYPE_SAMPLE:
++			req_act |= ROC_NPC_ACTION_TYPE_SAMPLE;
++			act_sample = actions->conf;
++			errcode = roc_npc_process_sample_action(roc_npc, act_sample, flow);
++			if (errcode)
++				goto err_exit;
++			break;
+ 		default:
+ 			errcode = NPC_ERR_ACTION_NOTSUP;
+ 			goto err_exit;
+@@ -666,6 +705,27 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		goto err_exit;
+ 	}
+ 
++	if (req_act & ROC_NPC_ACTION_TYPE_SAMPLE) {
++		/* One entry for the mce list PF and channel comes from the sample subaction.
++		 * Another one is the action target of the flow rule getting created.
++		 */
++		flow->mcast_pf_funcs[1] = pf_func;
++		flow->mcast_channels[1] = npc->channel;
++		if (req_act & (ROC_NPC_ACTION_TYPE_DROP | ROC_NPC_ACTION_TYPE_SEC |
++			       ROC_NPC_ACTION_TYPE_RSS)) {
++			plt_err("Drop/RSS/SEC not supported with action type sample");
++			return -EINVAL;
++		}
++		if (flow->mcast_pf_funcs[0] == flow->mcast_pf_funcs[1]) {
++			plt_err("Sample destination and target cannot be same");
++			return -EINVAL;
++		}
++		if ((attr->egress) && (flow->mcast_channels[0] == flow->mcast_channels[1])) {
++			plt_err("Mirroring within PF and VF not allowed");
++			return -EINVAL;
++		}
++	}
++
+ 	/* Check if actions specified are compatible */
+ 	if (attr->egress) {
+ 		if (req_act & ROC_NPC_ACTION_TYPE_VLAN_STRIP) {
+@@ -675,11 +735,10 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		}
+ 
+ 		if (req_act &
+-		    ~(ROC_NPC_ACTION_TYPE_VLAN_INSERT |
+-		      ROC_NPC_ACTION_TYPE_VLAN_ETHTYPE_INSERT |
+-		      ROC_NPC_ACTION_TYPE_VLAN_PCP_INSERT |
+-		      ROC_NPC_ACTION_TYPE_DROP | ROC_NPC_ACTION_TYPE_COUNT)) {
+-			plt_err("Only VLAN insert, drop, count supported on Egress");
++		    ~(ROC_NPC_ACTION_TYPE_VLAN_INSERT | ROC_NPC_ACTION_TYPE_VLAN_ETHTYPE_INSERT |
++		      ROC_NPC_ACTION_TYPE_VLAN_PCP_INSERT | ROC_NPC_ACTION_TYPE_DROP |
++		      ROC_NPC_ACTION_TYPE_COUNT | ROC_NPC_ACTION_TYPE_SAMPLE)) {
++			plt_err("Only VLAN insert, drop, count, sample supported on Egress");
+ 			errcode = NPC_ERR_ACTION_NOTSUP;
+ 			goto err_exit;
+ 		}
+@@ -702,6 +761,11 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			goto err_exit;
+ 		}
+ 
++		if (req_act & ROC_NPC_ACTION_TYPE_SAMPLE) {
++			flow->mcast_pf_funcs[1] = pf_func;
++			flow->mcast_channels[1] = npc->channel;
++		}
++
+ 		goto set_pf_func;
+ 	} else {
+ 		if (vlan_insert_action) {
+@@ -749,13 +813,13 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		} else {
+ 			flow->npc_action = NIX_RX_ACTIONOP_UCAST;
+ 			if (req_act & ROC_NPC_ACTION_TYPE_QUEUE)
+-				flow->npc_action |= (uint64_t)rq << 20;
++				flow->recv_queue = rq;
+ 		}
+ 	} else if (req_act & ROC_NPC_ACTION_TYPE_DROP) {
+ 		flow->npc_action = NIX_RX_ACTIONOP_DROP;
+ 	} else if (req_act & ROC_NPC_ACTION_TYPE_QUEUE) {
+ 		flow->npc_action = NIX_RX_ACTIONOP_UCAST;
+-		flow->npc_action |= (uint64_t)rq << 20;
++		flow->recv_queue = rq;
+ 	} else if (req_act & ROC_NPC_ACTION_TYPE_RSS) {
+ 		flow->npc_action = NIX_RX_ACTIONOP_UCAST;
+ 	} else if (req_act & ROC_NPC_ACTION_TYPE_SEC) {
+@@ -775,6 +839,9 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		goto err_exit;
+ 	}
+ 
++	if (req_act & ROC_NPC_ACTION_TYPE_SAMPLE)
++		flow->npc_action = NIX_RX_ACTIONOP_MCAST;
++
+ 	if (mark)
+ 		flow->npc_action |= (uint64_t)mark << 40;
+ 
+@@ -1648,6 +1715,9 @@ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 			return rc;
+ 	}
+ 
++	if (flow->is_sampling_rule)
++		roc_nix_mcast_list_free(npc->mbox, flow->mcast_grp_index);
++
+ 	rc = roc_npc_mcam_free(roc_npc, flow);
+ 	if (rc != 0)
+ 		return rc;
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index e9870a162a65e..7dec10da30680 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -196,11 +196,19 @@ enum roc_npc_action_type {
+ 	ROC_NPC_ACTION_TYPE_PORT_ID = (1 << 16),
+ 	ROC_NPC_ACTION_TYPE_METER = (1 << 17),
+ 	ROC_NPC_ACTION_TYPE_AGE = (1 << 18),
++	ROC_NPC_ACTION_TYPE_SAMPLE = (1 << 19),
+ };
+ 
+ struct roc_npc_action {
+ 	enum roc_npc_action_type type; /**< Action type. */
+-	const void *conf; /**< Pointer to action configuration object. */
++	const void *conf;	       /**< Pointer to action configuration object. */
++};
++
++struct roc_npc_action_sample {
++	uint32_t ratio;	      /**< packets sampled equals to '1/ratio'. */
++	uint32_t action_type; /* PF or VF or PORT_ID target. */
++	uint16_t pf_func;
++	uint16_t channel;
+ };
+ 
+ struct roc_npc_action_mark {
+@@ -329,6 +337,13 @@ struct roc_npc_flow {
+ 	bool is_rep_vf;
+ 	struct npc *rep_npc;
+ 	int port_id;
++	bool is_sampling_rule;
++	uint32_t recv_queue;
++	uint32_t mcast_grp_index;
++	uint32_t mce_start_index;
++#define ROC_NPC_MIRROR_LIST_SIZE 2
++	uint16_t mcast_pf_funcs[ROC_NPC_MIRROR_LIST_SIZE];
++	uint16_t mcast_channels[ROC_NPC_MIRROR_LIST_SIZE];
+ 
+ 	TAILQ_ENTRY(roc_npc_flow) next;
+ };
+diff --git a/drivers/common/cnxk/roc_npc_mcam.c b/drivers/common/cnxk/roc_npc_mcam.c
+index 18d3c3ac9e067..5fdc06a5e017b 100644
+--- a/drivers/common/cnxk/roc_npc_mcam.c
++++ b/drivers/common/cnxk/roc_npc_mcam.c
+@@ -671,6 +671,43 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 		}
+ 	}
+ 
++	if (flow->nix_intf == NIX_INTF_TX) {
++		uint16_t pf_func = (flow->npc_action >> 4) & 0xffff;
++
++		if (flow->has_rep)
++			pf_func = flow->rep_pf_func;
++
++		pf_func = plt_cpu_to_be_16(pf_func);
++
++		rc = npc_mcam_set_pf_func(npc, flow, pf_func);
++		if (rc)
++			return rc;
++	}
++
++	if (flow->is_sampling_rule) {
++		/* Save and restore any mark value set */
++		uint16_t mark = (flow->npc_action >> 40) & 0xffff;
++		uint16_t mce_index = 0;
++		uint32_t rqs[2] = {};
++
++		rqs[1] = flow->recv_queue;
++		rc = roc_nix_mcast_list_setup(npc->mbox, flow->nix_intf, 2, flow->mcast_pf_funcs,
++					      flow->mcast_channels, rqs, &flow->mcast_grp_index,
++					      &flow->mce_start_index);
++		if (rc)
++			return rc;
++
++		flow->npc_action = NIX_RX_ACTIONOP_MCAST;
++		mce_index = flow->mce_start_index;
++		if (flow->nix_intf == NIX_INTF_TX) {
++			flow->npc_action |= (uint64_t)mce_index << 12;
++			flow->npc_action |= (uint64_t)mark << 32;
++		} else {
++			flow->npc_action |= (uint64_t)mce_index << 20;
++			flow->npc_action |= (uint64_t)mark << 40;
++		}
++	}
++
+ 	req = mbox_alloc_msg_npc_mcam_write_entry(mbox_get(mbox));
+ 	if (req == NULL) {
+ 		rc = -ENOSPC;
+@@ -698,25 +735,13 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 	 */
+ 	req->entry_data.vtag_action = flow->vtag_action;
+ 
+-	if (flow->nix_intf == NIX_INTF_TX) {
+-		uint16_t pf_func = (flow->npc_action >> 4) & 0xffff;
+-
+-		if (flow->has_rep)
+-			pf_func = flow->rep_pf_func;
+-
+-		pf_func = plt_cpu_to_be_16(pf_func);
+-
+-		rc = npc_mcam_set_pf_func(npc, flow, pf_func);
+-		if (rc)
+-			return rc;
+-	}
+-
+ 	for (idx = 0; idx < ROC_NPC_MAX_MCAM_WIDTH_DWORDS; idx++) {
+ 		req->entry_data.kw[idx] = flow->mcam_data[idx];
+ 		req->entry_data.kw_mask[idx] = flow->mcam_mask[idx];
+ 	}
+ 
+ 	if (flow->nix_intf == NIX_INTF_RX) {
++		flow->npc_action |= (uint64_t)flow->recv_queue << 20;
+ 		if (inl_dev && inl_dev->is_multi_channel &&
+ 		    (flow->npc_action & NIX_RX_ACTIONOP_UCAST_IPSEC)) {
+ 			pf_func = nix_inl_dev_pffunc_get();
+@@ -780,8 +805,11 @@ npc_mcam_alloc_and_write(struct npc *npc, struct roc_npc_flow *flow, struct npc_
+ 	if (flow->use_ctr)
+ 		flow->ctr_id = ctr;
+ 	rc = 0;
++
+ exit:
+ 	mbox_put(mbox);
++	if (rc)
++		roc_nix_mcast_list_free(npc->mbox, flow->mcast_grp_index);
+ 	return rc;
+ }
+ 
+@@ -1024,6 +1052,9 @@ npc_flow_free_all_resources(struct npc *npc)
+ 				rc |= npc_mcam_free_counter(npc->mbox, flow->ctr_id);
+ 			}
+ 
++			if (flow->is_sampling_rule)
++				roc_nix_mcast_list_free(npc->mbox, flow->mcast_grp_index);
++
+ 			npc_delete_prio_list_entry(npc, flow);
+ 
+ 			TAILQ_REMOVE(&npc->flow_list[idx], flow, next);
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 009b1d7b3e7fa..f4dcc34447ded 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -494,8 +494,8 @@ void npc_age_flow_list_entry_delete(struct roc_npc *npc, struct roc_npc_flow *fl
+ uint32_t npc_aged_flows_get(void *args);
+ int npc_aged_flows_bitmap_alloc(struct roc_npc *roc_npc);
+ void npc_aged_flows_bitmap_free(struct roc_npc *roc_npc);
+-int npc_aging_ctrl_thread_create(struct roc_npc *roc_npc,
+-				 const struct roc_npc_action_age *age,
++int npc_aging_ctrl_thread_create(struct roc_npc *roc_npc, const struct roc_npc_action_age *age,
+ 				 struct roc_npc_flow *flow);
+ void npc_aging_ctrl_thread_destroy(struct roc_npc *roc_npc);
++int npc_free_mcast_list(struct npc *npc, uint32_t mce_index);
+ #endif /* _ROC_NPC_PRIV_H_ */
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index aa884a8fe2a6d..ad83a364d5b8f 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -294,6 +294,8 @@ INTERNAL {
+ 	roc_nix_mac_promisc_mode_enable;
+ 	roc_nix_mac_rxtx_start_stop;
+ 	roc_nix_max_pkt_len;
++	roc_nix_mcast_list_free;
++	roc_nix_mcast_list_setup;
+ 	roc_nix_mcast_mcam_entry_alloc;
+ 	roc_nix_mcast_mcam_entry_ena_dis;
+ 	roc_nix_mcast_mcam_entry_free;
+-- 
+2.25.1
+

@@ -1,0 +1,56 @@
+From 3e8d4de050f46a5bdfb5f92f3a4d17701c7fac84 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 20 Jun 2024 20:49:13 +0530
+Subject: [PATCH 371/513] common/cnxk: enable second pass RQ in mask config
+
+This will enable second pass RQ and drop interrupt by default in
+mask configuration to avoid buffer leak possibilities during dev
+stop and interrupts to indicate drops if any.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I944512a61790c71b28b29945c4d7b090769868f2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129960
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_features.h | 6 ++++++
+ drivers/common/cnxk/roc_nix_inl.c  | 7 +++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index 3b512be132b8f..6abb35c29638f 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -90,4 +90,10 @@ roc_feature_nix_has_rx_inject(void)
+ 	return (roc_model_is_cn10ka_b0() || roc_model_is_cn10kb());
+ }
+ 
++static inline bool
++roc_feature_nix_has_second_pass_drop(void)
++{
++	return 0;
++}
++
+ #endif
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 7f84599c11351..a984ac56d9eb0 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -734,6 +734,13 @@ nix_inl_rq_mask_cfg(struct roc_nix *roc_nix, bool enable)
+ 	msk_req->rq_set.xqe_drop_ena = 0;
+ 	msk_req->rq_set.spb_ena = 1;
+ 
++	if (!roc_feature_nix_has_second_pass_drop()) {
++		msk_req->rq_set.ena = 1;
++		msk_req->rq_set.rq_int_ena = 1;
++		msk_req->rq_mask.ena = 0;
++		msk_req->rq_mask.rq_int_ena = 0;
++	}
++
+ 	msk_req->rq_mask.len_ol3_dis = 0;
+ 	msk_req->rq_mask.len_ol4_dis = 0;
+ 	msk_req->rq_mask.len_il3_dis = 0;
+-- 
+2.25.1
+

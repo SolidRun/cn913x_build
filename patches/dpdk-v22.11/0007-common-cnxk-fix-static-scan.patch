@@ -1,0 +1,39 @@
+From 8a30cad9057808cfad2756dcd8d527e1390a0c7e Mon Sep 17 00:00:00 2001
+From: Mohammad Iqbal Ahmad <mahmad@marvell.com>
+Date: Mon, 28 Nov 2022 14:09:05 +0530
+Subject: [PATCH 007/955] common/cnxk: fix static scan
+
+remove "Logically dead code" for static scan
+warning.
+
+Fixes: 4f9888d89d9f ("common/cnxk: delay inline device RQ enable to dev start")
+Cc: stable@dpdk.org
+
+Signed-off-by: Mohammad Iqbal Ahmad <mahmad@marvell.com>
+Change-Id: Ia5e1ad96a883973157a9114df0c0947040e881c3
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91389
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 98952ac6ea633d005ca8fb017170abab6de9cf29)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91513
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 782536db4c722..cb02d08a98e07 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -399,8 +399,6 @@ roc_nix_reassembly_configure(uint32_t max_wait_time, uint16_t max_frags)
+ 		return -EFAULT;
+ 
+ 	PLT_SET_USED(max_frags);
+-	if (idev == NULL)
+-		return -ENOTSUP;
+ 	roc_cpt = idev->cpt;
+ 	if (!roc_cpt) {
+ 		plt_err("Cannot support inline inbound, cryptodev not probed");
+-- 
+2.25.1
+

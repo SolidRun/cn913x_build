@@ -1,0 +1,46 @@
+From 0bd0cc6396d6a70a70748de57a259f3396b1176b Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Thu, 8 Jun 2023 17:15:42 +0530
+Subject: [PATCH 483/955] ci: disable failing tests
+
+cryptodev_openssl_autotest is failing CI on cn10k/cn9k.
+cnxk_mac_test is failing on 106 B0.
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I43793537a03420b42142da7a7348678948323474
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105150
+Reviewed-by: Ashwin Sekhar T K
+Tested-by: Ashwin Sekhar T K
+---
+ marvell-ci/test/env/cn10k.env | 2 ++
+ marvell-ci/test/env/cn9k.env  | 1 +
+ 2 files changed, 3 insertions(+)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 342488fa41855..fb6b9c83e4c93 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -71,6 +71,8 @@ TM_SETUP=${TM_SETUP:-}
+ FIXME_SKIP_TESTS="
+ 	cnxk_mtr_test_config
+ 	cnxk_fc_test_config
++	cryptodev_openssl_autotest
++	cnxk_mac_test
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index adbd35d2fc1b5..efa54d1039a6f 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -69,6 +69,7 @@ TM_SETUP=${TM_SETUP:-1}
+ 
+ FIXME_SKIP_TESTS="
+         cnxk_fc_test_config
++	cryptodev_openssl_autotest
+ "
+ 
+ 
+-- 
+2.25.1
+

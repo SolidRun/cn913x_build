@@ -1,0 +1,88 @@
+From 3af6c5a1eb200f68fecdc1736c29eb9dd8514a52 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Wed, 11 Oct 2023 18:26:44 +0530
+Subject: [PATCH 656/955] common/cnxk: fix flow add in age flow list
+
+While adding flow in npc_flow_list, the flow can be added before the
+current flow iterator. The function returns after adding this flow.
+This prevents flow to be added in age flow list correctly. This patch moves
+the addition of age flow list before npc_flow_list add to prevent the
+error. Also the flow is added or deleted to/from age flow list if the flow
+has age action.
+
+Fixes: 78bb2bf22fc2 ("common/cnxk: add support to get aged flows")
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Change-Id: I610e69444504ad3873c91cc33edfeb0ad82a0a07
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114071
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c       | 9 ++++++---
+ drivers/common/cnxk/roc_npc.h       | 1 +
+ drivers/common/cnxk/roc_npc_aging.c | 1 +
+ 3 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index bb197aa47fc1b..68485ec7d7b20 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -1517,6 +1517,9 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	}
+ 	roc_npc->rep_npc = NULL;
+ 
++	if (flow->has_age_action)
++		npc_age_flow_list_entry_add(roc_npc, flow);
++
+ 	if (flow->use_pre_alloc == 0)
+ 		list = &npc->flow_list[flow->priority];
+ 	else
+@@ -1531,8 +1534,6 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 	}
+ 	TAILQ_INSERT_TAIL(list, flow, next);
+ 
+-	npc_age_flow_list_entry_add(roc_npc, flow);
+-
+ 	return flow;
+ 
+ set_rss_failed:
+@@ -1636,7 +1637,9 @@ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 
+ 	npc_delete_prio_list_entry(npc, flow);
+ 
+-	npc_age_flow_list_entry_delete(roc_npc, flow);
++	if (flow->has_age_action)
++		npc_age_flow_list_entry_delete(roc_npc, flow);
++
+ 	if (roc_npc->flow_age.age_flow_refcnt == 0 && roc_npc->flow_age.aged_flows_poll_thread)
+ 		npc_aging_ctrl_thread_destroy(roc_npc);
+ 
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 227e1487533e0..acb9b37bb3fa8 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -307,6 +307,7 @@ struct roc_npc_flow {
+ 	uint64_t timeout_cycles;
+ 	void *age_context;
+ 	uint32_t timeout;
++	bool has_age_action;
+ 	uint16_t rep_pf_func;
+ 	uint16_t rep_channel;
+ 	struct mbox *rep_mbox;
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+index 4b845954b4350..4c368f4a9496d 100644
+--- a/drivers/common/cnxk/roc_npc_aging.c
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -273,6 +273,7 @@ npc_aging_ctrl_thread_create(struct roc_npc *roc_npc,
+ 	flow->age_context = age->context == NULL ? flow : age->context;
+ 	flow->timeout = age->timeout;
+ 	flow->timeout_cycles = plt_tsc_cycles() + age->timeout * plt_tsc_hz();
++	flow->has_age_action = true;
+ 
+ 	if (flow_age->age_flow_refcnt == 0) {
+ 		flow_age->aged_flows_get_thread_exit = false;
+-- 
+2.25.1
+

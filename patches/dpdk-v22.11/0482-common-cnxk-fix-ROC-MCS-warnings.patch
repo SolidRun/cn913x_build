@@ -1,0 +1,157 @@
+From 3cda1e8e2bf8c71f70f3bc8c57dfef2fa5bc2aa8 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Mon, 5 Jun 2023 10:30:10 +0530
+Subject: [PATCH 482/955] common/cnxk: fix ROC MCS warnings
+
+Fixed warnings for initial declarations inside for loop
+in roc_mcs.c.
+
+Fixes: 76e05d65da40 ("common/cnxk: add MACsec control port configuration")
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I483bae4f274fdf655a681fdd73b928abdd6949cc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104835
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_mcs.c | 28 +++++++++++++++-------------
+ 1 file changed, 15 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_mcs.c b/drivers/common/cnxk/roc_mcs.c
+index 6536ca7fb74ba..0f988e3173627 100644
+--- a/drivers/common/cnxk/roc_mcs.c
++++ b/drivers/common/cnxk/roc_mcs.c
+@@ -290,7 +290,7 @@ roc_mcs_custom_tag_cfg_get(struct roc_mcs *mcs, struct roc_mcs_custom_tag_cfg_ge
+ {
+ 	struct mcs_custom_tag_cfg_get_req *get_req;
+ 	struct mcs_custom_tag_cfg_get_rsp *get_rsp;
+-	int rc;
++	int i, rc;
+ 
+ 	MCS_SUPPORT_CHECK;
+ 
+@@ -308,7 +308,7 @@ roc_mcs_custom_tag_cfg_get(struct roc_mcs *mcs, struct roc_mcs_custom_tag_cfg_ge
+ 	if (rc)
+ 		return rc;
+ 
+-	for (int i = 0; i < 8; i++) {
++	for (i = 0; i < 8; i++) {
+ 		rsp->cstm_etype[i] = get_rsp->cstm_etype[i];
+ 		rsp->cstm_indx[i] = get_rsp->cstm_indx[i];
+ 	}
+@@ -351,12 +351,13 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 	struct roc_mcs_clear_stats stats = {0};
+ 	int tx_cnt = 0, rx_cnt = 0, rc = 0;
+ 	uint64_t set;
++	int i;
+ 
+ 	port.port_id = port_id;
+ 	rc = mcs_port_reset_set(mcs, &port, 1);
+ 
+ 	/* Reset TX/RX PN tables */
+-	for (int i = 0; i < (priv->sa_entries << 1); i++) {
++	for (i = 0; i < (priv->sa_entries << 1); i++) {
+ 		set = plt_bitmap_get(priv->port_rsrc[port_id].sa_bmap, i);
+ 		if (set) {
+ 			pn_table.pn_id = i;
+@@ -391,7 +392,7 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 
+ 		mdata->num_tx_sa = tx_cnt;
+ 		mdata->num_rx_sa = rx_cnt;
+-		for (int i = 0; i < (priv->sa_entries << 1); i++) {
++		for (i = 0; i < (priv->sa_entries << 1); i++) {
+ 			set = plt_bitmap_get(priv->port_rsrc[port_id].sa_bmap, i);
+ 			if (set) {
+ 				if (i >= priv->sa_entries)
+@@ -405,7 +406,7 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 	rx_cnt = 0;
+ 
+ 	/* Reset Tx active SA to index:0 */
+-	for (int i = priv->sc_entries; i < (priv->sc_entries << 1); i++) {
++	for (i = priv->sc_entries; i < (priv->sc_entries << 1); i++) {
+ 		set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
+ 		if (set) {
+ 			uint16_t sc_id = i - priv->sc_entries;
+@@ -434,7 +435,7 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 		}
+ 
+ 		mdata->num_tx_sc = tx_cnt;
+-		for (int i = priv->sc_entries; i < (priv->sc_entries << 1); i++) {
++		for (i = priv->sc_entries; i < (priv->sc_entries << 1); i++) {
+ 			set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
+ 			if (set)
+ 				mdata->tx_sc_array[--tx_cnt] = i - priv->sc_entries;
+@@ -442,7 +443,7 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 	}
+ 
+ 	/* Clear SA_IN_USE for active ANs in RX CPM */
+-	for (int i = 0; i < priv->sc_entries; i++) {
++	for (i = 0; i < priv->sc_entries; i++) {
+ 		set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
+ 		if (set) {
+ 			rx_map.sa_index = priv->port_rsrc[port_id].sc_conf[i].rx.sa_idx;
+@@ -458,7 +459,7 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 	}
+ 
+ 	/* Reset flow(flow/secy/sc/sa) stats mapped to this PORT */
+-	for (int i = 0; i < (priv->tcam_entries << 1); i++) {
++	for (i = 0; i < (priv->tcam_entries << 1); i++) {
+ 		set = plt_bitmap_get(priv->port_rsrc[port_id].tcam_bmap, i);
+ 		if (set) {
+ 			stats.type = MCS_FLOWID_STATS;
+@@ -473,7 +474,7 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 				return rc;
+ 		}
+ 	}
+-	for (int i = 0; i < (priv->secy_entries << 1); i++) {
++	for (i = 0; i < (priv->secy_entries << 1); i++) {
+ 		set = plt_bitmap_get(priv->port_rsrc[port_id].secy_bmap, i);
+ 		if (set) {
+ 			stats.type = MCS_SECY_STATS;
+@@ -488,7 +489,7 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 				return rc;
+ 		}
+ 	}
+-	for (int i = 0; i < (priv->sc_entries << 1); i++) {
++	for (i = 0; i < (priv->sc_entries << 1); i++) {
+ 		set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
+ 		if (set) {
+ 			stats.type = MCS_SC_STATS;
+@@ -504,7 +505,7 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 		}
+ 	}
+ 	if (roc_model_is_cn10kb_a0()) {
+-		for (int i = 0; i < (priv->sa_entries << 1); i++) {
++		for (i = 0; i < (priv->sa_entries << 1); i++) {
+ 			set = plt_bitmap_get(priv->port_rsrc[port_id].sa_bmap, i);
+ 			if (set) {
+ 				stats.type = MCS_SA_STATS;
+@@ -544,7 +545,7 @@ roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint
+ 	}
+ 
+ 	/* Reactivate in-use ANs for active SCs in RX CPM */
+-	for (int i = 0; i < priv->sc_entries; i++) {
++	for (i = 0; i < priv->sc_entries; i++) {
+ 		set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
+ 		if (set) {
+ 			rx_map.sa_index = priv->port_rsrc[port_id].sc_conf[i].rx.sa_idx;
+@@ -871,6 +872,7 @@ void
+ roc_mcs_dev_fini(struct roc_mcs *mcs)
+ {
+ 	struct mcs_priv *priv;
++	int i;
+ 
+ 	mcs->refcount--;
+ 	if (mcs->refcount > 0)
+@@ -882,7 +884,7 @@ roc_mcs_dev_fini(struct roc_mcs *mcs)
+ 
+ 	rsrc_bmap_free(&priv->dev_rsrc);
+ 
+-	for (int i = 0; i < MAX_PORTS_PER_MCS; i++) {
++	for (i = 0; i < MAX_PORTS_PER_MCS; i++) {
+ 		rsrc_bmap_free(&priv->port_rsrc[i]);
+ 		plt_free(priv->port_rsrc[i].sc_conf);
+ 	}
+-- 
+2.25.1
+

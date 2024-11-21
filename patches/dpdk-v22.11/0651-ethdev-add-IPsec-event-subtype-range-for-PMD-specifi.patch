@@ -1,0 +1,41 @@
+From a365afb1a9d53e3f97d98b530680dda8642a7359 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Wed, 4 Oct 2023 17:29:12 +0530
+Subject: [PATCH 651/955] ethdev: add IPsec event subtype range for PMD
+ specific code
+
+Add IPsec event subtype range for PMD specific code in order
+to accommodate wide range of errors that PMD supports.
+These IPsec event subtypes are used when an error doesn't
+match the spec defined subtypes between RTE_ETH_EVENT_IPSEC_UNKNOWN
+and RTE_ETH_EVENT_IPSEC_MAX. Adding this as -ve error range
+to avoid ABI breakage.
+
+Change-Id: I837097c04678df2e9362a64d89e21b0a92ccd6b5
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113144
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ lib/ethdev/rte_ethdev.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
+index 96d0650d0c8b0..cb4295e4f1c53 100644
+--- a/lib/ethdev/rte_ethdev.h
++++ b/lib/ethdev/rte_ethdev.h
+@@ -3819,6 +3819,10 @@ struct rte_eth_event_macsec_desc {
+  * eth device.
+  */
+ enum rte_eth_event_ipsec_subtype {
++	/**  PMD specific error start */
++	RTE_ETH_EVENT_IPSEC_PMD_ERROR_START = -256,
++	/**  PMD specific error end */
++	RTE_ETH_EVENT_IPSEC_PMD_ERROR_END = -1,
+ 	/** Unknown event type */
+ 	RTE_ETH_EVENT_IPSEC_UNKNOWN = 0,
+ 	/** Sequence number overflow */
+-- 
+2.25.1
+

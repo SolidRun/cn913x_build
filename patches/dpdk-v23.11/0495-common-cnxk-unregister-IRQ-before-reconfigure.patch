@@ -1,0 +1,113 @@
+From 8eded7dca7c2a65aa98cd27531d6e9d3141cef40 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 4 Sep 2024 16:27:57 +0530
+Subject: [PATCH 495/513] common/cnxk: unregister IRQ before reconfigure
+
+Unregister SSO device and NPA IRQs before resizing
+the IRQs and registering them.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I13fc6c5a2ba06f037c81b6a4fd91e9e2c67d7561
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134924
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c      | 16 +++++++---------
+ drivers/common/cnxk/roc_dev_priv.h |  2 ++
+ drivers/common/cnxk/roc_sso.c      |  7 +++++++
+ 3 files changed, 16 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index a43b32fc14cf8..8cc83df37c0ae 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -1037,8 +1037,8 @@ mbox_unregister_vf_irq(struct plt_pci_device *pci_dev, struct dev *dev)
+ 	dev_irq_unregister(intr_handle, roc_pf_vf_mbox_irq, dev, RVU_VF_INT_VEC_MBOX);
+ }
+ 
+-static void
+-mbox_unregister_irq(struct plt_pci_device *pci_dev, struct dev *dev)
++void
++dev_mbox_unregister_irq(struct plt_pci_device *pci_dev, struct dev *dev)
+ {
+ 	if (dev_is_vf(dev))
+ 		mbox_unregister_vf_irq(pci_dev, dev);
+@@ -1116,8 +1116,8 @@ roc_pf_vf_flr_irq(void *param)
+ 	}
+ }
+ 
+-static int
+-vf_flr_unregister_irqs(struct plt_pci_device *pci_dev, struct dev *dev)
++void
++dev_vf_flr_unregister_irqs(struct plt_pci_device *pci_dev, struct dev *dev)
+ {
+ 	struct plt_intr_handle *intr_handle = pci_dev->intr_handle;
+ 	int i;
+@@ -1133,8 +1133,6 @@ vf_flr_unregister_irqs(struct plt_pci_device *pci_dev, struct dev *dev)
+ 
+ 	dev_irq_unregister(intr_handle, roc_pf_vf_flr_irq, dev,
+ 			   RVU_PF_INT_VEC_VFFLR1);
+-
+-	return 0;
+ }
+ 
+ int
+@@ -1713,7 +1711,7 @@ dev_init(struct dev *dev, struct plt_pci_device *pci_dev)
+ iounmap:
+ 	dev_vf_mbase_put(pci_dev, vf_mbase);
+ mbox_unregister:
+-	mbox_unregister_irq(pci_dev, dev);
++	dev_mbox_unregister_irq(pci_dev, dev);
+ 	if (dev->ops)
+ 		plt_free(dev->ops);
+ mbox_fini:
+@@ -1751,10 +1749,10 @@ dev_fini(struct dev *dev, struct plt_pci_device *pci_dev)
+ 	if (dev->lmt_mz)
+ 		plt_memzone_free(dev->lmt_mz);
+ 
+-	mbox_unregister_irq(pci_dev, dev);
++	dev_mbox_unregister_irq(pci_dev, dev);
+ 
+ 	if (!dev_is_vf(dev)) {
+-		vf_flr_unregister_irqs(pci_dev, dev);
++		dev_vf_flr_unregister_irqs(pci_dev, dev);
+ 		/* Releasing memory allocated for mbox region */
+ 		if (dev->vf_mbox_mz)
+ 			plt_memzone_free(dev->vf_mbox_mz);
+diff --git a/drivers/common/cnxk/roc_dev_priv.h b/drivers/common/cnxk/roc_dev_priv.h
+index 434e165b5659d..5ab4f72f8f650 100644
+--- a/drivers/common/cnxk/roc_dev_priv.h
++++ b/drivers/common/cnxk/roc_dev_priv.h
+@@ -170,6 +170,8 @@ int dev_irqs_disable(struct plt_intr_handle *intr_handle);
+ int dev_irq_reconfigure(struct plt_intr_handle *intr_handle, uint16_t max_intr);
+ 
+ int dev_mbox_register_irq(struct plt_pci_device *pci_dev, struct dev *dev);
++void dev_mbox_unregister_irq(struct plt_pci_device *pci_dev, struct dev *dev);
+ int dev_vf_flr_register_irqs(struct plt_pci_device *pci_dev, struct dev *dev);
++void dev_vf_flr_unregister_irqs(struct plt_pci_device *pci_dev, struct dev *dev);
+ 
+ #endif /* _ROC_DEV_PRIV_H */
+diff --git a/drivers/common/cnxk/roc_sso.c b/drivers/common/cnxk/roc_sso.c
+index a3479c4d21143..516969fb04788 100644
+--- a/drivers/common/cnxk/roc_sso.c
++++ b/drivers/common/cnxk/roc_sso.c
+@@ -881,7 +881,14 @@ sso_update_msix_vec_count(struct roc_sso *roc_sso, uint16_t sso_vec_cnt)
+ 		return dev_irq_reconfigure(pci_dev->intr_handle, mbox_vec_cnt + npa_vec_cnt);
+ 	}
+ 
++	/* Before re-configuring unregister irqs */
++	dev_mbox_unregister_irq(pci_dev, dev);
++	if (!dev_is_vf(dev))
++		dev_vf_flr_unregister_irqs(pci_dev, dev);
++
+ 	npa_vec_cnt = (dev->npa.pci_dev == pci_dev) ? NPA_LF_INT_VEC_POISON + 1 : 0;
++	if (npa_vec_cnt)
++		npa_unregister_irqs(&dev->npa);
+ 
+ 	/* Re-configure to include SSO vectors */
+ 	rc = dev_irq_reconfigure(pci_dev->intr_handle, mbox_vec_cnt + npa_vec_cnt + sso_vec_cnt);
+-- 
+2.25.1
+

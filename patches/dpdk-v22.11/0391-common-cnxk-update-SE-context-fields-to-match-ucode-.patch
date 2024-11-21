@@ -1,0 +1,44 @@
+From d9332b31a088c178febe1eb970dc7377bfaba7f2 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 3 May 2023 23:26:17 -0700
+Subject: [PATCH 391/955] common/cnxk: update SE context fields to match ucode
+ spec
+
+Update the fields in SE context and rename to keep it in sync with
+microcode spec.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I8a6f3022cf2a12ecc960dcfd9a57d6476d235395
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102994
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/roc_se.h | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index 1495088915884..9e04ccd7b1c77 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -170,13 +170,15 @@ typedef enum {
+ struct roc_se_enc_context {
+ 	uint64_t iv_source : 1;
+ 	uint64_t aes_key : 2;
+-	uint64_t rsvd_60 : 1;
++	uint64_t rsvd_59 : 1;
+ 	uint64_t enc_cipher : 4;
+ 	uint64_t auth_input_type : 1;
+-	uint64_t rsvd_52_54 : 3;
++	uint64_t auth_key_src : 1;
++	uint64_t rsvd_50_51 : 2;
+ 	uint64_t hash_type : 4;
+ 	uint64_t mac_len : 8;
+-	uint64_t rsvd_39_0 : 40;
++	uint64_t rsvd_16_39 : 24;
++	uint64_t hmac_key_sz : 16;
+ 	uint8_t encr_key[32];
+ 	uint8_t encr_iv[16];
+ };
+-- 
+2.25.1
+

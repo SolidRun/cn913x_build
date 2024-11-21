@@ -1,0 +1,31 @@
+From e64a037723f07ebbc63480f888a7e048eefa0720 Mon Sep 17 00:00:00 2001
+From: Jerin Jacob <jerinj@marvell.com>
+Date: Fri, 24 Mar 2023 08:10:12 +0530
+Subject: [PATCH 332/955] marvell-ci: skip building the test for non arm64
+
+Change-Id: Id670139a5e9f418e69cf91191b8c93b675fdae79
+Signed-off-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/99840
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/meson.build | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index 7209a1f2bef9c..643849cd8982b 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -5,6 +5,10 @@ if not get_option('tests')
+     subdir_done()
+ endif
+ 
++if not host_machine.cpu_family().startswith('aarch')
++    subdir_done()
++endif
++
+ subdir('common')
+ 
+ # The developer is expected to add new scripts in subdirectories and add it to
+-- 
+2.25.1
+

@@ -1,0 +1,32 @@
+From 082f16c7c77d686380b5c16fa6a6d64dae552d74 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 18 Dec 2023 21:14:54 +0530
+Subject: [PATCH 750/955] net/octeon_ep: disable array oob warning
+
+Disable array out of bounds warning.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I2fb65dfe8aab5b7bcde90218decb1333ad394ea0
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118460
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/octeon_ep/meson.build b/drivers/net/octeon_ep/meson.build
+index 23c66e890248d..0cfdfc7122036 100644
+--- a/drivers/net/octeon_ep/meson.build
++++ b/drivers/net/octeon_ep/meson.build
+@@ -35,7 +35,7 @@ if arch_subdir == 'x86'
+     endif
+ endif
+ 
+-extra_flags = ['-Wno-strict-aliasing']
++extra_flags = ['-Wno-strict-aliasing', '-Wno-array-bounds']
+ foreach flag: extra_flags
+     if cc.has_argument(flag)
+         cflags += flag
+-- 
+2.25.1
+

@@ -1,0 +1,35 @@
+From 017e939d92052dfd3786ee2946458fad6c55eea0 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Fri, 13 Jan 2023 20:33:10 +0530
+Subject: [PATCH 167/955] examples/fips_validation: add SHA3 algorithms in
+ ECDSA test
+
+Add SHA3 algorithms in ECDSA as supported.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I2a817ef1464cea65a459c834cc4e770836febe16
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94607
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ examples/fips_validation/fips_validation_ecdsa.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/examples/fips_validation/fips_validation_ecdsa.c b/examples/fips_validation/fips_validation_ecdsa.c
+index 5c91abfc5a89c..aef722d147ba8 100644
+--- a/examples/fips_validation/fips_validation_ecdsa.c
++++ b/examples/fips_validation/fips_validation_ecdsa.c
+@@ -50,6 +50,10 @@ struct {
+ 		{RTE_CRYPTO_AUTH_SHA256, "SHA2-256"},
+ 		{RTE_CRYPTO_AUTH_SHA384, "SHA2-384"},
+ 		{RTE_CRYPTO_AUTH_SHA512, "SHA2-512"},
++		{RTE_CRYPTO_AUTH_SHA3_224, "SHA3-224"},
++		{RTE_CRYPTO_AUTH_SHA3_256, "SHA3-256"},
++		{RTE_CRYPTO_AUTH_SHA3_384, "SHA3-384"},
++		{RTE_CRYPTO_AUTH_SHA3_512, "SHA3-512"},
+ };
+ 
+ struct {
+-- 
+2.25.1
+

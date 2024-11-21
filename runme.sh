@@ -59,7 +59,7 @@ fi
 ###############################################################################
 
 RELEASE=${RELEASE:-v6.1.111}
-DPDK_RELEASE=${DPDK_RELEASE:-v22.07}
+DPDK_RELEASE=${DPDK_RELEASE:-v24.07}
 
 SHALLOW=${SHALLOW:true}
 	if [ "x$SHALLOW" == "xtrue" ]; then
@@ -529,34 +529,39 @@ do_build_${DISTRO}
 ###############################################################################
 # build MUSDK
 ###############################################################################
-if [[ ! -d $ROOTDIR/build/musdk-marvell-SDK11.22.07 ]]; then
+MUSDK_VERSION=SDK12.24.10
+if [[ ! -d $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION} ]]; then
 	cd $ROOTDIR/build/
-	wget https://solidrun-common.sos-de-fra-1.exo.io/cn913x/marvell/SDK11.22.07/sources-musdk-marvell-SDK11.22.07.tar.bz2
-	tar -vxf sources-musdk-marvell-SDK11.22.07.tar.bz2
-	rm -f sources-musdk-marvell-SDK11.22.07.tar.bz2
-	cd musdk-marvell-SDK11.22.07
+	wget https://solidrun-common.sos-de-fra-1.exo.io/cn913x/marvell/${MUSDK_VERSION}/sources-musdk-marvell-${MUSDK_VERSION}.tar.bz2
+	tar -vxf sources-musdk-marvell-${MUSDK_VERSION}.tar.bz2
+	rm -f sources-musdk-marvell-${MUSDK_VERSION}.tar.bz2
+	cd musdk-marvell-${MUSDK_VERSION}
 	for i in `find $ROOTDIR/patches/musdk/*.patch`; do
 		patch -p1 < $i
 	done
 
 fi
 
-cd $ROOTDIR/build/musdk-marvell-SDK11.22.07
+cd $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}
 ./bootstrap
-./configure --host=aarch64-linux-gnu CFLAGS="-fPIC -O2 -Wno-error=maybe-uninitialized -Wno-error=address -Wno-error=use-after-free"
+./configure --host=aarch64-linux-gnu CFLAGS="-fPIC -O2"
 make -j${PARALLEL}
 make install
-cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma
+cd $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/modules/cma
 make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
-cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2
+cd $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/modules/pp2
 make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
 
 ###############################################################################
 # build DPDK
 ###############################################################################
-export PKG_CONFIG_PATH=$ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/lib/pkgconfig/:$PKG_CONFIG_PATH
+export PKG_CONFIG_PATH=$ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/usr/local/lib/pkgconfig/:$PKG_CONFIG_PATH
 cd $ROOTDIR/build/dpdk
-meson build -Dexamples=all -Dwerror=false --cross-file $ROOTDIR/configs/dpdk/arm64_armada_solidrun_linux_gcc
+meson build \
+	-Dexamples=all \
+	-Dwerror=false \
+	-Dpkg_config_path=$ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/usr/local/lib/pkgconfig \
+	--cross-file $ROOTDIR/configs/dpdk/arm64_armada_solidrun_linux_gcc
 ninja -C build
 
 ###############################################################################
@@ -590,14 +595,14 @@ e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l2fwd $ROOTDIR/images/
 e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l3fwd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
 
 # Copy MUSDK
-cd $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/
+cd $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/usr/local/
 for i in `find .`; do
 	if [ -d $i ]; then
 		e2mkdir -v -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:usr/$i
 	fi
 	if [ -f $i ] && ! [ -L $i ]; then
 		DIR=`dirname $i`
-		e2cp -v -G 0 -O 0 -p $ROOTDIR/build/musdk-marvell-SDK11.22.07/usr/local/$i $ROOTDIR/images/tmp/rootfs.ext4:usr/$DIR
+		e2cp -v -G 0 -O 0 -p $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/usr/local/$i $ROOTDIR/images/tmp/rootfs.ext4:usr/$DIR
 	fi
 done
 for i in `find .`; do
@@ -624,8 +629,8 @@ cd -
 
 # Copy MUSDK modules
 e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
-e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/cma/musdk_cma.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
-e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-SDK11.22.07/modules/pp2/mv_pp_uio.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
+e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/modules/cma/musdk_cma.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
+e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/modules/pp2/mv_pp_uio.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
 
 # ext4 ubuntu partition is ready
 cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images

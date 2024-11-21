@@ -1,0 +1,166 @@
+From 4db269ce84416580b10aaf40095c59f69df4569f Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 12 Jan 2024 20:08:51 +0530
+Subject: [PATCH 176/513] marvell-ci: add TLS crypto perf tests
+
+Added cases for TLS 1.2 and DTLS 1.2
+for AES-GCM and AES-CBC-HMAC-SHA1 for 1,2,4 cores.
+The support for TLS is available for CN103 and CN106B0
+boards only, hence tests are run conditionally on these
+platform only.
+On board CN106B0, rclk 2700 is used, so a new file is created
+for that. Currently all the performance numbers are copied from
+rclk 2500 file.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I4b0a9b063f8edfb1fae20656bb68709640f1eb2d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120241
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ .../crypto_perf/cnxk_crypto_perf.sh           | 44 +++++++++++++
+ .../ref_numbers/cn10k/rclk2700_sclk1200.106xx | 61 +++++++++++++++++++
+ 2 files changed, 105 insertions(+)
+ create mode 100644 marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx
+
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh b/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
+index 78287e636c45f..936b01148469c 100755
+--- a/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/cnxk_crypto_perf.sh
+@@ -22,6 +22,10 @@ PARTNUM_98XX=0x0b1
+ ! $(cat /proc/device-tree/compatible | grep -q "cn10k")
+ IS_CN10K=$?
+ 
++! $(cat /proc/device-tree/compatible | grep -q "cn10kb")
++IS_CN103=$?
++PART_106B0=$(cat /proc/device-tree/soc\@0/chiprevision)
++
+ if [[ $IS_CN10K -ne 0 ]]; then
+ 	DEVTYPE="crypto_cn10k"
+ 	CRYPTO_DEVICE=$(lspci -d :a0f3 | head -1 | awk -e '{ print $1 }')
+@@ -381,6 +385,39 @@ function aead_ipsec_perf()
+ 	crypto_perf_common "$algo_str" "--devtype $DEVTYPE --ptest throughput --optype ipsec --aead-algo $cipher --pool-sz $POOLSZ --aead-op encrypt --aead-key-sz 32 --aead-iv-sz 12 --aead-aad-sz 64 --digest-sz 16 --buffer-sz $BUFFERSZ --total-ops $NUMOPS --burst-sz $BURSTSZ --silent --csv-friendly"
+ }
+ 
++function aes_sha1_hmac_tls12_perf()
++{
++	local cipher="aes-cbc"
++	local auth="sha1-hmac"
++	local algo_str="${cipher}_${auth}-tls1.2"
++
++	crypto_perf_common "$algo_str" "--devtype $DEVTYPE --ptest throughput --optype tls-record --cipher-algo $cipher --pool-sz $POOLSZ --cipher-op encrypt --cipher-key-sz 16 --cipher-iv-sz 16 --auth-algo $auth --auth-op generate --auth-key-sz 20 --digest-sz 16 --buffer-sz $BUFFERSZ --total-ops $NUMOPS --burst-sz $BURSTSZ --silent --csv-friendly --tls-version TLS1.2"
++}
++
++function aead_tls12_perf()
++{
++	local cipher="aes-gcm"
++	local algo_str="${cipher}-tls1.2"
++
++	crypto_perf_common "$algo_str" "--devtype $DEVTYPE --ptest throughput --optype tls-record --aead-algo $cipher --pool-sz $POOLSZ --aead-op encrypt --aead-key-sz 32  --digest-sz 16 --buffer-sz $BUFFERSZ --total-ops $NUMOPS --burst-sz $BURSTSZ --silent --csv-friendly --tls-version TLS1.2"
++}
++
++function aes_sha1_hmac_dtls12_perf()
++{
++	local cipher="aes-cbc"
++	local auth="sha1-hmac"
++	local algo_str="${cipher}_${auth}-dtls1.2"
++
++	crypto_perf_common "$algo_str" "--devtype $DEVTYPE --ptest throughput --optype tls-record --cipher-algo $cipher --pool-sz $POOLSZ --cipher-op encrypt --cipher-key-sz 16 --cipher-iv-sz 16 --auth-algo $auth --auth-op generate --auth-key-sz 20 --digest-sz 16 --buffer-sz $BUFFERSZ --total-ops $NUMOPS --burst-sz $BURSTSZ --silent --csv-friendly --tls-version DTLS1.2"
++}
++
++function aead_dtls12_perf()
++{
++	local cipher="aes-gcm"
++	local algo_str="${cipher}-dtls1.2"
++
++	crypto_perf_common "$algo_str" "--devtype $DEVTYPE --ptest throughput --optype tls-record --aead-algo $cipher --pool-sz $POOLSZ --aead-op encrypt --aead-key-sz 32 --digest-sz 16 --buffer-sz $BUFFERSZ --total-ops $NUMOPS --burst-sz $BURSTSZ --silent --csv-friendly --tls-version DTLS1.2"
++}
+ 
+ function zuc_eia3_perf()
+ {
+@@ -432,5 +469,12 @@ zuc_eia3_perf
+ zuc_eea3_perf
+ ae_modex_perf
+ 
++if [[ $IS_CN103 -ne 0 ]] || [[ $PART_106B0 == "B0" ]]; then
++	aead_tls12_perf
++	aes_sha1_hmac_tls12_perf
++	aead_dtls12_perf
++	aes_sha1_hmac_dtls12_perf
++fi
++
+ echo "Crypto perf application completed"
+ exit 0
+diff --git a/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx
+new file mode 100644
+index 0000000000000..65f3a9a8e2f87
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/crypto_perf/ref_numbers/cn10k/rclk2700_sclk1200.106xx
+@@ -0,0 +1,61 @@
++aes-cbc-only
++64: 27.529 54.352 78.153
++384: 26.797 40.724 41.192
++1504: 14.319 14.414 14.378
++<end>
++aes-cbc_sha1-hmac
++64: 23.644 46.06 47.021
++384: 23.925 33.904 33.983
++1504: 13.623 13.677 13.665
++<end>
++aes-gcm
++64: 13.958 27.221 27.575
++384: 13.841 22.638 22.873
++1504: 9.798 9.836 9.873
++<end>
++aes-cbc_sha1-hmac-ipsec
++64: 31.951 43.329 45.253
++384: 28.768 31.425 33.531
++1504: 11.401 12.002 12.8
++<end>
++aes-gcm-ipsec
++64: 31.979 46.894 52.529
++384: 31.77 34.26 36
++1504: 11.28 11.869 12.558
++<end>
++zuc-eia3
++64: 18.147 25.186 24.776
++384: 18.001 18.588 18.446
++1504: 9.948 9.983 9.955
++<end>
++zuc-eea3
++64: 27.808 52.624 52.692
++384: 27.363 30.495 30.583
++1504: 12.041 12.06 12.068
++<end>
++modex
++64: 1.241 1.243 1.243
++384: 1.241 1.243 1.243
++1504: 1.241 1.243 1.243
++<end>
++aes-cbc_sha1-hmac-tls1.2
++64: 31.951 43.329 45.253
++384: 28.268 27.425 29.05
++1504: 9.401 9.6 9.8
++<end>
++aes-gcm-tls1.2
++64: 31.979 46.894 52.529
++384: 31.77 34.26 36
++1504: 9.28 11.369 11.558
++<end>
++aes-cbc_sha1-hmac-dtls1.2
++64: 31.951 43.329 45.253
++384: 28.268 27.425 29.05
++1504: 9.401 9.502 9.8
++<end>
++aes-gcm-dtls1.2
++64: 31.979 46.894 52.529
++384: 31.77 34.26 36
++1504: 9.28 11.369 11.558
++<end>
++
+-- 
+2.25.1
+

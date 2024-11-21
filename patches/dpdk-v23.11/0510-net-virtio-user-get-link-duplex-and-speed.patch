@@ -1,0 +1,94 @@
+From 03e9038158cb66fbd3a94622b2287d90836e6b25 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Tue, 1 Oct 2024 12:41:52 +0530
+Subject: [PATCH 510/513] net/virtio-user: get link duplex and speed
+
+This patch extends the virtio_user_read_dev_config API to retrieve link
+speed and duplex settings if the device features support
+VIRTIO_NET_F_SPEED_DUPLEX.
+
+Change-Id: I378748e6e055d6b2943633bf3cc7784d0239f682
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/136466
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ .../net/virtio/virtio_user/virtio_user_dev.c  | 22 ++++++++++++++++++-
+ .../net/virtio/virtio_user/virtio_user_dev.h  |  2 ++
+ drivers/net/virtio/virtio_user_ethdev.c       |  6 +++++
+ 3 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.c b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+index add18fcb2603b..3c54c11996a6b 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.c
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.c
+@@ -424,6 +424,25 @@ virtio_user_dev_init_mac(struct virtio_user_dev *dev, const char *mac)
+ 	PMD_DRV_LOG(INFO, "(%s) MAC %s specified", dev->path, buf);
+ }
+ 
++int
++virtio_user_dev_get_speed_duplex_config(struct virtio_user_dev *dev, void *dst, size_t offset,
++					int length)
++{
++	int ret = 0;
++
++	if (!(dev->device_features & (1ULL << VIRTIO_NET_F_SPEED_DUPLEX)))
++		return -ENOTSUP;
++
++	if (!dev->ops->get_config)
++		return -ENOTSUP;
++
++	ret = dev->ops->get_config(dev, dst, offset, length);
++	if (ret)
++		PMD_DRV_LOG(ERR, "(%s) Failed to get speed/duplex config in device", dev->path);
++
++	return ret;
++}
++
+ static int
+ virtio_user_dev_init_notify(struct virtio_user_dev *dev)
+ {
+@@ -730,7 +749,8 @@ virtio_user_free_vrings(struct virtio_user_dev *dev)
+ 	 1ULL << VIRTIO_F_NOTIFICATION_DATA	|	\
+ 	 1ULL << VIRTIO_F_ORDER_PLATFORM        |       \
+ 	 1ULL << VIRTIO_NET_F_HASH_REPORT       |       \
+-	 1ULL << VIRTIO_NET_F_RSS)
++	 1ULL << VIRTIO_NET_F_RSS               |       \
++	 1ULL << VIRTIO_NET_F_SPEED_DUPLEX)
+ 
+ int
+ virtio_user_dev_init(struct virtio_user_dev *dev, char *path, uint16_t queues,
+diff --git a/drivers/net/virtio/virtio_user/virtio_user_dev.h b/drivers/net/virtio/virtio_user/virtio_user_dev.h
+index 39b3eec0f2b60..6d80a67084e12 100644
+--- a/drivers/net/virtio/virtio_user/virtio_user_dev.h
++++ b/drivers/net/virtio/virtio_user/virtio_user_dev.h
+@@ -88,6 +88,8 @@ int virtio_user_dev_set_mac(struct virtio_user_dev *dev);
+ int virtio_user_dev_get_mac(struct virtio_user_dev *dev);
+ int virtio_user_dev_get_rss_config(struct virtio_user_dev *dev, void *dst, size_t offset,
+ 				   int length);
++int virtio_user_dev_get_speed_duplex_config(struct virtio_user_dev *dev, void *dst,
++					    size_t offset, int length);
+ void virtio_user_dev_delayed_disconnect_handler(void *param);
+ int virtio_user_dev_server_reconnect(struct virtio_user_dev *dev);
+ extern const char * const virtio_user_backend_strings[];
+diff --git a/drivers/net/virtio/virtio_user_ethdev.c b/drivers/net/virtio/virtio_user_ethdev.c
+index 3a27f2095d4b2..d06ed1644c0ef 100644
+--- a/drivers/net/virtio/virtio_user_ethdev.c
++++ b/drivers/net/virtio/virtio_user_ethdev.c
+@@ -55,6 +55,12 @@ virtio_user_read_dev_config(struct virtio_hw *hw, size_t offset,
+ 
+ 	if (offset >= offsetof(struct virtio_net_config, rss_max_key_size))
+ 		virtio_user_dev_get_rss_config(dev, dst, offset, length);
++
++	if (offset == offsetof(struct virtio_net_config, speed))
++		virtio_user_dev_get_speed_duplex_config(dev, dst, offset, length);
++
++	if (offset == offsetof(struct virtio_net_config, duplex))
++		virtio_user_dev_get_speed_duplex_config(dev, dst, offset, length);
+ }
+ 
+ static void
+-- 
+2.25.1
+

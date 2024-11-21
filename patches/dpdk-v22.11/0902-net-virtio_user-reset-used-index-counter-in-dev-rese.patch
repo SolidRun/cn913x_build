@@ -1,0 +1,41 @@
+From 097d8746b675540730a1fa7c02a5dd1774b48644 Mon Sep 17 00:00:00 2001
+From: Kommula Shiva Shankar <kshankar@marvell.com>
+Date: Thu, 25 Jul 2024 21:40:46 +0000
+Subject: [PATCH 902/955] net/virtio_user: reset used index counter in dev
+ reset
+
+When the virtio device is reinitialized during ethdev reconfiguration,
+all the virtio rings are recreated and populated on the device.
+In this case, reset the used index counter to zero,
+as the newly created ring starts from zero index
+
+Signed-off-by: Kommula Shiva Shankar <kshankar@marvell.com>
+Change-Id: Ia3101135b14a9d8416779dcf58af0cc79cfc071b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132094
+Reviewed-by: Srujana Challa <schalla@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+(cherry picked from commit 98466facd96a4133f4ab24aa251368eba7b3cb78)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132367
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/virtio/virtio_user_ethdev.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/virtio/virtio_user_ethdev.c b/drivers/net/virtio/virtio_user_ethdev.c
+index d32abec327308..87e89d39966cb 100644
+--- a/drivers/net/virtio/virtio_user_ethdev.c
++++ b/drivers/net/virtio/virtio_user_ethdev.c
+@@ -194,6 +194,7 @@ virtio_user_setup_queue_packed(struct virtqueue *vq,
+ 	vring->device = (void *)(uintptr_t)used_addr;
+ 	dev->packed_queues[queue_idx].avail_wrap_counter = true;
+ 	dev->packed_queues[queue_idx].used_wrap_counter = true;
++	dev->packed_queues[queue_idx].used_idx = 0;
+ 
+ 	for (i = 0; i < vring->num; i++)
+ 		vring->desc[i].flags = 0;
+-- 
+2.25.1
+

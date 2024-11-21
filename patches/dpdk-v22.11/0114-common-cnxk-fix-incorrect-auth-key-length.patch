@@ -1,0 +1,47 @@
+From 43947ba69399cd41440c79bdaf6375c7f0446929 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Wed, 21 Dec 2022 23:02:13 +0530
+Subject: [PATCH 114/955] common/cnxk: fix incorrect auth key length
+
+Auth key length is stored as 8 bit value in SE context. It should
+be larger enough to accommodate supported auth key length of 1024
+bytes maximum, as in HMAC.
+
+Fixes: a45859312ff ("common/cnxk: add SE definitions for symmetric crypto")
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I73fbe648eec52da1826bec5def7bf73be29e9968
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93240
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/roc_se.h | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index 6758142214857..a0c97b26c5526 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -288,16 +288,15 @@ struct roc_se_ctx {
+ 	uint64_t enc_cipher : 8;
+ 	uint64_t hash_type : 8;
+ 	uint64_t mac_len : 8;
+-	uint64_t auth_key_len : 8;
++	uint64_t auth_key_len : 16;
+ 	uint64_t fc_type : 4;
+ 	uint64_t hmac : 1;
+ 	uint64_t zsk_flags : 3;
+ 	uint64_t k_ecb : 1;
+ 	uint64_t pdcp_ci_alg : 2;
+ 	uint64_t pdcp_auth_alg : 2;
+-	uint16_t ciph_then_auth : 1;
+-	uint16_t auth_then_ciph : 1;
+-	uint64_t rsvd : 17;
++	uint64_t ciph_then_auth : 1;
++	uint64_t auth_then_ciph : 1;
+ 	union cpt_inst_w4 template_w4;
+ 	/* Below fields are accessed by hardware */
+ 	struct se_ctx_s {
+-- 
+2.25.1
+

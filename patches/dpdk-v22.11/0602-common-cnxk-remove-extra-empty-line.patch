@@ -1,0 +1,32 @@
+From aa0ef1085d4bf7e5b350795fc4026a6e1006fdb8 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Thu, 17 Aug 2023 12:39:51 +0530
+Subject: [PATCH 602/955] common/cnxk: remove extra empty line
+
+Removes extra empty line to make it sync with
+dpdk-23.03-devel.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Id3fa082bf4b03d90d6bac2263025f39109cd741e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109956
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index dbe77879d2c38..787bccb27d035 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -165,7 +165,6 @@ struct roc_cpt_inline_ipsec_inb_cfg {
+ 	uint8_t ctx_ilen : 7;
+ };
+ 
+-
+ int __roc_api roc_cpt_rxc_time_cfg(struct roc_cpt *roc_cpt,
+ 				   struct roc_cpt_rxc_time_cfg *cfg);
+ int __roc_api roc_cpt_dev_init(struct roc_cpt *roc_cpt);
+-- 
+2.25.1
+

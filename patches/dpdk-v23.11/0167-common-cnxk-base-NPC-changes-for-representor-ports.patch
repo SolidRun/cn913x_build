@@ -1,0 +1,84 @@
+From d351dfe29510ddb3ba967c14e50b9b8e75f8f60a Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Fri, 1 Dec 2023 01:32:15 +0530
+Subject: [PATCH 167/513] common/cnxk: base NPC changes for representor ports
+
+Adding base NPC support for represented ports and introducing a
+predefined index for NIXX_AF_LFX_RX_VTAG_TYPEX, which can perform
+strip action in case of flow installed by PF on behalf of a
+representor port
+
+Change-Id: I0d72d88de0a4786e404253c07cfa206b2b5c5036
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c       |  2 ++
+ drivers/common/cnxk/roc_npc_parse.c | 17 +++++++++++++++--
+ drivers/common/cnxk/roc_npc_priv.h  |  1 +
+ 3 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index baa4c230c9d67..f4fb8c7660bb6 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -1414,6 +1414,7 @@ npc_vtag_strip_action_configure(struct mbox *mbox,
+ 
+ 	rx_vtag_action |= (NIX_RX_VTAGACTION_VTAG_VALID << 15);
+ 	rx_vtag_action |= ((uint64_t)NPC_LID_LB << 8);
++	rx_vtag_action |= ((uint64_t)NIX_RX_VTAG_TYPE6 << 12);
+ 	rx_vtag_action |= NIX_RX_VTAGACTION_VTAG0_RELPTR;
+ 
+ 	if (*strip_cnt == 2) {
+@@ -1464,6 +1465,7 @@ npc_vtag_action_program(struct roc_npc *roc_npc,
+ 			if (rc)
+ 				return rc;
+ 
++			plt_npc_dbg("VLAN strip action, strip_cnt %d", strip_cnt);
+ 			if (strip_cnt == 2)
+ 				actions++;
+ 
+diff --git a/drivers/common/cnxk/roc_npc_parse.c b/drivers/common/cnxk/roc_npc_parse.c
+index 3638d4be71fda..0aaf86c76870d 100644
+--- a/drivers/common/cnxk/roc_npc_parse.c
++++ b/drivers/common/cnxk/roc_npc_parse.c
+@@ -46,11 +46,24 @@ npc_parse_port_representor_id(struct npc_parse_state *pst)
+ 	return 0;
+ }
+ 
++int
++npc_parse_represented_port_id(struct npc_parse_state *pst)
++{
++	if (pst->pattern->type != ROC_NPC_ITEM_TYPE_REPRESENTED_PORT)
++		return 0;
++
++	if (pst->flow->nix_intf != NIX_INTF_RX)
++		return -EINVAL;
++
++	pst->pattern++;
++
++	return 0;
++}
++
+ static int
+ npc_flow_raw_item_prepare(const struct roc_npc_flow_item_raw *raw_spec,
+ 			  const struct roc_npc_flow_item_raw *raw_mask,
+-			  struct npc_parse_item_info *info, uint8_t *spec_buf,
+-			  uint8_t *mask_buf)
++			  struct npc_parse_item_info *info, uint8_t *spec_buf, uint8_t *mask_buf)
+ {
+ 
+ 	memset(spec_buf, 0, NPC_MAX_RAW_ITEM_LEN);
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index ab84e3e8e71ed..069c625911afe 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -458,6 +458,7 @@ int npc_parse_item_basic(const struct roc_npc_item_info *item, struct npc_parse_
+ int npc_parse_meta_items(struct npc_parse_state *pst);
+ int npc_parse_mark_item(struct npc_parse_state *pst);
+ int npc_parse_port_representor_id(struct npc_parse_state *pst);
++int npc_parse_represented_port_id(struct npc_parse_state *pst);
+ int npc_parse_pre_l2(struct npc_parse_state *pst);
+ int npc_parse_higig2_hdr(struct npc_parse_state *pst);
+ int npc_parse_cpt_hdr(struct npc_parse_state *pst);
+-- 
+2.25.1
+

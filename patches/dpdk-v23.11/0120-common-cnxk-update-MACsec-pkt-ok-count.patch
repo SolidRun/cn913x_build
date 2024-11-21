@@ -1,0 +1,55 @@
+From bb22e9557f322030cd91d57c2cae7266ab830b0c Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Wed, 3 Jan 2024 14:12:41 +0530
+Subject: [PATCH 120/513] common/cnxk: update MACsec pkt ok count
+
+In case of 103xx platform, the packet unchecked count
+is same as packet ok count when validate frames is set in
+secy configuration. And when validate frames is not set,
+then also unchecked count can be treated as ok count.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I09c27c599a4b26d4ab22510b124cc352965394c2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118971
+Reviewed-by: Vamsi Krishna Attunuru <vattunuru@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_security_inline_macsec.c | 2 +-
+ drivers/common/cnxk/roc_mcs_stats.c    | 5 +++++
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_security_inline_macsec.c b/app/test/test_security_inline_macsec.c
+index 8ae3fdadec3c0..f11e9da8c375a 100644
+--- a/app/test/test_security_inline_macsec.c
++++ b/app/test/test_security_inline_macsec.c
+@@ -708,7 +708,7 @@ mcs_stats_check(void *ctx, enum mcs_op op,
+ 
+ 		if ((opts->check_decap_stats || opts->check_verify_only_stats) &&
+ 				sc_stat.pkt_ok_cnt != 1)
+-			return TEST_SKIPPED; /* FIXME pkt_ok_cnt not getting updated. */
++			return TEST_FAILED;
+ 
+ 		if (opts->check_pkts_invalid_stats && sc_stat.pkt_notvalid_cnt != 1)
+ 			return TEST_FAILED;
+diff --git a/drivers/common/cnxk/roc_mcs_stats.c b/drivers/common/cnxk/roc_mcs_stats.c
+index cac611959da74..9e5d62c9e2cb1 100644
+--- a/drivers/common/cnxk/roc_mcs_stats.c
++++ b/drivers/common/cnxk/roc_mcs_stats.c
+@@ -120,6 +120,11 @@ roc_mcs_sc_stats_get(struct roc_mcs *mcs, struct roc_mcs_stats_req *mcs_req,
+ 		if (roc_model_is_cn10kb_a0()) {
+ 			stats->octet_decrypt_cnt = rsp->octet_decrypt_cnt;
+ 			stats->octet_validate_cnt = rsp->octet_validate_cnt;
++			/*
++			 * If validate frame is enabled in secy configuration,
++			 * pkt unchecked count is same as pkt ok count.
++			 */
++			stats->pkt_ok_cnt = rsp->pkt_unchecked_cnt;
+ 		} else {
+ 			stats->pkt_delay_cnt = rsp->pkt_delay_cnt;
+ 			stats->pkt_ok_cnt = rsp->pkt_ok_cnt;
+-- 
+2.25.1
+

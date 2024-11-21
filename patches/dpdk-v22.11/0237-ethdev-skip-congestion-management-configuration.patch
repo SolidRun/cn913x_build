@@ -1,0 +1,95 @@
+From 24159e0c112cfd8ec9a922b899ae8c61e4cd3014 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Wed, 14 Dec 2022 16:37:44 +0530
+Subject: [PATCH 237/955] ethdev: skip congestion management configuration
+
+Introduce new flow action to skip congestion management configuration
+This feature helps to skip the congestion management processing
+based on per flow or the packet color identified by
+rte_flow meter object. For example, If one Rx queue configured as
+RED congestion and application wants tobypass the RED congestion
+processing for all GREEN color packet can be expressed though
+RTE_FLOW_ACTION_TYPE_SKIP_CMAN flow action
+
+Change-Id: I608c93f3c855515ef767f14ed7e86e525a8aadd3
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92616
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ doc/guides/nics/features/default.ini |  1 +
+ doc/guides/prog_guide/rte_flow.rst   | 22 ++++++++++++++++++++++
+ lib/ethdev/rte_flow.h                | 11 +++++++++++
+ 3 files changed, 34 insertions(+)
+
+diff --git a/doc/guides/nics/features/default.ini b/doc/guides/nics/features/default.ini
+index 510cc6679db6d..b93f053a2bc86 100644
+--- a/doc/guides/nics/features/default.ini
++++ b/doc/guides/nics/features/default.ini
+@@ -198,6 +198,7 @@ set_tag              =
+ set_tp_dst           =
+ set_tp_src           =
+ set_ttl              =
++skip_cman            =
+ vf                   =
+ vxlan_decap          =
+ vxlan_encap          =
+diff --git a/doc/guides/prog_guide/rte_flow.rst b/doc/guides/prog_guide/rte_flow.rst
+index 3e6242803dc03..4efadcc87bc55 100644
+--- a/doc/guides/prog_guide/rte_flow.rst
++++ b/doc/guides/prog_guide/rte_flow.rst
+@@ -1840,6 +1840,28 @@ Drop packets.
+    | no properties |
+    +---------------+
+ 
++
++Action: ``SKIP_CMAN``
++^^^^^^^^^^^^^^^^^^^^^
++
++Skip congestion management on received packets
++
++- Using ``rte_eth_cman_config_set()``, application can configure ethdev Rx
++  queue's congestion mechanism.Once applied packets congestion configuration
++  is bypassed on that particular ethdev Rx queue for all packets directed
++  to that receive queue
++
++.. _table_rte_flow_action_skip_cman:
++
++.. table:: SKIP_CMAN
++
++   +---------------+
++   | Field         |
++   +===============+
++   | no properties |
++   +---------------+
++
++
+ Action: ``COUNT``
+ ^^^^^^^^^^^^^^^^^
+ 
+diff --git a/lib/ethdev/rte_flow.h b/lib/ethdev/rte_flow.h
+index b60987db4b4fc..6ab632df9d307 100644
+--- a/lib/ethdev/rte_flow.h
++++ b/lib/ethdev/rte_flow.h
+@@ -2736,6 +2736,17 @@ enum rte_flow_action_type {
+ 	 * No associated configuration structure.
+ 	 */
+ 	RTE_FLOW_ACTION_TYPE_SEND_TO_KERNEL,
++
++	/**
++	 * Skip congestion management configuration
++	 *
++	 * Using rte_eth_cman_config_set() API the application
++	 * can configure ethdev Rx queue's congestion mechanism.
++	 * Introducing RTE_FLOW_ACTION_TYPE_SKIP_CMAN flow action to skip the
++	 * congestion configuration applied to the given ethdev Rx queue.
++	 *
++	 */
++	RTE_FLOW_ACTION_TYPE_SKIP_CMAN,
+ };
+ 
+ /**
+-- 
+2.25.1
+

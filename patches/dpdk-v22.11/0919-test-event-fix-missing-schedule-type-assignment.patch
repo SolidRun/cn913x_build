@@ -1,0 +1,37 @@
+From c47ce2d3cbbb24b516eb29534ef6a802008d2905 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Wed, 24 Jul 2024 00:44:45 +0530
+Subject: [PATCH 919/955] test/event: fix missing schedule type assignment
+
+Missing schedule type assignment might set it to
+incorrect value, set it to SCHED_TYPE_PARALLEL.
+
+Fixes: d007a7f39de3 ("eventdev: introduce link profiles")
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I0fba7b2ee03eeb5f7519f515ead185a61009ce8f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131902
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133679
+---
+ app/test/test_eventdev.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/app/test/test_eventdev.c b/app/test/test_eventdev.c
+index e86890e9ec734..9f9bc60a588ed 100644
+--- a/app/test/test_eventdev.c
++++ b/app/test/test_eventdev.c
+@@ -1183,6 +1183,7 @@ test_eventdev_profile_switch(void)
+ 	ev.op = RTE_EVENT_OP_NEW;
+ 	ev.flow_id = 0;
+ 	ev.u64 = 0xBADF00D0;
++	ev.sched_type = RTE_SCHED_TYPE_PARALLEL;
+ 	rc = rte_event_enqueue_burst(TEST_DEV_ID, 0, &ev, 1);
+ 	TEST_ASSERT(rc == 1, "Failed to enqueue event");
+ 	ev.queue_id = 1;
+-- 
+2.25.1
+

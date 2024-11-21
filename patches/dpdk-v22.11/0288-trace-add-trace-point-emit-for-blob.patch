@@ -1,0 +1,223 @@
+From 03c41d97f18c585ff7d960a4ce6b58edd37539d2 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Wed, 8 Feb 2023 22:42:10 +0530
+Subject: [PATCH 288/955] trace: add trace point emit for blob
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds a trace point emit function for capturing a blob. The blob
+captures the length passed by the application followed by the array.
+
+The maximum blob bytes which can be captured is bounded by
+RTE_TRACE_BLOB_LEN_MAX macro. The value for max blob length macro is
+64 bytes. If the length is less than 64 the remaining trailing bytes
+are set to zero.
+
+This patch also adds test case for emit blob tracepoint function.
+
+ci: skip_checkpatch
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Acked-by: Morten Brørup <mb@smartsharesystems.com>
+Acked-by: Sunil Kumar Kori <skori@marvell.com>
+Acked-by: Jerin Jacob <jerinj@marvell.com>
+Acked-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Change-Id: Idc0aea6b8ac5ef26d8f95d3ae0b02f09c818da91
+---
+ app/test/test_trace.c                      | 11 ++++++++
+ doc/guides/prog_guide/trace_lib.rst        | 13 +++++++++
+ lib/eal/common/eal_common_trace_points.c   |  2 ++
+ lib/eal/include/rte_eal_trace.h            |  6 +++++
+ lib/eal/include/rte_trace_point.h          | 31 ++++++++++++++++++++++
+ lib/eal/include/rte_trace_point_register.h |  9 +++++++
+ lib/eal/version.map                        |  3 +++
+ 7 files changed, 75 insertions(+)
+
+diff --git a/app/test/test_trace.c b/app/test/test_trace.c
+index 6bedf14024657..ad4a394a29478 100644
+--- a/app/test/test_trace.c
++++ b/app/test/test_trace.c
+@@ -4,6 +4,7 @@
+ 
+ #include <rte_eal_trace.h>
+ #include <rte_lcore.h>
++#include <rte_random.h>
+ #include <rte_trace.h>
+ 
+ #include "test.h"
+@@ -177,7 +178,12 @@ test_fp_trace_points(void)
+ static int
+ test_generic_trace_points(void)
+ {
++	uint8_t arr[RTE_TRACE_BLOB_LEN_MAX];
+ 	int tmp;
++	int i;
++
++	for (i = 0; i < RTE_TRACE_BLOB_LEN_MAX; i++)
++		arr[i] = i;
+ 
+ 	rte_eal_trace_generic_void();
+ 	rte_eal_trace_generic_u64(0x10000000000000);
+@@ -195,6 +201,11 @@ test_generic_trace_points(void)
+ 	rte_eal_trace_generic_ptr(&tmp);
+ 	rte_eal_trace_generic_str("my string");
+ 	rte_eal_trace_generic_size_t(sizeof(void *));
++	rte_eal_trace_generic_blob(arr, 0);
++	rte_eal_trace_generic_blob(arr, 17);
++	rte_eal_trace_generic_blob(arr, RTE_TRACE_BLOB_LEN_MAX);
++	rte_eal_trace_generic_blob(arr, rte_rand() %
++					RTE_TRACE_BLOB_LEN_MAX);
+ 	RTE_EAL_TRACE_GENERIC_FUNC;
+ 
+ 	return TEST_SUCCESS;
+diff --git a/doc/guides/prog_guide/trace_lib.rst b/doc/guides/prog_guide/trace_lib.rst
+index 9a8f38073dfa4..6f444534e82fc 100644
+--- a/doc/guides/prog_guide/trace_lib.rst
++++ b/doc/guides/prog_guide/trace_lib.rst
+@@ -352,3 +352,16 @@ event ID.
+ The ``packet.header`` and ``packet.context`` will be written in the slow path
+ at the time of trace memory creation. The ``trace.header`` and trace payload
+ will be emitted when the tracepoint function is invoked.
++
++Limitations
++-----------
++
++- The ``rte_trace_point_emit_blob()`` function can capture a maximum blob
++  of length ``RTE_TRACE_BLOB_LEN_MAX`` bytes.
++  The application can call ``rte_trace_point_emit_blob()`` multiple times
++  with length less than or equal to ``RTE_TRACE_BLOB_LEN_MAX``,
++  if it needs to capture more than ``RTE_TRACE_BLOB_LEN_MAX`` bytes.
++- If the length passed to the ``rte_trace_point_emit_blob()``
++  is less than ``RTE_TRACE_BLOB_LEN_MAX``,
++  then the trailing ``(RTE_TRACE_BLOB_LEN_MAX - len)`` bytes in the trace
++  are set to zero.
+diff --git a/lib/eal/common/eal_common_trace_points.c b/lib/eal/common/eal_common_trace_points.c
+index 0b0b254615ca9..051f89809cf3d 100644
+--- a/lib/eal/common/eal_common_trace_points.c
++++ b/lib/eal/common/eal_common_trace_points.c
+@@ -40,6 +40,8 @@ RTE_TRACE_POINT_REGISTER(rte_eal_trace_generic_size_t,
+ 	lib.eal.generic.size_t)
+ RTE_TRACE_POINT_REGISTER(rte_eal_trace_generic_func,
+ 	lib.eal.generic.func)
++RTE_TRACE_POINT_REGISTER(rte_eal_trace_generic_blob,
++	lib.eal.generic.blob)
+ 
+ RTE_TRACE_POINT_REGISTER(rte_eal_trace_alarm_set,
+ 	lib.eal.alarm.set)
+diff --git a/lib/eal/include/rte_eal_trace.h b/lib/eal/include/rte_eal_trace.h
+index 5ef43982302e1..6f5c022558608 100644
+--- a/lib/eal/include/rte_eal_trace.h
++++ b/lib/eal/include/rte_eal_trace.h
+@@ -143,6 +143,12 @@ RTE_TRACE_POINT(
+ 	rte_trace_point_emit_string(func);
+ )
+ 
++RTE_TRACE_POINT(
++	rte_eal_trace_generic_blob,
++	RTE_TRACE_POINT_ARGS(const void *in, uint8_t len),
++	rte_trace_point_emit_blob(in, len);
++)
++
+ #define RTE_EAL_TRACE_GENERIC_FUNC rte_eal_trace_generic_func(__func__)
+ 
+ /* Interrupt */
+diff --git a/lib/eal/include/rte_trace_point.h b/lib/eal/include/rte_trace_point.h
+index 0f8700974f3bb..4d6b5700dd1dd 100644
+--- a/lib/eal/include/rte_trace_point.h
++++ b/lib/eal/include/rte_trace_point.h
+@@ -144,6 +144,16 @@ _tp _args \
+ #define rte_trace_point_emit_ptr(val)
+ /** Tracepoint function payload for string datatype */
+ #define rte_trace_point_emit_string(val)
++/**
++ * Tracepoint function to capture a blob.
++ *
++ * @param val
++ *   Pointer to the array to be captured.
++ * @param len
++ *   Length to be captured. The maximum supported length is
++ *   RTE_TRACE_BLOB_LEN_MAX bytes.
++ */
++#define rte_trace_point_emit_blob(val, len)
+ 
+ #endif /* __DOXYGEN__ */
+ 
+@@ -152,6 +162,9 @@ _tp _args \
+ /** @internal Macro to define event header size. */
+ #define __RTE_TRACE_EVENT_HEADER_SZ sizeof(uint64_t)
+ 
++/** Macro to define maximum emit length of blob. */
++#define RTE_TRACE_BLOB_LEN_MAX 64
++
+ /**
+  * Enable recording events of the given tracepoint in the trace buffer.
+  *
+@@ -374,12 +387,30 @@ do { \
+ 	mem = RTE_PTR_ADD(mem, __RTE_TRACE_EMIT_STRING_LEN_MAX); \
+ } while (0)
+ 
++#define rte_trace_point_emit_blob(in, len) \
++do { \
++	if (unlikely(in == NULL)) \
++		return; \
++	if (len > RTE_TRACE_BLOB_LEN_MAX) \
++		len = RTE_TRACE_BLOB_LEN_MAX; \
++	__rte_trace_point_emit(len, uint8_t); \
++	memcpy(mem, in, len); \
++	memset(RTE_PTR_ADD(mem, len), 0, RTE_TRACE_BLOB_LEN_MAX - len); \
++	mem = RTE_PTR_ADD(mem, RTE_TRACE_BLOB_LEN_MAX); \
++} while (0)
++
+ #else
+ 
+ #define __rte_trace_point_emit_header_generic(t) RTE_SET_USED(t)
+ #define __rte_trace_point_emit_header_fp(t) RTE_SET_USED(t)
+ #define __rte_trace_point_emit(in, type) RTE_SET_USED(in)
+ #define rte_trace_point_emit_string(in) RTE_SET_USED(in)
++#define rte_trace_point_emit_blob(in, len) \
++do { \
++	RTE_SET_USED(in); \
++	RTE_SET_USED(len); \
++} while (0)
++
+ 
+ #endif /* ALLOW_EXPERIMENTAL_API */
+ #endif /* _RTE_TRACE_POINT_REGISTER_H_ */
+diff --git a/lib/eal/include/rte_trace_point_register.h b/lib/eal/include/rte_trace_point_register.h
+index a32f4d731bffb..a9682d3f22422 100644
+--- a/lib/eal/include/rte_trace_point_register.h
++++ b/lib/eal/include/rte_trace_point_register.h
+@@ -47,6 +47,15 @@ do { \
+ 		RTE_STR(in)"[32]", "string_bounded_t"); \
+ } while (0)
+ 
++#define rte_trace_point_emit_blob(in, len) \
++do { \
++	RTE_SET_USED(in); \
++	__rte_trace_point_emit(len, uint8_t); \
++	__rte_trace_point_emit_field(RTE_TRACE_BLOB_LEN_MAX, \
++		RTE_STR(in)"[" RTE_STR(RTE_TRACE_BLOB_LEN_MAX)"]", \
++		RTE_STR(uint8_t)); \
++} while (0)
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/eal/version.map b/lib/eal/version.map
+index 7ad12a7dc9859..67be24686af3f 100644
+--- a/lib/eal/version.map
++++ b/lib/eal/version.map
+@@ -440,6 +440,9 @@ EXPERIMENTAL {
+ 	rte_thread_detach;
+ 	rte_thread_equal;
+ 	rte_thread_join;
++
++	# added in 23.03
++	__rte_eal_trace_generic_blob;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

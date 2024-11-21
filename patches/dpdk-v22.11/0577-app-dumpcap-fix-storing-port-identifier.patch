@@ -1,0 +1,35 @@
+From d147feeec132c8e62889a651b19b4a6cae073d8d Mon Sep 17 00:00:00 2001
+From: Ben Magistro <koncept1@gmail.com>
+Date: Tue, 3 Jan 2023 19:38:10 -0800
+Subject: [PATCH 577/955] app/dumpcap: fix storing port identifier
+
+When dumpcap adds an interface, the port was not being preserved. This
+results in the structure being initialized and the port field being set
+to 0 regardless of what port was actually selected. This unset field is
+then used in both the enable and cleanup calls. This could result in the
+capture occurring on the wrong interface.
+
+Fixes: cbb44143be74 ("app/dumpcap: add new packet capture application")
+
+Signed-off-by: Ben Magistro <koncept1@gmail.com>
+Signed-off-by: Stephen Hemminger <stephen@networkplumber.org>
+Change-Id: Id285043a4f310bc357a498bba22864c8f58c2e9f
+---
+ app/dumpcap/main.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/app/dumpcap/main.c b/app/dumpcap/main.c
+index 2eb8414efaa5d..4751ca26b892a 100644
+--- a/app/dumpcap/main.c
++++ b/app/dumpcap/main.c
+@@ -202,6 +202,7 @@ static void add_interface(uint16_t port, const char *name)
+ 		rte_exit(EXIT_FAILURE, "no memory for interface\n");
+ 
+ 	memset(intf, 0, sizeof(*intf));
++	intf->port = port;
+ 	rte_strscpy(intf->name, name, sizeof(intf->name));
+ 
+ 	printf("Capturing on '%s'\n", name);
+-- 
+2.25.1
+

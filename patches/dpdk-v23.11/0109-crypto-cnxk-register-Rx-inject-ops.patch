@@ -1,0 +1,51 @@
+From e366eea4309164cf7c9ed75de69fd8995ce51bd7 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 20 Dec 2023 03:08:54 -0800
+Subject: [PATCH 109/513] crypto/cnxk: register Rx inject ops
+
+Register RX Inject ops
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Ib4053ed80ad02b4fa719b4f2da5b19968d3c829a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118630
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_sec.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_sec.c b/drivers/crypto/cnxk/cn10k_cryptodev_sec.c
+index ba6ca96df3187..300a8e4f94f48 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_sec.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_sec.c
+@@ -4,6 +4,7 @@
+ 
+ #include <rte_security.h>
+ 
++#include "cn10k_cryptodev_ops.h"
+ #include "cn10k_cryptodev_sec.h"
+ #include "cnxk_cryptodev_ops.h"
+ 
+@@ -26,8 +27,10 @@ cn10k_sec_session_create(void *dev, struct rte_security_session_conf *conf,
+ 
+ 	vf = crypto_dev->data->dev_private;
+ 
+-	if (conf->protocol == RTE_SECURITY_PROTOCOL_IPSEC)
++	if (conf->protocol == RTE_SECURITY_PROTOCOL_IPSEC) {
++		((struct cn10k_sec_session *)sess)->userdata = conf->userdata;
+ 		return cn10k_ipsec_session_create(vf, qp, &conf->ipsec, conf->crypto_xform, sess);
++	}
+ 
+ 	if (conf->protocol == RTE_SECURITY_PROTOCOL_TLS_RECORD)
+ 		return cn10k_tls_record_session_create(vf, qp, &conf->tls_record,
+@@ -126,4 +129,6 @@ cn10k_sec_ops_override(void)
+ 	cnxk_sec_ops.session_get_size = cn10k_sec_session_get_size;
+ 	cnxk_sec_ops.session_stats_get = cn10k_sec_session_stats_get;
+ 	cnxk_sec_ops.session_update = cn10k_sec_session_update;
++	cnxk_sec_ops.inb_pkt_rx_inject = cn10k_cryptodev_sec_inb_rx_inject;
++	cnxk_sec_ops.rx_inject_configure = cn10k_cryptodev_sec_rx_inject_configure;
+ }
+-- 
+2.25.1
+

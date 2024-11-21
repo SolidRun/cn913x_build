@@ -1,0 +1,99 @@
+From 25d3c3d36483575c38cbd670b34dcd227e793112 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Mon, 30 Oct 2023 01:00:24 -0700
+Subject: [PATCH 044/513] crypto/cnxk: Rx inject config update
+
+- Update chan in CPT inst from port's Rx chan
+- Set Rx inject config in Idev struct
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I6efcd4aea93c0b2ed8d0189d8128b500c0b8d600
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117309
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c | 4 +++-
+ drivers/crypto/cnxk/cn10k_ipsec.c         | 3 +++
+ drivers/crypto/cnxk/cnxk_cryptodev.h      | 1 +
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  | 2 ++
+ 4 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index c86d47239b174..53a33aab49865 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -15,6 +15,7 @@
+ #else
+ #include "roc_io_generic.h"
+ #endif
++#include "roc_idev.h"
+ #include "roc_sso.h"
+ #include "roc_sso_dp.h"
+ 
+@@ -1122,6 +1123,7 @@ cn10k_cryptodev_sec_inb_rx_inject(void *dev, struct rte_mbuf **pkts,
+ 		inst->dptr = dptr;
+ 		inst->rptr = dptr;
+ 
++		inst->w0.hw_s.chan = *(vf->rx_chan_base + m->port);
+ 		inst->w0.hw_s.l2_len = l2_len;
+ 		inst->w0.hw_s.et_offset = l2_len - 2;
+ 
+@@ -1653,7 +1655,7 @@ cn10k_cryptodev_sec_rx_inject_configure(void *device, uint16_t port_id, bool ena
+ 	if (ret)
+ 		return -ENOTSUP;
+ 
+-	RTE_SET_USED(enable);
++	roc_idev_nix_rx_inject_set(port_id, enable);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec.c b/drivers/crypto/cnxk/cn10k_ipsec.c
+index 2d098fdd24a49..d08a1067cafdd 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec.c
++++ b/drivers/crypto/cnxk/cn10k_ipsec.c
+@@ -192,6 +192,9 @@ cn10k_ipsec_inb_sa_create(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf,
+ 	sec_sess->is_outbound = false;
+ 	sec_sess->inst.w7 = ipsec_cpt_inst_w7_get(roc_cpt, in_sa);
+ 
++	/* Save index/SPI in cookie, specific required for Rx Inject */
++	sa_dptr->w1.s.cookie = 0xFFFFFFFF;
++
+ 	/* pre-populate CPT INST word 4 */
+ 	inst_w4.u64 = 0;
+ 	inst_w4.s.opcode_major = ROC_IE_OT_MAJOR_OP_PROCESS_INBOUND_IPSEC | ROC_IE_OT_INPLACE_BIT;
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.h b/drivers/crypto/cnxk/cnxk_cryptodev.h
+index fedae53736d20..2ae81d2f90413 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.h
+@@ -20,6 +20,7 @@
+ struct cnxk_cpt_vf {
+ 	struct roc_cpt_lmtline rx_inj_lmtline;
+ 	uint16_t rx_inj_pf_func;
++	uint16_t *rx_chan_base;
+ 	struct roc_cpt cpt;
+ 	struct rte_cryptodev_capabilities crypto_caps[CNXK_CPT_MAX_CAPS];
+ 	struct rte_cryptodev_capabilities
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index c0733ddbfba97..fd44155955aaa 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -10,6 +10,7 @@
+ #include "roc_ae_fpm_tables.h"
+ #include "roc_cpt.h"
+ #include "roc_errata.h"
++#include "roc_idev.h"
+ #include "roc_ie_on.h"
+ 
+ #include "cnxk_ae.h"
+@@ -117,6 +118,7 @@ cnxk_cpt_dev_config(struct rte_cryptodev *dev, struct rte_cryptodev_config *conf
+ 		if (rte_security_dynfield_register() < 0)
+ 			return -ENOTSUP;
+ 		rxc_ena = true;
++		vf->rx_chan_base = roc_idev_nix_rx_chan_base_get();
+ 	}
+ 
+ 	ret = roc_cpt_dev_configure(roc_cpt, nb_lf, rxc_ena, vf->rx_inj_lf);
+-- 
+2.25.1
+

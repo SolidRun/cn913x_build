@@ -1,0 +1,86 @@
+From 1d38956384cd87778e6c07094597815cfd7b4a5e Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Wed, 8 Jun 2022 14:18:47 +0530
+Subject: [PATCH 108/955] crypto/cnxk: add callback to report CPT HW error
+
+Adds and register callback to report CPT MISC error interrupts to
+the application using rte_cryptodev_pmd_callback_process.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Id897288d25d1064801ccc95316ad564924f7a9a2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93222
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_cryptodev.c     | 12 ++++++++++++
+ drivers/crypto/cnxk/cnxk_cryptodev.h     |  1 +
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c |  8 ++++++++
+ 3 files changed, 21 insertions(+)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.c b/drivers/crypto/cnxk/cnxk_cryptodev.c
+index a86b1cb60fd50..4fa1907cea44c 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.c
+@@ -2,6 +2,7 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
++#include <cryptodev_pmd.h>
+ #include <rte_cryptodev.h>
+ 
+ #include "roc_cpt.h"
+@@ -57,3 +58,14 @@ cnxk_cpt_eng_grp_add(struct roc_cpt *roc_cpt)
+ 
+ 	return 0;
+ }
++
++void
++cnxk_cpt_int_misc_cb(struct roc_cpt_lf *lf, __rte_unused void *args)
++{
++	struct roc_cpt *roc_cpt = lf->roc_cpt;
++
++	if (roc_cpt == NULL)
++		return;
++
++	rte_cryptodev_pmd_callback_process(roc_cpt->opaque, RTE_CRYPTODEV_EVENT_ERROR);
++}
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.h b/drivers/crypto/cnxk/cnxk_cryptodev.h
+index dd7dd3bc3a275..0b5635b7083b8 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.h
+@@ -31,5 +31,6 @@ struct cnxk_cpt_vf {
+ uint64_t cnxk_cpt_default_ff_get(void);
+ int cnxk_cpt_eng_grp_add(struct roc_cpt *roc_cpt);
+ int cnxk_cpt_parse_devargs(struct rte_devargs *devargs, struct cnxk_cpt_vf *vf);
++void cnxk_cpt_int_misc_cb(struct roc_cpt_lf *lf, void *args);
+ 
+ #endif /* _CNXK_CRYPTODEV_H_ */
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 4640edf7ff304..7ff1d158cdedc 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -105,6 +105,9 @@ cnxk_cpt_dev_config(struct rte_cryptodev *dev,
+ 			return ret;
+ 		}
+ 	}
++	roc_cpt->opaque = dev;
++	/* Register callback to handle CPT_MISC_INT */
++	roc_cpt_int_misc_cb_register(cnxk_cpt_int_misc_cb, NULL);
+ 
+ 	return 0;
+ }
+@@ -164,6 +167,11 @@ cnxk_cpt_dev_close(struct rte_cryptodev *dev)
+ 		roc_ae_ec_grp_put();
+ 	}
+ 
++	ret = roc_cpt_int_misc_cb_unregister(cnxk_cpt_int_misc_cb, NULL);
++	if (ret < 0) {
++		plt_err("Could not unregister CPT_MISC_INT cb");
++		return ret;
++	}
+ 	roc_cpt_dev_clear(&vf->cpt);
+ 
+ 	return 0;
+-- 
+2.25.1
+

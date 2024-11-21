@@ -1,0 +1,33 @@
+From 1ef7b1926aead0ff08f488d8bfe6b30316c1b124 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 30 Nov 2023 18:18:21 +0530
+Subject: [PATCH 018/513] cnxk-tests: disable l2fwd_tmc
+
+Disable l2fwd_tmc as it is not compiling in
+dpdk-23.11-devel.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I586cc2f60978a40495c3cfdad7dbf2d6d0871b39
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117186
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index 536204a8a5837..4c50927e0c6f2 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -87,7 +87,7 @@ test_subdirs_arm = [
+         'trace_autotest',
+         'mbuf_perf',
+         'hotplug_test',
+-        'l2fwd_tmc',
++#        'l2fwd_tmc',
+         'l2fwd_event_pfc',
+         'tx_vlan',
+         'ipsec_reassembly_perf',
+-- 
+2.25.1
+

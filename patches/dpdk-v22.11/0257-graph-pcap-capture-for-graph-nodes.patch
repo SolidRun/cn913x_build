@@ -1,0 +1,69 @@
+From d90c03e6eb4ec997e4e08d833927f52e719ecbe3 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Tue, 28 Feb 2023 16:51:30 +0530
+Subject: [PATCH 257/955] graph: pcap capture for graph nodes
+
+sync from upstream.
+
+Change-Id: I8a48c9c4524e3bf53b28dbef0af928a7b78592d4
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98159
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ lib/graph/graph_pcap.c         | 5 ++---
+ lib/graph/graph_pcap_private.h | 8 --------
+ 2 files changed, 2 insertions(+), 11 deletions(-)
+
+diff --git a/lib/graph/graph_pcap.c b/lib/graph/graph_pcap.c
+index 7bd13ed61e4b6..9cbd1b8fdb6c9 100644
+--- a/lib/graph/graph_pcap.c
++++ b/lib/graph/graph_pcap.c
+@@ -3,9 +3,9 @@
+  */
+ 
+ #include <errno.h>
+-#include <unistd.h>
+-#include <stdlib.h>
+ #include <pwd.h>
++#include <stdlib.h>
++#include <unistd.h>
+ 
+ #include <rte_mbuf.h>
+ #include <rte_pcapng.h>
+@@ -158,7 +158,6 @@ graph_pcap_init(struct graph *graph)
+ 		graph_data->nb_pkt_to_capture = GRAPH_PCAP_NUM_PACKETS;
+ 
+ 	/* All good. Now populate data for secondary process. */
+-
+ 	rte_strscpy(graph_data->pcap_filename, graph->pcap_filename, RTE_GRAPH_PCAP_FILE_SZ);
+ 	graph_data->pcap_enable = 1;
+ 
+diff --git a/lib/graph/graph_pcap_private.h b/lib/graph/graph_pcap_private.h
+index 198add67e28c2..2ec772072c9dd 100644
+--- a/lib/graph/graph_pcap_private.h
++++ b/lib/graph/graph_pcap_private.h
+@@ -10,10 +10,6 @@
+ 
+ #include "graph_private.h"
+ 
+-#ifdef __cplusplus
+-extern "C" {
+-#endif
+-
+ /**
+  * @internal
+  *
+@@ -117,8 +113,4 @@ uint16_t graph_pcap_dispatch(struct rte_graph *graph,
+ 				   struct rte_node *node, void **objs,
+ 				   uint16_t nb_objs);
+ 
+-#ifdef __cplusplus
+-}
+-#endif
+-
+ #endif /* _RTE_GRAPH_PCAP_PRIVATE_H_ */
+-- 
+2.25.1
+

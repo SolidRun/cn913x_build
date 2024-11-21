@@ -1,0 +1,137 @@
+From 38587acdf23ccf0f2263030084c5519e542ede5d Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Fri, 1 Dec 2023 01:13:55 +0530
+Subject: [PATCH 798/955] common/cnxk: base support for eswitch VF
+
+Base ROC layer changes for supporting eswitch VF and NIX lbk
+changes for ESW
+
+Change-Id: I2c495cda67623bc1fee4d1a6e568bd58400900e3
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+---
+ drivers/common/cnxk/roc_constants.h |  1 +
+ drivers/common/cnxk/roc_dev.c       |  1 +
+ drivers/common/cnxk/roc_nix.c       | 15 +++++++++++++--
+ drivers/common/cnxk/roc_nix.h       |  1 +
+ drivers/common/cnxk/roc_nix_priv.h  |  1 +
+ drivers/common/cnxk/version.map     |  1 +
+ 6 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_constants.h b/drivers/common/cnxk/roc_constants.h
+index cb98523ec463b..aec5f15beb669 100644
+--- a/drivers/common/cnxk/roc_constants.h
++++ b/drivers/common/cnxk/roc_constants.h
+@@ -47,6 +47,7 @@
+ #define PCI_DEVID_CNXK_RVU_REE_PF     0xA0f4
+ #define PCI_DEVID_CNXK_RVU_REE_VF     0xA0f5
+ #define PCI_DEVID_CNXK_RVU_ESWITCH_PF 0xA0E0
++#define PCI_DEVID_CNXK_RVU_ESWITCH_VF 0xA0E1
+ 
+ #define PCI_DEVID_CN9K_CGX  0xA059
+ #define PCI_DEVID_CN10K_RPM 0xA060
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 4ab389c69bd1f..276a1628b8154 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -1224,6 +1224,7 @@ dev_vf_hwcap_update(struct plt_pci_device *pci_dev, struct dev *dev)
+ 	case PCI_DEVID_CNXK_RVU_VF:
+ 	case PCI_DEVID_CNXK_RVU_SDP_VF:
+ 	case PCI_DEVID_CNXK_RVU_NIX_INL_VF:
++	case PCI_DEVID_CNXK_RVU_ESWITCH_VF:
+ 		dev->hwcap |= DEV_HWCAP_F_VF;
+ 		break;
+ 	}
+diff --git a/drivers/common/cnxk/roc_nix.c b/drivers/common/cnxk/roc_nix.c
+index e68d472f43b1c..20202788b5fdb 100644
+--- a/drivers/common/cnxk/roc_nix.c
++++ b/drivers/common/cnxk/roc_nix.c
+@@ -13,6 +13,14 @@ roc_nix_is_lbk(struct roc_nix *roc_nix)
+ 	return nix->lbk_link;
+ }
+ 
++bool
++roc_nix_is_esw(struct roc_nix *roc_nix)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++
++	return nix->esw_link;
++}
++
+ int
+ roc_nix_get_base_chan(struct roc_nix *roc_nix)
+ {
+@@ -156,7 +164,7 @@ roc_nix_max_pkt_len(struct roc_nix *roc_nix)
+ 	if (roc_model_is_cn9k())
+ 		return NIX_CN9K_MAX_HW_FRS;
+ 
+-	if (nix->lbk_link)
++	if (nix->lbk_link || nix->esw_link)
+ 		return NIX_LBK_MAX_HW_FRS;
+ 
+ 	return NIX_RPM_MAX_HW_FRS;
+@@ -351,7 +359,7 @@ roc_nix_get_hw_info(struct roc_nix *roc_nix)
+ 	rc = mbox_process_msg(mbox, (void *)&hw_info);
+ 	if (rc == 0) {
+ 		nix->vwqe_interval = hw_info->vwqe_delay;
+-		if (nix->lbk_link)
++		if (nix->lbk_link || nix->esw_link)
+ 			roc_nix->dwrr_mtu = hw_info->lbk_dwrr_mtu;
+ 		else if (nix->sdp_link)
+ 			roc_nix->dwrr_mtu = hw_info->sdp_dwrr_mtu;
+@@ -368,6 +376,7 @@ sdp_lbk_id_update(struct plt_pci_device *pci_dev, struct nix *nix)
+ {
+ 	nix->sdp_link = false;
+ 	nix->lbk_link = false;
++	nix->esw_link = false;
+ 
+ 	/* Update SDP/LBK link based on PCI device id */
+ 	switch (pci_dev->id.device_id) {
+@@ -376,7 +385,9 @@ sdp_lbk_id_update(struct plt_pci_device *pci_dev, struct nix *nix)
+ 		nix->sdp_link = true;
+ 		break;
+ 	case PCI_DEVID_CNXK_RVU_AF_VF:
++	case PCI_DEVID_CNXK_RVU_ESWITCH_VF:
+ 		nix->lbk_link = true;
++		nix->esw_link = true;
+ 		break;
+ 	default:
+ 		break;
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 0289ce9820ed8..bd3e540f457ba 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -526,6 +526,7 @@ int __roc_api roc_nix_dev_fini(struct roc_nix *roc_nix);
+ 
+ /* Type */
+ bool __roc_api roc_nix_is_lbk(struct roc_nix *roc_nix);
++bool __roc_api roc_nix_is_esw(struct roc_nix *roc_nix);
+ bool __roc_api roc_nix_is_sdp(struct roc_nix *roc_nix);
+ bool __roc_api roc_nix_is_pf(struct roc_nix *roc_nix);
+ bool __roc_api roc_nix_is_vf_or_sdp(struct roc_nix *roc_nix);
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 3d99ade2b4789..275ffc8ea32d3 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -170,6 +170,7 @@ struct nix {
+ 	uintptr_t base;
+ 	bool sdp_link;
+ 	bool lbk_link;
++	bool esw_link;
+ 	bool ptp_en;
+ 	bool is_nix1;
+ 
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index fdd511e441e32..01bc50591af79 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -249,6 +249,7 @@ INTERNAL {
+ 	roc_nix_inl_outb_cpt_lfs_dump;
+ 	roc_nix_cpt_ctx_cache_sync;
+ 	roc_nix_is_lbk;
++	roc_nix_is_esw;
+ 	roc_nix_is_pf;
+ 	roc_nix_is_sdp;
+ 	roc_nix_is_vf_or_sdp;
+-- 
+2.25.1
+

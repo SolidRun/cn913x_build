@@ -1,0 +1,35 @@
+From b930612c38a757a5bb1681d7db871f0a97daf002 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 30 Nov 2022 08:44:06 +0000
+Subject: [PATCH 011/955] common/cnxk: perform LF fini ops only when allocated
+
+If LFs are not attached, LF detach and free ops should not be attempted.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I400e77bf9a6d3195e5dad9172322d9c6fea83b9e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91535
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index fb97ec89b23b6..bf216b55453e9 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -861,6 +861,9 @@ roc_cpt_dev_clear(struct roc_cpt *roc_cpt)
+ 	if (cpt == NULL)
+ 		return;
+ 
++	if (roc_cpt->nb_lf == 0)
++		return;
++
+ 	for (i = 0; i < roc_cpt->nb_lf; i++)
+ 		cpt->lf_msix_off[i] = 0;
+ 
+-- 
+2.25.1
+

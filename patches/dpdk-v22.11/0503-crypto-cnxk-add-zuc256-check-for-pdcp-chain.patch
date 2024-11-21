@@ -1,0 +1,44 @@
+From 10389817d564661be411b11a73a5d1658fdb3437 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Wed, 5 Apr 2023 16:15:56 +0530
+Subject: [PATCH 503/955] crypto/cnxk: add zuc256 check for pdcp chain
+
+Return error for zuc256 pdcp chain tests.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I1b6cf3220426173503ae9fb3863ea880420b8ce7
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100696
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 1565de59cec7b1cd4dcfd12654d1aad707cec2d7)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105847
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_se.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index f441699c11af0..6ced4ef7896cf 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -88,10 +88,13 @@ cpt_ciph_type_set(roc_se_cipher_type type, struct roc_se_ctx *ctx, uint16_t key_
+ 		fc_type = ROC_SE_FC_GEN;
+ 		break;
+ 	case ROC_SE_ZUC_EEA3:
+-		if (chained_op)
++		if (chained_op) {
++			if (unlikely(key_len != 16))
++				return -1;
+ 			fc_type = ROC_SE_PDCP_CHAIN;
+-		else
++		} else {
+ 			fc_type = ROC_SE_PDCP;
++		}
+ 		break;
+ 	case ROC_SE_SNOW3G_UEA2:
+ 		if (unlikely(key_len != 16))
+-- 
+2.25.1
+

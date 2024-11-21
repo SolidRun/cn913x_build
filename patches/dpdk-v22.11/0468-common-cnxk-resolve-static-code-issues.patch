@@ -1,0 +1,55 @@
+From c447dccdfdbd4f348eae8b61387bf2aa19281e72 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Wed, 10 May 2023 13:52:26 +0530
+Subject: [PATCH 468/955] common/cnxk: resolve static code issues
+
+- pthread cond wait return check
+- shifting bits more than range causing undefined behavior
+
+Change-Id: I0bbdf8e151ce0971fdc78870699b1bc02b9e4321
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103849
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 40c4e54b2a4fd..c6de1d62da8b1 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -1064,8 +1064,8 @@ vf_flr_handle_msg(void *param, dev_intr_t *flr)
+ 			flr->bits[vf / max_bits] &= ~(BIT_ULL(vf % max_bits));
+ 
+ 			/* Signal FLR finish */
+-			plt_write64(BIT_ULL(vf), dev->bar2 +
+-				     RVU_PF_VFTRPENDX(vf / max_bits));
++			plt_write64(BIT_ULL(vf % max_bits),
++				    dev->bar2 + RVU_PF_VFTRPENDX(vf / max_bits));
+ 		}
+ 	}
+ }
+@@ -1076,12 +1076,15 @@ pf_vf_mbox_thread_main(void *arg)
+ 	struct dev *dev = arg;
+ 	bool is_flr, is_mbox;
+ 	dev_intr_t flr, intr;
+-	int sz;
++	int sz, rc;
+ 
+ 	sz = sizeof(intr.bits[0]) * MAX_VFPF_DWORD_BITS;
+ 	pthread_mutex_lock(&dev->sync.mutex);
+ 	while (dev->sync.start_thread) {
+-		pthread_cond_wait(&dev->sync.pfvf_msg_cond, &dev->sync.mutex);
++		do {
++			rc = pthread_cond_wait(&dev->sync.pfvf_msg_cond, &dev->sync.mutex);
++		} while (rc != 0);
++
+ 		if (!dev->sync.msg_avail) {
+ 			continue;
+ 		} else {
+-- 
+2.25.1
+

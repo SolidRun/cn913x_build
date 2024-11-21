@@ -1,0 +1,46 @@
+From b06417657b9a884714f832a544e39cd2fd27479b Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Wed, 27 Mar 2024 11:43:16 +0530
+Subject: [PATCH 393/513] Revert "crypto/cnxk: normalize base input in modexp"
+
+This reverts commit c0305b91cc6f54c38a5d94a3dfd4ec9afc979240.
+
+Change-Id: Ib184f2b64efb59cee0c7d345745fb07435c0b106
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/124503
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_ae.h | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_ae.h b/drivers/crypto/cnxk/cnxk_ae.h
+index 089b025f1566b..ea11e093bfe43 100644
+--- a/drivers/crypto/cnxk/cnxk_ae.h
++++ b/drivers/crypto/cnxk/cnxk_ae.h
+@@ -282,7 +282,7 @@ cnxk_ae_modex_prep(struct rte_crypto_op *op, struct roc_ae_buf_ptr *meta_buf,
+ 	struct rte_crypto_mod_op_param mod_op;
+ 	uint64_t total_key_len;
+ 	union cpt_inst_w4 w4;
+-	size_t base_len;
++	uint32_t base_len;
+ 	uint32_t dlen;
+ 	uint8_t *dptr;
+ 
+@@ -290,11 +290,8 @@ cnxk_ae_modex_prep(struct rte_crypto_op *op, struct roc_ae_buf_ptr *meta_buf,
+ 
+ 	base_len = mod_op.base.length;
+ 	if (unlikely(base_len > mod_len)) {
+-		cnxk_ae_modex_param_normalize(&mod_op.base.data, &base_len);
+-		if (unlikely(base_len > mod_len)) {
+-			op->status = RTE_CRYPTO_OP_STATUS_INVALID_ARGS;
+-			return -ENOTSUP;
+-		}
++		op->status = RTE_CRYPTO_OP_STATUS_INVALID_ARGS;
++		return -ENOTSUP;
+ 	}
+ 
+ 	total_key_len = mod_len + exp_len;
+-- 
+2.25.1
+

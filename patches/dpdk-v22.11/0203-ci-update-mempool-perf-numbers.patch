@@ -1,0 +1,38 @@
+From c4bf2b87cd0dad4f56fac4b94b647958bb039e7e Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Fri, 10 Feb 2023 20:45:11 +0530
+Subject: [PATCH 203/955] ci: update mempool perf numbers
+
+Update cn106 mempool perf numbers for rclk 2500 and sclk 1100.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Iee068767ce15cd892c79531d340d6f3a2fb95c2c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96622
+---
+ marvell-ci/test/cnxk-tests/mempool_perf/meson.build              | 1 +
+ .../mempool_perf/ref_numbers/cn106xx_rclk2500_sclk1100           | 1 +
+ 2 files changed, 2 insertions(+)
+ create mode 100644 marvell-ci/test/cnxk-tests/mempool_perf/ref_numbers/cn106xx_rclk2500_sclk1100
+
+diff --git a/marvell-ci/test/cnxk-tests/mempool_perf/meson.build b/marvell-ci/test/cnxk-tests/mempool_perf/meson.build
+index 0be92fb7f9fd7..543cacedf5d4c 100644
+--- a/marvell-ci/test/cnxk-tests/mempool_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/mempool_perf/meson.build
+@@ -17,6 +17,7 @@ test_dir = meson.current_build_dir()
+ run_command(copy_data, test_script)
+ run_command(copy_data, 'ref_numbers/cn96xx_rclk2200_sclk1100')
+ run_command(copy_data, 'ref_numbers/cn106xx_rclk2000_sclk1000')
++run_command(copy_data, 'ref_numbers/cn106xx_rclk2500_sclk1100')
+ 
+ # This executable is built exactly as dpdk-test but only the custom
+ # mempool_perf command is available in this.
+diff --git a/marvell-ci/test/cnxk-tests/mempool_perf/ref_numbers/cn106xx_rclk2500_sclk1100 b/marvell-ci/test/cnxk-tests/mempool_perf/ref_numbers/cn106xx_rclk2500_sclk1100
+new file mode 100644
+index 0000000000000..8dadf7806a92b
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/mempool_perf/ref_numbers/cn106xx_rclk2500_sclk1100
+@@ -0,0 +1 @@
++1402103398
+-- 
+2.25.1
+

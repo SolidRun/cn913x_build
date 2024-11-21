@@ -1,0 +1,41 @@
+From 392b255894a1da0e71fefe1b57a4567ccef18e95 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Thu, 2 Feb 2023 10:33:41 +0530
+Subject: [PATCH 200/955] common/cnxk: fix inline IPsec rule creation
+
+Use inline IPsec device to create IPsec rules irrespective
+of RTE_ETH_RX_OFFLOAD_SECURITY offload flag.
+
+Fixes: 4474c77030 ("drivers: add IPsec rule reservation scheme for cnxk")
+Cc: stable@dpdk.org
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Iebef53e2fb8a82c46de312cf5bfac3e292dd2308
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96471
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index d541b0e553589..7ce4614735fe1 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -562,8 +562,10 @@ npc_parse_actions(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 				}
+ 				rq = inl_rq->qid;
+ 				pf_func = nix_inl_dev_pffunc_get();
+-				flow->is_inline_dev = 1;
+ 			}
++
++			if (roc_nix_inl_dev_is_probed())
++				flow->is_inline_dev = 1;
+ 			sec_action = actions;
+ 			break;
+ 		case ROC_NPC_ACTION_TYPE_VLAN_STRIP:
+-- 
+2.25.1
+

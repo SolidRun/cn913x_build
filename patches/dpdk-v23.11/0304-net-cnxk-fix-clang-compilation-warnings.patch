@@ -1,0 +1,90 @@
+From 90326b9cf7f1966147970a8f63d75db917e5e9c6 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 1 Mar 2024 13:25:55 +0530
+Subject: [PATCH 304/513] net/cnxk: fix clang compilation warnings
+
+typecast added to fix compilation errors.
+
+Fixes: 4ac0c60a1d5f ("net/cnxk: support CPT Tx queue count")
+
+Change-Id: Iac8ed2f75d864efd862e6c2e8aad930cc33165bb
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122959
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_tx_select.c | 2 ++
+ drivers/net/cnxk/cn9k_tx_select.c  | 2 ++
+ drivers/net/cnxk/cnxk_ethdev.h     | 7 ++++---
+ 3 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_tx_select.c b/drivers/net/cnxk/cn10k_tx_select.c
+index 6fda15ea1100a..9d4d59ca06617 100644
+--- a/drivers/net/cnxk/cn10k_tx_select.c
++++ b/drivers/net/cnxk/cn10k_tx_select.c
+@@ -20,6 +20,7 @@ pick_tx_func(struct rte_eth_dev *eth_dev,
+ 			eth_dev->tx_pkt_burst;
+ }
+ 
++#if defined(RTE_ARCH_ARM64)
+ static int
+ cn10k_nix_tx_queue_count(void *tx_queue)
+ {
+@@ -35,6 +36,7 @@ cn10k_nix_tx_queue_sec_count(void *tx_queue)
+ 
+ 	return cnxk_nix_tx_queue_sec_count(txq->fc_mem, txq->sqes_per_sqb_log2, txq->cpt_fc);
+ }
++#endif
+ 
+ static void
+ cn10k_eth_set_tx_tmplt_func(struct rte_eth_dev *eth_dev)
+diff --git a/drivers/net/cnxk/cn9k_tx_select.c b/drivers/net/cnxk/cn9k_tx_select.c
+index 2d9359b6ca458..05d33cfd1acd5 100644
+--- a/drivers/net/cnxk/cn9k_tx_select.c
++++ b/drivers/net/cnxk/cn9k_tx_select.c
+@@ -20,6 +20,7 @@ pick_tx_func(struct rte_eth_dev *eth_dev,
+ 			eth_dev->tx_pkt_burst;
+ }
+ 
++#if defined(RTE_ARCH_ARM64)
+ static int
+ cn9k_nix_tx_queue_count(void *tx_queue)
+ {
+@@ -35,6 +36,7 @@ cn9k_nix_tx_queue_sec_count(void *tx_queue)
+ 
+ 	return cnxk_nix_tx_queue_sec_count(txq->fc_mem, txq->sqes_per_sqb_log2, txq->cpt_fc);
+ }
++#endif
+ 
+ static void
+ cn9k_eth_set_tx_tmplt_func(struct rte_eth_dev *eth_dev)
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index e0f67fdf912c9..eab034831a9ec 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -472,7 +472,7 @@ cnxk_nix_tx_queue_count(uint64_t *mem, uint16_t sqes_per_sqb_log2)
+ {
+ 	uint64_t val;
+ 
+-	val = rte_atomic_load_explicit(mem, rte_memory_order_relaxed);
++	val = rte_atomic_load_explicit((RTE_ATOMIC(uint64_t *))mem, rte_memory_order_relaxed);
+ 	val = (val << sqes_per_sqb_log2) - val;
+ 
+ 	return (val & 0xFFFF);
+@@ -483,9 +483,10 @@ cnxk_nix_tx_queue_sec_count(uint64_t *mem, uint16_t sqes_per_sqb_log2, uint64_t
+ {
+ 	uint64_t sq_cnt, sec_cnt, val;
+ 
+-	sq_cnt = rte_atomic_load_explicit(mem, rte_memory_order_relaxed);
++	sq_cnt = rte_atomic_load_explicit((RTE_ATOMIC(uint64_t *))mem, rte_memory_order_relaxed);
+ 	sq_cnt = (sq_cnt << sqes_per_sqb_log2) - sq_cnt;
+-	sec_cnt = rte_atomic_load_explicit(sec_fc, rte_memory_order_relaxed);
++	sec_cnt = rte_atomic_load_explicit((RTE_ATOMIC(uint64_t *))sec_fc,
++					   rte_memory_order_relaxed);
+ 	val = RTE_MAX(sq_cnt, sec_cnt);
+ 
+ 	return (val & 0xFFFF);
+-- 
+2.25.1
+

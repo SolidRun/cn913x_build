@@ -1,0 +1,47 @@
+From 8c76134d9b065dfe8c5bb4bf0fa29173e43ee6f8 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 12 Mar 2024 13:36:07 +0000
+Subject: [PATCH 275/513] marvell-ci: add Odyssey files to checkformat
+
+Add Odyssey files to checkformat.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I25ec9da02d26b8f806a78fdee47a3f8b2d913e03
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123658
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/checkpatch/checkformat.sh | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/marvell-ci/checkpatch/checkformat.sh b/marvell-ci/checkpatch/checkformat.sh
+index 435de94dc18f8..69dfb93e85712 100755
+--- a/marvell-ci/checkpatch/checkformat.sh
++++ b/marvell-ci/checkpatch/checkformat.sh
+@@ -18,8 +18,10 @@ CLANG_FORMAT_DEF0="clang-format-diff"
+ CLANG_FORMAT_DEF1="/usr/share/clang/clang-format-diff.py"
+ CLANG_FORMAT_DEF2="clang-format-diff.py"
+ CLANG_FORMAT=${CLANG_FORMAT:-}
+-# Match only cnxk-common, cn9k and cn10k files.
+-FORMAT_REGEX="drivers/.*/cn.*/.*\.[chS]$"
++# Match cnxk-common, cn9k and cn10k files.
++FORMAT_REGEX_CN="drivers/.*/cn.*/.*\.[chS]$"
++# Match Odyssey files.
++FORMAT_REGEX_ODY="drivers/dma/odm/.*\.[chS]$"
+ 
+ status=0
+ 
+@@ -46,7 +48,8 @@ for f in $@; do
+ 	echo -e "\n$f"
+ 	printf '=%.0s' $(seq 1 ${#f})
+ 	echo ""
+-	output=$(cat $f | $CLANG_FORMAT -p1 -regex "${FORMAT_REGEX}" $EXTRA_ARGS 2>&1)
++	output=$(cat $f | $CLANG_FORMAT -p1 -regex "${FORMAT_REGEX_CN}" $EXTRA_ARGS 2>&1)
++	output+=$(cat $f | $CLANG_FORMAT -p1 -regex "${FORMAT_REGEX_ODY}" $EXTRA_ARGS 2>&1)
+ 	# Ignore non-existing file comparisons because it means those files
+ 	# have been removed in later commits or patch wouldn't apply.
+ 	output=${output/No such file or directory/}
+-- 
+2.25.1
+

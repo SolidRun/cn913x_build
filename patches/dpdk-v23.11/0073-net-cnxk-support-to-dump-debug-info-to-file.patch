@@ -1,0 +1,174 @@
+From 2481618d76e48e0a31daecbb8f76bdfe6285852f Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Fri, 3 Nov 2023 10:36:14 +0530
+Subject: [PATCH 073/513] net/cnxk: support to dump debug info to file
+
+This patch dumps contents of receviced packet descriptor from CQ
+for debug to file
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Ib6af25ab4fd4d75e9e0b478f23f05c65f69b259d
+---
+ drivers/net/cnxk/cn10k_ethdev.c | 67 +++++++++++++++++++++++++++++++++
+ drivers/net/cnxk/cn9k_ethdev.c  | 53 ++++++++++++++++++++++++++
+ 2 files changed, 120 insertions(+)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index c6ded57ebb707..b4b80b60d500d 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -660,6 +660,72 @@ cn10k_nix_reassembly_conf_set(struct rte_eth_dev *eth_dev,
+ 	return rc;
+ }
+ 
++static int
++cn10k_nix_rx_avail_get(struct cn10k_eth_rxq *rxq)
++{
++	uint32_t qmask = rxq->qmask;
++	uint64_t reg, head, tail;
++	int available;
++
++	/* Use LDADDA version to avoid reorder */
++	reg = roc_atomic64_add_sync(rxq->wdata, rxq->cq_status);
++	/* CQ_OP_STATUS operation error */
++	if (reg & BIT_ULL(NIX_CQ_OP_STAT_OP_ERR) ||
++	    reg & BIT_ULL(NIX_CQ_OP_STAT_CQ_ERR))
++		return 0;
++	tail = reg & 0xFFFFF;
++	head = (reg >> 20) & 0xFFFFF;
++	if (tail < head)
++		available = tail - head + qmask + 1;
++	else
++		available = tail - head;
++
++	return available;
++}
++
++static int
++cn10k_rx_descriptor_dump(const struct rte_eth_dev *eth_dev, uint16_t qid,
++			 uint16_t offset, uint16_t num, FILE *file)
++{
++	struct cn10k_eth_rxq *rxq = eth_dev->data->rx_queues[qid];
++	const uint64_t data_off = rxq->data_off;
++	const uint32_t qmask = rxq->qmask;
++	const uintptr_t desc = rxq->desc;
++	struct cpt_parse_hdr_s *cpth;
++	uint32_t head = rxq->head;
++	struct nix_cqe_hdr_s *cq;
++	uint16_t count = 0;
++	int availble_pkts;
++	uint64_t cq_w1;
++
++	availble_pkts = cn10k_nix_rx_avail_get(rxq);
++
++	if ((offset + num - 1) >= availble_pkts) {
++		plt_err("Invalid BD num=%u\n", num);
++		return -EINVAL;
++	}
++
++	while (count < num) {
++		cq = (struct nix_cqe_hdr_s *)(desc + CQE_SZ(head) +
++					      count + offset);
++		cq_w1 = *((const uint64_t *)cq + 1);
++		if (cq_w1 & BIT(11)) {
++			rte_iova_t buff = *((rte_iova_t *)((uint64_t *)cq + 9));
++			struct rte_mbuf *mbuf =
++				(struct rte_mbuf *)(buff - data_off);
++			cpth = (struct cpt_parse_hdr_s *)
++				((uintptr_t)mbuf + (uint16_t)data_off);
++			roc_cpt_parse_hdr_dump(file, cpth);
++		} else {
++			roc_nix_cqe_dump(file, cq);
++		}
++
++		count++;
++		head &= qmask;
++	}
++	return 0;
++}
++
+ static int
+ cn10k_nix_tm_mark_vlan_dei(struct rte_eth_dev *eth_dev, int mark_green,
+ 			   int mark_yellow, int mark_red,
+@@ -798,6 +864,7 @@ nix_eth_dev_ops_override(void)
+ 			cn10k_nix_reassembly_capability_get;
+ 	cnxk_eth_dev_ops.ip_reassembly_conf_get = cn10k_nix_reassembly_conf_get;
+ 	cnxk_eth_dev_ops.ip_reassembly_conf_set = cn10k_nix_reassembly_conf_set;
++	cnxk_eth_dev_ops.eth_rx_descriptor_dump = cn10k_rx_descriptor_dump;
+ }
+ 
+ /* Update platform specific tm ops */
+diff --git a/drivers/net/cnxk/cn9k_ethdev.c b/drivers/net/cnxk/cn9k_ethdev.c
+index bae4dda5e2ad0..e88631a02e547 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.c
++++ b/drivers/net/cnxk/cn9k_ethdev.c
+@@ -664,6 +664,58 @@ cn9k_nix_tm_mark_ip_dscp(struct rte_eth_dev *eth_dev, int mark_green,
+ 	return rc;
+ }
+ 
++static int
++cn9k_nix_rx_avail_get(struct cn9k_eth_rxq *rxq)
++{
++	uint32_t qmask = rxq->qmask;
++	uint64_t reg, head, tail;
++	int available;
++
++	/* Use LDADDA version to avoid reorder */
++	reg = roc_atomic64_add_sync(rxq->wdata, rxq->cq_status);
++	/* CQ_OP_STATUS operation error */
++	if (reg & BIT_ULL(NIX_CQ_OP_STAT_OP_ERR) ||
++	    reg & BIT_ULL(NIX_CQ_OP_STAT_CQ_ERR))
++		return 0;
++	tail = reg & 0xFFFFF;
++	head = (reg >> 20) & 0xFFFFF;
++	if (tail < head)
++		available = tail - head + qmask + 1;
++	else
++		available = tail - head;
++
++	return available;
++}
++
++static int
++cn9k_rx_descriptor_dump(const struct rte_eth_dev *eth_dev, uint16_t qid,
++			 uint16_t offset, uint16_t num, FILE *file)
++{
++	struct cn9k_eth_rxq *rxq = eth_dev->data->rx_queues[qid];
++	const uint32_t qmask = rxq->qmask;
++	const uintptr_t desc = rxq->desc;
++	uint32_t head = rxq->head;
++	struct nix_cqe_hdr_s *cq;
++	uint16_t count = 0;
++	int availble_pkts;
++
++	availble_pkts = cn9k_nix_rx_avail_get(rxq);
++
++	if ((offset + num - 1) >= availble_pkts) {
++		plt_err("Invalid BD num=%u\n", num);
++		return -EINVAL;
++	}
++
++	while (count < num) {
++		cq = (struct nix_cqe_hdr_s *)(desc + CQE_SZ(head) +
++					      count + offset);
++		roc_nix_cqe_dump(file, cq);
++		count++;
++		head &= qmask;
++	}
++	return 0;
++}
++
+ /* Update platform specific eth dev ops */
+ static void
+ nix_eth_dev_ops_override(void)
+@@ -687,6 +739,7 @@ nix_eth_dev_ops_override(void)
+ 	cnxk_eth_dev_ops.mtr_ops_get = NULL;
+ 	cnxk_eth_dev_ops.timesync_read_tx_timestamp =
+ 		cn9k_nix_timesync_read_tx_timestamp;
++	cnxk_eth_dev_ops.eth_rx_descriptor_dump = cn9k_rx_descriptor_dump;
+ }
+ 
+ /* Update platform specific eth dev ops */
+-- 
+2.25.1
+

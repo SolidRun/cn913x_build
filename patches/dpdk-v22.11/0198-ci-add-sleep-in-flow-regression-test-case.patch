@@ -1,0 +1,43 @@
+From 7a7eb973681fc7fa7b0c1e2e3666076cab86be94 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Wed, 8 Feb 2023 23:51:47 +0530
+Subject: [PATCH 198/955] ci: add sleep in flow regression test case
+
+testpmd logs were not being updated so test cases were getting failed
+as they expect some specific string at output.
+
+Added sleep so that logs can be updated in out.prefix file correctly.
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I3a93c6bbb8c38e12ebb082ef240b66f9a6c36612
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96445
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/flow_regression/cnxk_flow_regression.sh     | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh b/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh
+index 29cd29eb10296..ab87dcbd741c9 100755
+--- a/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh
++++ b/marvell-ci/test/cnxk-tests/flow_regression/cnxk_flow_regression.sh
+@@ -61,6 +61,7 @@ function testpmd_check_hits()
+ 
+ 	testpmd_cmd $prefix "flow query 0 0 count"
+ 
++	sleep 3
+ 	testpmd_prompt $prefix
+ 	COUNT=`cat $out | tail -n4 | grep "hits:" | cut -d':' -f2`
+ 
+@@ -107,6 +108,7 @@ function testpmd_test_flow()
+ 	echo "-------------------------TESTPMD LOG-----------------------------"
+ 	testpmd_cmd $PRFX "show port stats all"
+ 	testpmd_log $prefix
++	sleep 3
+ 
+ 	if testpmd_check_hits $1; then
+ 		echo "$name passed"
+-- 
+2.25.1
+

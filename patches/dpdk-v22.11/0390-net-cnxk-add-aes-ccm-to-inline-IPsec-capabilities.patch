@@ -1,0 +1,103 @@
+From 54d3739b6293980e263e28dde86315de59be876e Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Thu, 4 May 2023 10:51:05 +0530
+Subject: [PATCH 390/955] net/cnxk: add aes-ccm to inline IPsec capabilities
+
+Declares AES-CCM support in inline IPsec capabilities.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: I812dfbcc1aeff288b4e5f48dad2cfaf1b967896d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102788
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/cnxk/cn10k_ethdev_sec.c | 30 +++++++++++++++++++++++++++++
+ drivers/net/cnxk/cn9k_ethdev_sec.c  | 30 +++++++++++++++++++++++++++++
+ 2 files changed, 60 insertions(+)
+
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index f6992c8c8fc8b..8293960743a00 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -229,6 +229,36 @@ static struct rte_cryptodev_capabilities cn10k_eth_sec_crypto_caps[] = {
+ 			}, }
+ 		}, }
+ 	},
++	{	/* AES CCM */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AEAD,
++			{.aead = {
++				.algo = RTE_CRYPTO_AEAD_AES_CCM,
++				.block_size = 16,
++				.key_size = {
++					.min = 16,
++					.max = 32,
++					.increment = 8
++				},
++				.digest_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				},
++				.aad_size = {
++					.min = 8,
++					.max = 12,
++					.increment = 4
++				},
++				.iv_size = {
++					.min = 11,
++					.max = 13,
++					.increment = 1
++				}
++			}, }
++		}, }
++	},
+ 	{	/* NULL (AUTH) */
+ 		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
+ 		{.sym = {
+diff --git a/drivers/net/cnxk/cn9k_ethdev_sec.c b/drivers/net/cnxk/cn9k_ethdev_sec.c
+index 327f221e385de..688b13ae1e2ba 100644
+--- a/drivers/net/cnxk/cn9k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn9k_ethdev_sec.c
+@@ -100,6 +100,36 @@ static struct rte_cryptodev_capabilities cn9k_eth_sec_crypto_caps[] = {
+ 			}, }
+ 		}, }
+ 	},
++	{	/* AES CCM */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_AEAD,
++			{.aead = {
++				.algo = RTE_CRYPTO_AEAD_AES_CCM,
++				.block_size = 16,
++				.key_size = {
++					.min = 16,
++					.max = 32,
++					.increment = 8
++				},
++				.digest_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				},
++				.aad_size = {
++					.min = 8,
++					.max = 12,
++					.increment = 4
++				},
++				.iv_size = {
++					.min = 11,
++					.max = 13,
++					.increment = 1
++				}
++			}, }
++		}, }
++	},
+ 	{	/* AES CBC */
+ 		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
+ 		{.sym = {
+-- 
+2.25.1
+

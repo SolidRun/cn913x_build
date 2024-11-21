@@ -1,0 +1,357 @@
+From b2ad807e038bdb8d789b66326a1b02665fe7f1de Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 28 Nov 2022 15:24:32 +0530
+Subject: [PATCH 045/955] common/cnxk: free pending sqe buffers
+
+This patch provides a callback mechanism when SQ receives MNQ_ERR.
+Even when SQ got MNQ_ERR interrupt application still enqueue
+packets for sending they will be struck at SQ, so we are freeing
+all these pending packets when we called SQ finish.
+
+ci: skip_checkformat
+
+Change-Id: I39829cb3ab026a89ed0325d91b1a98cade9ce814
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+---
+ drivers/common/cnxk/roc_dev_priv.h  |   4 +
+ drivers/common/cnxk/roc_nix.h       |   5 +
+ drivers/common/cnxk/roc_nix_irq.c   |  11 ++-
+ drivers/common/cnxk/roc_nix_priv.h  |   2 +
+ drivers/common/cnxk/roc_nix_queue.c |  32 +++++--
+ drivers/common/cnxk/roc_nix_tm.c    | 141 +++++++++++++++++++++++++++-
+ drivers/common/cnxk/version.map     |   2 +
+ 7 files changed, 186 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev_priv.h b/drivers/common/cnxk/roc_dev_priv.h
+index 302dc0feb0146..e21a7154c0e9c 100644
+--- a/drivers/common/cnxk/roc_dev_priv.h
++++ b/drivers/common/cnxk/roc_dev_priv.h
+@@ -30,6 +30,9 @@ typedef void (*link_info_t)(void *roc_nix,
+ /* PTP info callback */
+ typedef int (*ptp_info_t)(void *roc_nix, bool enable);
+ 
++/* Queue Error get callback */
++typedef void (*q_err_cb_t)(void *roc_nix, void *data);
++
+ /* Link status get callback */
+ typedef void (*link_status_get_t)(void *roc_nix,
+ 				  struct cgx_link_user_info *link);
+@@ -38,6 +41,7 @@ struct dev_ops {
+ 	link_info_t link_status_update;
+ 	ptp_info_t ptp_info_update;
+ 	link_status_get_t link_status_get;
++	q_err_cb_t q_err_cb;
+ };
+ 
+ #define dev_is_vf(dev) ((dev)->hwcap & DEV_HWCAP_F_VF)
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 6654a2df782cf..dfc87e87582aa 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -405,6 +405,9 @@ typedef void (*link_status_t)(struct roc_nix *roc_nix,
+ /* PTP info update callback */
+ typedef int (*ptp_info_update_t)(struct roc_nix *roc_nix, bool enable);
+ 
++/* Queue Error get callback */
++typedef void (*q_err_get_t)(struct roc_nix *roc_nix, void *data);
++
+ /* Link status get callback */
+ typedef void (*link_info_get_t)(struct roc_nix *roc_nix,
+ 				struct roc_nix_link_info *link);
+@@ -783,6 +786,8 @@ void __roc_api roc_nix_mac_link_cb_unregister(struct roc_nix *roc_nix);
+ int __roc_api roc_nix_mac_link_info_get_cb_register(
+ 	struct roc_nix *roc_nix, link_info_get_t link_info_get);
+ void __roc_api roc_nix_mac_link_info_get_cb_unregister(struct roc_nix *roc_nix);
++int __roc_api roc_nix_q_err_cb_register(struct roc_nix *roc_nix, q_err_get_t sq_err_handle);
++void __roc_api roc_nix_q_err_cb_unregister(struct roc_nix *roc_nix);
+ 
+ /* Ops */
+ int __roc_api roc_nix_switch_hdr_set(struct roc_nix *roc_nix,
+diff --git a/drivers/common/cnxk/roc_nix_irq.c b/drivers/common/cnxk/roc_nix_irq.c
+index d72980fb18d05..661af7919313a 100644
+--- a/drivers/common/cnxk/roc_nix_irq.c
++++ b/drivers/common/cnxk/roc_nix_irq.c
+@@ -249,9 +249,9 @@ nix_lf_q_irq(void *param)
+ {
+ 	struct nix_qint *qint = (struct nix_qint *)param;
+ 	uint8_t irq, qintx = qint->qintx;
++	int q, cq, rq, sq, intr_cb = 0;
+ 	struct nix *nix = qint->nix;
+ 	struct dev *dev = &nix->dev;
+-	int q, cq, rq, sq;
+ 	uint64_t intr;
+ 	uint8_t rc;
+ 
+@@ -301,8 +301,10 @@ nix_lf_q_irq(void *param)
+ 
+ 		/* Detect Meta-descriptor enqueue error */
+ 		rc = nix_lf_sq_debug_reg(nix, NIX_LF_MNQ_ERR_DBG);
+-		if (rc)
++		if (rc) {
+ 			plt_err("SQ=%d NIX_SQINT_MNQ_ERR, errcode %x", sq, rc);
++			intr_cb = 1;
++		}
+ 
+ 		/* Detect Send error */
+ 		rc = nix_lf_sq_debug_reg(nix, NIX_LF_SEND_ERR_DBG);
+@@ -321,6 +323,11 @@ nix_lf_q_irq(void *param)
+ 	/* Dump registers to std out */
+ 	roc_nix_lf_reg_dump(nix_priv_to_roc_nix(nix), NULL);
+ 	roc_nix_queues_ctx_dump(nix_priv_to_roc_nix(nix), NULL);
++
++	/* Call reset callback */
++	if (intr_cb)
++		if (dev->ops->q_err_cb)
++			dev->ops->q_err_cb(nix_priv_to_roc_nix(nix), NULL);
+ }
+ 
+ int
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 2eba44c248dda..02290a1b86e76 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -406,6 +406,8 @@ int nix_tm_bp_config_set(struct roc_nix *roc_nix, uint16_t sq, uint16_t tc,
+ 			 bool enable, bool force_flush);
+ void nix_rq_vwqe_flush(struct roc_nix_rq *rq, uint16_t vwqe_interval);
+ int nix_tm_mark_init(struct nix *nix);
++void nix_tm_sq_free_sqe_buffer(uint64_t *sqe, int head_off, int end_off, int instr_sz);
++int roc_nix_tm_sq_free_pending_sqe(struct nix *nix, int q);
+ 
+ /*
+  * TM priv utils.
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 1cb1fd21017b7..8a84a34bef4ff 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -1089,9 +1089,8 @@ sq_cn9k_fini(struct nix *nix, struct roc_nix_sq *sq)
+ 	while (count) {
+ 		void *next_sqb;
+ 
+-		next_sqb = *(void **)((uintptr_t)sqb_buf +
+-				      (uint32_t)((sqes_per_sqb - 1) *
+-						 sq->max_sqe_sz));
++		next_sqb = *(void **)((uint64_t *)sqb_buf +
++				      (uint32_t)((sqes_per_sqb - 1) * (0x2 >> sq->max_sqe_sz) * 8));
+ 		roc_npa_aura_op_free(sq->aura_handle, 1, (uint64_t)sqb_buf);
+ 		sqb_buf = next_sqb;
+ 		count--;
+@@ -1206,9 +1205,8 @@ sq_fini(struct nix *nix, struct roc_nix_sq *sq)
+ 	while (count) {
+ 		void *next_sqb;
+ 
+-		next_sqb = *(void **)((uintptr_t)sqb_buf +
+-				      (uint32_t)((sqes_per_sqb - 1) *
+-						 sq->max_sqe_sz));
++		next_sqb = *(void **)((uint64_t *)sqb_buf +
++				      (uint32_t)((sqes_per_sqb - 1) * (0x2 >> sq->max_sqe_sz) * 8));
+ 		roc_npa_aura_op_free(sq->aura_handle, 1, (uint64_t)sqb_buf);
+ 		sqb_buf = next_sqb;
+ 		count--;
+@@ -1386,3 +1384,25 @@ roc_nix_sq_head_tail_get(struct roc_nix *roc_nix, uint16_t qid, uint32_t *head,
+ 	/* Update tail index as per used sqb count */
+ 	*tail += (sqes_per_sqb * (sqb_cnt - 1));
+ }
++
++int
++roc_nix_q_err_cb_register(struct roc_nix *roc_nix, q_err_get_t sq_err_handle)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct dev *dev = &nix->dev;
++
++	if (sq_err_handle == NULL)
++		return NIX_ERR_PARAM;
++
++	dev->ops->q_err_cb = (q_err_cb_t)sq_err_handle;
++	return 0;
++}
++
++void
++roc_nix_q_err_cb_unregister(struct roc_nix *roc_nix)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct dev *dev = &nix->dev;
++
++	dev->ops->q_err_cb = NULL;
++}
+diff --git a/drivers/common/cnxk/roc_nix_tm.c b/drivers/common/cnxk/roc_nix_tm.c
+index be8da714cdea1..255ca83f489e1 100644
+--- a/drivers/common/cnxk/roc_nix_tm.c
++++ b/drivers/common/cnxk/roc_nix_tm.c
+@@ -607,6 +607,136 @@ roc_nix_tm_sq_flush_spin(struct roc_nix_sq *sq)
+ 	return -EFAULT;
+ }
+ 
++void
++nix_tm_sq_free_sqe_buffer(uint64_t *sqe, int head_off, int end_off, int instr_sz)
++{
++	int i, j, inc = (8 * (0x2 >> instr_sz)), segs;
++	struct nix_send_hdr_s *send_hdr;
++	uint64_t *ptr, aura_handle;
++	struct idev_cfg *idev;
++
++	if (!sqe)
++		return;
++
++	idev = idev_get_cfg();
++	if (idev == NULL)
++		return;
++
++	ptr = sqe + (head_off * inc);
++	for (i = head_off; i < end_off; i++) {
++		ptr = sqe + (i * inc);
++		send_hdr = (struct nix_send_hdr_s *)(ptr);
++		aura_handle = roc_npa_aura_handle_gen(send_hdr->w0.aura, idev->npa->base);
++		ptr += 2;
++		if (((*ptr >> 60) & 0xF) == NIX_SUBDC_EXT)
++			ptr += 2;
++		if (((*ptr >> 60) & 0xF) == NIX_SUBDC_AGE_AND_STATS)
++			ptr += 2;
++		if (((*ptr >> 60) & 0xF) == NIX_SUBDC_JUMP) {
++			ptr += 1;
++			ptr = (uint64_t *)*ptr;
++		}
++		if (((*ptr >> 60) & 0xF) == NIX_SUBDC_CRC)
++			ptr += 2;
++		/* We are not parsing immediate send descriptor */
++		if (((*ptr >> 60) & 0xF) == NIX_SUBDC_IMM)
++			continue;
++		while (1) {
++			if (((*ptr >> 60) & 0xF) == NIX_SUBDC_SG) {
++				segs = (*ptr >> 48) & 0x3;
++				ptr += 1;
++				for (j = 0; j < segs; j++) {
++					roc_npa_aura_op_free(aura_handle, 0, *ptr);
++					ptr += 1;
++				}
++				if (segs == 2)
++					ptr += 1;
++			} else if (((*ptr >> 60) & 0xF) == NIX_SUBDC_SG2) {
++				uint64_t aura = (*ptr >> 16) & 0xFFFFF;
++
++				aura = roc_npa_aura_handle_gen(aura, idev->npa->base);
++				ptr += 1;
++				roc_npa_aura_op_free(aura, 0, *ptr);
++				ptr += 1;
++			} else
++				break;
++		}
++	}
++}
++
++int
++roc_nix_tm_sq_free_pending_sqe(struct nix *nix, int q)
++{
++	int head_off, count, rc = 0, tail_off;
++	struct roc_nix_sq *sq = nix->sqs[q];
++	void *sqb_buf, *dat, *tail_sqb;
++	struct dev *dev = &nix->dev;
++	struct ndc_sync_op *ndc_req;
++	uint16_t sqes_per_sqb;
++	struct mbox *mbox;
++
++	mbox = dev->mbox;
++	/* Sync NDC-NIX-TX for LF */
++	ndc_req = mbox_alloc_msg_ndc_sync_op(mbox);
++	if (ndc_req == NULL)
++		return -EFAULT;
++
++	ndc_req->nix_lf_tx_sync = 1;
++	if (mbox_process(mbox))
++		rc |= NIX_ERR_NDC_SYNC;
++
++	if (rc)
++		plt_err("NDC_SYNC failed rc %d", rc);
++
++	rc = nix_q_ctx_get(dev, NIX_AQ_CTYPE_SQ, q, (void *)&dat);
++
++	if (roc_model_is_cn9k()) {
++		volatile struct nix_sq_ctx_s *ctx = (struct nix_sq_ctx_s *)dat;
++
++		/* We will cleanup SQE buffers only when we received MNQ interrupt */
++		if (!ctx->mnq_dis)
++			return -EFAULT;
++
++		count = ctx->sqb_count;
++		sqb_buf = (void *)ctx->head_sqb;
++		tail_sqb = (void *)ctx->tail_sqb;
++		head_off = ctx->head_offset;
++		tail_off = ctx->tail_offset;
++	} else {
++		volatile struct nix_cn10k_sq_ctx_s *ctx = (struct nix_cn10k_sq_ctx_s *)dat;
++
++		/* We will cleanup SQE buffers only when we received MNQ interrupt */
++		if (!ctx->mnq_dis)
++			return -EFAULT;
++
++		count = ctx->sqb_count;
++		/* Free SQB's that are used */
++		sqb_buf = (void *)ctx->head_sqb;
++		tail_sqb = (void *)ctx->tail_sqb;
++		head_off = ctx->head_offset;
++		tail_off = ctx->tail_offset;
++	}
++	sqes_per_sqb = 1 << sq->sqes_per_sqb_log2;
++	/* Free SQB's that are used */
++	while (count) {
++		void *next_sqb;
++
++		if (sqb_buf == tail_sqb)
++			nix_tm_sq_free_sqe_buffer(sqb_buf, head_off, tail_off, sq->max_sqe_sz);
++		else
++			nix_tm_sq_free_sqe_buffer(sqb_buf, head_off, (sqes_per_sqb - 1),
++						  sq->max_sqe_sz);
++		next_sqb = *(void **)((uint64_t *)sqb_buf +
++				      (uint32_t)((sqes_per_sqb - 1) * (0x2 >> sq->max_sqe_sz) * 8));
++		roc_npa_aura_op_free(sq->aura_handle, 1, (uint64_t)sqb_buf);
++		sqb_buf = next_sqb;
++		head_off = 0;
++		count--;
++	}
++
++	return 0;
++}
++
+ /* Flush and disable tx queue and its parent SMQ */
+ int
+ nix_tm_sq_flush_pre(struct roc_nix_sq *sq)
+@@ -635,7 +765,7 @@ nix_tm_sq_flush_pre(struct roc_nix_sq *sq)
+ 
+ 	/* Find the node for this SQ */
+ 	node = nix_tm_node_search(nix, qid, tree);
+-	if (!node || !(node->flags & NIX_TM_NODE_ENABLED)) {
++	if (!node) {
+ 		plt_err("Invalid node/state for sq %u", qid);
+ 		return -EFAULT;
+ 	}
+@@ -691,8 +821,13 @@ nix_tm_sq_flush_pre(struct roc_nix_sq *sq)
+ 		/* Wait for sq entries to be flushed */
+ 		rc = roc_nix_tm_sq_flush_spin(sq);
+ 		if (rc) {
+-			plt_err("Failed to drain sq %u, rc=%d\n", sq->qid, rc);
+-			return rc;
++			rc = roc_nix_tm_sq_free_pending_sqe(nix, sq->qid);
++			if (rc) {
++				plt_err("Failed to drain sq %u, rc=%d\n", sq->qid, rc);
++				return rc;
++			}
++			/* Freed all pending SQEs for this SQ, so disable this node */
++			sibling->flags &= ~NIX_TM_NODE_ENABLED;
+ 		}
+ 	}
+ 
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index ce4348483a443..762048e9bea25 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -224,6 +224,8 @@ INTERNAL {
+ 	roc_nix_ptp_rx_ena_dis;
+ 	roc_nix_ptp_sync_time_adjust;
+ 	roc_nix_ptp_tx_ena_dis;
++	roc_nix_q_err_cb_register;
++	roc_nix_q_err_cb_unregister;
+ 	roc_nix_queues_ctx_dump;
+ 	roc_nix_ras_intr_ena_dis;
+ 	roc_nix_reassembly_configure;
+-- 
+2.25.1
+

@@ -1,0 +1,34 @@
+From 9f38dcdc880e6c6c9251ffc364aa275e11f386af Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Tue, 19 Dec 2023 22:00:08 +0530
+Subject: [PATCH 108/513] common/cnxk: fix reverse xmas tree
+
+Fix reverse xmas tree.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I2da61876ed31f83c9d7aebf8169e310d2a4c2767
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/118565
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_se.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index 20e744b41ed86..5a3ed0b647828 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -268,8 +268,8 @@ int
+ roc_se_auth_key_set(struct roc_se_ctx *se_ctx, roc_se_auth_type type, const uint8_t *key,
+ 		    uint16_t key_len, uint16_t mac_len)
+ {
+-	struct roc_se_pdcp_ctx *pctx;
+ 	struct roc_se_kasumi_ctx *k_ctx;
++	struct roc_se_pdcp_ctx *pctx;
+ 	struct roc_se_context *fctx;
+ 	uint8_t opcode_minor;
+ 	bool chained_op;
+-- 
+2.25.1
+

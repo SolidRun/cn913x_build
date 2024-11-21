@@ -1,0 +1,146 @@
+From 921fa0d52f37b446238bd7d13769943f3d6925b4 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Fri, 17 May 2024 03:14:06 -0700
+Subject: [PATCH 367/513] crypto/cnxk: add queue pair reset support
+
+Add support for queue pair reset API for cnxk
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I440eb5a8c45d5005491d4ab079fe541a3fc25be4
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128030
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129943
+---
+ drivers/common/cnxk/roc_cpt.c             | 14 ++++++++++++++
+ drivers/common/cnxk/roc_cpt.h             |  1 +
+ drivers/common/cnxk/version.map           |  1 +
+ drivers/crypto/cnxk/cn10k_cryptodev_ops.c |  1 +
+ drivers/crypto/cnxk/cn9k_cryptodev_ops.c  |  1 +
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  | 21 +++++++++++++++++++++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.h  |  3 +++
+ 7 files changed, 42 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index f8b7a31007626..2f00e9d6a1be1 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -953,6 +953,20 @@ cpt_lf_fini(struct roc_cpt_lf *lf)
+ 	lf->iq_vaddr = NULL;
+ }
+ 
++void
++roc_cpt_lf_reset(struct roc_cpt_lf *lf)
++{
++	if (lf == NULL)
++		return;
++
++	cpt_lf_misc_intr_enb_dis(lf, false);
++	cpt_lf_done_intr_enb_dis(lf, false);
++	roc_cpt_iq_disable(lf);
++	roc_cpt_iq_reset(lf);
++	cpt_lf_misc_intr_enb_dis(lf, true);
++	cpt_lf_done_intr_enb_dis(lf, true);
++}
++
+ void
+ roc_cpt_lf_fini(struct roc_cpt_lf *lf)
+ {
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index 95c61550789a2..636a1b887db0e 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -187,6 +187,7 @@ int __roc_api roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc
+ void __roc_api roc_cpt_dev_clear(struct roc_cpt *roc_cpt);
+ int __roc_api roc_cpt_lf_init(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf);
+ void __roc_api roc_cpt_lf_fini(struct roc_cpt_lf *lf);
++void __roc_api roc_cpt_lf_reset(struct roc_cpt_lf *lf);
+ int __roc_api roc_cpt_lf_ctx_flush(struct roc_cpt_lf *lf, void *cptr,
+ 				   bool inval);
+ int __roc_api roc_cpt_lf_ctx_reload(struct roc_cpt_lf *lf, void *cptr);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 6f9415a5efb1f..f132d27ddd743 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -74,6 +74,7 @@ INTERNAL {
+ 	roc_cpt_lf_ctx_reload;
+ 	roc_cpt_lf_init;
+ 	roc_cpt_lf_fini;
++	roc_cpt_lf_reset;
+ 	roc_cpt_lfs_print;
+ 	roc_cpt_lmtline_init;
+ 	roc_cpt_parse_hdr_dump;
+diff --git a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+index 6eb842c4dcd85..8fcd637b964a9 100644
+--- a/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn10k_cryptodev_ops.c
+@@ -1973,6 +1973,7 @@ struct rte_cryptodev_ops cn10k_cpt_ops = {
+ 	.stats_reset = NULL,
+ 	.queue_pair_setup = cnxk_cpt_queue_pair_setup,
+ 	.queue_pair_release = cnxk_cpt_queue_pair_release,
++	.queue_pair_reset = cnxk_cpt_queue_pair_reset,
+ 
+ 	/* Symmetric crypto ops */
+ 	.sym_session_get_size = cnxk_cpt_sym_session_get_size,
+diff --git a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+index 92b4819ad4dc2..ada9caac83184 100644
+--- a/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cn9k_cryptodev_ops.c
+@@ -707,6 +707,7 @@ struct rte_cryptodev_ops cn9k_cpt_ops = {
+ 	.stats_reset = NULL,
+ 	.queue_pair_setup = cnxk_cpt_queue_pair_setup,
+ 	.queue_pair_release = cnxk_cpt_queue_pair_release,
++	.queue_pair_reset = cnxk_cpt_queue_pair_reset,
+ 
+ 	/* Symmetric crypto ops */
+ 	.sym_session_get_size = cnxk_cpt_sym_session_get_size,
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index ec8823d69f522..91cd046d70e91 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -496,6 +496,27 @@ cnxk_cpt_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
+ 	return ret;
+ }
+ 
++int
++cnxk_cpt_queue_pair_reset(struct rte_cryptodev *dev, uint16_t qp_id,
++			  const struct rte_cryptodev_qp_conf *conf, int socket_id)
++{
++	if (conf == NULL) {
++		struct cnxk_cpt_vf *vf = dev->data->dev_private;
++		struct roc_cpt_lf *lf;
++
++		if (vf == NULL)
++			return -ENOTSUP;
++
++		lf = vf->cpt.lf[qp_id];
++		roc_cpt_lf_reset(lf);
++		roc_cpt_iq_enable(lf);
++
++		return 0;
++	}
++
++	return cnxk_cpt_queue_pair_setup(dev, qp_id, conf, socket_id);
++}
++
+ uint32_t
+ cnxk_cpt_qp_depth_used(void *qptr)
+ {
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+index fb5f3911b9bc1..d96cd29c51e03 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.h
+@@ -120,6 +120,9 @@ int cnxk_cpt_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
+ 			      const struct rte_cryptodev_qp_conf *conf,
+ 			      int socket_id __rte_unused);
+ 
++int cnxk_cpt_queue_pair_reset(struct rte_cryptodev *dev, uint16_t qp_id,
++			      const struct rte_cryptodev_qp_conf *conf, int socket_id);
++
+ int cnxk_cpt_queue_pair_release(struct rte_cryptodev *dev, uint16_t qp_id);
+ 
+ unsigned int cnxk_cpt_sym_session_get_size(struct rte_cryptodev *dev);
+-- 
+2.25.1
+

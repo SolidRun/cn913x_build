@@ -1,0 +1,76 @@
+From da3315f2ece414ce4cc0fea530b20ac7b369e8d7 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 8 Dec 2022 01:22:27 +0530
+Subject: [PATCH 064/955] common/cnxk: free tm resources in order from leaf to
+ root
+
+Now that kernel is clearing parent info that is needed for flush,
+free the resources in order from leaf to root so that when SMQ flush
+is called there is always hierarchy present from SMQ till TL1.
+
+Change-Id: I45c1fa66224a86cdfaecdec451bd0edef53cc644
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92129
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+(cherry picked from commit 6e0f60830f75c3ad762319d1a19835103588d786)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92146
+---
+ drivers/common/cnxk/roc_nix_tm.c | 32 +++++++++++++++++++-------------
+ 1 file changed, 19 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_tm.c b/drivers/common/cnxk/roc_nix_tm.c
+index 9eb4dfb1fdc4b..79b423417ffeb 100644
+--- a/drivers/common/cnxk/roc_nix_tm.c
++++ b/drivers/common/cnxk/roc_nix_tm.c
+@@ -1818,6 +1818,7 @@ nix_tm_free_resources(struct roc_nix *roc_nix, uint32_t tree_mask, bool hw_only)
+ 	enum roc_nix_tm_tree tree;
+ 	uint32_t profile_id;
+ 	int rc = 0;
++	int hw_lvl;
+ 
+ 	for (tree = 0; tree < ROC_NIX_TM_TREE_MAX; tree++) {
+ 		if (!(tree_mask & BIT(tree)))
+@@ -1826,20 +1827,25 @@ nix_tm_free_resources(struct roc_nix *roc_nix, uint32_t tree_mask, bool hw_only)
+ 		plt_tm_dbg("Freeing resources of tree %u", tree);
+ 
+ 		list = nix_tm_node_list(nix, tree);
+-		next_node = TAILQ_FIRST(list);
+-		while (next_node) {
+-			node = next_node;
+-			next_node = TAILQ_NEXT(node, node);
++		/* Flush and free resources from leaf */
++		for (hw_lvl = NIX_TXSCH_LVL_SMQ; hw_lvl < NIX_TXSCH_LVL_CNT; hw_lvl++) {
++			next_node = TAILQ_FIRST(list);
++			while (next_node) {
++				node = next_node;
++				next_node = TAILQ_NEXT(node, node);
++				if (node->hw_lvl != hw_lvl)
++					continue;
+ 
+-			if (!nix_tm_is_leaf(nix, node->lvl) &&
+-			    node->flags & NIX_TM_NODE_HWRES) {
+-				/* Clear xoff in path for flush to succeed */
+-				rc = nix_tm_clear_path_xoff(nix, node);
+-				if (rc)
+-					return rc;
+-				rc = nix_tm_free_node_resource(nix, node);
+-				if (rc)
+-					return rc;
++				if (!nix_tm_is_leaf(nix, node->lvl) &&
++				    node->flags & NIX_TM_NODE_HWRES) {
++					/* Clear xoff in path for flush to succeed */
++					rc = nix_tm_clear_path_xoff(nix, node);
++					if (rc)
++						return rc;
++					rc = nix_tm_free_node_resource(nix, node);
++					if (rc)
++						return rc;
++				}
+ 			}
+ 		}
+ 
+-- 
+2.25.1
+

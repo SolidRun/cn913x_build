@@ -1,0 +1,50 @@
+From d765efd4b58e602143e2cac544e63fefac64e710 Mon Sep 17 00:00:00 2001
+From: Ferruh Yigit <ferruh.yigit@amd.com>
+Date: Wed, 24 Jan 2024 18:53:59 +0000
+Subject: [PATCH 488/513] net/nfp: fix calloc parameters
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+gcc [1] generates warning [2] about calloc usage, because calloc
+parameter order is wrong, fixing it by replacing parameters.
+
+[1]
+gcc (GCC) 14.0.0 20231102 (experimental)
+
+[2]
+Compiling C object .../net_nfp_nfpcore_nfp_mutex.c.o
+.../net/nfp/nfpcore/nfp_mutex.c: In function ‘nfp_cpp_mutex_alloc’:
+../drivers/net/nfp/nfpcore/nfp_mutex.c:171:15:
+  warning: allocation of insufficient size ‘1’ for type
+           ‘struct nfp_cpp_mutex’ with size ‘48’ [-Walloc-size]
+  171 |         mutex = calloc(sizeof(*mutex), 1);
+      |               ^
+
+Fixes: c7e9729da6b5 ("net/nfp: support CPP")
+Cc: stable@dpdk.org
+
+Signed-off-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Acked-by: Chaoyong He <chaoyong.he@corigine.com>
+Acked-by: Morten Brørup <mb@smartsharesystems.com>
+Change-Id: I1ee167557248e296655b74201d42255dd49df48a
+---
+ drivers/net/nfp/nfpcore/nfp_mutex.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/nfp/nfpcore/nfp_mutex.c b/drivers/net/nfp/nfpcore/nfp_mutex.c
+index 3c10c7a090c0b..edb78dfdc917c 100644
+--- a/drivers/net/nfp/nfpcore/nfp_mutex.c
++++ b/drivers/net/nfp/nfpcore/nfp_mutex.c
+@@ -168,7 +168,7 @@ nfp_cpp_mutex_alloc(struct nfp_cpp *cpp,
+ 	if (tmp != key)
+ 		return NULL;
+ 
+-	mutex = calloc(sizeof(*mutex), 1);
++	mutex = calloc(1, sizeof(*mutex));
+ 	if (mutex == NULL)
+ 		return NULL;
+ 
+-- 
+2.25.1
+

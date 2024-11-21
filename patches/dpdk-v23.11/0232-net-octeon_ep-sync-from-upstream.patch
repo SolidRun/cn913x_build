@@ -1,0 +1,231 @@
+From f18a5457035b400df871570cf712e1f73d23e763 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 26 Feb 2024 19:43:30 +0530
+Subject: [PATCH 232/513] net/octeon_ep: sync from upstream
+
+Sync changes from upstream.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ifa544ef0f5f0e1d8d0e04b7111aa852dc3d9937d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122568
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_rx_avx.c  | 10 ++++++++--
+ drivers/net/octeon_ep/cnxk_ep_rx_neon.c | 25 +++++++++++++++++++------
+ drivers/net/octeon_ep/cnxk_ep_rx_sse.c  | 14 ++++++++++----
+ drivers/net/octeon_ep/otx_ep_rxtx.h     | 19 +++----------------
+ 4 files changed, 40 insertions(+), 28 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx_avx.c b/drivers/net/octeon_ep/cnxk_ep_rx_avx.c
+index aba0cee31d8c9..47eb1d2ef7111 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_rx_avx.c
++++ b/drivers/net/octeon_ep/cnxk_ep_rx_avx.c
+@@ -26,9 +26,11 @@ cnxk_ep_process_pkts_vec_avx(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq
+ 					21, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+ 					0xFF, 0xFF, 0xFF, 7, 6, 5, 4, 3, 2, 1, 0);
+ 
++		/* Load indexes. */
+ 		for (i = 1; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+ 			idx[i] = otx_ep_incr_index(idx[i - 1], 1, nb_desc);
+ 
++		/* Prefetch next indexes. */
+ 		if (new_pkts - pkts > 8) {
+ 			pidx[0] = otx_ep_incr_index(idx[i - 1], 1, nb_desc);
+ 			for (i = 1; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+@@ -40,19 +42,23 @@ cnxk_ep_process_pkts_vec_avx(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq
+ 			}
+ 		}
+ 
++		/* Load mbuf array. */
+ 		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+ 			m[i] = recv_buf_list[idx[i]];
+ 
++		/* Load rearm data and packet length for shuffle. */
+ 		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+-			data[i] = _mm256_set_epi64x(
+-				0, cnxk_pktmbuf_mtod(m[i], struct otx_ep_droq_info *)->length >> 16,
++			data[i] = _mm256_set_epi64x(0,
++				cnxk_pktmbuf_mtod(m[i], struct otx_ep_droq_info *)->length >> 16,
+ 				0, rearm_data);
+ 
++		/* Shuffle data to its place and sum the packet length. */
+ 		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++) {
+ 			data[i] = _mm256_shuffle_epi8(data[i], mask);
+ 			bytes_rsvd += _mm256_extract_epi16(data[i], 10);
+ 		}
+ 
++		/* Store the 256bit data to the mbuf. */
+ 		for (i = 0; i < CNXK_EP_OQ_DESC_PER_LOOP_AVX; i++)
+ 			_mm256_storeu_si256((__m256i *)&m[i]->rearm_data, data[i]);
+ 
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx_neon.c b/drivers/net/octeon_ep/cnxk_ep_rx_neon.c
+index 3c10e56e79354..4c46a7ea081fd 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_rx_neon.c
++++ b/drivers/net/octeon_ep/cnxk_ep_rx_neon.c
+@@ -8,24 +8,24 @@ static __rte_always_inline void
+ cnxk_ep_process_pkts_vec_neon(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq,
+ 			      uint16_t new_pkts)
+ {
++	const uint8x16_t mask0 = {0, 1, 0xff, 0xff, 0, 1, 0xff, 0xff,
++				  4, 5, 0xff, 0xff, 4, 5, 0xff, 0xff};
++	const uint8x16_t mask1 = {8,  9,  0xff, 0xff, 8,  9,  0xff, 0xff,
++				  12, 13, 0xff, 0xff, 12, 13, 0xff, 0xff};
+ 	struct rte_mbuf **recv_buf_list = droq->recv_buf_list;
+ 	uint32_t pidx0, pidx1, pidx2, pidx3;
+ 	struct rte_mbuf *m0, *m1, *m2, *m3;
+ 	uint32_t read_idx = droq->read_idx;
+ 	uint16_t nb_desc = droq->nb_desc;
+ 	uint32_t idx0, idx1, idx2, idx3;
++	uint64x2_t s01, s23;
+ 	uint32x4_t bytes;
+ 	uint16_t pkts = 0;
+ 
+ 	idx0 = read_idx;
++	s01 = vdupq_n_u64(0);
+ 	bytes = vdupq_n_u32(0);
+ 	while (pkts < new_pkts) {
+-		const uint8x16_t mask0 = {0, 1, 0xff, 0xff, 0, 1, 0xff, 0xff,
+-					  4, 5, 0xff, 0xff, 4, 5, 0xff, 0xff};
+-		const uint8x16_t mask1 = {8,  9,  0xff, 0xff, 8,  9,  0xff, 0xff,
+-					  12, 13, 0xff, 0xff, 12, 13, 0xff, 0xff};
+-		uint64x2_t s01, s23;
+-
+ 		idx1 = otx_ep_incr_index(idx0, 1, nb_desc);
+ 		idx2 = otx_ep_incr_index(idx1, 1, nb_desc);
+ 		idx3 = otx_ep_incr_index(idx2, 1, nb_desc);
+@@ -47,6 +47,7 @@ cnxk_ep_process_pkts_vec_neon(struct rte_mbuf **rx_pkts, struct otx_ep_droq *dro
+ 		m2 = recv_buf_list[idx2];
+ 		m3 = recv_buf_list[idx3];
+ 
++		/* Load packet size big-endian. */
+ 		s01 = vsetq_lane_u32(cnxk_pktmbuf_mtod(m0, struct otx_ep_droq_info *)->length >> 48,
+ 				     s01, 0);
+ 		s01 = vsetq_lane_u32(cnxk_pktmbuf_mtod(m1, struct otx_ep_droq_info *)->length >> 48,
+@@ -55,17 +56,22 @@ cnxk_ep_process_pkts_vec_neon(struct rte_mbuf **rx_pkts, struct otx_ep_droq *dro
+ 				     s01, 2);
+ 		s01 = vsetq_lane_u32(cnxk_pktmbuf_mtod(m3, struct otx_ep_droq_info *)->length >> 48,
+ 				     s01, 3);
++		/* Convert to little-endian. */
+ 		s01 = vrev16q_u8(s01);
+ 
++		/* Vertical add, consolidate outside the loop. */
+ 		bytes += vaddq_u32(bytes, s01);
++		/* Segregate to packet length and data length. */
+ 		s23 = vqtbl1q_u8(s01, mask1);
+ 		s01 = vqtbl1q_u8(s01, mask0);
+ 
++		/* Store packet length and data length to mbuf. */
+ 		*(uint64_t *)&m0->pkt_len = vgetq_lane_u64(s01, 0);
+ 		*(uint64_t *)&m1->pkt_len = vgetq_lane_u64(s01, 1);
+ 		*(uint64_t *)&m2->pkt_len = vgetq_lane_u64(s23, 0);
+ 		*(uint64_t *)&m3->pkt_len = vgetq_lane_u64(s23, 1);
+ 
++		/* Reset rearm data. */
+ 		*(uint64_t *)&m0->rearm_data = droq->rearm_data;
+ 		*(uint64_t *)&m1->rearm_data = droq->rearm_data;
+ 		*(uint64_t *)&m2->rearm_data = droq->rearm_data;
+@@ -83,7 +89,14 @@ cnxk_ep_process_pkts_vec_neon(struct rte_mbuf **rx_pkts, struct otx_ep_droq *dro
+ 	droq->pkts_pending -= new_pkts;
+ 	/* Stats */
+ 	droq->stats.pkts_received += new_pkts;
++#if defined(RTE_ARCH_32)
++	droq->stats.bytes_received += vgetq_lane_u32(bytes, 0);
++	droq->stats.bytes_received += vgetq_lane_u32(bytes, 1);
++	droq->stats.bytes_received += vgetq_lane_u32(bytes, 2);
++	droq->stats.bytes_received += vgetq_lane_u32(bytes, 3);
++#else
+ 	droq->stats.bytes_received += vaddvq_u32(bytes);
++#endif
+ }
+ 
+ uint16_t __rte_noinline __rte_hot
+diff --git a/drivers/net/octeon_ep/cnxk_ep_rx_sse.c b/drivers/net/octeon_ep/cnxk_ep_rx_sse.c
+index 5d8c173413111..308c8b2288c6b 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_rx_sse.c
++++ b/drivers/net/octeon_ep/cnxk_ep_rx_sse.c
+@@ -43,21 +43,27 @@ cnxk_ep_process_pkts_vec_sse(struct rte_mbuf **rx_pkts, struct otx_ep_droq *droq
+ 		m2 = recv_buf_list[idx2];
+ 		m3 = recv_buf_list[idx3];
+ 
++		/* Load packet size big-endian. */
+ 		s01 = _mm_set_epi32(cnxk_pktmbuf_mtod(m3, struct otx_ep_droq_info *)->length >> 48,
+ 				    cnxk_pktmbuf_mtod(m1, struct otx_ep_droq_info *)->length >> 48,
+ 				    cnxk_pktmbuf_mtod(m2, struct otx_ep_droq_info *)->length >> 48,
+ 				    cnxk_pktmbuf_mtod(m0, struct otx_ep_droq_info *)->length >> 48);
++		/* Convert to little-endian. */
+ 		s01 = _mm_shuffle_epi8(s01, bswap_mask);
++		/* Vertical add, consolidate outside loop */
+ 		bytes = _mm_add_epi32(bytes, s01);
++		/* Segregate to packet length and data length. */
+ 		s23 = _mm_shuffle_epi32(s01, _MM_SHUFFLE(3, 3, 1, 1));
+ 		s01 = _mm_shuffle_epi8(s01, cpy_mask);
+ 		s23 = _mm_shuffle_epi8(s23, cpy_mask);
+ 
+-		*(uint64_t *)&m0->pkt_len = _mm_extract_epi64(s01, 0);
+-		*(uint64_t *)&m1->pkt_len = _mm_extract_epi64(s01, 1);
+-		*(uint64_t *)&m2->pkt_len = _mm_extract_epi64(s23, 0);
+-		*(uint64_t *)&m3->pkt_len = _mm_extract_epi64(s23, 1);
++		/* Store packet length and data length to mbuf. */
++		*(uint64_t *)&m0->pkt_len = ((rte_xmm_t)s01).u64[0];
++		*(uint64_t *)&m1->pkt_len = ((rte_xmm_t)s01).u64[1];
++		*(uint64_t *)&m2->pkt_len = ((rte_xmm_t)s23).u64[0];
++		*(uint64_t *)&m3->pkt_len = ((rte_xmm_t)s23).u64[1];
+ 
++		/* Reset rearm data. */
+ 		*(uint64_t *)&m0->rearm_data = droq->rearm_data;
+ 		*(uint64_t *)&m1->rearm_data = droq->rearm_data;
+ 		*(uint64_t *)&m2->rearm_data = droq->rearm_data;
+diff --git a/drivers/net/octeon_ep/otx_ep_rxtx.h b/drivers/net/octeon_ep/otx_ep_rxtx.h
+index 759f16d355a19..6b3abe21b1f3a 100644
+--- a/drivers/net/octeon_ep/otx_ep_rxtx.h
++++ b/drivers/net/octeon_ep/otx_ep_rxtx.h
+@@ -50,20 +50,11 @@ cnxk_ep_xmit_pkts_mseg(void *tx_queue, struct rte_mbuf **pkts, uint16_t nb_pkts)
+ uint16_t
+ cnxk_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ 
+-#ifdef RTE_ARCH_X86
+ uint16_t
+ cnxk_ep_recv_pkts_sse(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ 
+-#ifdef CC_AVX2_SUPPORT
+ uint16_t
+ cnxk_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+-#endif
+-#endif
+-
+-#ifdef RTE_ARCH_ARM64
+-uint16_t
+-cnxk_ep_recv_pkts_neon(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts);
+-#endif
+ 
+ uint16_t
+ cnxk_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+@@ -71,21 +62,17 @@ cnxk_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budge
+ uint16_t
+ cn9k_ep_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ 
+-#ifdef RTE_ARCH_X86
++uint16_t
++cnxk_ep_recv_pkts_neon(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts);
++
+ uint16_t
+ cn9k_ep_recv_pkts_sse(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+ 
+-#ifdef CC_AVX2_SUPPORT
+ uint16_t
+ cn9k_ep_recv_pkts_avx(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+-#endif
+-#endif
+-
+ 
+-#ifdef RTE_ARCH_ARM64
+ uint16_t
+ cn9k_ep_recv_pkts_neon(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts);
+-#endif
+ 
+ uint16_t
+ cn9k_ep_recv_pkts_mseg(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t budget);
+-- 
+2.25.1
+

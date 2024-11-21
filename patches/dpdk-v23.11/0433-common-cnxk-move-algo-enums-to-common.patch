@@ -1,0 +1,429 @@
+From 424e204a0ede5ce6f33b1bdd9475d639fd27e2cd Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 7 Aug 2024 11:15:15 +0000
+Subject: [PATCH 433/513] common/cnxk: move algo enums to common
+
+The enums are same between 9k & 10k. Move to common.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: Id38bc74bccd380d11a7332b38505465f0ad1a16f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133002
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133611
+---
+ drivers/common/cnxk/cnxk_security.c      | 106 ++++++++++-------------
+ drivers/common/cnxk/roc_ie.h             |  22 +++++
+ drivers/common/cnxk/roc_ie_on.h          |  22 -----
+ drivers/common/cnxk/roc_ie_ot.h          |  19 ----
+ drivers/crypto/cnxk/cn10k_ipsec_la_ops.h |   6 +-
+ drivers/net/cnxk/cn10k_ethdev_sec.c      |   8 +-
+ drivers/net/cnxk/cn9k_ethdev_sec.c       |  12 +--
+ 7 files changed, 83 insertions(+), 112 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index 15b0bedf43e23..e67c3f2331873 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -66,15 +66,15 @@ ot_ipsec_sa_common_param_fill(union roc_ot_ipsec_sa_word2 *w2, uint8_t *cipher_k
+ 
+ 		switch (crypto_xfrm->aead.algo) {
+ 		case RTE_CRYPTO_AEAD_AES_GCM:
+-			w2->s.enc_type = ROC_IE_OT_SA_ENC_AES_GCM;
+-			w2->s.auth_type = ROC_IE_OT_SA_AUTH_NULL;
++			w2->s.enc_type = ROC_IE_SA_ENC_AES_GCM;
++			w2->s.auth_type = ROC_IE_SA_AUTH_NULL;
+ 			memcpy(salt_key, &ipsec_xfrm->salt, 4);
+ 			tmp_salt = (uint32_t *)salt_key;
+ 			*tmp_salt = rte_be_to_cpu_32(*tmp_salt);
+ 			break;
+ 		case RTE_CRYPTO_AEAD_AES_CCM:
+-			w2->s.enc_type = ROC_IE_OT_SA_ENC_AES_CCM;
+-			w2->s.auth_type = ROC_IE_OT_SA_AUTH_NULL;
++			w2->s.enc_type = ROC_IE_SA_ENC_AES_CCM;
++			w2->s.auth_type = ROC_IE_SA_AUTH_NULL;
+ 			ccm_flag = 0x07 & ~ROC_CPT_AES_CCM_CTR_LEN;
+ 			*salt_key = ccm_flag;
+ 			memcpy(PLT_PTR_ADD(salt_key, 1), &ipsec_xfrm->salt, 3);
+@@ -88,16 +88,16 @@ ot_ipsec_sa_common_param_fill(union roc_ot_ipsec_sa_word2 *w2, uint8_t *cipher_k
+ 		if (cipher_xfrm != NULL) {
+ 			switch (cipher_xfrm->cipher.algo) {
+ 			case RTE_CRYPTO_CIPHER_NULL:
+-				w2->s.enc_type = ROC_IE_OT_SA_ENC_NULL;
++				w2->s.enc_type = ROC_IE_SA_ENC_NULL;
+ 				break;
+ 			case RTE_CRYPTO_CIPHER_AES_CBC:
+-				w2->s.enc_type = ROC_IE_OT_SA_ENC_AES_CBC;
++				w2->s.enc_type = ROC_IE_SA_ENC_AES_CBC;
+ 				break;
+ 			case RTE_CRYPTO_CIPHER_AES_CTR:
+-				w2->s.enc_type = ROC_IE_OT_SA_ENC_AES_CTR;
++				w2->s.enc_type = ROC_IE_SA_ENC_AES_CTR;
+ 				break;
+ 			case RTE_CRYPTO_CIPHER_3DES_CBC:
+-				w2->s.enc_type = ROC_IE_OT_SA_ENC_3DES_CBC;
++				w2->s.enc_type = ROC_IE_SA_ENC_3DES_CBC;
+ 				break;
+ 			default:
+ 				return -ENOTSUP;
+@@ -113,25 +113,25 @@ ot_ipsec_sa_common_param_fill(union roc_ot_ipsec_sa_word2 *w2, uint8_t *cipher_k
+ 				plt_err("anti-replay can't be supported with integrity service disabled");
+ 				return -EINVAL;
+ 			}
+-			w2->s.auth_type = ROC_IE_OT_SA_AUTH_NULL;
++			w2->s.auth_type = ROC_IE_SA_AUTH_NULL;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA1_HMAC:
+-			w2->s.auth_type = ROC_IE_OT_SA_AUTH_SHA1;
++			w2->s.auth_type = ROC_IE_SA_AUTH_SHA1;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA256_HMAC:
+-			w2->s.auth_type = ROC_IE_OT_SA_AUTH_SHA2_256;
++			w2->s.auth_type = ROC_IE_SA_AUTH_SHA2_256;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA384_HMAC:
+-			w2->s.auth_type = ROC_IE_OT_SA_AUTH_SHA2_384;
++			w2->s.auth_type = ROC_IE_SA_AUTH_SHA2_384;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA512_HMAC:
+-			w2->s.auth_type = ROC_IE_OT_SA_AUTH_SHA2_512;
++			w2->s.auth_type = ROC_IE_SA_AUTH_SHA2_512;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
+-			w2->s.auth_type = ROC_IE_OT_SA_AUTH_AES_XCBC_128;
++			w2->s.auth_type = ROC_IE_SA_AUTH_AES_XCBC_128;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_AES_GMAC:
+-			w2->s.auth_type = ROC_IE_OT_SA_AUTH_AES_GMAC;
++			w2->s.auth_type = ROC_IE_SA_AUTH_AES_GMAC;
+ 			key = auth_xfrm->auth.key.data;
+ 			length = auth_xfrm->auth.key.length;
+ 			memcpy(salt_key, &ipsec_xfrm->salt, 4);
+@@ -174,12 +174,9 @@ ot_ipsec_sa_common_param_fill(union roc_ot_ipsec_sa_word2 *w2, uint8_t *cipher_k
+ 	}
+ 
+ 	/* Set AES key length */
+-	if (w2->s.enc_type == ROC_IE_OT_SA_ENC_AES_CBC ||
+-	    w2->s.enc_type == ROC_IE_OT_SA_ENC_AES_CCM ||
+-	    w2->s.enc_type == ROC_IE_OT_SA_ENC_AES_CTR ||
+-	    w2->s.enc_type == ROC_IE_OT_SA_ENC_AES_GCM ||
+-	    w2->s.enc_type == ROC_IE_OT_SA_ENC_AES_CCM ||
+-	    w2->s.auth_type == ROC_IE_OT_SA_AUTH_AES_GMAC) {
++	if (w2->s.enc_type == ROC_IE_SA_ENC_AES_CBC || w2->s.enc_type == ROC_IE_SA_ENC_AES_CCM ||
++	    w2->s.enc_type == ROC_IE_SA_ENC_AES_CTR || w2->s.enc_type == ROC_IE_SA_ENC_AES_GCM ||
++	    w2->s.enc_type == ROC_IE_SA_ENC_AES_CCM || w2->s.auth_type == ROC_IE_SA_AUTH_AES_GMAC) {
+ 		switch (length) {
+ 		case ROC_CPT_AES128_KEY_LEN:
+ 			w2->s.aes_key_len = ROC_IE_SA_AES_KEY_LEN_128;
+@@ -809,11 +806,11 @@ on_ipsec_sa_ctl_set(struct rte_security_ipsec_xform *ipsec,
+ 	if (crypto_xform->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
+ 		switch (crypto_xform->aead.algo) {
+ 		case RTE_CRYPTO_AEAD_AES_GCM:
+-			ctl->enc_type = ROC_IE_ON_SA_ENC_AES_GCM;
++			ctl->enc_type = ROC_IE_SA_ENC_AES_GCM;
+ 			aes_key_len = crypto_xform->aead.key.length;
+ 			break;
+ 		case RTE_CRYPTO_AEAD_AES_CCM:
+-			ctl->enc_type = ROC_IE_ON_SA_ENC_AES_CCM;
++			ctl->enc_type = ROC_IE_SA_ENC_AES_CCM;
+ 			aes_key_len = crypto_xform->aead.key.length;
+ 			break;
+ 		default:
+@@ -824,20 +821,20 @@ on_ipsec_sa_ctl_set(struct rte_security_ipsec_xform *ipsec,
+ 		if (cipher_xform != NULL) {
+ 			switch (cipher_xform->cipher.algo) {
+ 			case RTE_CRYPTO_CIPHER_NULL:
+-				ctl->enc_type = ROC_IE_ON_SA_ENC_NULL;
++				ctl->enc_type = ROC_IE_SA_ENC_NULL;
+ 				break;
+ 			case RTE_CRYPTO_CIPHER_DES_CBC:
+-				ctl->enc_type = ROC_IE_ON_SA_ENC_DES_CBC;
++				ctl->enc_type = ROC_IE_SA_ENC_DES_CBC;
+ 				break;
+ 			case RTE_CRYPTO_CIPHER_3DES_CBC:
+-				ctl->enc_type = ROC_IE_ON_SA_ENC_3DES_CBC;
++				ctl->enc_type = ROC_IE_SA_ENC_3DES_CBC;
+ 				break;
+ 			case RTE_CRYPTO_CIPHER_AES_CBC:
+-				ctl->enc_type = ROC_IE_ON_SA_ENC_AES_CBC;
++				ctl->enc_type = ROC_IE_SA_ENC_AES_CBC;
+ 				aes_key_len = cipher_xform->cipher.key.length;
+ 				break;
+ 			case RTE_CRYPTO_CIPHER_AES_CTR:
+-				ctl->enc_type = ROC_IE_ON_SA_ENC_AES_CTR;
++				ctl->enc_type = ROC_IE_SA_ENC_AES_CTR;
+ 				aes_key_len = cipher_xform->cipher.key.length;
+ 				break;
+ 			default:
+@@ -848,32 +845,32 @@ on_ipsec_sa_ctl_set(struct rte_security_ipsec_xform *ipsec,
+ 
+ 		switch (auth_xform->auth.algo) {
+ 		case RTE_CRYPTO_AUTH_NULL:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_NULL;
++			ctl->auth_type = ROC_IE_SA_AUTH_NULL;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_MD5_HMAC:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_MD5;
++			ctl->auth_type = ROC_IE_SA_AUTH_MD5;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA1_HMAC:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_SHA1;
++			ctl->auth_type = ROC_IE_SA_AUTH_SHA1;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA224_HMAC:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_SHA2_224;
++			ctl->auth_type = ROC_IE_SA_AUTH_SHA2_224;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA256_HMAC:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_SHA2_256;
++			ctl->auth_type = ROC_IE_SA_AUTH_SHA2_256;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA384_HMAC:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_SHA2_384;
++			ctl->auth_type = ROC_IE_SA_AUTH_SHA2_384;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_SHA512_HMAC:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_SHA2_512;
++			ctl->auth_type = ROC_IE_SA_AUTH_SHA2_512;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_AES_GMAC:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_AES_GMAC;
++			ctl->auth_type = ROC_IE_SA_AUTH_AES_GMAC;
+ 			aes_key_len = auth_xform->auth.key.length;
+ 			break;
+ 		case RTE_CRYPTO_AUTH_AES_XCBC_MAC:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_AES_XCBC_128;
++			ctl->auth_type = ROC_IE_SA_AUTH_AES_XCBC_128;
+ 			break;
+ 		default:
+ 			plt_err("Unsupported auth algorithm");
+@@ -882,12 +879,9 @@ on_ipsec_sa_ctl_set(struct rte_security_ipsec_xform *ipsec,
+ 	}
+ 
+ 	/* Set AES key length */
+-	if (ctl->enc_type == ROC_IE_ON_SA_ENC_AES_CBC ||
+-	    ctl->enc_type == ROC_IE_ON_SA_ENC_AES_CCM ||
+-	    ctl->enc_type == ROC_IE_ON_SA_ENC_AES_CTR ||
+-	    ctl->enc_type == ROC_IE_ON_SA_ENC_AES_GCM ||
+-	    ctl->enc_type == ROC_IE_ON_SA_ENC_AES_CCM ||
+-	    ctl->auth_type == ROC_IE_ON_SA_AUTH_AES_GMAC) {
++	if (ctl->enc_type == ROC_IE_SA_ENC_AES_CBC || ctl->enc_type == ROC_IE_SA_ENC_AES_CCM ||
++	    ctl->enc_type == ROC_IE_SA_ENC_AES_CTR || ctl->enc_type == ROC_IE_SA_ENC_AES_GCM ||
++	    ctl->enc_type == ROC_IE_SA_ENC_AES_CCM || ctl->auth_type == ROC_IE_SA_AUTH_AES_GMAC) {
+ 		switch (aes_key_len) {
+ 		case 16:
+ 			ctl->aes_key_len = ROC_IE_SA_AES_KEY_LEN_128;
+@@ -998,30 +992,26 @@ cnxk_on_ipsec_outb_sa_create(struct rte_security_ipsec_xform *ipsec,
+ 	if (ret)
+ 		return ret;
+ 
+-	if (ctl->enc_type == ROC_IE_ON_SA_ENC_AES_GCM ||
+-	    ctl->enc_type == ROC_IE_ON_SA_ENC_AES_CCM || ctl->auth_type == ROC_IE_ON_SA_AUTH_NULL ||
+-	    ctl->auth_type == ROC_IE_ON_SA_AUTH_AES_GMAC) {
++	if (ctl->enc_type == ROC_IE_SA_ENC_AES_GCM || ctl->enc_type == ROC_IE_SA_ENC_AES_CCM ||
++	    ctl->auth_type == ROC_IE_SA_AUTH_NULL || ctl->auth_type == ROC_IE_SA_AUTH_AES_GMAC) {
+ 		template = &out_sa->aes_gcm.template;
+ 		ctx_len = offsetof(struct roc_ie_on_outb_sa, aes_gcm.template);
+ 	} else {
+ 		switch (ctl->auth_type) {
+-		case ROC_IE_ON_SA_AUTH_MD5:
+-		case ROC_IE_ON_SA_AUTH_SHA1:
++		case ROC_IE_SA_AUTH_MD5:
++		case ROC_IE_SA_AUTH_SHA1:
+ 			template = &out_sa->sha1.template;
+-			ctx_len = offsetof(struct roc_ie_on_outb_sa,
+-					   sha1.template);
++			ctx_len = offsetof(struct roc_ie_on_outb_sa, sha1.template);
+ 			break;
+-		case ROC_IE_ON_SA_AUTH_SHA2_256:
+-		case ROC_IE_ON_SA_AUTH_SHA2_384:
+-		case ROC_IE_ON_SA_AUTH_SHA2_512:
++		case ROC_IE_SA_AUTH_SHA2_256:
++		case ROC_IE_SA_AUTH_SHA2_384:
++		case ROC_IE_SA_AUTH_SHA2_512:
+ 			template = &out_sa->sha2.template;
+-			ctx_len = offsetof(struct roc_ie_on_outb_sa,
+-					   sha2.template);
++			ctx_len = offsetof(struct roc_ie_on_outb_sa, sha2.template);
+ 			break;
+-		case ROC_IE_ON_SA_AUTH_AES_XCBC_128:
++		case ROC_IE_SA_AUTH_AES_XCBC_128:
+ 			template = &out_sa->aes_xcbc.template;
+-			ctx_len = offsetof(struct roc_ie_on_outb_sa,
+-					   aes_xcbc.template);
++			ctx_len = offsetof(struct roc_ie_on_outb_sa, aes_xcbc.template);
+ 			break;
+ 		default:
+ 			plt_err("Unsupported auth algorithm");
+diff --git a/drivers/common/cnxk/roc_ie.h b/drivers/common/cnxk/roc_ie.h
+index 31b83948e135f..fe0e281df9620 100644
+--- a/drivers/common/cnxk/roc_ie.h
++++ b/drivers/common/cnxk/roc_ie.h
+@@ -31,4 +31,26 @@ enum {
+ 	ROC_IE_SA_AES_KEY_LEN_256 = 3,
+ };
+ 
++enum {
++	ROC_IE_SA_ENC_NULL = 0,
++	ROC_IE_SA_ENC_DES_CBC = 1,
++	ROC_IE_SA_ENC_3DES_CBC = 2,
++	ROC_IE_SA_ENC_AES_CBC = 3,
++	ROC_IE_SA_ENC_AES_CTR = 4,
++	ROC_IE_SA_ENC_AES_GCM = 5,
++	ROC_IE_SA_ENC_AES_CCM = 6,
++};
++
++enum {
++	ROC_IE_SA_AUTH_NULL = 0,
++	ROC_IE_SA_AUTH_MD5 = 1,
++	ROC_IE_SA_AUTH_SHA1 = 2,
++	ROC_IE_SA_AUTH_SHA2_224 = 3,
++	ROC_IE_SA_AUTH_SHA2_256 = 4,
++	ROC_IE_SA_AUTH_SHA2_384 = 5,
++	ROC_IE_SA_AUTH_SHA2_512 = 6,
++	ROC_IE_SA_AUTH_AES_GMAC = 7,
++	ROC_IE_SA_AUTH_AES_XCBC_128 = 8,
++};
++
+ #endif /* __ROC_IE_H__ */
+diff --git a/drivers/common/cnxk/roc_ie_on.h b/drivers/common/cnxk/roc_ie_on.h
+index 11c995e9d1928..d3e463e10585b 100644
+--- a/drivers/common/cnxk/roc_ie_on.h
++++ b/drivers/common/cnxk/roc_ie_on.h
+@@ -31,28 +31,6 @@ enum roc_ie_on_ucc_ipsec {
+ #define ROC_IE_ON_PER_PKT_IV	BIT(43)
+ #define ROC_IE_ON_INPLACE_BIT	BIT(6)
+ 
+-enum {
+-	ROC_IE_ON_SA_ENC_NULL = 0,
+-	ROC_IE_ON_SA_ENC_DES_CBC = 1,
+-	ROC_IE_ON_SA_ENC_3DES_CBC = 2,
+-	ROC_IE_ON_SA_ENC_AES_CBC = 3,
+-	ROC_IE_ON_SA_ENC_AES_CTR = 4,
+-	ROC_IE_ON_SA_ENC_AES_GCM = 5,
+-	ROC_IE_ON_SA_ENC_AES_CCM = 6,
+-};
+-
+-enum {
+-	ROC_IE_ON_SA_AUTH_NULL = 0,
+-	ROC_IE_ON_SA_AUTH_MD5 = 1,
+-	ROC_IE_ON_SA_AUTH_SHA1 = 2,
+-	ROC_IE_ON_SA_AUTH_SHA2_224 = 3,
+-	ROC_IE_ON_SA_AUTH_SHA2_256 = 4,
+-	ROC_IE_ON_SA_AUTH_SHA2_384 = 5,
+-	ROC_IE_ON_SA_AUTH_SHA2_512 = 6,
+-	ROC_IE_ON_SA_AUTH_AES_GMAC = 7,
+-	ROC_IE_ON_SA_AUTH_AES_XCBC_128 = 8,
+-};
+-
+ enum {
+ 	ROC_IE_ON_SA_FRAG_POST = 0,
+ 	ROC_IE_ON_SA_FRAG_PRE = 1,
+diff --git a/drivers/common/cnxk/roc_ie_ot.h b/drivers/common/cnxk/roc_ie_ot.h
+index af2691e0eb284..1420e3d586bf3 100644
+--- a/drivers/common/cnxk/roc_ie_ot.h
++++ b/drivers/common/cnxk/roc_ie_ot.h
+@@ -110,25 +110,6 @@ enum {
+ 	ROC_IE_OT_SA_INNER_PKT_L4_CSUM_DISABLE = 1,
+ };
+ 
+-enum {
+-	ROC_IE_OT_SA_ENC_NULL = 0,
+-	ROC_IE_OT_SA_ENC_3DES_CBC = 2,
+-	ROC_IE_OT_SA_ENC_AES_CBC = 3,
+-	ROC_IE_OT_SA_ENC_AES_CTR = 4,
+-	ROC_IE_OT_SA_ENC_AES_GCM = 5,
+-	ROC_IE_OT_SA_ENC_AES_CCM = 6,
+-};
+-
+-enum {
+-	ROC_IE_OT_SA_AUTH_NULL = 0,
+-	ROC_IE_OT_SA_AUTH_SHA1 = 2,
+-	ROC_IE_OT_SA_AUTH_SHA2_256 = 4,
+-	ROC_IE_OT_SA_AUTH_SHA2_384 = 5,
+-	ROC_IE_OT_SA_AUTH_SHA2_512 = 6,
+-	ROC_IE_OT_SA_AUTH_AES_GMAC = 7,
+-	ROC_IE_OT_SA_AUTH_AES_XCBC_128 = 8,
+-};
+-
+ enum {
+ 	ROC_IE_OT_SA_ENCAP_NONE = 0,
+ 	ROC_IE_OT_SA_ENCAP_UDP = 1,
+diff --git a/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h b/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h
+index 8969a2a6bf59d..65e02d26686f3 100644
+--- a/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h
++++ b/drivers/crypto/cnxk/cn10k_ipsec_la_ops.h
+@@ -60,9 +60,9 @@ process_outb_sa(struct roc_cpt_lf *lf, struct rte_crypto_op *cop, struct cn10k_s
+ 
+ #ifdef LA_IPSEC_DEBUG
+ 	if (sess->sa.out_sa.w2.s.iv_src == ROC_IE_OT_SA_IV_SRC_FROM_SA) {
+-		if (sess->sa.out_sa.w2.s.enc_type == ROC_IE_OT_SA_ENC_AES_GCM ||
+-		    sess->sa.out_sa.w2.s.enc_type == ROC_IE_OT_SA_ENC_AES_CCM ||
+-		    sess->sa.out_sa.w2.s.auth_type == ROC_IE_OT_SA_AUTH_AES_GMAC)
++		if (sess->sa.out_sa.w2.s.enc_type == ROC_IE_SA_ENC_AES_GCM ||
++		    sess->sa.out_sa.w2.s.enc_type == ROC_IE_SA_ENC_AES_CCM ||
++		    sess->sa.out_sa.w2.s.auth_type == ROC_IE_SA_AUTH_AES_GMAC)
+ 			ipsec_po_sa_aes_gcm_iv_set(sess, cop);
+ 		else
+ 			ipsec_po_sa_iv_set(sess, cop);
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index 074bb09822961..890af0fa886d0 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -660,10 +660,10 @@ outb_dbg_iv_update(struct roc_ot_ipsec_outb_sa *outb_sa, const char *__iv_str)
+ 	if (!iv_str)
+ 		return;
+ 
+-	if (outb_sa->w2.s.enc_type == ROC_IE_OT_SA_ENC_AES_GCM ||
+-	    outb_sa->w2.s.enc_type == ROC_IE_OT_SA_ENC_AES_CTR ||
+-	    outb_sa->w2.s.enc_type == ROC_IE_OT_SA_ENC_AES_CCM ||
+-	    outb_sa->w2.s.auth_type == ROC_IE_OT_SA_AUTH_AES_GMAC) {
++	if (outb_sa->w2.s.enc_type == ROC_IE_SA_ENC_AES_GCM ||
++	    outb_sa->w2.s.enc_type == ROC_IE_SA_ENC_AES_CTR ||
++	    outb_sa->w2.s.enc_type == ROC_IE_SA_ENC_AES_CCM ||
++	    outb_sa->w2.s.auth_type == ROC_IE_SA_AUTH_AES_GMAC) {
+ 		memset(outb_sa->iv.s.iv_dbg1, 0, sizeof(outb_sa->iv.s.iv_dbg1));
+ 		memset(outb_sa->iv.s.iv_dbg2, 0, sizeof(outb_sa->iv.s.iv_dbg2));
+ 
+diff --git a/drivers/net/cnxk/cn9k_ethdev_sec.c b/drivers/net/cnxk/cn9k_ethdev_sec.c
+index a0e0a73639b37..25110d1a5bf56 100644
+--- a/drivers/net/cnxk/cn9k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn9k_ethdev_sec.c
+@@ -422,10 +422,10 @@ outb_dbg_iv_update(struct roc_ie_on_common_sa *common_sa, const char *__iv_str)
+ 	if (!iv_str)
+ 		return;
+ 
+-	if (common_sa->ctl.enc_type == ROC_IE_OT_SA_ENC_AES_GCM ||
+-	    common_sa->ctl.enc_type == ROC_IE_OT_SA_ENC_AES_CTR ||
+-	    common_sa->ctl.enc_type == ROC_IE_OT_SA_ENC_AES_CCM ||
+-	    common_sa->ctl.auth_type == ROC_IE_OT_SA_AUTH_AES_GMAC) {
++	if (common_sa->ctl.enc_type == ROC_IE_SA_ENC_AES_GCM ||
++	    common_sa->ctl.enc_type == ROC_IE_SA_ENC_AES_CTR ||
++	    common_sa->ctl.enc_type == ROC_IE_SA_ENC_AES_CCM ||
++	    common_sa->ctl.auth_type == ROC_IE_SA_AUTH_AES_GMAC) {
+ 		iv_dbg = common_sa->iv.gcm.iv;
+ 		iv_len = 8;
+ 	}
+@@ -534,7 +534,7 @@ cn9k_eth_sec_session_update(void *device,
+ 	outb_priv->esn = ipsec->esn.value;
+ 
+ 	memcpy(&outb_priv->nonce, outb_sa->common_sa.iv.gcm.nonce, 4);
+-	if (outb_sa->common_sa.ctl.enc_type == ROC_IE_ON_SA_ENC_AES_GCM)
++	if (outb_sa->common_sa.ctl.enc_type == ROC_IE_SA_ENC_AES_GCM)
+ 		outb_priv->copy_salt = 1;
+ 
+ 	rlens = &outb_priv->rlens;
+@@ -750,7 +750,7 @@ cn9k_eth_sec_session_create(void *device,
+ 		outb_priv->seq = 1;
+ 
+ 		memcpy(&outb_priv->nonce, outb_sa->common_sa.iv.gcm.nonce, 4);
+-		if (outb_sa->common_sa.ctl.enc_type == ROC_IE_ON_SA_ENC_AES_GCM)
++		if (outb_sa->common_sa.ctl.enc_type == ROC_IE_SA_ENC_AES_GCM)
+ 			outb_priv->copy_salt = 1;
+ 
+ 		/* Save rlen info */
+-- 
+2.25.1
+

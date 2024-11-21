@@ -1,0 +1,59 @@
+From 33e543f86045a6e130b088f35a33008fd1f170d8 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 29 Nov 2022 15:25:04 +0530
+Subject: [PATCH 003/955] cnxk-tests: fix build
+
+Fix extbuf, l2fwd_tmc and multi_pool_pkt_tx test apps build.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I129ab03dcf7ec8c0a14d7915b81e4a0c3dc71d1c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91471
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/extbuf/extbuf.c                     | 1 -
+ marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c            | 3 ---
+ .../test/cnxk-tests/multi_pool_pkt_tx/multi_pool_pkt_tx.c      | 1 -
+ 3 files changed, 5 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/extbuf/extbuf.c b/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
+index 3621e8081c58a..dfd306e2b8429 100644
+--- a/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
++++ b/marvell-ci/test/cnxk-tests/extbuf/extbuf.c
+@@ -217,7 +217,6 @@ initialize(struct port_info *pinfo, struct app_arg *arg)
+ 	struct rte_eth_conf port_conf = {
+ 		.rxmode = {
+ 			.mq_mode = RTE_ETH_MQ_RX_NONE,
+-			.split_hdr_size = 0,
+ 		},
+ 		.txmode = {
+ 			.mq_mode = RTE_ETH_MQ_TX_NONE,
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c b/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c
+index 41a0d3f22f682..162f880224a43 100644
+--- a/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c
++++ b/marvell-ci/test/cnxk-tests/l2fwd_tmc/l2fwd_common.c
+@@ -10,9 +10,6 @@ l2fwd_event_init_ports(struct l2fwd_resources *rsrc)
+ 	uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
+ 	uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
+ 	struct rte_eth_conf port_conf = {
+-		.rxmode = {
+-			.split_hdr_size = 0,
+-		},
+ 		.txmode = {
+ 			.mq_mode = RTE_ETH_MQ_TX_NONE,
+ 		},
+diff --git a/marvell-ci/test/cnxk-tests/multi_pool_pkt_tx/multi_pool_pkt_tx.c b/marvell-ci/test/cnxk-tests/multi_pool_pkt_tx/multi_pool_pkt_tx.c
+index b6975748a9b90..b635174664400 100644
+--- a/marvell-ci/test/cnxk-tests/multi_pool_pkt_tx/multi_pool_pkt_tx.c
++++ b/marvell-ci/test/cnxk-tests/multi_pool_pkt_tx/multi_pool_pkt_tx.c
+@@ -203,7 +203,6 @@ initialize(struct port_info *pinfo, struct app_arg *arg)
+ 	struct rte_eth_conf port_conf = {
+ 		.rxmode = {
+ 			.mq_mode = RTE_ETH_MQ_RX_NONE,
+-			.split_hdr_size = 0,
+ 		},
+ 		.txmode = {
+ 			.mq_mode = RTE_ETH_MQ_TX_NONE,
+-- 
+2.25.1
+

@@ -1,0 +1,85 @@
+From bc53b18bb7b16b5575914e48abd24d2ba2c29684 Mon Sep 17 00:00:00 2001
+From: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Date: Thu, 2 Nov 2023 06:49:21 -0700
+Subject: [PATCH 022/513] ml/cnxk: add support for additional integer types
+
+Added support quantization and dequantization of 32-bit
+and 64-bit integer types.
+
+Signed-off-by: Srikanth Yalavarthi <syalavarthi@marvell.com>
+Change-Id: I4164c36560295428ece101759dea53ba3e44df3a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117170
+Tested-by: Shivah Shankar Shankar Narayan Rao <sshankarnara@marvell.com>
+Reviewed-by: Shivah Shankar Shankar Narayan Rao <sshankarnara@marvell.com>
+---
+ drivers/ml/cnxk/cnxk_ml_io.c     | 24 ++++++++++++++++++++++++
+ drivers/ml/cnxk/mvtvm_ml_model.c |  4 ++++
+ 2 files changed, 28 insertions(+)
+
+diff --git a/drivers/ml/cnxk/cnxk_ml_io.c b/drivers/ml/cnxk/cnxk_ml_io.c
+index c78009ab0cd21..4b0adc2ae472c 100644
+--- a/drivers/ml/cnxk/cnxk_ml_io.c
++++ b/drivers/ml/cnxk/cnxk_ml_io.c
+@@ -40,6 +40,18 @@ cnxk_ml_io_quantize_single(struct cnxk_ml_io *input, uint8_t *dbuffer, uint8_t *
+ 		case RTE_ML_IO_TYPE_UINT16:
+ 			ret = rte_ml_io_float32_to_uint16(qscale, nb_elements, dbuffer, qbuffer);
+ 			break;
++		case RTE_ML_IO_TYPE_INT32:
++			ret = rte_ml_io_float32_to_int32(qscale, nb_elements, dbuffer, qbuffer);
++			break;
++		case RTE_ML_IO_TYPE_UINT32:
++			ret = rte_ml_io_float32_to_uint32(qscale, nb_elements, dbuffer, qbuffer);
++			break;
++		case RTE_ML_IO_TYPE_INT64:
++			ret = rte_ml_io_float32_to_int64(qscale, nb_elements, dbuffer, qbuffer);
++			break;
++		case RTE_ML_IO_TYPE_UINT64:
++			ret = rte_ml_io_float32_to_uint64(qscale, nb_elements, dbuffer, qbuffer);
++			break;
+ 		case RTE_ML_IO_TYPE_FP16:
+ 			ret = rte_ml_io_float32_to_float16(nb_elements, dbuffer, qbuffer);
+ 			break;
+@@ -82,6 +94,18 @@ cnxk_ml_io_dequantize_single(struct cnxk_ml_io *output, uint8_t *qbuffer, uint8_
+ 		case RTE_ML_IO_TYPE_UINT16:
+ 			ret = rte_ml_io_uint16_to_float32(dscale, nb_elements, qbuffer, dbuffer);
+ 			break;
++		case RTE_ML_IO_TYPE_INT32:
++			ret = rte_ml_io_int32_to_float32(dscale, nb_elements, qbuffer, dbuffer);
++			break;
++		case RTE_ML_IO_TYPE_UINT32:
++			ret = rte_ml_io_uint32_to_float32(dscale, nb_elements, qbuffer, dbuffer);
++			break;
++		case RTE_ML_IO_TYPE_INT64:
++			ret = rte_ml_io_int64_to_float32(dscale, nb_elements, qbuffer, dbuffer);
++			break;
++		case RTE_ML_IO_TYPE_UINT64:
++			ret = rte_ml_io_uint64_to_float32(dscale, nb_elements, qbuffer, dbuffer);
++			break;
+ 		case RTE_ML_IO_TYPE_FP16:
+ 			ret = rte_ml_io_float16_to_float32(nb_elements, qbuffer, dbuffer);
+ 			break;
+diff --git a/drivers/ml/cnxk/mvtvm_ml_model.c b/drivers/ml/cnxk/mvtvm_ml_model.c
+index 0dbe08e988986..e3234ae44226c 100644
+--- a/drivers/ml/cnxk/mvtvm_ml_model.c
++++ b/drivers/ml/cnxk/mvtvm_ml_model.c
+@@ -150,6 +150,8 @@ mvtvm_ml_io_type_map(DLDataType dltype)
+ 			return RTE_ML_IO_TYPE_INT16;
+ 		else if (dltype.bits == 32)
+ 			return RTE_ML_IO_TYPE_INT32;
++		else if (dltype.bits == 64)
++			return RTE_ML_IO_TYPE_INT64;
+ 		break;
+ 	case kDLUInt:
+ 		if (dltype.bits == 8)
+@@ -158,6 +160,8 @@ mvtvm_ml_io_type_map(DLDataType dltype)
+ 			return RTE_ML_IO_TYPE_UINT16;
+ 		else if (dltype.bits == 32)
+ 			return RTE_ML_IO_TYPE_UINT32;
++		else if (dltype.bits == 64)
++			return RTE_ML_IO_TYPE_UINT64;
+ 		break;
+ 	case kDLFloat:
+ 		if (dltype.bits == 8)
+-- 
+2.25.1
+

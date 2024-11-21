@@ -1,0 +1,114 @@
+From 79cf1e4b836a0357b6fdb98dc0539beef39d1022 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Fri, 23 Sep 2022 21:36:05 +0530
+Subject: [PATCH 077/955] event/cnxk: update timer arm burst parameters
+
+Increase the timer arm burst size to 16 and chunk size
+for optimum performance.
+Use fixed size chunk pool cache to avoid high alloc cycles.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ibdaf67dd60c89b9c16dabf2e4c323ca2cf4542ad
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/87122
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 63811d211573403d9c008754fc8eb03c70ee4e13)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/87258
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92510
+---
+ drivers/event/cnxk/cnxk_tim_evdev.c  |  7 ++-----
+ drivers/event/cnxk/cnxk_tim_evdev.h  |  5 ++---
+ drivers/event/cnxk/cnxk_tim_worker.h | 12 +++++++++---
+ 3 files changed, 13 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/event/cnxk/cnxk_tim_evdev.c b/drivers/event/cnxk/cnxk_tim_evdev.c
+index 5dd79cbd47743..6ff3ca72f779c 100644
+--- a/drivers/event/cnxk/cnxk_tim_evdev.c
++++ b/drivers/event/cnxk/cnxk_tim_evdev.c
+@@ -14,12 +14,11 @@ static int
+ cnxk_tim_chnk_pool_create(struct cnxk_tim_ring *tim_ring,
+ 			  struct rte_event_timer_adapter_conf *rcfg)
+ {
+-	unsigned int cache_sz = (tim_ring->nb_chunks / 1.5);
+ 	unsigned int mp_flags = 0;
++	unsigned int cache_sz;
+ 	char pool_name[25];
+ 	int rc;
+ 
+-	cache_sz /= rte_lcore_count();
+ 	/* Create chunk pool. */
+ 	if (rcfg->flags & RTE_EVENT_TIMER_ADAPTER_F_SP_PUT) {
+ 		mp_flags = RTE_MEMPOOL_F_SP_PUT | RTE_MEMPOOL_F_SC_GET;
+@@ -30,9 +29,7 @@ cnxk_tim_chnk_pool_create(struct cnxk_tim_ring *tim_ring,
+ 	snprintf(pool_name, sizeof(pool_name), "cnxk_tim_chunk_pool%d",
+ 		 tim_ring->ring_id);
+ 
+-	if (cache_sz > CNXK_TIM_MAX_POOL_CACHE_SZ)
+-		cache_sz = CNXK_TIM_MAX_POOL_CACHE_SZ;
+-	cache_sz = cache_sz != 0 ? cache_sz : 2;
++	cache_sz = CNXK_TIM_MAX_POOL_CACHE_SZ;
+ 	tim_ring->nb_chunks += (cache_sz * rte_lcore_count());
+ 	if (!tim_ring->disable_npa) {
+ 		tim_ring->chunk_pool = rte_mempool_create_empty(
+diff --git a/drivers/event/cnxk/cnxk_tim_evdev.h b/drivers/event/cnxk/cnxk_tim_evdev.h
+index 0c192346c7528..8c69d15c80bb8 100644
+--- a/drivers/event/cnxk/cnxk_tim_evdev.h
++++ b/drivers/event/cnxk/cnxk_tim_evdev.h
+@@ -24,10 +24,9 @@
+ 
+ #define CNXK_TIM_EVDEV_NAME	    cnxk_tim_eventdev
+ #define CNXK_TIM_MAX_BUCKETS	    (0xFFFFF)
+-#define CNXK_TIM_RING_DEF_CHUNK_SZ  (256)
++#define CNXK_TIM_RING_DEF_CHUNK_SZ  (1024)
+ #define CNXK_TIM_CHUNK_ALIGNMENT    (16)
+-#define CNXK_TIM_MAX_BURST	    \
+-			(RTE_CACHE_LINE_SIZE / CNXK_TIM_CHUNK_ALIGNMENT)
++#define CNXK_TIM_MAX_BURST	    (16)
+ #define CNXK_TIM_NB_CHUNK_SLOTS(sz) (((sz) / CNXK_TIM_CHUNK_ALIGNMENT) - 1)
+ #define CNXK_TIM_MIN_CHUNK_SLOTS    (0x1)
+ #define CNXK_TIM_MAX_CHUNK_SLOTS    (0x1FFE)
+diff --git a/drivers/event/cnxk/cnxk_tim_worker.h b/drivers/event/cnxk/cnxk_tim_worker.h
+index 52faeeeed6610..f4f0a1c946a84 100644
+--- a/drivers/event/cnxk/cnxk_tim_worker.h
++++ b/drivers/event/cnxk/cnxk_tim_worker.h
+@@ -106,11 +106,17 @@ cnxk_tim_bkt_inc_nent(struct cnxk_tim_bkt *bktp)
+ }
+ 
+ static inline void
+-cnxk_tim_bkt_add_nent(struct cnxk_tim_bkt *bktp, uint32_t v)
++cnxk_tim_bkt_add_nent_relaxed(struct cnxk_tim_bkt *bktp, uint32_t v)
+ {
+ 	__atomic_add_fetch(&bktp->nb_entry, v, __ATOMIC_RELAXED);
+ }
+ 
++static inline void
++cnxk_tim_bkt_add_nent(struct cnxk_tim_bkt *bktp, uint32_t v)
++{
++	__atomic_add_fetch(&bktp->nb_entry, v, __ATOMIC_RELEASE);
++}
++
+ static inline uint64_t
+ cnxk_tim_bkt_clr_nent(struct cnxk_tim_bkt *bktp)
+ {
+@@ -530,7 +536,7 @@ cnxk_tim_add_entry_brst(struct cnxk_tim_ring *const tim_ring,
+ 			index = cnxk_tim_cpy_wrk(index, chunk_remainder, chunk,
+ 						 tim, ents, bkt);
+ 			cnxk_tim_bkt_sub_rem(bkt, chunk_remainder);
+-			cnxk_tim_bkt_add_nent(bkt, chunk_remainder);
++			cnxk_tim_bkt_add_nent_relaxed(bkt, chunk_remainder);
+ 		}
+ 
+ 		if (flags & CNXK_TIM_ENA_FB)
+@@ -561,7 +567,7 @@ cnxk_tim_add_entry_brst(struct cnxk_tim_ring *const tim_ring,
+ 		cnxk_tim_bkt_add_nent(bkt, nb_timers);
+ 	}
+ 
+-	cnxk_tim_bkt_dec_lock(bkt);
++	cnxk_tim_bkt_dec_lock_relaxed(bkt);
+ 
+ 	return nb_timers;
+ }
+-- 
+2.25.1
+

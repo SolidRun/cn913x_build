@@ -1,0 +1,164 @@
+From e478bba9a5e4696a66ecc91fb1b831e1139b0546 Mon Sep 17 00:00:00 2001
+From: Srujana Challa <schalla@marvell.com>
+Date: Mon, 19 Jun 2023 17:38:54 +0530
+Subject: [PATCH 510/955] ci: add test script for t106 mode verification
+
+Adds test script which sets T106_MODE bit (enables CPT04 ucode load) and
+runs cryptodev autotest and inline IPsec autotest with CPT04 ucode on
+CN10K B0 chip.
+
+Signed-off-by: Srujana Challa <schalla@marvell.com>
+Change-Id: Ia0fe4db74f9f52a8b63a65a0b914a6431d6d29a9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105871
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ .../cpt_t106_mode/cpt_t106_mode_test.sh       | 81 +++++++++++++++++++
+ .../test/cnxk-tests/cpt_t106_mode/meson.build | 32 ++++++++
+ marvell-ci/test/cnxk-tests/meson.build        |  1 +
+ 3 files changed, 114 insertions(+)
+ create mode 100755 marvell-ci/test/cnxk-tests/cpt_t106_mode/cpt_t106_mode_test.sh
+ create mode 100644 marvell-ci/test/cnxk-tests/cpt_t106_mode/meson.build
+
+diff --git a/marvell-ci/test/cnxk-tests/cpt_t106_mode/cpt_t106_mode_test.sh b/marvell-ci/test/cnxk-tests/cpt_t106_mode/cpt_t106_mode_test.sh
+new file mode 100755
+index 0000000000000..c7ad22d659f63
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/cpt_t106_mode/cpt_t106_mode_test.sh
+@@ -0,0 +1,81 @@
++#!/bin/bash
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++set -euo pipefail
++
++SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
++
++MEMPOOL_DEVICE=$(lspci -d :a0fb | tail -1 | awk -e '{ print $1 }')
++
++NIX_INL_DEV=${NIX_INL_DEV:-$(lspci -d :a0f0 | tail -1 | awk -e '{ print $1 }')}
++NIX_INL_DEVICE="$NIX_INL_DEV"
++
++ETH_DEV=${ETH_DEV:-$(lspci -d :a0f8 | head -1 | awk -e '{ print $1 }')}
++ETHERNET_DEVICE="$ETH_DEV"
++
++CRYPTO_DEV=${CRYPTO_DEV:-$(lspci -d :a0f3 | head -1 | awk -e '{ print $1 }')}
++CRYPTO_DEVICE="$CRYPTO_DEV"
++
++SSO_DEV=${SSO_DEV:-$(lspci -d :a0f9 | tail -1 | awk -e '{ print $1 }')}
++EVENT_DEVICE="$SSO_DEV"
++
++if [[ -f $SCRIPTPATH/../../../../app/test/dpdk-test ]]; then
++	# This is running from build directory
++	DPDK_TEST_BIN=$SCRIPTPATH/../../../../app/test/dpdk-test
++elif [[ -f $SCRIPTPATH/../../dpdk-test ]]; then
++	# This is running from install directory
++	DPDK_TEST_BIN=$SCRIPTPATH/../../dpdk-test
++else
++	DPDK_TEST_BIN=$(which dpdk-test)
++	if [[ -z $DPDK_TEST_BIN ]]; then
++		echo "dpdk-test not found !!"
++		exit 1
++	fi
++fi
++
++declare -A t106_mode_test_args
++
++! $(cat /sys/bus/pci/devices/0002:20:00.0/revision | grep -q "0x54")
++IS_CN10K_B0=$?
++
++register_t106_mode_test() {
++        t106_mode_test_args[$1]="${2-}"
++}
++
++run_t106_mode_tests() {
++	echo 0 >/sys/bus/pci/devices/0002\:20\:00.0/sriov_numvfs
++	echo "0002:20:00.0" > /sys/bus/pci/drivers/rvu_cptpf/unbind
++	echo "0002:20:00.0" > /sys/bus/pci/drivers/rvu_cptpf/bind
++	devlink dev param set pci/0002:20:00.0 name t106_mode value 1 cmode runtime
++	echo 1 >/sys/bus/pci/devices/0002\:20\:00.0/sriov_numvfs
++	dmesg | grep "OCPT-04"
++
++	echo "177d a0f3" > /sys/bus/pci/drivers/vfio-pci/new_id
++	echo "0002:20:00.1" > /sys/bus/pci/devices/0002\:20\:00.1/driver/unbind
++	echo "0002:20:00.1" > /sys/bus/pci/drivers/vfio-pci/bind
++
++	for test in ${!t106_mode_test_args[@]}; do
++		DPDK_TEST=$test $DPDK_TEST_BIN ${t106_mode_test_args[$test]}
++	done
++
++	echo "Restoring the CPT firmware to CPT05"
++	echo 0 >/sys/bus/pci/devices/0002\:20\:00.0/sriov_numvfs
++	echo "0002:20:00.0" > /sys/bus/pci/drivers/rvu_cptpf/unbind
++	echo "0002:20:00.0" > /sys/bus/pci/drivers/rvu_cptpf/bind
++	devlink dev param set pci/0002:20:00.0 name t106_mode value 0 cmode runtime
++	echo 1 >/sys/bus/pci/devices/0002\:20\:00.0/sriov_numvfs
++}
++
++#					DPDK TEST NAME		TEST ARGS
++register_t106_mode_test		inline_ipsec_autotest	"-a $ETHERNET_DEVICE -a $NIX_INL_DEVICE -a $CRYPTO_DEVICE"
++register_t106_mode_test		event_inline_ipsec_autotest	"-a $ETHERNET_DEVICE -a $NIX_INL_DEVICE -a $CRYPTO_DEVICE -a $EVENT_DEVICE"
++register_t106_mode_test		cryptodev_cn10k_autotest	"-a $CRYPTO_DEVICE,max_qps_limit=4 -a $MEMPOOL_DEVICE --log-level=7"
++register_t106_mode_test		cryptodev_cn10k_asym_autotest	"-a $CRYPTO_DEVICE,max_qps_limit=4 -a $MEMPOOL_DEVICE --log-level=7"
++
++if [[ $IS_CN10K_B0 -ne 0 ]]
++then
++	run_t106_mode_tests
++else
++	echo "Skipped the test as it is not CN10K B0 chip"
++fi
+diff --git a/marvell-ci/test/cnxk-tests/cpt_t106_mode/meson.build b/marvell-ci/test/cnxk-tests/cpt_t106_mode/meson.build
+new file mode 100644
+index 0000000000000..91bea7a3351e0
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/cpt_t106_mode/meson.build
+@@ -0,0 +1,32 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2023 Marvell.
++
++# Test script
++test_script = 'cpt_t106_mode_test.sh'
++
++# Test name
++test_name = 'cpt_t106_mode'
++
++# Test arguments
++test_args = ''
++
++# Test directory name relative to build directory.
++test_dir = meson.current_build_dir()
++
++# Copy the required scripts to build directory.
++run_command(copy_data, test_script)
++
++# Add the meson event test
++test(
++    test_name,
++    cnxk_test_script_wrapper,
++    env : ['DPDK_TEST=' + test_name, 'TEST_DIR=' + test_dir],
++    args : [test_script, test_args],
++    is_parallel : false,
++    suite : 'cnxk-tests')
++
++# Install the sample script
++install_data(
++    'cpt_t106_mode_test.sh',
++    install_mode : 'rwxr-xr-x',
++    install_dir : 'bin/cnxk/cpt_t106_mode')
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index b549796fa2d36..ed7428ecd5e8e 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -81,6 +81,7 @@ test_subdirs = [
+         'multi_mempool',
+         'ipsec_msns',
+         'hwpool',
++        'cpt_t106_mode',
+ ]
+ 
+ foreach dir:test_subdirs
+-- 
+2.25.1
+

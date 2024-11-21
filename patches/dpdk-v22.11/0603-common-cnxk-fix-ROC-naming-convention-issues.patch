@@ -1,0 +1,136 @@
+From 9df723c3700d88d7ce036b97163b09bafa559c93 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Thu, 17 Aug 2023 13:15:47 +0530
+Subject: [PATCH 603/955] common/cnxk: fix ROC naming convention issues
+
+Fix ROC naming convention issues.
+
+Fixes: 78bb2bf22fc2 ("common/cnxk: add support to get aged flows")
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Ib92dc68f6a71d20857d5b4f2b97189002155dc56
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109963
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c           |  1 -
+ drivers/common/cnxk/roc_npc.h           |  2 +-
+ drivers/common/cnxk/roc_npc_aging.c     | 14 +++++++++-----
+ drivers/common/cnxk/roc_npc_mcam_dump.c |  3 +++
+ drivers/common/cnxk/roc_npc_parse.c     |  1 +
+ 5 files changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 9df53318e4c76..c0c168db76ab4 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -1583,7 +1583,6 @@ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 		goto done;
+ 	}
+ 
+-
+ 	rc = npc_rss_group_free(npc, flow);
+ 	if (rc != 0) {
+ 		plt_err("Failed to free rss action rc = %d", rc);
+diff --git a/drivers/common/cnxk/roc_npc.h b/drivers/common/cnxk/roc_npc.h
+index 8b8a2eb343177..ab00f75de1491 100644
+--- a/drivers/common/cnxk/roc_npc.h
++++ b/drivers/common/cnxk/roc_npc.h
+@@ -207,7 +207,7 @@ struct roc_npc_action_port_id {
+ struct roc_npc_action_age {
+ 	uint32_t timeout : 24; /**< Time in seconds. */
+ 	uint32_t reserved : 8; /**< Reserved, must be zero. */
+-	/** The user flow context, NULL means the rte_flow pointer. */
++	/** The user flow context, NULL means the flow pointer. */
+ 	void *context;
+ };
+ 
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+index 94126fe9fd638..874a7cd4ff670 100644
+--- a/drivers/common/cnxk/roc_npc_aging.c
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -62,7 +62,7 @@ check_timeout_cycles(struct roc_npc *roc_npc, uint32_t mcam_id)
+ 	list = &npc->age_flow_list;
+ 	TAILQ_FOREACH(fl_iter, list, next) {
+ 		if (fl_iter->flow->mcam_id == mcam_id &&
+-		    fl_iter->flow->timeout_cycles < rte_get_timer_cycles()) {
++		    fl_iter->flow->timeout_cycles < plt_tsc_cycles()) {
+ 			/* update bitmap */
+ 			plt_bitmap_set(flow_age->aged_flows, mcam_id);
+ 			if (!aging_enabled) {
+@@ -90,8 +90,8 @@ update_timeout_cycles(struct roc_npc *roc_npc, uint32_t mcam_id)
+ 	list = &npc->age_flow_list;
+ 	TAILQ_FOREACH(fl_iter, list, next) {
+ 		if (fl_iter->flow->mcam_id == mcam_id) {
+-			fl_iter->flow->timeout_cycles = rte_get_timer_cycles() +
+-				fl_iter->flow->timeout * rte_get_timer_hz();
++			fl_iter->flow->timeout_cycles = plt_tsc_cycles() +
++				fl_iter->flow->timeout * plt_tsc_hz();
+ 			break;
+ 		}
+ 	}
+@@ -214,6 +214,11 @@ npc_age_flow_list_entry_add(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 	struct npc_age_flow_entry *new_entry;
+ 
+ 	new_entry = plt_zmalloc(sizeof(*new_entry), 0);
++	if (new_entry == NULL) {
++		plt_err("flow entry alloc failed");
++		return;
++	}
++
+ 	new_entry->flow = flow;
+ 	roc_npc->flow_age.age_flow_refcnt++;
+ 	/* List in ascending order of mcam entries */
+@@ -269,8 +274,7 @@ npc_aging_ctrl_thread_create(struct roc_npc *roc_npc,
+ 
+ 	flow->age_context = age->context == NULL ? flow : age->context;
+ 	flow->timeout = age->timeout;
+-	flow->timeout_cycles = rte_get_timer_cycles() + age->timeout *
+-			       rte_get_timer_hz();
++	flow->timeout_cycles = plt_tsc_cycles() + age->timeout * plt_tsc_hz();
+ 
+ 	if (flow_age->age_flow_refcnt == 0) {
+ 		flow_age->aged_flows_get_thread_exit = false;
+diff --git a/drivers/common/cnxk/roc_npc_mcam_dump.c b/drivers/common/cnxk/roc_npc_mcam_dump.c
+index ff831b0a71dd6..ebd2dd69c2406 100644
+--- a/drivers/common/cnxk/roc_npc_mcam_dump.c
++++ b/drivers/common/cnxk/roc_npc_mcam_dump.c
+@@ -649,6 +649,7 @@ npc_flow_hw_mcam_entry_dump(FILE *file, struct npc *npc, struct roc_npc_flow *fl
+ 	struct nix_inl_dev *inl_dev = NULL;
+ 	struct idev_cfg *idev;
+ 	struct mbox *mbox;
++	uint8_t enabled;
+ 	int rc = 0, i;
+ 
+ 	idev = idev_get_cfg();
+@@ -677,6 +678,7 @@ npc_flow_hw_mcam_entry_dump(FILE *file, struct npc *npc, struct roc_npc_flow *fl
+ 
+ 	mbox_memcpy(mcam_data, mcam_read_rsp->entry_data.kw, sizeof(mcam_data));
+ 	mbox_memcpy(mcam_mask, mcam_read_rsp->entry_data.kw_mask, sizeof(mcam_data));
++	enabled = mcam_read_rsp->enable;
+ 
+ 	fprintf(file, "HW MCAM Data :\n");
+ 
+@@ -684,6 +686,7 @@ npc_flow_hw_mcam_entry_dump(FILE *file, struct npc *npc, struct roc_npc_flow *fl
+ 		fprintf(file, "\tDW%d     :%016lX\n", i, mcam_data[i]);
+ 		fprintf(file, "\tDW%d_Mask:%016lX\n", i, mcam_mask[i]);
+ 	}
++	fprintf(file, "\tEnabled = 0x%x\n", enabled);
+ 
+ 	fprintf(file, "\n");
+ 	mbox_put(mbox);
+diff --git a/drivers/common/cnxk/roc_npc_parse.c b/drivers/common/cnxk/roc_npc_parse.c
+index 126bbd5358a2b..acaebaed21aa9 100644
+--- a/drivers/common/cnxk/roc_npc_parse.c
++++ b/drivers/common/cnxk/roc_npc_parse.c
+@@ -97,6 +97,7 @@ npc_parse_pre_l2(struct npc_parse_state *pst)
+ 		(const struct roc_npc_flow_item_raw *)pst->pattern->mask, &info,
+ 		raw_spec_buf, raw_mask_buf);
+ 
++	info.def_mask = NULL;
+ 	info.hw_mask = &hw_mask;
+ 	npc_get_hw_supp_mask(pst, &info, lid, lt);
+ 
+-- 
+2.25.1
+

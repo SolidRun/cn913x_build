@@ -1,0 +1,161 @@
+From cb7952dd630d1e378684ed14425890d2e710b354 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Tue, 17 Jan 2023 13:35:51 +0530
+Subject: [PATCH 283/955] common/cnxk: add percent drop threshold to pool
+
+Currently hard coded drop threshold(95%) is configured to aura/pool as a
+threshold for drop limit.
+
+Patch adds a input parameter to RoC API so that user passed percentage
+value can be configured.
+
+Change-Id: I988b630e0ca6a11f7f391c5ed309897ba91f8eab
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98441
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h            |  6 ++++--
+ drivers/common/cnxk/roc_nix_fc.c         | 17 ++++++++++++-----
+ drivers/common/cnxk/roc_nix_inl.c        |  2 +-
+ drivers/common/cnxk/roc_nix_priv.h       |  2 +-
+ drivers/event/cnxk/cnxk_eventdev_adptr.c |  4 ++--
+ 5 files changed, 20 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 50aef4fe85cbb..fde8fe4ecc766 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -15,6 +15,7 @@
+ #define ROC_NIX_PFC_CLASS_INVALID     UINT8_MAX
+ #define ROC_NIX_SQB_THRESH	      30U
+ #define ROC_NIX_SQB_SLACK	      12U
++#define ROC_NIX_AURA_THRESH	      95U
+ 
+ /* Reserved interface types for BPID allocation */
+ #define ROC_NIX_INTF_TYPE_CGX  0
+@@ -197,6 +198,7 @@ struct roc_nix_fc_cfg {
+ 			uint16_t cq_drop;
+ 			bool enable;
+ 			uint64_t pool;
++			uint64_t pool_drop_pct;
+ 		} rq_cfg;
+ 
+ 		struct {
+@@ -849,8 +851,8 @@ uint16_t __roc_api roc_nix_chan_count_get(struct roc_nix *roc_nix);
+ 
+ enum roc_nix_fc_mode __roc_api roc_nix_fc_mode_get(struct roc_nix *roc_nix);
+ 
+-void __roc_api roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id,
+-				     uint8_t ena, uint8_t force, uint8_t tc);
++void __roc_api roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena,
++				     uint8_t force, uint8_t tc, uint64_t drop_percent);
+ int __roc_api roc_nix_bpids_alloc(struct roc_nix *roc_nix, uint8_t type,
+ 				  uint8_t bp_cnt, uint16_t *bpids);
+ int __roc_api roc_nix_bpids_free(struct roc_nix *roc_nix, uint8_t bp_cnt,
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 3618d2920b33c..98dd9a9e665af 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -297,6 +297,7 @@ nix_fc_rq_config_set(struct roc_nix *roc_nix, struct roc_nix_fc_cfg *fc_cfg)
+ {
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+ 	struct roc_nix_fc_cfg tmp;
++	uint64_t pool_drop_pct;
+ 	struct roc_nix_rq *rq;
+ 	int sso_ena = 0, rc;
+ 
+@@ -307,13 +308,19 @@ nix_fc_rq_config_set(struct roc_nix *roc_nix, struct roc_nix_fc_cfg *fc_cfg)
+ 		return -EINVAL;
+ 
+ 	if (sso_ena) {
++		pool_drop_pct = fc_cfg->rq_cfg.pool_drop_pct;
++		/* Use default value for zero pct */
++		if (fc_cfg->rq_cfg.enable && !pool_drop_pct)
++			pool_drop_pct = ROC_NIX_AURA_THRESH;
++
+ 		roc_nix_fc_npa_bp_cfg(roc_nix, fc_cfg->rq_cfg.pool,
+ 				      fc_cfg->rq_cfg.enable, true,
+-				      fc_cfg->rq_cfg.tc);
++				      fc_cfg->rq_cfg.tc, fc_cfg->rq_cfg.pool_drop_pct);
+ 
+ 		if (roc_nix->local_meta_aura_ena && roc_nix->meta_aura_handle)
+ 			roc_nix_fc_npa_bp_cfg(roc_nix, roc_nix->meta_aura_handle,
+-					      fc_cfg->rq_cfg.enable, true, fc_cfg->rq_cfg.tc);
++					      fc_cfg->rq_cfg.enable, true, fc_cfg->rq_cfg.tc,
++					      fc_cfg->rq_cfg.pool_drop_pct);
+ 	}
+ 
+ 	/* Copy RQ config to CQ config as they are occupying same area */
+@@ -476,8 +483,8 @@ nix_rx_chan_multi_bpid_cfg(struct roc_nix *roc_nix, uint8_t chan, uint16_t bpid,
+ #define NIX_BPID_INVALID 0xFFFF
+ 
+ void
+-roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena,
+-		      uint8_t force, uint8_t tc)
++roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena, uint8_t force,
++		      uint8_t tc, uint64_t drop_percent)
+ {
+ 	uint32_t aura_id = roc_npa_aura_handle_to_aura(pool_id);
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
+@@ -513,7 +520,7 @@ roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id, uint8_t ena,
+ 	}
+ 
+ 	bp_intf = 1 << nix->is_nix1;
+-	bp_thresh = NIX_RQ_AURA_THRESH(rsp->aura.limit >> rsp->aura.shift);
++	bp_thresh = NIX_RQ_AURA_THRESH(drop_percent, rsp->aura.limit >> rsp->aura.shift);
+ 
+ 	/* BP is already enabled. */
+ 	if (rsp->aura.bp_ena && ena) {
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index b16756d6423e7..329ebf94050ed 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -263,7 +263,7 @@ roc_nix_inl_meta_aura_check(struct roc_nix *roc_nix, struct roc_nix_rq *rq)
+ 		 */
+ 		if (aura_setup && nix->rqs[0] && nix->rqs[0]->tc != ROC_NIX_PFC_CLASS_INVALID)
+ 			roc_nix_fc_npa_bp_cfg(roc_nix, roc_nix->meta_aura_handle,
+-					      true, true, nix->rqs[0]->tc);
++					      true, true, nix->rqs[0]->tc, ROC_NIX_AURA_THRESH);
+ 	} else {
+ 		rc = nix_inl_global_meta_buffer_validate(idev, rq);
+ 		if (rc)
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 7144d1ee10296..f900a81d8aca2 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -20,7 +20,7 @@
+ /* Apply LBP at 75% of actual BP */
+ #define NIX_CQ_LPB_THRESH_FRAC	(75 * 16 / 100)
+ #define NIX_CQ_FULL_ERRATA_SKID (1024ull * 256)
+-#define NIX_RQ_AURA_THRESH(x)	(((x)*95) / 100)
++#define NIX_RQ_AURA_THRESH(percent, val) (((val) * (percent)) / 100)
+ 
+ /* IRQ triggered when NIX_LF_CINTX_CNT[QCOUNT] crosses this value */
+ #define CQ_CQE_THRESH_DEFAULT	0x1ULL
+diff --git a/drivers/event/cnxk/cnxk_eventdev_adptr.c b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+index 5ec436382c6c6..3dc3d04a1e0e0 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_adptr.c
++++ b/drivers/event/cnxk/cnxk_eventdev_adptr.c
+@@ -263,7 +263,7 @@ cnxk_sso_rx_adapter_queue_add(
+ 		if (rxq_sp->tx_pause)
+ 			roc_nix_fc_npa_bp_cfg(&cnxk_eth_dev->nix,
+ 					      rxq_sp->qconf.mp->pool_id, true,
+-					      dev->force_ena_bp, rxq_sp->tc);
++					      dev->force_ena_bp, rxq_sp->tc, ROC_NIX_AURA_THRESH);
+ 		cnxk_sso_tstamp_cfg(eth_dev->data->port_id, cnxk_eth_dev, dev);
+ 		cnxk_eth_dev->nb_rxq_sso++;
+ 	}
+@@ -307,7 +307,7 @@ cnxk_sso_rx_adapter_queue_del(const struct rte_eventdev *event_dev,
+ 		rc = cnxk_sso_rxq_disable(cnxk_eth_dev, (uint16_t)rx_queue_id);
+ 		roc_nix_fc_npa_bp_cfg(&cnxk_eth_dev->nix,
+ 				      rxq_sp->qconf.mp->pool_id, false,
+-				      dev->force_ena_bp, 0);
++				      dev->force_ena_bp, 0, ROC_NIX_AURA_THRESH);
+ 		cnxk_eth_dev->nb_rxq_sso--;
+ 
+ 		/* Enable drop_re if it was disabled earlier */
+-- 
+2.25.1
+

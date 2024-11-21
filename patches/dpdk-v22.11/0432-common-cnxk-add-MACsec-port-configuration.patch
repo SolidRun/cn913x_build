@@ -1,0 +1,535 @@
+From 3cbde070ebd8313d6ea978d6284120a35ad043fc Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 19 May 2023 01:04:52 +0530
+Subject: [PATCH 432/955] common/cnxk: add MACsec port configuration
+
+Added ROC APIs for MACsec port configurations
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Iac62117b2cac851c42ac5976224f4d783a392da0
+---
+ drivers/common/cnxk/roc_mbox.h  |  40 ++++
+ drivers/common/cnxk/roc_mcs.c   | 345 ++++++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_mcs.h   |  48 +++++
+ drivers/common/cnxk/version.map |   4 +
+ 4 files changed, 437 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index a31832794540f..770ba6a514101 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -319,6 +319,9 @@ struct mbox_msghdr {
+ 	M(MCS_INTR_CFG, 0xa012, mcs_intr_cfg, mcs_intr_cfg, msg_rsp)                               \
+ 	M(MCS_SET_LMAC_MODE, 0xa013, mcs_set_lmac_mode, mcs_set_lmac_mode, msg_rsp)                \
+ 	M(MCS_SET_PN_THRESHOLD, 0xa014, mcs_set_pn_threshold, mcs_set_pn_threshold, msg_rsp)       \
++	M(MCS_PORT_RESET, 0xa018, mcs_port_reset, mcs_port_reset_req, msg_rsp)                     \
++	M(MCS_PORT_CFG_SET, 0xa019, mcs_port_cfg_set, mcs_port_cfg_set_req, msg_rsp)               \
++	M(MCS_PORT_CFG_GET, 0xa020, mcs_port_cfg_get, mcs_port_cfg_get_req, mcs_port_cfg_get_rsp)  \
+ 
+ /* Messages initiated by AF (range 0xC00 - 0xDFF) */
+ #define MBOX_UP_CGX_MESSAGES                                                   \
+@@ -919,6 +922,43 @@ struct mcs_set_pn_threshold {
+ 	uint64_t __io rsvd;
+ };
+ 
++struct mcs_port_cfg_set_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io cstm_tag_rel_mode_sel;
++	uint8_t __io custom_hdr_enb;
++	uint8_t __io fifo_skid;
++	uint8_t __io lmac_mode;
++	uint8_t __io lmac_id;
++	uint8_t __io mcs_id;
++	uint64_t __io rsvd;
++};
++
++struct mcs_port_cfg_get_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io lmac_id;
++	uint8_t __io mcs_id;
++	uint64_t __io rsvd;
++};
++
++struct mcs_port_cfg_get_rsp {
++	struct mbox_msghdr hdr;
++	uint8_t __io cstm_tag_rel_mode_sel;
++	uint8_t __io custom_hdr_enb;
++	uint8_t __io fifo_skid;
++	uint8_t __io lmac_mode;
++	uint8_t __io lmac_id;
++	uint8_t __io mcs_id;
++	uint64_t __io rsvd;
++};
++
++struct mcs_port_reset_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io reset;
++	uint8_t __io mcs_id;
++	uint8_t __io lmac_id;
++	uint64_t __io rsvd;
++};
++
+ struct mcs_stats_req {
+ 	struct mbox_msghdr hdr;
+ 	uint8_t __io id;
+diff --git a/drivers/common/cnxk/roc_mcs.c b/drivers/common/cnxk/roc_mcs.c
+index c2f0a46f233c2..32cb8d106d3bf 100644
+--- a/drivers/common/cnxk/roc_mcs.c
++++ b/drivers/common/cnxk/roc_mcs.c
+@@ -80,6 +80,25 @@ roc_mcs_active_lmac_set(struct roc_mcs *mcs, struct roc_mcs_set_active_lmac *lma
+ 	return mbox_process_msg(mcs->mbox, (void *)&rsp);
+ }
+ 
++static int
++mcs_port_reset_set(struct roc_mcs *mcs, struct roc_mcs_port_reset_req *port, uint8_t reset)
++{
++	struct mcs_port_reset_req *req;
++	struct msg_rsp *rsp;
++
++	MCS_SUPPORT_CHECK;
++
++	req = mbox_alloc_msg_mcs_port_reset(mcs->mbox);
++	if (req == NULL)
++		return -ENOMEM;
++
++	req->reset = reset;
++	req->lmac_id = port->port_id;
++	req->mcs_id = mcs->idx;
++
++	return mbox_process_msg(mcs->mbox, (void *)&rsp);
++}
++
+ int
+ roc_mcs_lmac_mode_set(struct roc_mcs *mcs, struct roc_mcs_set_lmac_mode *port)
+ {
+@@ -125,6 +144,64 @@ roc_mcs_pn_threshold_set(struct roc_mcs *mcs, struct roc_mcs_set_pn_threshold *p
+ 	return mbox_process_msg(mcs->mbox, (void *)&rsp);
+ }
+ 
++int
++roc_mcs_port_cfg_set(struct roc_mcs *mcs, struct roc_mcs_port_cfg_set_req *req)
++{
++	struct mcs_port_cfg_set_req *set_req;
++	struct msg_rsp *rsp;
++
++	MCS_SUPPORT_CHECK;
++
++	if (req == NULL)
++		return -EINVAL;
++
++	set_req = mbox_alloc_msg_mcs_port_cfg_set(mcs->mbox);
++	if (set_req == NULL)
++		return -ENOMEM;
++
++	set_req->cstm_tag_rel_mode_sel = req->cstm_tag_rel_mode_sel;
++	set_req->custom_hdr_enb = req->custom_hdr_enb;
++	set_req->fifo_skid = req->fifo_skid;
++	set_req->lmac_mode = req->port_mode;
++	set_req->lmac_id = req->port_id;
++	set_req->mcs_id = mcs->idx;
++
++	return mbox_process_msg(mcs->mbox, (void *)&rsp);
++}
++
++int
++roc_mcs_port_cfg_get(struct roc_mcs *mcs, struct roc_mcs_port_cfg_get_req *req,
++		     struct roc_mcs_port_cfg_get_rsp *rsp)
++{
++	struct mcs_port_cfg_get_req *get_req;
++	struct mcs_port_cfg_get_rsp *get_rsp;
++	int rc;
++
++	MCS_SUPPORT_CHECK;
++
++	if (req == NULL)
++		return -EINVAL;
++
++	get_req = mbox_alloc_msg_mcs_port_cfg_get(mcs->mbox);
++	if (get_req == NULL)
++		return -ENOMEM;
++
++	get_req->lmac_id = req->port_id;
++	get_req->mcs_id = mcs->idx;
++
++	rc = mbox_process_msg(mcs->mbox, (void *)&get_rsp);
++	if (rc)
++		return rc;
++
++	rsp->cstm_tag_rel_mode_sel = get_rsp->cstm_tag_rel_mode_sel;
++	rsp->custom_hdr_enb = get_rsp->custom_hdr_enb;
++	rsp->fifo_skid = get_rsp->fifo_skid;
++	rsp->port_mode = get_rsp->lmac_mode;
++	rsp->port_id = get_rsp->lmac_id;
++
++	return 0;
++}
++
+ int
+ roc_mcs_intr_configure(struct roc_mcs *mcs, struct roc_mcs_intr_cfg *config)
+ {
+@@ -146,6 +223,274 @@ roc_mcs_intr_configure(struct roc_mcs *mcs, struct roc_mcs_intr_cfg *config)
+ 	return mbox_process_msg(mcs->mbox, (void *)&rsp);
+ }
+ 
++int
++roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata, uint8_t port_id)
++{
++	struct mcs_priv *priv = roc_mcs_to_mcs_priv(mcs);
++	struct roc_mcs_pn_table_write_req pn_table = {0};
++	struct roc_mcs_rx_sc_sa_map rx_map = {0};
++	struct roc_mcs_tx_sc_sa_map tx_map = {0};
++	struct roc_mcs_port_reset_req port = {0};
++	struct roc_mcs_clear_stats stats = {0};
++	int tx_cnt = 0, rx_cnt = 0, rc = 0;
++	uint64_t set;
++
++	port.port_id = port_id;
++	rc = mcs_port_reset_set(mcs, &port, 1);
++
++	/* Reset TX/RX PN tables */
++	for (int i = 0; i < (priv->sa_entries << 1); i++) {
++		set = plt_bitmap_get(priv->port_rsrc[port_id].sa_bmap, i);
++		if (set) {
++			pn_table.pn_id = i;
++			pn_table.next_pn = 1;
++			pn_table.dir = MCS_RX;
++			if (i >= priv->sa_entries) {
++				pn_table.dir = MCS_TX;
++				pn_table.pn_id -= priv->sa_entries;
++			}
++			rc = roc_mcs_pn_table_write(mcs, &pn_table);
++			if (rc)
++				return rc;
++
++			if (i >= priv->sa_entries)
++				tx_cnt++;
++			else
++				rx_cnt++;
++		}
++	}
++
++	if (tx_cnt || rx_cnt) {
++		mdata->tx_sa_array = plt_zmalloc(tx_cnt * sizeof(uint16_t), 0);
++		if (tx_cnt && (mdata->tx_sa_array == NULL)) {
++			rc = -ENOMEM;
++			goto exit;
++		}
++		mdata->rx_sa_array = plt_zmalloc(rx_cnt * sizeof(uint16_t), 0);
++		if (rx_cnt && (mdata->rx_sa_array == NULL)) {
++			rc = -ENOMEM;
++			goto exit;
++		}
++
++		mdata->num_tx_sa = tx_cnt;
++		mdata->num_rx_sa = rx_cnt;
++		for (int i = 0; i < (priv->sa_entries << 1); i++) {
++			set = plt_bitmap_get(priv->port_rsrc[port_id].sa_bmap, i);
++			if (set) {
++				if (i >= priv->sa_entries)
++					mdata->tx_sa_array[--tx_cnt] = i - priv->sa_entries;
++				else
++					mdata->rx_sa_array[--rx_cnt] = i;
++			}
++		}
++	}
++	tx_cnt = 0;
++	rx_cnt = 0;
++
++	/* Reset Tx active SA to index:0 */
++	for (int i = priv->sc_entries; i < (priv->sc_entries << 1); i++) {
++		set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
++		if (set) {
++			uint16_t sc_id = i - priv->sc_entries;
++
++			tx_map.sa_index0 = priv->port_rsrc[port_id].sc_conf[sc_id].tx.sa_idx0;
++			tx_map.sa_index1 = priv->port_rsrc[port_id].sc_conf[sc_id].tx.sa_idx1;
++			tx_map.rekey_ena = priv->port_rsrc[port_id].sc_conf[sc_id].tx.rekey_enb;
++			tx_map.sectag_sci = priv->port_rsrc[port_id].sc_conf[sc_id].tx.sci;
++			tx_map.sa_index0_vld = 1;
++			tx_map.sa_index1_vld = 0;
++			tx_map.tx_sa_active = 0;
++			tx_map.sc_id = sc_id;
++			rc = roc_mcs_tx_sc_sa_map_write(mcs, &tx_map);
++			if (rc)
++				return rc;
++
++			tx_cnt++;
++		}
++	}
++
++	if (tx_cnt) {
++		mdata->tx_sc_array = plt_zmalloc(tx_cnt * sizeof(uint16_t), 0);
++		if (tx_cnt && (mdata->tx_sc_array == NULL)) {
++			rc = -ENOMEM;
++			goto exit;
++		}
++
++		mdata->num_tx_sc = tx_cnt;
++		for (int i = priv->sc_entries; i < (priv->sc_entries << 1); i++) {
++			set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
++			if (set)
++				mdata->tx_sc_array[--tx_cnt] = i - priv->sc_entries;
++		}
++	}
++
++	/* Clear SA_IN_USE for active ANs in RX CPM */
++	for (int i = 0; i < priv->sc_entries; i++) {
++		set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
++		if (set) {
++			rx_map.sa_index = priv->port_rsrc[port_id].sc_conf[i].rx.sa_idx;
++			rx_map.an = priv->port_rsrc[port_id].sc_conf[i].rx.an;
++			rx_map.sa_in_use = 0;
++			rx_map.sc_id = i;
++			rc = roc_mcs_rx_sc_sa_map_write(mcs, &rx_map);
++			if (rc)
++				return rc;
++
++			rx_cnt++;
++		}
++	}
++
++	/* Reset flow(flow/secy/sc/sa) stats mapped to this PORT */
++	for (int i = 0; i < (priv->tcam_entries << 1); i++) {
++		set = plt_bitmap_get(priv->port_rsrc[port_id].tcam_bmap, i);
++		if (set) {
++			stats.type = MCS_FLOWID_STATS;
++			stats.id = i;
++			stats.dir = MCS_RX;
++			if (i >= priv->sa_entries) {
++				stats.dir = MCS_TX;
++				stats.id -= priv->tcam_entries;
++			}
++			rc = roc_mcs_stats_clear(mcs, &stats);
++			if (rc)
++				return rc;
++		}
++	}
++	for (int i = 0; i < (priv->secy_entries << 1); i++) {
++		set = plt_bitmap_get(priv->port_rsrc[port_id].secy_bmap, i);
++		if (set) {
++			stats.type = MCS_SECY_STATS;
++			stats.id = i;
++			stats.dir = MCS_RX;
++			if (i >= priv->sa_entries) {
++				stats.dir = MCS_TX;
++				stats.id -= priv->secy_entries;
++			}
++			rc = roc_mcs_stats_clear(mcs, &stats);
++			if (rc)
++				return rc;
++		}
++	}
++	for (int i = 0; i < (priv->sc_entries << 1); i++) {
++		set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
++		if (set) {
++			stats.type = MCS_SC_STATS;
++			stats.id = i;
++			stats.dir = MCS_RX;
++			if (i >= priv->sa_entries) {
++				stats.dir = MCS_TX;
++				stats.id -= priv->sc_entries;
++			}
++			rc = roc_mcs_stats_clear(mcs, &stats);
++			if (rc)
++				return rc;
++		}
++	}
++	if (roc_model_is_cn10kb_a0()) {
++		for (int i = 0; i < (priv->sa_entries << 1); i++) {
++			set = plt_bitmap_get(priv->port_rsrc[port_id].sa_bmap, i);
++			if (set) {
++				stats.type = MCS_SA_STATS;
++				stats.id = i;
++				stats.dir = MCS_RX;
++				if (i >= priv->sa_entries) {
++					stats.dir = MCS_TX;
++					stats.id -= priv->sa_entries;
++				}
++				rc = roc_mcs_stats_clear(mcs, &stats);
++				if (rc)
++					return rc;
++			}
++		}
++	}
++	{
++		stats.type = MCS_PORT_STATS;
++		stats.id = port_id;
++		rc = roc_mcs_stats_clear(mcs, &stats);
++		if (rc)
++			return rc;
++	}
++
++	if (rx_cnt) {
++		mdata->rx_sc_array = plt_zmalloc(rx_cnt * sizeof(uint16_t), 0);
++		if (mdata->rx_sc_array == NULL) {
++			rc = -ENOMEM;
++			goto exit;
++		}
++		mdata->sc_an_array = plt_zmalloc(rx_cnt * sizeof(uint8_t), 0);
++		if (mdata->sc_an_array == NULL) {
++			rc = -ENOMEM;
++			goto exit;
++		}
++
++		mdata->num_rx_sc = rx_cnt;
++	}
++
++	/* Reactivate in-use ANs for active SCs in RX CPM */
++	for (int i = 0; i < priv->sc_entries; i++) {
++		set = plt_bitmap_get(priv->port_rsrc[port_id].sc_bmap, i);
++		if (set) {
++			rx_map.sa_index = priv->port_rsrc[port_id].sc_conf[i].rx.sa_idx;
++			rx_map.an = priv->port_rsrc[port_id].sc_conf[i].rx.an;
++			rx_map.sa_in_use = 1;
++			rx_map.sc_id = i;
++			rc = roc_mcs_rx_sc_sa_map_write(mcs, &rx_map);
++			if (rc)
++				return rc;
++
++			mdata->rx_sc_array[--rx_cnt] = i;
++			mdata->sc_an_array[rx_cnt] = priv->port_rsrc[port_id].sc_conf[i].rx.an;
++		}
++	}
++
++	port.port_id = port_id;
++	rc = mcs_port_reset_set(mcs, &port, 0);
++
++	return rc;
++exit:
++	if (mdata->num_tx_sa)
++		plt_free(mdata->tx_sa_array);
++	if (mdata->num_rx_sa)
++		plt_free(mdata->rx_sa_array);
++	if (mdata->num_tx_sc)
++		plt_free(mdata->tx_sc_array);
++	if (mdata->num_rx_sc) {
++		plt_free(mdata->rx_sc_array);
++		plt_free(mdata->sc_an_array);
++	}
++	return rc;
++}
++
++int
++roc_mcs_port_reset(struct roc_mcs *mcs, struct roc_mcs_port_reset_req *port)
++{
++	struct roc_mcs_event_desc desc = {0};
++	int rc;
++
++	/* Initiate port reset and software recovery */
++	rc = roc_mcs_port_recovery(mcs, &desc.metadata, port->port_id);
++	if (rc)
++		goto exit;
++
++	desc.type = ROC_MCS_EVENT_PORT_RESET_RECOVERY;
++	/* Notify the entity details to the application which are recovered */
++	mcs_event_cb_process(mcs, &desc);
++
++exit:
++	if (desc.metadata.num_tx_sa)
++		plt_free(desc.metadata.tx_sa_array);
++	if (desc.metadata.num_rx_sa)
++		plt_free(desc.metadata.rx_sa_array);
++	if (desc.metadata.num_tx_sc)
++		plt_free(desc.metadata.tx_sc_array);
++	if (desc.metadata.num_rx_sc) {
++		plt_free(desc.metadata.rx_sc_array);
++		plt_free(desc.metadata.sc_an_array);
++	}
++
++	return rc;
++}
++
+ int
+ roc_mcs_event_cb_register(struct roc_mcs *mcs, enum roc_mcs_event_type event,
+ 			  roc_mcs_dev_cb_fn cb_fn, void *cb_arg, void *userdata)
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+index d53aeb6b1ea29..77f2cee68134f 100644
+--- a/drivers/common/cnxk/roc_mcs.h
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -163,6 +163,43 @@ struct roc_mcs_set_pn_threshold {
+ 	uint64_t rsvd;
+ };
+ 
++struct roc_mcs_port_cfg_set_req {
++	/* Index of custom tag (= cstm_indx[x] in roc_mcs_custom_tag_cfg_get_rsp struct) to use
++	 * when TX SECY_PLCY_MEMX[SECTAG_INSERT_MODE] = 0 (relative offset mode)
++	 */
++	uint8_t cstm_tag_rel_mode_sel;
++	/* In ingress path, custom_hdr_enb = 1 when the port is expected to receive pkts
++	 * that have 8B custom header before DMAC
++	 */
++	uint8_t custom_hdr_enb;
++	/* Valid fifo skid values are 14,28,56 for 25G,50G,100G respectively
++	 * FIFOs need to be configured based on the port_mode, valid only for 105N
++	 */
++	uint8_t fifo_skid;
++	uint8_t port_mode; /* 2'b00 - 25G or less, 2'b01 - 50G, 2'b10 - 100G */
++	uint8_t port_id;
++	uint64_t rsvd;
++};
++
++struct roc_mcs_port_cfg_get_req {
++	uint8_t port_id;
++	uint64_t rsvd;
++};
++
++struct roc_mcs_port_cfg_get_rsp {
++	uint8_t cstm_tag_rel_mode_sel;
++	uint8_t custom_hdr_enb;
++	uint8_t fifo_skid;
++	uint8_t port_mode;
++	uint8_t port_id;
++	uint64_t rsvd;
++};
++
++struct roc_mcs_port_reset_req {
++	uint8_t port_id;
++	uint64_t rsvd;
++};
++
+ struct roc_mcs_stats_req {
+ 	uint8_t id;
+ 	uint8_t dir;
+@@ -365,6 +402,13 @@ __roc_api int roc_mcs_active_lmac_set(struct roc_mcs *mcs, struct roc_mcs_set_ac
+ __roc_api int roc_mcs_lmac_mode_set(struct roc_mcs *mcs, struct roc_mcs_set_lmac_mode *port);
+ /* (X)PN threshold set */
+ __roc_api int roc_mcs_pn_threshold_set(struct roc_mcs *mcs, struct roc_mcs_set_pn_threshold *pn);
++/* Reset port */
++__roc_api int roc_mcs_port_reset(struct roc_mcs *mcs, struct roc_mcs_port_reset_req *port);
++/* Get port config */
++__roc_api int roc_mcs_port_cfg_set(struct roc_mcs *mcs, struct roc_mcs_port_cfg_set_req *req);
++/* Set port config */
++__roc_api int roc_mcs_port_cfg_get(struct roc_mcs *mcs, struct roc_mcs_port_cfg_get_req *req,
++				   struct roc_mcs_port_cfg_get_rsp *rsp);
+ 
+ /* Resource allocation and free */
+ __roc_api int roc_mcs_alloc_rsrc(struct roc_mcs *mcs, struct roc_mcs_alloc_rsrc_req *req,
+@@ -434,4 +478,8 @@ __roc_api int roc_mcs_event_cb_unregister(struct roc_mcs *mcs, enum roc_mcs_even
+ /* Configure interrupts */
+ __roc_api int roc_mcs_intr_configure(struct roc_mcs *mcs, struct roc_mcs_intr_cfg *config);
+ 
++/* Port recovery from fatal errors */
++__roc_api int roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata,
++				    uint8_t port_id);
++
+ #endif /* _ROC_MCS_H_ */
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index ee1948b732148..1e7b66c10a667 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -123,6 +123,10 @@ INTERNAL {
+ 	roc_mcs_pn_table_write;
+ 	roc_mcs_pn_table_read;
+ 	roc_mcs_pn_threshold_set;
++	roc_mcs_port_cfg_get;
++	roc_mcs_port_cfg_set;
++	roc_mcs_port_recovery;
++	roc_mcs_port_reset;
+ 	roc_mcs_port_stats_get;
+ 	roc_mcs_rx_sc_cam_enable;
+ 	roc_mcs_rx_sc_cam_read;
+-- 
+2.25.1
+

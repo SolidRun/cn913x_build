@@ -1,0 +1,84 @@
+From f71e861f07300e8b750d57ee32a8105011d2c0e8 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Tue, 11 Jul 2023 03:00:07 -0700
+Subject: [PATCH 551/955] crypto/cnxk: fix control flow issues
+
+This patch fixes below coverity issues.
+
+Coverity issue: 393678
+Fixes: 21c1c303148b ("crypto/cnxk: support SM4")
+
+Coverity issue: 393679
+Fixes: 21c1c303148b ("crypto/cnxk: support SM4")
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Id4b9f0a7cf3dc06f17ad6d0f5da7a20667f3bd29
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107260
+Reviewed-by: Tejasree Kondoj <ktejasree@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_se.h | 22 +++++-----------------
+ 1 file changed, 5 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index 8a6ca636c9ad1..13c8bfbd382f8 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -1087,7 +1087,6 @@ cpt_sm_prep(uint32_t flags, uint64_t d_offs, uint64_t d_lens, struct roc_se_fc_p
+ 		iv_len = 0;
+ 
+ 	encr_offset += iv_len;
+-	enc_dlen = encr_data_len + encr_offset;
+ 	enc_dlen = RTE_ALIGN_CEIL(encr_data_len, 8) + encr_offset;
+ 
+ 	inputlen = enc_dlen;
+@@ -2560,11 +2559,6 @@ fill_sm_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	char src[SRC_IOV_SIZE];
+ 	char dst[SRC_IOV_SIZE];
+ 	void *mdata = NULL;
+-#ifdef CPT_ALWAYS_USE_SG_MODE
+-	uint8_t inplace = 0;
+-#else
+-	uint8_t inplace = 1;
+-#endif
+ 	uint32_t flags = 0;
+ 	int ret;
+ 
+@@ -2594,11 +2588,9 @@ fill_sm_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 
+ 	fc_params.ctx = &sess->roc_se_ctx;
+ 
+-	if (likely(!m_dst && inplace)) {
++	if (m_dst == NULL) {
+ 		fc_params.dst_iov = fc_params.src_iov = (void *)src;
+-
+ 		prepare_iov_from_pkt_inplace(m_src, &fc_params, &flags);
+-
+ 	} else {
+ 		/* Out of place processing */
+ 		fc_params.src_iov = (void *)src;
+@@ -2611,14 +2603,10 @@ fill_sm_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 			goto err_exit;
+ 		}
+ 
+-		if (unlikely(m_dst != NULL)) {
+-			if (prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0)) {
+-				plt_dp_err("Prepare dst iov failed for m_dst %p", m_dst);
+-				ret = -EINVAL;
+-				goto err_exit;
+-			}
+-		} else {
+-			fc_params.dst_iov = (void *)src;
++		if (prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0)) {
++			plt_dp_err("Prepare dst iov failed for m_dst %p", m_dst);
++			ret = -EINVAL;
++			goto err_exit;
+ 		}
+ 	}
+ 
+-- 
+2.25.1
+

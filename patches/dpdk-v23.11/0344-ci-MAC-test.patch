@@ -1,0 +1,76 @@
+From d5cebf83e3363cb03626ee52984a8b1975d1ec6a Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 29 Apr 2024 11:19:36 +0530
+Subject: [PATCH 344/513] ci: MAC test
+
+MAC test was successful while invoking manually, failed while CI running.
+testpmd prompt command was waiting in busy loop to get only testpmd
+prompt, in CI link notification was coming while waiting for prompt,
+due to this test was failed.
+
+Change-Id: I8b36c253bb8195d6047ca66302fd80b7edb55040
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/126278
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/common/testpmd/common.env | 8 ++++++++
+ marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh | 8 +++++---
+ 2 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/common/testpmd/common.env b/marvell-ci/test/cnxk-tests/common/testpmd/common.env
+index bd1159b5b0822..107d34ed826ec 100644
+--- a/marvell-ci/test/cnxk-tests/common/testpmd/common.env
++++ b/marvell-ci/test/cnxk-tests/common/testpmd/common.env
+@@ -48,12 +48,20 @@ function testpmd_prompt()
+ 		cmd="tail -c +$skip_bytes $out"
+ 	fi
+ 
++	start_ts=`date +%s`
++	start_ts=$((start_ts + 60))
+ 	while ! ($cmd | grep -q "^testpmd> $"); do
+ 		if [ "$refresh" == "yes" ]
+ 		then
+ 			sleep 0.01
+ 			echo "" >>$in
+ 		fi
++		#Link change may break this logic, timeout loop to continue again
++		ts=`date +%s`
++		if (( $ts > $start_ts ))
++		then
++			break;
++		fi
+ 		continue;
+ 	done
+ }
+diff --git a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+index a77b36cf63d0d..a657d96b05a6f 100755
+--- a/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
++++ b/marvell-ci/test/cnxk-tests/mac_test/cnxk_mac_test.sh
+@@ -146,8 +146,9 @@ function macfltr_pkt_test_verify()
+ 		ts=`date +%s`
+ 		if (( $ts > $start_ts ))
+ 		then
+-			echo "Timeout unable to received $EXPECTED_CNT packets"
+-			cleanup_interface
++			echo "Timeout: packets expected $1 packets rcvd $tx_count"
++			macfltr_cleanup
++			macfltr_cleanup_interface
+ 			exit 1
+ 		fi
+ 
+@@ -198,7 +199,8 @@ function check_port_status()
+ 		if (( $ts > $start_ts ))
+ 		then
+ 			echo "Timeout port is down"
+-			cleanup_interface
++			macfltr_cleanup
++			macfltr_cleanup_interface
+ 			exit 1
+ 		fi
+ 		echo "link status $link_status"
+-- 
+2.25.1
+

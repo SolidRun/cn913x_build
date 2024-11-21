@@ -1,0 +1,104 @@
+From fe39b04a3e90f20793dc44e59ae7556ab31da40f Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 26 Oct 2022 20:12:56 +0530
+Subject: [PATCH 016/955] crypto/cnxk: update resp len calculation for IPv6
+
+In IPsec lookaside path, response length for an encryption is pre
+calculated and updated in the mbuf as the packet length.
+Response length dpepends on the layer-3 header length.
+As IPsec security context does not provide any information about the IP
+version, the layer-3 header length is calculated in data path based on IP
+version and extension headers.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Ic8bd8bb185ef882a336d72d9ecbd1f157ae387f4
+---
+ drivers/common/cnxk/cnxk_security.c     |  4 +--
+ drivers/crypto/cnxk/cn9k_ipsec_la_ops.h | 36 ++++++++++++++++++++++---
+ 2 files changed, 35 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index 5034c769382ed..79427d48fe4bc 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -19,7 +19,7 @@ ipsec_hmac_opad_ipad_gen(struct rte_crypto_sym_xform *auth_xform,
+ 	uint32_t i;
+ 
+ 	/* HMAC OPAD and IPAD */
+-	for (i = 0; i < 127 && i < length; i++) {
++	for (i = 0; i < 128 && i < length; i++) {
+ 		opad[i] = opad[i] ^ key[i];
+ 		ipad[i] = ipad[i] ^ key[i];
+ 	}
+@@ -1344,7 +1344,7 @@ cnxk_on_ipsec_outb_sa_create(struct rte_security_ipsec_xform *ipsec,
+ 	} else
+ 		ctx_len += sizeof(template->ip4);
+ 
+-	ctx_len += RTE_ALIGN_CEIL(ctx_len, 8);
++	ctx_len = RTE_ALIGN_CEIL(ctx_len, 8);
+ 
+ 	if (crypto_xform->type != RTE_CRYPTO_SYM_XFORM_AEAD) {
+ 		uint8_t *hmac_opad_ipad = (uint8_t *)&out_sa->sha2;
+diff --git a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+index 724fc525ade77..f1298017cee1d 100644
+--- a/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
++++ b/drivers/crypto/cnxk/cn9k_ipsec_la_ops.h
+@@ -13,14 +13,44 @@
+ #include "cnxk_security_ar.h"
+ 
+ static __rte_always_inline int32_t
+-ipsec_po_out_rlen_get(struct cn9k_sec_session *sess, uint32_t plen)
++ipsec_po_out_rlen_get(struct cn9k_sec_session *sess, uint32_t plen, struct rte_mbuf *m_src)
+ {
+ 	uint32_t enc_payload_len;
+ 	int adj_len = 0;
+ 
+-	if (sess->sa.out_sa.common_sa.ctl.ipsec_mode == ROC_IE_SA_MODE_TRANSPORT)
++	if (sess->sa.out_sa.common_sa.ctl.ipsec_mode == ROC_IE_SA_MODE_TRANSPORT) {
+ 		adj_len = ROC_CPT_TUNNEL_IPV4_HDR_LEN;
+ 
++		uintptr_t data = (uintptr_t)m_src->buf_addr + m_src->data_off;
++		struct rte_ipv4_hdr *ip = (struct rte_ipv4_hdr *)data;
++
++		if (unlikely(((ip->version_ihl & 0xf0) >> RTE_IPV4_IHL_MULTIPLIER) != IPVERSION)) {
++			struct rte_ipv6_hdr *ip6 = (struct rte_ipv6_hdr *)ip;
++			uint8_t *nxt_hdr = (uint8_t *)ip6;
++			uint8_t dest_op_cnt = 0;
++			int nh = ip6->proto;
++
++			PLT_ASSERT(((ip->version_ihl & 0xf0) >> RTE_IPV4_IHL_MULTIPLIER) == 6);
++
++			adj_len = ROC_CPT_TUNNEL_IPV6_HDR_LEN;
++			nxt_hdr += ROC_CPT_TUNNEL_IPV6_HDR_LEN;
++			while (nh != -EINVAL) {
++				size_t ext_len = 0;
++
++				nh = rte_ipv6_get_next_ext(nxt_hdr, nh, &ext_len);
++				/* With multiple dest ops headers, the ESP hdr will be before
++				 * the 2nd dest ops and after the first dest ops header
++				 */
++				if ((nh == IPPROTO_DSTOPTS) && dest_op_cnt)
++					break;
++				else if (nh == IPPROTO_DSTOPTS)
++					dest_op_cnt++;
++				adj_len += ext_len;
++				nxt_hdr += ext_len;
++			}
++		}
++	}
++
+ 	enc_payload_len =
+ 		RTE_ALIGN_CEIL(plen + sess->rlens.roundup_len - adj_len, sess->rlens.roundup_byte);
+ 
+@@ -41,7 +71,7 @@ process_outb_sa(struct rte_crypto_op *cop, struct cn9k_sec_session *sess, struct
+ 
+ 	pkt_len = rte_pktmbuf_pkt_len(m_src);
+ 	dlen = pkt_len + hdr_len;
+-	rlen = ipsec_po_out_rlen_get(sess, pkt_len);
++	rlen = ipsec_po_out_rlen_get(sess, pkt_len, m_src);
+ 
+ 	extend_tail = rlen - dlen;
+ 	if (unlikely(extend_tail > rte_pktmbuf_tailroom(m_src))) {
+-- 
+2.25.1
+

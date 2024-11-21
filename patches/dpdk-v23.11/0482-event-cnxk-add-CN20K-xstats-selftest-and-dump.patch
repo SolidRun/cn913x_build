@@ -1,0 +1,104 @@
+From d02a62cb95e7525abbbd1cc44a6bb7cdd924aebe Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 26 Aug 2024 20:09:11 +0530
+Subject: [PATCH 482/513] event/cnxk: add CN20K xstats, selftest and dump
+
+Add selftest to verify SSO, xstats to get queue specific
+stats and add function to dump internal state of SSO.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I8a36d2823052d856ca0149589ec1826a32ed0427
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134419
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ app/test/test_eventdev.c                    |  7 +++++++
+ drivers/event/cnxk/cn20k_eventdev.c         | 12 ++++++++++++
+ drivers/event/cnxk/cnxk_eventdev_selftest.c |  8 ++++----
+ 3 files changed, 23 insertions(+), 4 deletions(-)
+
+diff --git a/app/test/test_eventdev.c b/app/test/test_eventdev.c
+index 40138a51e5c7e..6da342dec87d3 100644
+--- a/app/test/test_eventdev.c
++++ b/app/test/test_eventdev.c
+@@ -1372,6 +1372,12 @@ test_eventdev_selftest_cn10k(void)
+ 	return test_eventdev_selftest_impl("event_cn10k", "");
+ }
+ 
++static int
++test_eventdev_selftest_cn20k(void)
++{
++	return test_eventdev_selftest_impl("event_cn20k", "");
++}
++
+ #endif /* !RTE_EXEC_ENV_WINDOWS */
+ 
+ REGISTER_FAST_TEST(eventdev_common_autotest, true, true, test_eventdev_common);
+@@ -1383,5 +1389,6 @@ REGISTER_DRIVER_TEST(eventdev_selftest_dpaa2, test_eventdev_selftest_dpaa2);
+ REGISTER_DRIVER_TEST(eventdev_selftest_dlb2, test_eventdev_selftest_dlb2);
+ REGISTER_DRIVER_TEST(eventdev_selftest_cn9k, test_eventdev_selftest_cn9k);
+ REGISTER_DRIVER_TEST(eventdev_selftest_cn10k, test_eventdev_selftest_cn10k);
++REGISTER_DRIVER_TEST(eventdev_selftest_cn20k, test_eventdev_selftest_cn20k);
+ 
+ #endif /* !RTE_EXEC_ENV_WINDOWS */
+diff --git a/drivers/event/cnxk/cn20k_eventdev.c b/drivers/event/cnxk/cn20k_eventdev.c
+index 1bfad3c29369e..e4fecc3e322ae 100644
+--- a/drivers/event/cnxk/cn20k_eventdev.c
++++ b/drivers/event/cnxk/cn20k_eventdev.c
+@@ -406,6 +406,12 @@ cn20k_sso_close(struct rte_eventdev *event_dev)
+ 	return cnxk_sso_close(event_dev, cn20k_sso_hws_unlink);
+ }
+ 
++static int
++cn20k_sso_selftest(void)
++{
++	return cnxk_sso_selftest(RTE_STR(event_cn20k));
++}
++
+ static struct eventdev_ops cn20k_sso_dev_ops = {
+ 	.dev_infos_get = cn20k_sso_info_get,
+ 	.dev_configure = cn20k_sso_dev_configure,
+@@ -425,9 +431,15 @@ static struct eventdev_ops cn20k_sso_dev_ops = {
+ 	.port_unlink_profile = cn20k_sso_port_unlink_profile,
+ 	.timeout_ticks = cnxk_sso_timeout_ticks,
+ 
++	.xstats_get = cnxk_sso_xstats_get,
++	.xstats_reset = cnxk_sso_xstats_reset,
++	.xstats_get_names = cnxk_sso_xstats_get_names,
++
++	.dump = cnxk_sso_dump,
+ 	.dev_start = cn20k_sso_start,
+ 	.dev_stop = cn20k_sso_stop,
+ 	.dev_close = cn20k_sso_close,
++	.dev_selftest = cn20k_sso_selftest,
+ };
+ 
+ static int
+diff --git a/drivers/event/cnxk/cnxk_eventdev_selftest.c b/drivers/event/cnxk/cnxk_eventdev_selftest.c
+index 7b5e3e5cf9ef9..f7995faeca47d 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_selftest.c
++++ b/drivers/event/cnxk/cnxk_eventdev_selftest.c
+@@ -1566,16 +1566,16 @@ cnxk_sso_selftest(const char *dev_name)
+ 			return rc;
+ 	}
+ 
+-	if (roc_model_runtime_is_cn10k()) {
+-		printf("Verifying CN10K workslot getwork mode none\n");
++	if (roc_model_runtime_is_cn10k() || roc_model_runtime_is_cn20k()) {
++		printf("Verifying %s workslot getwork mode none\n", dev_name);
+ 		dev->gw_mode = CNXK_GW_MODE_NONE;
+ 		if (cnxk_sso_testsuite_run(dev_name))
+ 			return rc;
+-		printf("Verifying CN10K workslot getwork mode prefetch\n");
++		printf("Verifying %s workslot getwork mode prefetch\n", dev_name);
+ 		dev->gw_mode = CNXK_GW_MODE_PREF;
+ 		if (cnxk_sso_testsuite_run(dev_name))
+ 			return rc;
+-		printf("Verifying CN10K workslot getwork mode smart prefetch\n");
++		printf("Verifying %s workslot getwork mode smart prefetch\n", dev_name);
+ 		dev->gw_mode = CNXK_GW_MODE_PREF_WFE;
+ 		if (cnxk_sso_testsuite_run(dev_name))
+ 			return rc;
+-- 
+2.25.1
+

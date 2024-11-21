@@ -1,0 +1,48 @@
+From 031441e7102d344d39e11ac038a923f61a6967de Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Mon, 17 Jul 2023 11:56:13 +0530
+Subject: [PATCH 530/955] test/security: fix IPv6 next header field
+
+In case of IPv6 fragments are reassembled, then fragment
+header will be removed from packet and next-header field in
+IPv6 header will be updated to header followed by fragment header.
+
+Fixes: a310577766d6 ("test/security: add inline IPsec reassembly cases")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I0c898ee92a12c0bd65ce278b3fadc199c7d9174a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107599
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_security_inline_proto_vectors.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/app/test/test_security_inline_proto_vectors.h b/app/test/test_security_inline_proto_vectors.h
+index 61a045b446ec0..3ac75588a31d9 100644
+--- a/app/test/test_security_inline_proto_vectors.h
++++ b/app/test/test_security_inline_proto_vectors.h
+@@ -88,7 +88,7 @@ struct ip_reassembly_test_packet pkt_ipv6_udp_p1 = {
+ 	.l4_offset = 40,
+ 	.data = {
+ 		/* IP */
+-		0x60, 0x00, 0x00, 0x00, 0x05, 0xb4, 0x2C, 0x40,
++		0x60, 0x00, 0x00, 0x00, 0x05, 0xb4, 0x11, 0x40,
+ 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+ 		0x00, 0x00, 0xff, 0xff, 0x0d, 0x00, 0x00, 0x02,
+ 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+@@ -135,7 +135,7 @@ struct ip_reassembly_test_packet pkt_ipv6_udp_p2 = {
+ 	.l4_offset = 40,
+ 	.data = {
+ 		/* IP */
+-		0x60, 0x00, 0x00, 0x00, 0x11, 0x5a, 0x2c, 0x40,
++		0x60, 0x00, 0x00, 0x00, 0x11, 0x5a, 0x11, 0x40,
+ 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+ 		0x00, 0x00, 0xff, 0xff, 0x0d, 0x00, 0x00, 0x02,
+ 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+-- 
+2.25.1
+

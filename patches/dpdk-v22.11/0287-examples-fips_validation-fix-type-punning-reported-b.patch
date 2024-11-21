@@ -1,0 +1,47 @@
+From a03e217610131e48b0830f43b328441439027362 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Tue, 28 Feb 2023 22:10:23 +0530
+Subject: [PATCH 287/955] examples/fips_validation: fix type punning reported
+ by older GCC
+
+Older GCC versions in CI (CentOS) reported type punning on accessing
+uint8_t array of two elements with uint16_t ptr. Added a work around
+to use additional ptr variable.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I8b321ffb4c7a7f8b0d3f27cccbdca162aeb0f9f1
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98189
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ examples/fips_validation/main.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/examples/fips_validation/main.c b/examples/fips_validation/main.c
+index 97190902aa1d6..2c4353185edda 100644
+--- a/examples/fips_validation/main.c
++++ b/examples/fips_validation/main.c
+@@ -2377,6 +2377,7 @@ fips_mct_shake_test(void)
+ 	uint32_t i, j, range, outlen, max_outlen;
+ 	struct fips_val val = {NULL, 0}, md;
+ 	uint8_t rightmost[2];
++	uint16_t *rightptr;
+ 	int ret;
+ 
+ 	max_outlen = vec.cipher_auth.digest.len;
+@@ -2434,8 +2435,9 @@ fips_mct_shake_test(void)
+ 			md.len = outlen;
+ 			rightmost[0] = md.val[md.len-1];
+ 			rightmost[1] = md.val[md.len-2];
++			rightptr = (uint16_t *)rightmost;
+ 			outlen = info.interim_info.sha_data.min_outlen +
+-				(*(uint16_t *)rightmost % range);
++				(*rightptr % range);
+ 		}
+ 
+ 		memcpy(vec.cipher_auth.digest.val, md.val, md.len);
+-- 
+2.25.1
+

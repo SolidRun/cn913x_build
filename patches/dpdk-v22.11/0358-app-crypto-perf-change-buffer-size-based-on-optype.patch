@@ -1,0 +1,50 @@
+From 1694125a139bc29ba0e0bfb7cc42cafb520d43f7 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Thu, 30 Mar 2023 15:22:51 +0530
+Subject: [PATCH 358/955] app/crypto-perf: change buffer size based on optype
+
+Adding digest size to buffer size in auth-then-cipher
+mode with auth_op set to generate as cipher length
+includes digest size also.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I96d7836600e98e4279488b3bc1718cd4025fe5ac
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100358
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test-crypto-perf/cperf_options_parsing.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/app/test-crypto-perf/cperf_options_parsing.c b/app/test-crypto-perf/cperf_options_parsing.c
+index 8c9f6325905e2..849a5d6bb442d 100644
+--- a/app/test-crypto-perf/cperf_options_parsing.c
++++ b/app/test-crypto-perf/cperf_options_parsing.c
+@@ -1064,6 +1064,10 @@ check_cipher_buffer_length(struct cperf_options *options)
+ 		else
+ 			buffer_size = options->buffer_size_list[0];
+ 
++		if ((options->auth_op == RTE_CRYPTO_AUTH_OP_GENERATE) &&
++				(options->op_type == CPERF_AUTH_THEN_CIPHER))
++			buffer_size += options->digest_sz;
++
+ 		while (buffer_size <= options->max_buffer_size) {
+ 			if ((buffer_size % AES_BLOCK_SIZE) != 0) {
+ 				RTE_LOG(ERR, USER1, "Some of the buffer sizes are "
+@@ -1090,6 +1094,10 @@ check_cipher_buffer_length(struct cperf_options *options)
+ 		else
+ 			buffer_size = options->buffer_size_list[0];
+ 
++		if ((options->auth_op == RTE_CRYPTO_AUTH_OP_GENERATE) &&
++				(options->op_type == CPERF_AUTH_THEN_CIPHER))
++			buffer_size += options->digest_sz;
++
+ 		while (buffer_size <= options->max_buffer_size) {
+ 			if ((buffer_size % DES_BLOCK_SIZE) != 0) {
+ 				RTE_LOG(ERR, USER1, "Some of the buffer sizes are "
+-- 
+2.25.1
+

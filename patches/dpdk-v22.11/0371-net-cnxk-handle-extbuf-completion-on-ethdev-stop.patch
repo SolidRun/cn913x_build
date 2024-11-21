@@ -1,0 +1,524 @@
+From 93c6ab19d9ecd8d4c8560d6accf011d80b4ada6f Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Fri, 14 Apr 2023 13:16:20 +0530
+Subject: [PATCH 371/955] net/cnxk: handle extbuf completion on ethdev stop
+
+During tranmissoin of packets, CQ corresponding to
+SQ is polled for transmit completion packets in
+transmit function, when last burst is transmitted
+corresponding transmit completion packets are left
+in CQ.This patch reads leftover packets in CQ on
+ethdev stop.Moved transmit completion code to cn10k_rxtx.h
+and cn9k_ethdev.h to avoid code duplication
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I334493045de057444c8e44acfb3b279f9e7da63f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101118
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_tx_worker.h |  2 +-
+ drivers/event/cnxk/cn9k_worker.h     |  2 +-
+ drivers/net/cnxk/cn10k_ethdev.c      | 13 +++++
+ drivers/net/cnxk/cn10k_rxtx.h        | 76 +++++++++++++++++++++++++
+ drivers/net/cnxk/cn10k_tx.h          | 83 +---------------------------
+ drivers/net/cnxk/cn9k_ethdev.c       | 14 +++++
+ drivers/net/cnxk/cn9k_ethdev.h       | 77 ++++++++++++++++++++++++++
+ drivers/net/cnxk/cn9k_tx.h           | 83 +---------------------------
+ 8 files changed, 188 insertions(+), 162 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_tx_worker.h b/drivers/event/cnxk/cn10k_tx_worker.h
+index 52c674d195f5e..cf2f311da6857 100644
+--- a/drivers/event/cnxk/cn10k_tx_worker.h
++++ b/drivers/event/cnxk/cn10k_tx_worker.h
+@@ -74,7 +74,7 @@ cn10k_sso_tx_one(struct cn10k_sso_hws *ws, struct rte_mbuf *m, uint64_t *cmd,
+ 		return 0;
+ 
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+-		handle_tx_completion_pkts(txq, 1, 1);
++		handle_tx_completion_pkts(txq, 1);
+ 
+ 	cn10k_nix_tx_skeleton(txq, cmd, flags, 0);
+ 	/* Perform header writes before barrier
+diff --git a/drivers/event/cnxk/cn9k_worker.h b/drivers/event/cnxk/cn9k_worker.h
+index 3d43963edf6df..462f59d2010bb 100644
+--- a/drivers/event/cnxk/cn9k_worker.h
++++ b/drivers/event/cnxk/cn9k_worker.h
+@@ -796,7 +796,7 @@ cn9k_sso_hws_event_tx(uint64_t base, struct rte_event *ev, uint64_t *cmd,
+ 	txq = cn9k_sso_hws_xtract_meta(m, txq_data);
+ 
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+-		handle_tx_completion_pkts(txq, 1, 1);
++		handle_tx_completion_pkts(txq, 1);
+ 
+ 	if (cn9k_sso_sq_depth(txq) <= 0)
+ 		return 0;
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index c33646846ebe7..0df7fe9004cd6 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -369,6 +369,10 @@ static int
+ cn10k_nix_tx_queue_stop(struct rte_eth_dev *eth_dev, uint16_t qidx)
+ {
+ 	struct cn10k_eth_txq *txq = eth_dev->data->tx_queues[qidx];
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	uint16_t flags = dev->tx_offload_flags;
++	struct roc_nix *nix = &dev->nix;
++	uint32_t head = 0, tail = 0;
+ 	int rc;
+ 
+ 	rc = cnxk_nix_tx_queue_stop(eth_dev, qidx);
+@@ -377,6 +381,15 @@ cn10k_nix_tx_queue_stop(struct rte_eth_dev *eth_dev, uint16_t qidx)
+ 
+ 	/* Clear fc cache pkts to trigger worker stop */
+ 	txq->fc_cache_pkts = 0;
++
++	if ((flags & NIX_TX_OFFLOAD_MBUF_NOFF_F) && txq->tx_compl.ena) {
++		struct roc_nix_sq *sq = &dev->sqs[qidx];
++		do {
++			handle_tx_completion_pkts(txq, flags & NIX_TX_VWQE_F);
++			roc_nix_sq_head_tail_get(nix, sq->qid, &head, &tail);
++		} while (head != tail);
++	}
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/cnxk/cn10k_rxtx.h b/drivers/net/cnxk/cn10k_rxtx.h
+index 241da2d22d333..bf7fd265adc78 100644
+--- a/drivers/net/cnxk/cn10k_rxtx.h
++++ b/drivers/net/cnxk/cn10k_rxtx.h
+@@ -115,4 +115,80 @@ struct cn10k_sec_sess_priv {
+ 	(void *)((uintptr_t)(lmt_addr) +                                       \
+ 		 ((uint64_t)(lmt_num) << ROC_LMT_LINE_SIZE_LOG2) + (offset))
+ 
++static inline uint16_t
++nix_tx_compl_nb_pkts(struct cn10k_eth_txq *txq, const uint64_t wdata,
++		const uint32_t qmask)
++{
++	uint16_t available = txq->tx_compl.available;
++
++	/* Update the available count if cached value is not enough */
++	if (!unlikely(available)) {
++		uint64_t reg, head, tail;
++
++		/* Use LDADDA version to avoid reorder */
++		reg = roc_atomic64_add_sync(wdata, txq->tx_compl.cq_status);
++		/* CQ_OP_STATUS operation error */
++		if (reg & BIT_ULL(NIX_CQ_OP_STAT_OP_ERR) ||
++				reg & BIT_ULL(NIX_CQ_OP_STAT_CQ_ERR))
++			return 0;
++
++		tail = reg & 0xFFFFF;
++		head = (reg >> 20) & 0xFFFFF;
++		if (tail < head)
++			available = tail - head + qmask + 1;
++		else
++			available = tail - head;
++
++		txq->tx_compl.available = available;
++	}
++	return available;
++}
++
++static inline void
++handle_tx_completion_pkts(struct cn10k_eth_txq *txq, uint8_t mt_safe)
++{
++#define CNXK_NIX_CQ_ENTRY_SZ 128
++#define CQE_SZ(x)            ((x) * CNXK_NIX_CQ_ENTRY_SZ)
++
++	uint16_t tx_pkts = 0, nb_pkts;
++	const uintptr_t desc = txq->tx_compl.desc_base;
++	const uint64_t wdata = txq->tx_compl.wdata;
++	const uint32_t qmask = txq->tx_compl.qmask;
++	uint32_t head = txq->tx_compl.head;
++	struct nix_cqe_hdr_s *tx_compl_cq;
++	struct nix_send_comp_s *tx_compl_s0;
++	struct rte_mbuf *m_next, *m;
++
++	if (mt_safe)
++		rte_spinlock_lock(&txq->tx_compl.ext_buf_lock);
++
++	nb_pkts = nix_tx_compl_nb_pkts(txq, wdata, qmask);
++	while (tx_pkts < nb_pkts) {
++		rte_prefetch_non_temporal((void *)(desc +
++					(CQE_SZ((head + 2) & qmask))));
++		tx_compl_cq = (struct nix_cqe_hdr_s *)
++			(desc + CQE_SZ(head));
++		tx_compl_s0 = (struct nix_send_comp_s *)
++			((uint64_t *)tx_compl_cq + 1);
++		m = txq->tx_compl.ptr[tx_compl_s0->sqe_id];
++		while (m->next != NULL) {
++			m_next = m->next;
++			rte_pktmbuf_free_seg(m);
++			m = m_next;
++		}
++		rte_pktmbuf_free_seg(m);
++
++		head++;
++		head &= qmask;
++		tx_pkts++;
++	}
++	txq->tx_compl.head = head;
++	txq->tx_compl.available -= nb_pkts;
++
++	plt_write64((wdata | nb_pkts), txq->tx_compl.cq_door);
++
++	if (mt_safe)
++		rte_spinlock_unlock(&txq->tx_compl.ext_buf_lock);
++}
++
+ #endif /* __CN10K_RXTX_H__ */
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index f0c51d0f7871c..93f5ebfea7c3f 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -1206,83 +1206,6 @@ cn10k_nix_prepare_mseg(struct cn10k_eth_txq *txq,
+ 	return segdw;
+ }
+ 
+-static inline uint16_t
+-nix_tx_compl_nb_pkts(struct cn10k_eth_txq *txq, const uint64_t wdata,
+-		const uint16_t pkts, const uint32_t qmask)
+-{
+-	uint32_t available = txq->tx_compl.available;
+-
+-	/* Update the available count if cached value is not enough */
+-	if (unlikely(available < pkts)) {
+-		uint64_t reg, head, tail;
+-
+-		/* Use LDADDA version to avoid reorder */
+-		reg = roc_atomic64_add_sync(wdata, txq->tx_compl.cq_status);
+-		/* CQ_OP_STATUS operation error */
+-		if (reg & BIT_ULL(NIX_CQ_OP_STAT_OP_ERR) ||
+-				reg & BIT_ULL(NIX_CQ_OP_STAT_CQ_ERR))
+-			return 0;
+-
+-		tail = reg & 0xFFFFF;
+-		head = (reg >> 20) & 0xFFFFF;
+-		if (tail < head)
+-			available = tail - head + qmask + 1;
+-		else
+-			available = tail - head;
+-
+-		txq->tx_compl.available = available;
+-	}
+-	return RTE_MIN(pkts, available);
+-}
+-
+-static inline void
+-handle_tx_completion_pkts(struct cn10k_eth_txq *txq, const uint16_t pkts,
+-			  uint8_t mt_safe)
+-{
+-#define CNXK_NIX_CQ_ENTRY_SZ 128
+-#define CQE_SZ(x)            ((x) * CNXK_NIX_CQ_ENTRY_SZ)
+-
+-	uint16_t tx_pkts = 0, nb_pkts;
+-	const uintptr_t desc = txq->tx_compl.desc_base;
+-	const uint64_t wdata = txq->tx_compl.wdata;
+-	const uint32_t qmask = txq->tx_compl.qmask;
+-	uint32_t head = txq->tx_compl.head;
+-	struct nix_cqe_hdr_s *tx_compl_cq;
+-	struct nix_send_comp_s *tx_compl_s0;
+-	struct rte_mbuf *m_next, *m;
+-
+-	if (mt_safe)
+-		rte_spinlock_lock(&txq->tx_compl.ext_buf_lock);
+-
+-	nb_pkts = nix_tx_compl_nb_pkts(txq, wdata, pkts, qmask);
+-	while (tx_pkts < nb_pkts) {
+-		rte_prefetch_non_temporal((void *)(desc +
+-					(CQE_SZ((head + 2) & qmask))));
+-		tx_compl_cq = (struct nix_cqe_hdr_s *)
+-			(desc + CQE_SZ(head));
+-		tx_compl_s0 = (struct nix_send_comp_s *)
+-			((uint64_t *)tx_compl_cq + 1);
+-		m = txq->tx_compl.ptr[tx_compl_s0->sqe_id];
+-		while (m->next != NULL) {
+-			m_next = m->next;
+-			rte_pktmbuf_free_seg(m);
+-			m = m_next;
+-		}
+-		rte_pktmbuf_free_seg(m);
+-
+-		head++;
+-		head &= qmask;
+-		tx_pkts++;
+-	}
+-	txq->tx_compl.head = head;
+-	txq->tx_compl.available -= nb_pkts;
+-
+-	plt_write64((wdata | nb_pkts), txq->tx_compl.cq_door);
+-
+-	if (mt_safe)
+-		rte_spinlock_unlock(&txq->tx_compl.ext_buf_lock);
+-}
+-
+ static __rte_always_inline uint16_t
+ cn10k_nix_xmit_pkts(void *tx_queue, uint64_t *ws, struct rte_mbuf **tx_pkts,
+ 		    uint16_t pkts, uint64_t *cmd, const uint16_t flags)
+@@ -1304,7 +1227,7 @@ cn10k_nix_xmit_pkts(void *tx_queue, uint64_t *ws, struct rte_mbuf **tx_pkts,
+ 	bool sec;
+ 
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+-		handle_tx_completion_pkts(txq, pkts, flags & NIX_TX_VWQE_F);
++		handle_tx_completion_pkts(txq, flags & NIX_TX_VWQE_F);
+ 
+ 	if (!(flags & NIX_TX_VWQE_F)) {
+ 		NIX_XMIT_FC_OR_RETURN(txq, pkts);
+@@ -1453,7 +1376,7 @@ cn10k_nix_xmit_pkts_mseg(void *tx_queue, uint64_t *ws,
+ 	bool sec;
+ 
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+-		handle_tx_completion_pkts(txq, pkts, flags & NIX_TX_VWQE_F);
++		handle_tx_completion_pkts(txq, flags & NIX_TX_VWQE_F);
+ 
+ 	if (!(flags & NIX_TX_VWQE_F)) {
+ 		NIX_XMIT_FC_OR_RETURN(txq, pkts);
+@@ -2008,7 +1931,7 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 	} wd;
+ 
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+-		handle_tx_completion_pkts(txq, pkts, flags & NIX_TX_VWQE_F);
++		handle_tx_completion_pkts(txq, flags & NIX_TX_VWQE_F);
+ 
+ 	if (!(flags & NIX_TX_VWQE_F)) {
+ 		NIX_XMIT_FC_OR_RETURN(txq, pkts);
+diff --git a/drivers/net/cnxk/cn9k_ethdev.c b/drivers/net/cnxk/cn9k_ethdev.c
+index e55a2aa133391..bae4dda5e2ad0 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.c
++++ b/drivers/net/cnxk/cn9k_ethdev.c
+@@ -329,14 +329,28 @@ static int
+ cn9k_nix_tx_queue_stop(struct rte_eth_dev *eth_dev, uint16_t qidx)
+ {
+ 	struct cn9k_eth_txq *txq = eth_dev->data->tx_queues[qidx];
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	uint16_t flags = dev->tx_offload_flags;
++	struct roc_nix *nix = &dev->nix;
++	uint32_t head = 0, tail = 0;
+ 	int rc;
+ 
++
+ 	rc = cnxk_nix_tx_queue_stop(eth_dev, qidx);
+ 	if (rc)
+ 		return rc;
+ 
+ 	/* Clear fc cache pkts to trigger worker stop */
+ 	txq->fc_cache_pkts = 0;
++
++	if ((flags & NIX_TX_OFFLOAD_MBUF_NOFF_F) && txq->tx_compl.ena) {
++		struct roc_nix_sq *sq = &dev->sqs[qidx];
++		do {
++			handle_tx_completion_pkts(txq, 0);
++			roc_nix_sq_head_tail_get(nix, sq->qid, &head, &tail);
++		} while (head != tail);
++	}
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/cnxk/cn9k_ethdev.h b/drivers/net/cnxk/cn9k_ethdev.h
+index a82dcb3d19804..9e0a3c5bb26ae 100644
+--- a/drivers/net/cnxk/cn9k_ethdev.h
++++ b/drivers/net/cnxk/cn9k_ethdev.h
+@@ -107,4 +107,81 @@ void cn9k_eth_set_tx_function(struct rte_eth_dev *eth_dev);
+ /* Security context setup */
+ void cn9k_eth_sec_ops_override(void);
+ 
++static inline uint16_t
++nix_tx_compl_nb_pkts(struct cn9k_eth_txq *txq, const uint64_t wdata,
++		const uint32_t qmask)
++{
++	uint16_t available = txq->tx_compl.available;
++
++	/* Update the available count if cached value is not enough */
++	if (!unlikely(available)) {
++		uint64_t reg, head, tail;
++
++		/* Use LDADDA version to avoid reorder */
++		reg = roc_atomic64_add_sync(wdata, txq->tx_compl.cq_status);
++		/* CQ_OP_STATUS operation error */
++		if (reg & BIT_ULL(NIX_CQ_OP_STAT_OP_ERR) ||
++				reg & BIT_ULL(NIX_CQ_OP_STAT_CQ_ERR))
++			return 0;
++
++		tail = reg & 0xFFFFF;
++		head = (reg >> 20) & 0xFFFFF;
++		if (tail < head)
++			available = tail - head + qmask + 1;
++		else
++			available = tail - head;
++
++		txq->tx_compl.available = available;
++	}
++	return available;
++}
++
++static inline void
++handle_tx_completion_pkts(struct cn9k_eth_txq *txq, uint8_t mt_safe)
++{
++#define CNXK_NIX_CQ_ENTRY_SZ 128
++#define CQE_SZ(x)            ((x) * CNXK_NIX_CQ_ENTRY_SZ)
++
++	uint16_t tx_pkts = 0, nb_pkts;
++	const uintptr_t desc = txq->tx_compl.desc_base;
++	const uint64_t wdata = txq->tx_compl.wdata;
++	const uint32_t qmask = txq->tx_compl.qmask;
++	uint32_t head = txq->tx_compl.head;
++	struct nix_cqe_hdr_s *tx_compl_cq;
++	struct nix_send_comp_s *tx_compl_s0;
++	struct rte_mbuf *m_next, *m;
++
++	if (mt_safe)
++		rte_spinlock_lock(&txq->tx_compl.ext_buf_lock);
++
++	nb_pkts = nix_tx_compl_nb_pkts(txq, wdata, qmask);
++	while (tx_pkts < nb_pkts) {
++		rte_prefetch_non_temporal((void *)(desc +
++					(CQE_SZ((head + 2) & qmask))));
++		tx_compl_cq = (struct nix_cqe_hdr_s *)
++			(desc + CQE_SZ(head));
++		tx_compl_s0 = (struct nix_send_comp_s *)
++			((uint64_t *)tx_compl_cq + 1);
++		m = txq->tx_compl.ptr[tx_compl_s0->sqe_id];
++		while (m->next != NULL) {
++			m_next = m->next;
++			rte_pktmbuf_free_seg(m);
++			m = m_next;
++		}
++		rte_pktmbuf_free_seg(m);
++
++		head++;
++		head &= qmask;
++		tx_pkts++;
++	}
++	txq->tx_compl.head = head;
++	txq->tx_compl.available -= nb_pkts;
++
++	plt_write64((wdata | nb_pkts), txq->tx_compl.cq_door);
++
++	if (mt_safe)
++		rte_spinlock_unlock(&txq->tx_compl.ext_buf_lock);
++}
++
++
+ #endif /* __CN9K_ETHDEV_H__ */
+diff --git a/drivers/net/cnxk/cn9k_tx.h b/drivers/net/cnxk/cn9k_tx.h
+index 8efb75b505f1b..1ea449163737e 100644
+--- a/drivers/net/cnxk/cn9k_tx.h
++++ b/drivers/net/cnxk/cn9k_tx.h
+@@ -560,83 +560,6 @@ cn9k_nix_xmit_mseg_one_release(uint64_t *cmd, void *lmt_addr,
+ 	} while (lmt_status == 0);
+ }
+ 
+-static inline uint16_t
+-nix_tx_compl_nb_pkts(struct cn9k_eth_txq *txq, const uint64_t wdata,
+-		const uint16_t pkts, const uint32_t qmask)
+-{
+-	uint32_t available = txq->tx_compl.available;
+-
+-	/* Update the available count if cached value is not enough */
+-	if (unlikely(available < pkts)) {
+-		uint64_t reg, head, tail;
+-
+-		/* Use LDADDA version to avoid reorder */
+-		reg = roc_atomic64_add_sync(wdata, txq->tx_compl.cq_status);
+-		/* CQ_OP_STATUS operation error */
+-		if (reg & BIT_ULL(NIX_CQ_OP_STAT_OP_ERR) ||
+-				reg & BIT_ULL(NIX_CQ_OP_STAT_CQ_ERR))
+-			return 0;
+-
+-		tail = reg & 0xFFFFF;
+-		head = (reg >> 20) & 0xFFFFF;
+-		if (tail < head)
+-			available = tail - head + qmask + 1;
+-		else
+-			available = tail - head;
+-
+-		txq->tx_compl.available = available;
+-	}
+-	return RTE_MIN(pkts, available);
+-}
+-
+-static inline void
+-handle_tx_completion_pkts(struct cn9k_eth_txq *txq, const uint16_t pkts,
+-			  uint8_t mt_safe)
+-{
+-#define CNXK_NIX_CQ_ENTRY_SZ 128
+-#define CQE_SZ(x)            ((x) * CNXK_NIX_CQ_ENTRY_SZ)
+-
+-	uint16_t tx_pkts = 0, nb_pkts;
+-	const uintptr_t desc = txq->tx_compl.desc_base;
+-	const uint64_t wdata = txq->tx_compl.wdata;
+-	const uint32_t qmask = txq->tx_compl.qmask;
+-	uint32_t head = txq->tx_compl.head;
+-	struct nix_cqe_hdr_s *tx_compl_cq;
+-	struct nix_send_comp_s *tx_compl_s0;
+-	struct rte_mbuf *m_next, *m;
+-
+-	if (mt_safe)
+-		rte_spinlock_lock(&txq->tx_compl.ext_buf_lock);
+-
+-	nb_pkts = nix_tx_compl_nb_pkts(txq, wdata, pkts, qmask);
+-	while (tx_pkts < nb_pkts) {
+-		rte_prefetch_non_temporal((void *)(desc +
+-					(CQE_SZ((head + 2) & qmask))));
+-		tx_compl_cq = (struct nix_cqe_hdr_s *)
+-			(desc + CQE_SZ(head));
+-		tx_compl_s0 = (struct nix_send_comp_s *)
+-			((uint64_t *)tx_compl_cq + 1);
+-		m = txq->tx_compl.ptr[tx_compl_s0->sqe_id];
+-		while (m->next != NULL) {
+-			m_next = m->next;
+-			rte_pktmbuf_free_seg(m);
+-			m = m_next;
+-		}
+-		rte_pktmbuf_free_seg(m);
+-
+-		head++;
+-		head &= qmask;
+-		tx_pkts++;
+-	}
+-	txq->tx_compl.head = head;
+-	txq->tx_compl.available -= nb_pkts;
+-
+-	plt_write64((wdata | nb_pkts), txq->tx_compl.cq_door);
+-
+-	if (mt_safe)
+-		rte_spinlock_unlock(&txq->tx_compl.ext_buf_lock);
+-}
+-
+ static __rte_always_inline uint16_t
+ cn9k_nix_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts,
+ 		   uint64_t *cmd, const uint16_t flags)
+@@ -649,7 +572,7 @@ cn9k_nix_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t pkts,
+ 	uint16_t i;
+ 
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+-		handle_tx_completion_pkts(txq, pkts, 0);
++		handle_tx_completion_pkts(txq, 0);
+ 
+ 	NIX_XMIT_FC_OR_RETURN(txq, pkts);
+ 
+@@ -701,7 +624,7 @@ cn9k_nix_xmit_pkts_mseg(void *tx_queue, struct rte_mbuf **tx_pkts,
+ 	uint64_t i;
+ 
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+-		handle_tx_completion_pkts(txq, pkts, 0);
++		handle_tx_completion_pkts(txq, 0);
+ 
+ 	NIX_XMIT_FC_OR_RETURN(txq, pkts);
+ 
+@@ -1050,7 +973,7 @@ cn9k_nix_xmit_pkts_vector(void *tx_queue, struct rte_mbuf **tx_pkts,
+ 	uint16_t pkts_left;
+ 
+ 	if (flags & NIX_TX_OFFLOAD_MBUF_NOFF_F && txq->tx_compl.ena)
+-		handle_tx_completion_pkts(txq, pkts, 0);
++		handle_tx_completion_pkts(txq, 0);
+ 
+ 	NIX_XMIT_FC_OR_RETURN(txq, pkts);
+ 
+-- 
+2.25.1
+

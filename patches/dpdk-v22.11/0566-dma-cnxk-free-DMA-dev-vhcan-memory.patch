@@ -1,0 +1,94 @@
+From 5f2bb8d8063ca0bd93beb32f5061ec44507d517a Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Wed, 26 Jul 2023 15:47:33 +0530
+Subject: [PATCH 566/955] dma/cnxk: free DMA dev vhcan memory
+
+Changeset address the issue of by-default freeing up all the DMA dev
+vchans when called from cnxk_dmadev_vchan_setup.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I2c447bb10480ffd9f832a335950de714a3041706
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108335
+Reviewed-by: Vamsi Krishna Attunuru <vattunuru@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 7e9d9e0256f3c37629805271f792c4eef7496bb4)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108534
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.c | 24 +++++++++++++++++-------
+ 1 file changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index 2f0d5687cc7cd..288606bb3d2aa 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -37,15 +37,25 @@ cnxk_dmadev_info_get(const struct rte_dma_dev *dev, struct rte_dma_info *dev_inf
+ }
+ 
+ static int
+-cnxk_dmadev_vchan_free(struct cnxk_dpi_vf_s *dpivf)
++cnxk_dmadev_vchan_free(struct cnxk_dpi_vf_s *dpivf, uint16_t vchan)
+ {
+ 	struct cnxk_dpi_conf *dpi_conf;
+ 	uint16_t num_vchans;
+ 	uint16_t max_desc;
+ 	int i, j;
+ 
+-	num_vchans = dpivf->num_vchans;
+-	for (i = 0; i < num_vchans; i++) {
++	if (vchan == RTE_DMA_ALL_VCHAN) {
++		num_vchans = dpivf->num_vchans;
++		i = 0;
++	} else {
++		if (vchan >= MAX_VCHANS_PER_QUEUE)
++			return -EINVAL;
++
++		num_vchans = vchan + 1;
++		i = vchan;
++	}
++
++	for (; i < num_vchans; i++) {
+ 		dpi_conf = &dpivf->conf[i];
+ 		max_desc = dpi_conf->c_desc.max_cnt;
+ 		if (dpi_conf->c_desc.compl_ptr) {
+@@ -75,7 +85,7 @@ cnxk_dmadev_configure(struct rte_dma_dev *dev, const struct rte_dma_conf *conf,
+ 		/* After config function, vchan setup function has to be called.
+ 		 * Free up vchan memory if any, before configuring num_vchans.
+ 		 */
+-		cnxk_dmadev_vchan_free(dpivf);
++		cnxk_dmadev_vchan_free(dpivf, RTE_DMA_ALL_VCHAN);
+ 		dpivf->num_vchans = conf->nb_vchans;
+ 	}
+ 
+@@ -147,7 +157,7 @@ cnxk_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 	};
+ 
+ 	/* Free up descriptor memory before allocating. */
+-	cnxk_dmadev_vchan_free(dpivf);
++	cnxk_dmadev_vchan_free(dpivf, vchan);
+ 
+ 	max_desc = conf->nb_desc;
+ 	if (!rte_is_power_of_2(max_desc))
+@@ -233,7 +243,7 @@ cn10k_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 	};
+ 
+ 	/* Free up descriptor memory before allocating. */
+-	cnxk_dmadev_vchan_free(dpivf);
++	cnxk_dmadev_vchan_free(dpivf, vchan);
+ 
+ 	max_desc = conf->nb_desc;
+ 	if (!rte_is_power_of_2(max_desc))
+@@ -314,7 +324,7 @@ cnxk_dmadev_close(struct rte_dma_dev *dev)
+ 	struct cnxk_dpi_vf_s *dpivf = dev->fp_obj->dev_private;
+ 
+ 	roc_dpi_disable(&dpivf->rdpi);
+-	cnxk_dmadev_vchan_free(dpivf);
++	cnxk_dmadev_vchan_free(dpivf, RTE_DMA_ALL_VCHAN);
+ 	roc_dpi_dev_fini(&dpivf->rdpi);
+ 
+ 	/* Clear all flags as we close the device. */
+-- 
+2.25.1
+

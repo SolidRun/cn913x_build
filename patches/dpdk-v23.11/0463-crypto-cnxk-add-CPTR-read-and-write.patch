@@ -1,0 +1,182 @@
+From 60265dcb432ef6cfa38d6716e2620d891be7d20d Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 22 Jul 2024 10:45:58 +0000
+Subject: [PATCH 463/513] crypto/cnxk: add CPTR read and write
+
+Add PMD API for CPTR read and write.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I44c6c54d753ef4cff7f8bf53cef31b5510490c46
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/131709
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134278
+---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c  | 71 +++++++++++++++++++++++
+ drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h | 52 +++++++++++++++++
+ drivers/crypto/cnxk/version.map           |  2 +
+ 3 files changed, 125 insertions(+)
+
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index f74e81f75c6ac..4d70caaf650b7 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -2,6 +2,7 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
++#include <rte_atomic.h>
+ #include <rte_cryptodev.h>
+ #include <cryptodev_pmd.h>
+ #include <rte_errno.h>
+@@ -1111,3 +1112,73 @@ rte_pmd_cnxk_crypto_cptr_get(struct rte_pmd_cnxk_crypto_sess *rte_sess)
+ 	plt_err("Invalid session type");
+ 	return NULL;
+ }
++
++int
++rte_pmd_cnxk_crypto_cptr_read(struct rte_pmd_cnxk_crypto_qptr *qptr,
++			      struct rte_pmd_cnxk_crypto_cptr *cptr, void *data, uint32_t len)
++{
++	struct cnxk_cpt_qp *qp = PLT_PTR_CAST(qptr);
++	int ret;
++
++	if (unlikely(qptr == NULL)) {
++		plt_err("Invalid queue pair pointer");
++		return -EINVAL;
++	}
++
++	if (unlikely(cptr == NULL)) {
++		plt_err("Invalid CPTR pointer");
++		return -EINVAL;
++	}
++
++	if (unlikely(data == NULL)) {
++		plt_err("Invalid data pointer");
++		return -EINVAL;
++	}
++
++	ret = roc_cpt_lf_ctx_flush(&qp->lf, cptr, false);
++	if (ret)
++		return ret;
++
++	/* Wait for the flush to complete. */
++	rte_delay_ms(1);
++
++	memcpy(data, cptr, len);
++	return 0;
++}
++
++int
++rte_pmd_cnxk_crypto_cptr_write(struct rte_pmd_cnxk_crypto_qptr *qptr,
++			       struct rte_pmd_cnxk_crypto_cptr *cptr, void *data, uint32_t len)
++{
++	struct cnxk_cpt_qp *qp = PLT_PTR_CAST(qptr);
++	int ret;
++
++	if (unlikely(qptr == NULL)) {
++		plt_err("Invalid queue pair pointer");
++		return -EINVAL;
++	}
++
++	if (unlikely(cptr == NULL)) {
++		plt_err("Invalid CPTR pointer");
++		return -EINVAL;
++	}
++
++	if (unlikely(data == NULL)) {
++		plt_err("Invalid data pointer");
++		return -EINVAL;
++	}
++
++	ret = roc_cpt_ctx_write(&qp->lf, data, cptr, len);
++	if (ret) {
++		plt_err("Could not write to CPTR");
++		return ret;
++	}
++
++	ret = roc_cpt_lf_ctx_flush(&qp->lf, cptr, false);
++	if (ret)
++		return ret;
++
++	rte_atomic_thread_fence(rte_memory_order_seq_cst);
++
++	return 0;
++}
+diff --git a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+index e4541483ef105..b94a293b7a566 100644
+--- a/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
++++ b/drivers/crypto/cnxk/rte_pmd_cnxk_crypto.h
+@@ -124,4 +124,56 @@ __rte_experimental
+ struct rte_pmd_cnxk_crypto_cptr *rte_pmd_cnxk_crypto_cptr_get(
+ 	struct rte_pmd_cnxk_crypto_sess *rte_sess);
+ 
++/**
++ * Read HW context (CPTR).
++ *
++ * @param qptr
++ *   Pointer obtained with ``rte_pmd_cnxk_crypto_qptr_get``.
++ * @param cptr
++ *   Pointer obtained with ``rte_pmd_cnxk_crypto_cptr_get`` or any valid CPTR address that can be
++ *   used with CPT CTX cache.
++ * @param[out] data
++ *   Destination pointer to copy CPTR context for application.
++ * @param len
++ *   Length of CPTR context to copy into data parameter.
++ *
++ * @return
++ *   - 0 On success.
++ *   - Negative value on error.
++ *     - -EINVAL if the input parameters are invalid.
++ *     - -ENOTSUP if the operation is not supported.
++ *     - -EAGAIN if the operation is not successful.
++ *     - -EFAULT if the operation failed.
++ */
++__rte_experimental
++int rte_pmd_cnxk_crypto_cptr_read(struct rte_pmd_cnxk_crypto_qptr *qptr,
++				  struct rte_pmd_cnxk_crypto_cptr *cptr, void *data,
++				  uint32_t len);
++
++/**
++ * Write HW context (CPTR).
++ *
++ * @param qptr
++ *  Pointer obtained with ``rte_pmd_cnxk_crypto_qptr_get``.
++ * @param cptr
++ *  Pointer obtained with ``rte_pmd_cnxk_crypto_cptr_get`` or any valid CPTR address that can be
++ *  used with CPT CTX cache.
++ * @param data
++ *  Source pointer to copy CPTR context from application.
++ * @param len
++ *  Length of CPTR context to copy from data parameter.
++ *
++ * @return
++ *   - 0 On success.
++ *   - Negative value on error.
++ *     - -EINVAL if the input parameters are invalid.
++ *     - -ENOTSUP if the operation is not supported.
++ *     - -EAGAIN if the operation is not successful.
++ *     - -EFAULT if the operation failed.
++ */
++__rte_experimental
++int rte_pmd_cnxk_crypto_cptr_write(struct rte_pmd_cnxk_crypto_qptr *qptr,
++				   struct rte_pmd_cnxk_crypto_cptr *cptr, void *data,
++				   uint32_t len);
++
+ #endif /* _PMD_CNXK_CRYPTO_H_ */
+diff --git a/drivers/crypto/cnxk/version.map b/drivers/crypto/cnxk/version.map
+index 7a8122dc1dded..6e51f7be1a6b0 100644
+--- a/drivers/crypto/cnxk/version.map
++++ b/drivers/crypto/cnxk/version.map
+@@ -8,6 +8,8 @@ EXPERIMENTAL {
+ 	# added in 24.07
+ 	rte_pmd_cnxk_crypto_cptr_flush;
+ 	rte_pmd_cnxk_crypto_cptr_get;
++	rte_pmd_cnxk_crypto_cptr_read;
++	rte_pmd_cnxk_crypto_cptr_write;
+ };
+ 
+ INTERNAL {
+-- 
+2.25.1
+

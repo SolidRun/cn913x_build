@@ -1,0 +1,73 @@
+From 66b5430a979ff5ca108e6ae0f1a68e5e48a8fc8b Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Mon, 15 Jan 2024 16:57:53 +0530
+Subject: [PATCH 136/513] test/security: add DTLS 1.2 data walkthrough test
+
+Add data walkthrough test for DTLS 1.2
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I30f7622e002e898ea6a609881080f5a7be9f4406
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119765
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c                     | 17 +++++++++++++++++
+ app/test/test_cryptodev_security_tls_record.c |  5 ++++-
+ 2 files changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index d7da9a1a5d2f7..2520116cf6462 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12109,6 +12109,19 @@ test_tls_1_2_record_proto_sgl(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_dtls_1_2_record_proto_data_walkthrough(void)
++{
++	struct tls_record_test_flags flags;
++
++	memset(&flags, 0, sizeof(flags));
++
++	flags.data_walkthrough = true;
++	flags.tls_version = RTE_SECURITY_VERSION_DTLS_1_2;
++
++	return test_tls_record_proto_all(&flags);
++}
++
+ static int
+ test_dtls_1_2_record_proto_display_list(void)
+ {
+@@ -17283,6 +17296,10 @@ static struct unit_test_suite dtls12_record_proto_testsuite  = {
+ 			"Combined test alg list",
+ 			ut_setup_security, ut_teardown,
+ 			test_dtls_1_2_record_proto_display_list),
++		TEST_CASE_NAMED_ST(
++			"Data walkthrough combined test alg list",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_data_walkthrough),
+ 		TEST_CASE_NAMED_ST(
+ 			"Multi-segmented mode",
+ 			ut_setup_security, ut_teardown,
+diff --git a/app/test/test_cryptodev_security_tls_record.c b/app/test/test_cryptodev_security_tls_record.c
+index 3745c6a0d13b2..92bcbff8429bf 100644
+--- a/app/test/test_cryptodev_security_tls_record.c
++++ b/app/test/test_cryptodev_security_tls_record.c
+@@ -143,7 +143,10 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 		break;
+ 	case RTE_SECURITY_VERSION_DTLS_1_2:
+ 		hdr_len = sizeof(struct rte_dtls_hdr);
+-		min_padding = 0;
++		if (td->aead)
++			min_padding = 0;
++		else
++			min_padding = 1;
+ 		break;
+ 	default:
+ 		hdr_len = 0;
+-- 
+2.25.1
+

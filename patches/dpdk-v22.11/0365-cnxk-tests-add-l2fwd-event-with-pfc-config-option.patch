@@ -1,0 +1,3170 @@
+From 21dc15c3a14a0395ac4028ced830d0c166f5c60a Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Fri, 7 Apr 2023 16:39:37 +0530
+Subject: [PATCH 365/955] cnxk-tests: add l2fwd event with pfc config option
+
+Existing l2fwd_event application does not have option to configure PFC
+on a device while used in SSO mode.
+
+This application is based on existing l2fwd_event application with PFC
+configuration support.
+
+Following command line parameters are added with existing l2fwd_event
+options:
+
+ --rxq: Number of Rx queues created on each port. Default is 1
+ --txq: Number of Tx queues created on each port. Default is 1
+ --pfc: <port>:<rx_pfc>:<on/off>:<txq>:<tc>:<tx_pfc>:<on/off>:<rxq>:\
+        <tc>:<pause quanta>
+   - <port> : Port id on which PFC is to be enabled.
+   - <rx_pfc>:<on/off> : Enable reception of 802.1qbb flow control PFC
+			 frames.
+   - <txq> : Tx queue on which TC is to be mapped and will be paused if
+	     PFC is received with corresponding TC.
+   - <tc> : Traffic class which is used to pause mapped txq.
+   - <tx_pfc>:<on/off> : Enable xmit of 802.1qbb flow control PFC frames.
+   - <rxq> : Rx queue on which TC is to be mapped.
+   - <tc> : Traffic class which is mapped with rxq and used in PFC frame
+	    if threshold reaches.
+   - <pause quanta> : Pause quanta which is mapped with rxq and used in
+		      PFC frame if threshold reaches.
+
+Sample command:
+
+./l2fwd-event-pfc -c 0xff001 -a 0002:02:00.0,flow_max_priority=8	\
+-a 0002:1e:00.0 -- -p 0x1 --rxq 8 --txq 8				\
+--pfc 0:rx_pfc:on:0:0:tx_pfc:on:0:0:65535				\
+--pfc 0:rx_pfc:on:1:1:tx_pfc:on:1:1:65535				\
+--pfc 0:rx_pfc:on:2:2:tx_pfc:on:2:2:65535				\
+--pfc 0:rx_pfc:on:3:3:tx_pfc:on:3:3:65535				\
+--pfc 0:rx_pfc:on:4:4:tx_pfc:on:4:4:65535				\
+--pfc 0:rx_pfc:on:5:5:tx_pfc:on:5:5:65535				\
+--pfc 0:rx_pfc:on:6:6:tx_pfc:on:6:6:65535				\
+--pfc 0:rx_pfc:on:7:7:tx_pfc:on:7:7:65535				\
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I07ced67fe8cfb965f48e1b7d8c82c11a1cb52e05
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100880
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ .../test/cnxk-tests/l2fwd_event_pfc/Makefile  |   57 +
+ .../cnxk-tests/l2fwd_event_pfc/l2fwd_common.c |  162 +++
+ .../cnxk-tests/l2fwd_event_pfc/l2fwd_common.h |  165 +++
+ .../cnxk-tests/l2fwd_event_pfc/l2fwd_event.c  |  593 ++++++++++
+ .../cnxk-tests/l2fwd_event_pfc/l2fwd_event.h  |   73 ++
+ .../l2fwd_event_pfc/l2fwd_event_generic.c     |  352 ++++++
+ .../l2fwd_event_internal_port.c               |  321 +++++
+ .../cnxk-tests/l2fwd_event_pfc/l2fwd_poll.c   |  185 +++
+ .../cnxk-tests/l2fwd_event_pfc/l2fwd_poll.h   |   25 +
+ .../test/cnxk-tests/l2fwd_event_pfc/main.c    | 1054 +++++++++++++++++
+ .../cnxk-tests/l2fwd_event_pfc/meson.build    |   25 +
+ marvell-ci/test/cnxk-tests/meson.build        |    1 +
+ 12 files changed, 3013 insertions(+)
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/Makefile
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.c
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.h
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event.c
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event.h
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event_generic.c
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event_internal_port.c
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_poll.c
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_poll.h
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/main.c
+ create mode 100644 marvell-ci/test/cnxk-tests/l2fwd_event_pfc/meson.build
+
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/Makefile b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/Makefile
+new file mode 100644
+index 0000000000000..4d041ba3dbde3
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/Makefile
+@@ -0,0 +1,57 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2019 Marvell International Ltd.
++#
++
++# binary name
++APP = l2fwd-event
++
++# all source are stored in SRCS-y
++SRCS-y := main.c
++SRCS-y += l2fwd_poll.c
++SRCS-y += l2fwd_event.c
++SRCS-y += l2fwd_common.c
++SRCS-y += l2fwd_event_generic.c
++SRCS-y += l2fwd_event_internal_port.c
++
++PKGCONF ?= pkg-config
++
++# Build using pkg-config variables if possible
++ifneq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
++$(error "no installation of DPDK found")
++endif
++
++all: shared
++.PHONY: shared static
++shared: build/$(APP)-shared
++	ln -sf $(APP)-shared build/$(APP)
++static: build/$(APP)-static
++	ln -sf $(APP)-static build/$(APP)
++
++PC_FILE := $(shell $(PKGCONF) --path libdpdk 2>/dev/null)
++CFLAGS += -O3 $(shell $(PKGCONF) --cflags libdpdk)
++LDFLAGS_SHARED = $(shell $(PKGCONF) --libs libdpdk)
++LDFLAGS_STATIC = $(shell $(PKGCONF) --static --libs libdpdk)
++
++ifeq ($(MAKECMDGOALS),static)
++# check for broken pkg-config
++ifeq ($(shell echo $(LDFLAGS_STATIC) | grep 'whole-archive.*l:lib.*no-whole-archive'),)
++$(warning "pkg-config output list does not contain drivers between 'whole-archive'/'no-whole-archive' flags.")
++$(error "Cannot generate statically-linked binaries with this version of pkg-config")
++endif
++endif
++
++CFLAGS += -DALLOW_EXPERIMENTAL_API
++
++build/$(APP)-shared: $(SRCS-y) Makefile $(PC_FILE) | build
++	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED)
++
++build/$(APP)-static: $(SRCS-y) Makefile $(PC_FILE) | build
++	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
++
++build:
++	@mkdir -p $@
++
++.PHONY: clean
++clean:
++	rm -f build/$(APP) build/$(APP)-static build/$(APP)-shared
++	test -d build && rmdir -p build || true
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.c b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.c
+new file mode 100644
+index 0000000000000..b9e6a2e2d0b02
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.c
+@@ -0,0 +1,162 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2019 Marvell International Ltd.
++ */
++
++#include "l2fwd_common.h"
++
++int
++l2fwd_event_init_ports(struct l2fwd_resources *rsrc)
++{
++	uint16_t nb_rxd = RX_DESC_DEFAULT;
++	uint16_t nb_txd = TX_DESC_DEFAULT;
++	struct rte_eth_conf port_conf = {
++		.txmode = {
++			.mq_mode = RTE_ETH_MQ_TX_NONE,
++		},
++	};
++	uint16_t nb_ports_available = 0;
++	uint16_t port_id;
++	int ret, i;
++
++	if (rsrc->event_mode) {
++		port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
++		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
++		port_conf.rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_IP;
++	}
++
++	/* Initialise each port */
++	RTE_ETH_FOREACH_DEV(port_id) {
++		struct rte_eth_conf local_port_conf = port_conf;
++		struct rte_eth_dev_info dev_info;
++		struct rte_eth_rxconf rxq_conf;
++		struct rte_eth_txconf txq_conf;
++
++		/* skip ports that are not enabled */
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0) {
++			printf("Skipping disabled port %u\n", port_id);
++			continue;
++		}
++		nb_ports_available++;
++
++		/* init port */
++		printf("Initializing port %u... ", port_id);
++		fflush(stdout);
++
++		ret = rte_eth_dev_info_get(port_id, &dev_info);
++		if (ret != 0)
++			rte_panic("Error during getting device (port %u) info: %s\n",
++				  port_id, strerror(-ret));
++		local_port_conf.rx_adv_conf.rss_conf.rss_hf &=
++			dev_info.flow_type_rss_offloads;
++		if (local_port_conf.rx_adv_conf.rss_conf.rss_hf !=
++				port_conf.rx_adv_conf.rss_conf.rss_hf) {
++			printf("Port %u modified RSS hash function based on hardware support,"
++			       "requested:%#"PRIx64" configured:%#"PRIx64"",
++				port_id,
++				port_conf.rx_adv_conf.rss_conf.rss_hf,
++				local_port_conf.rx_adv_conf.rss_conf.rss_hf);
++		}
++
++		if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
++			local_port_conf.txmode.offloads |=
++				RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
++		/* Configure RX and TX queue. 8< */
++		ret = rte_eth_dev_configure(port_id, rsrc->num_rxq, rsrc->num_txq,
++					    &local_port_conf);
++		if (ret < 0)
++			rte_panic("Cannot configure device: err=%d, port=%u\n", ret, port_id);
++		/* >8 End of configuration RX and TX queue. */
++
++		ret = rte_eth_dev_adjust_nb_rx_tx_desc(port_id, &nb_rxd, &nb_txd);
++		if (ret < 0)
++			rte_panic("Cannot adjust number of descriptors: err=%d, port=%u\n",
++				  ret, port_id);
++
++		rte_eth_macaddr_get(port_id, &rsrc->eth_addr[port_id]);
++
++		/* init one RX queue */
++		fflush(stdout);
++		rxq_conf = dev_info.default_rxconf;
++		rxq_conf.offloads = local_port_conf.rxmode.offloads;
++		/* Using lcore to poll one or several ports. 8< */
++
++		for (i = 0; i < rsrc->num_rxq; i++) {
++			ret = rte_eth_rx_queue_setup(port_id, i, nb_rxd,
++						     rte_eth_dev_socket_id(port_id), &rxq_conf,
++						     rsrc->pktmbuf_pool[port_id][i]);
++			if (ret < 0)
++				rte_panic("rte_eth_rx_queue_setup:err=%d, port=%u\n",
++					  ret, port_id);
++		}
++
++		/* >8 End of using lcore to poll one or several ports. */
++
++		/* Init one TX queue on each port. 8< */
++		fflush(stdout);
++		txq_conf = dev_info.default_txconf;
++		txq_conf.offloads = local_port_conf.txmode.offloads;
++		for (i = 0; i < rsrc->num_txq; i++) {
++			ret = rte_eth_tx_queue_setup(port_id, i, nb_txd,
++						     rte_eth_dev_socket_id(port_id), &txq_conf);
++			if (ret < 0)
++				rte_panic("rte_eth_tx_queue_setup:err=%d, port=%u\n", ret, port_id);
++		}
++		/* >8 End of init one TX queue on each port. */
++
++		rte_eth_promiscuous_enable(port_id);
++
++		printf("Port %u,MAC address: " RTE_ETHER_ADDR_PRT_FMT "\n\n",
++			port_id,
++			RTE_ETHER_ADDR_BYTES(&rsrc->eth_addr[port_id]));
++	}
++
++	return nb_ports_available;
++}
++
++static void
++l2fwd_event_vector_array_free(struct rte_event events[], uint16_t num)
++{
++	uint16_t i;
++
++	for (i = 0; i < num; i++) {
++		rte_pktmbuf_free_bulk(
++			&events[i].vec->mbufs[events[i].vec->elem_offset],
++			events[i].vec->nb_elem);
++		rte_mempool_put(rte_mempool_from_obj(events[i].vec),
++				events[i].vec);
++	}
++}
++
++static void
++l2fwd_event_port_flush(uint8_t event_d_id __rte_unused, struct rte_event ev,
++		       void *args __rte_unused)
++{
++	if (ev.event_type & RTE_EVENT_TYPE_VECTOR)
++		l2fwd_event_vector_array_free(&ev, 1);
++	else
++		rte_pktmbuf_free(ev.mbuf);
++}
++
++void
++l2fwd_event_worker_cleanup(uint8_t event_d_id, uint8_t port_id,
++			   struct rte_event events[], uint16_t nb_enq,
++			   uint16_t nb_deq, uint8_t is_vector)
++{
++	int i;
++
++	if (nb_deq) {
++		if (is_vector)
++			l2fwd_event_vector_array_free(events + nb_enq,
++						      nb_deq - nb_enq);
++		else
++			for (i = nb_enq; i < nb_deq; i++)
++				rte_pktmbuf_free(events[i].mbuf);
++
++		for (i = 0; i < nb_deq; i++)
++			events[i].op = RTE_EVENT_OP_RELEASE;
++		rte_event_enqueue_burst(event_d_id, port_id, events, nb_deq);
++	}
++
++	rte_event_port_quiesce(event_d_id, port_id, l2fwd_event_port_flush,
++			       NULL);
++}
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.h b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.h
+new file mode 100644
+index 0000000000000..c4386befa82d6
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_common.h
+@@ -0,0 +1,165 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2019 Marvell International Ltd.
++ */
++
++#ifndef __L2FWD_COMMON_H__
++#define __L2FWD_COMMON_H__
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <stdint.h>
++#include <inttypes.h>
++#include <sys/types.h>
++#include <sys/queue.h>
++#include <netinet/in.h>
++#include <setjmp.h>
++#include <stdarg.h>
++#include <ctype.h>
++#include <errno.h>
++#include <getopt.h>
++#include <signal.h>
++#include <stdbool.h>
++
++#include <rte_common.h>
++#include <rte_malloc.h>
++#include <rte_memory.h>
++#include <rte_memcpy.h>
++#include <rte_eal.h>
++#include <rte_launch.h>
++#include <rte_cycles.h>
++#include <rte_prefetch.h>
++#include <rte_lcore.h>
++#include <rte_per_lcore.h>
++#include <rte_branch_prediction.h>
++#include <rte_interrupts.h>
++#include <rte_random.h>
++#include <rte_debug.h>
++#include <rte_ether.h>
++#include <rte_ethdev.h>
++#include <rte_eventdev.h>
++#include <rte_mempool.h>
++#include <rte_mbuf.h>
++#include <rte_spinlock.h>
++
++#define MAX_PKT_BURST 32
++#define MAX_RX_QUEUE_PER_LCORE 16
++#define MAX_RX_QUEUE_PER_PORT 16
++#define MAX_TX_QUEUE_PER_PORT 16
++#define MAX_PFC_CONFIG_PER_PORT 16
++
++#define RX_DESC_DEFAULT 1024
++#define TX_DESC_DEFAULT 1024
++
++#define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
++#define MEMPOOL_CACHE_SIZE 256
++
++#define DEFAULT_TIMER_PERIOD	10 /* default period is 10 seconds */
++#define MAX_TIMER_PERIOD	86400 /* 1 day max */
++
++#define VECTOR_SIZE_DEFAULT   MAX_PKT_BURST
++#define VECTOR_TMO_NS_DEFAULT 1E6 /* 1ms */
++
++/* Per-port statistics struct */
++struct l2fwd_port_statistics {
++	uint64_t dropped;
++	uint64_t tx;
++	uint64_t rx;
++} __rte_cache_aligned;
++
++/* Event vector attributes */
++struct l2fwd_event_vector_params {
++	uint8_t enabled;
++	uint16_t size;
++	uint64_t timeout_ns;
++};
++
++struct l2fwd_event_pfc_params {
++	bool rx_pfc;
++	bool tx_pfc;
++	uint16_t txq;
++	uint16_t tx_tc;
++	uint16_t rxq;
++	uint16_t rx_tc;
++	uint16_t pause;
++};
++
++struct l2fwd_resources {
++	volatile uint8_t force_quit;
++	uint8_t event_mode;
++	uint8_t sched_type;
++	uint8_t mac_updating;
++	uint8_t rx_queue_per_lcore;
++	uint8_t num_rxq;
++	uint8_t num_txq;
++	uint8_t pfc_config_cnt[RTE_MAX_ETHPORTS];
++	struct l2fwd_event_pfc_params pfc_config[RTE_MAX_ETHPORTS][MAX_PFC_CONFIG_PER_PORT];
++	bool port_pairs;
++	uint16_t nb_rxd;
++	uint16_t nb_txd;
++	uint32_t enabled_port_mask;
++	uint64_t timer_period;
++	struct rte_mempool *pktmbuf_pool[RTE_MAX_ETHPORTS][MAX_RX_QUEUE_PER_PORT];
++	struct rte_mempool *evt_vec_pool;
++	uint32_t dst_ports[RTE_MAX_ETHPORTS];
++	struct rte_ether_addr eth_addr[RTE_MAX_ETHPORTS];
++	struct l2fwd_port_statistics port_stats[RTE_MAX_ETHPORTS];
++	struct l2fwd_event_vector_params evt_vec;
++	void *evt_rsrc;
++	void *poll_rsrc;
++} __rte_cache_aligned;
++
++static __rte_always_inline void
++l2fwd_mac_updating(struct rte_mbuf *m, uint32_t dest_port_id,
++		   struct rte_ether_addr *addr)
++{
++	struct rte_ether_hdr *eth;
++	void *tmp;
++
++	eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
++
++	/* 02:00:00:00:00:xx */
++	tmp = &eth->dst_addr.addr_bytes[0];
++	*((uint64_t *)tmp) = 0x000000000002 + ((uint64_t)dest_port_id << 40);
++
++	/* src addr */
++	rte_ether_addr_copy(addr, &eth->src_addr);
++}
++
++static __rte_always_inline struct l2fwd_resources *
++l2fwd_get_rsrc(void)
++{
++	static const char name[RTE_MEMZONE_NAMESIZE] = "rsrc";
++	const struct rte_memzone *mz;
++
++	mz = rte_memzone_lookup(name);
++	if (mz != NULL)
++		return mz->addr;
++
++	mz = rte_memzone_reserve(name, sizeof(struct l2fwd_resources), 0, 0);
++	if (mz != NULL) {
++		struct l2fwd_resources *rsrc = mz->addr;
++
++		memset(rsrc, 0, sizeof(struct l2fwd_resources));
++		rsrc->mac_updating = true;
++		rsrc->event_mode = true;
++		rsrc->rx_queue_per_lcore = 1;
++		rsrc->num_rxq = 1;
++		rsrc->num_txq = 1;
++		rsrc->sched_type = RTE_SCHED_TYPE_ATOMIC;
++		rsrc->timer_period = 10 * rte_get_timer_hz();
++
++		return mz->addr;
++	}
++
++	rte_panic("Unable to allocate memory for l2fwd resources\n");
++
++	return NULL;
++}
++
++int l2fwd_event_init_ports(struct l2fwd_resources *rsrc);
++void l2fwd_event_worker_cleanup(uint8_t event_d_id, uint8_t port_id,
++				struct rte_event events[], uint16_t nb_enq,
++				uint16_t nb_deq, uint8_t is_vector);
++
++#endif /* __L2FWD_COMMON_H__ */
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event.c b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event.c
+new file mode 100644
+index 0000000000000..881bb4e060560
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event.c
+@@ -0,0 +1,593 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2019 Marvell International Ltd.
++ */
++
++#include <stdbool.h>
++#include <getopt.h>
++
++#include <rte_cycles.h>
++#include <rte_ethdev.h>
++#include <rte_eventdev.h>
++#include <rte_event_eth_rx_adapter.h>
++#include <rte_event_eth_tx_adapter.h>
++#include <rte_lcore.h>
++#include <rte_malloc.h>
++#include <rte_spinlock.h>
++
++#include "l2fwd_event.h"
++
++#define L2FWD_EVENT_SINGLE	0x1
++#define L2FWD_EVENT_BURST	0x2
++#define L2FWD_EVENT_TX_DIRECT	0x4
++#define L2FWD_EVENT_TX_ENQ	0x8
++#define L2FWD_EVENT_UPDT_MAC	0x10
++
++static inline int
++l2fwd_event_service_enable(uint32_t service_id)
++{
++	uint8_t min_service_count = UINT8_MAX;
++	uint32_t slcore_array[RTE_MAX_LCORE];
++	unsigned int slcore = 0;
++	uint8_t service_count;
++	int32_t slcore_count;
++
++	if (!rte_service_lcore_count())
++		return -ENOENT;
++
++	slcore_count = rte_service_lcore_list(slcore_array, RTE_MAX_LCORE);
++	if (slcore_count < 0)
++		return -ENOENT;
++	/* Get the core which has least number of services running. */
++	while (slcore_count--) {
++		/* Reset default mapping */
++		if (rte_service_map_lcore_set(service_id,
++					slcore_array[slcore_count], 0) != 0)
++			return -ENOENT;
++		service_count = rte_service_lcore_count_services(
++				slcore_array[slcore_count]);
++		if (service_count < min_service_count) {
++			slcore = slcore_array[slcore_count];
++			min_service_count = service_count;
++		}
++	}
++	if (rte_service_map_lcore_set(service_id, slcore, 1) != 0)
++		return -ENOENT;
++	rte_service_lcore_start(slcore);
++
++	return 0;
++}
++
++void
++l2fwd_event_service_setup(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	struct rte_event_dev_info evdev_info;
++	uint32_t service_id, caps;
++	int ret, i;
++
++	/* Running eventdev scheduler service on service core. 8< */
++	rte_event_dev_info_get(evt_rsrc->event_d_id, &evdev_info);
++	if (!(evdev_info.event_dev_cap & RTE_EVENT_DEV_CAP_DISTRIBUTED_SCHED)) {
++		ret = rte_event_dev_service_id_get(evt_rsrc->event_d_id,
++				&service_id);
++		if (ret != -ESRCH && ret != 0)
++			rte_panic("Error in starting eventdev service\n");
++		l2fwd_event_service_enable(service_id);
++	}
++	/* >8 End of running eventdev scheduler service on service core. */
++
++	/* Gets service ID for RX/TX adapters. 8< */
++	for (i = 0; i < evt_rsrc->rx_adptr.nb_rx_adptr; i++) {
++		ret = rte_event_eth_rx_adapter_caps_get(evt_rsrc->event_d_id,
++				evt_rsrc->rx_adptr.rx_adptr[i], &caps);
++		if (ret < 0)
++			rte_panic("Failed to get Rx adapter[%d] caps\n",
++				  evt_rsrc->rx_adptr.rx_adptr[i]);
++		ret = rte_event_eth_rx_adapter_service_id_get(
++				evt_rsrc->event_d_id,
++				&service_id);
++		if (ret != -ESRCH && ret != 0)
++			rte_panic("Error in starting Rx adapter[%d] service\n",
++				  evt_rsrc->rx_adptr.rx_adptr[i]);
++		l2fwd_event_service_enable(service_id);
++	}
++
++	for (i = 0; i < evt_rsrc->tx_adptr.nb_tx_adptr; i++) {
++		ret = rte_event_eth_tx_adapter_caps_get(evt_rsrc->event_d_id,
++				evt_rsrc->tx_adptr.tx_adptr[i], &caps);
++		if (ret < 0)
++			rte_panic("Failed to get Rx adapter[%d] caps\n",
++				  evt_rsrc->tx_adptr.tx_adptr[i]);
++		ret = rte_event_eth_tx_adapter_service_id_get(
++				evt_rsrc->event_d_id,
++				&service_id);
++		if (ret != -ESRCH && ret != 0)
++			rte_panic("Error in starting Rx adapter[%d] service\n",
++				  evt_rsrc->tx_adptr.tx_adptr[i]);
++		l2fwd_event_service_enable(service_id);
++	}
++	/* >8 End of get service ID for RX/TX adapters. */
++}
++
++static void
++l2fwd_event_capability_setup(struct l2fwd_event_resources *evt_rsrc)
++{
++	uint32_t caps = 0;
++	uint16_t i;
++	int ret;
++
++	RTE_ETH_FOREACH_DEV(i) {
++		ret = rte_event_eth_tx_adapter_caps_get(0, i, &caps);
++		if (ret)
++			rte_panic("Invalid capability for Tx adptr port %d\n",
++				  i);
++
++		evt_rsrc->tx_mode_q |= !(caps &
++				   RTE_EVENT_ETH_TX_ADAPTER_CAP_INTERNAL_PORT);
++	}
++
++	if (evt_rsrc->tx_mode_q)
++		l2fwd_event_set_generic_ops(&evt_rsrc->ops);
++	else
++		l2fwd_event_set_internal_port_ops(&evt_rsrc->ops);
++}
++
++static __rte_noinline int
++l2fwd_get_free_event_port(struct l2fwd_event_resources *evt_rsrc)
++{
++	static int index;
++	int port_id;
++
++	rte_spinlock_lock(&evt_rsrc->evp.lock);
++	if (index >= evt_rsrc->evp.nb_ports) {
++		printf("No free event port is available\n");
++		return -1;
++	}
++
++	port_id = evt_rsrc->evp.event_p_id[index];
++	index++;
++	rte_spinlock_unlock(&evt_rsrc->evp.lock);
++
++	return port_id;
++}
++
++static  __rte_always_inline void
++l2fwd_event_fwd(struct l2fwd_resources *rsrc, struct rte_event *ev,
++		const uint8_t tx_q_id, const uint64_t timer_period,
++		const uint32_t flags)
++{
++	struct rte_mbuf *mbuf = ev->mbuf;
++	struct rte_ether_hdr *eth;
++	struct rte_vlan_hdr *vlan;
++	uint16_t dst_port, txq = 0;
++
++	rte_prefetch0(rte_pktmbuf_mtod(mbuf, void *));
++	dst_port = rsrc->dst_ports[mbuf->port];
++
++	if (timer_period > 0)
++		__atomic_fetch_add(&rsrc->port_stats[mbuf->port].rx,
++				1, __ATOMIC_RELAXED);
++	mbuf->port = dst_port;
++
++	if (flags & L2FWD_EVENT_UPDT_MAC)
++		l2fwd_mac_updating(mbuf, dst_port, &rsrc->eth_addr[dst_port]);
++
++	if (flags & L2FWD_EVENT_TX_ENQ) {
++		ev->queue_id = tx_q_id;
++		ev->op = RTE_EVENT_OP_FORWARD;
++	}
++
++	if (flags & L2FWD_EVENT_TX_DIRECT) {
++		eth = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr *);
++		vlan = (struct rte_vlan_hdr *)(eth + 1);
++
++		txq = rte_cpu_to_be_16(vlan->vlan_tci) & 0xE000;
++		txq = txq >> 13;
++		rte_event_eth_tx_adapter_txq_set(mbuf, txq);
++	}
++
++	if (timer_period > 0)
++		__atomic_fetch_add(&rsrc->port_stats[mbuf->port].tx,
++				1, __ATOMIC_RELAXED);
++}
++
++static __rte_always_inline void
++l2fwd_event_loop_single(struct l2fwd_resources *rsrc,
++			const uint32_t flags)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	const int port_id = l2fwd_get_free_event_port(evt_rsrc);
++	const uint8_t tx_q_id = evt_rsrc->evq.event_q_id[
++					evt_rsrc->evq.nb_queues - 1];
++	const uint64_t timer_period = rsrc->timer_period;
++	const uint8_t event_d_id = evt_rsrc->event_d_id;
++	uint8_t enq = 0, deq = 0;
++	struct rte_event ev;
++
++	if (port_id < 0)
++		return;
++
++	printf("%s(): entering eventdev main loop on lcore %u\n", __func__,
++		rte_lcore_id());
++
++	while (!rsrc->force_quit) {
++		/* Read packet from eventdev */
++		deq = rte_event_dequeue_burst(event_d_id, port_id, &ev, 1, 0);
++		if (!deq)
++			continue;
++
++		l2fwd_event_fwd(rsrc, &ev, tx_q_id, timer_period, flags);
++
++		if (flags & L2FWD_EVENT_TX_ENQ) {
++			do {
++				enq = rte_event_enqueue_burst(event_d_id,
++							      port_id, &ev, 1);
++			} while (!enq && !rsrc->force_quit);
++		}
++
++		if (flags & L2FWD_EVENT_TX_DIRECT) {
++			enq = rte_event_eth_tx_adapter_enqueue(
++				event_d_id, port_id, &ev, 1, 0);
++			if (!enq)
++				rte_pktmbuf_free(ev.mbuf);
++		}
++	}
++
++	l2fwd_event_worker_cleanup(event_d_id, port_id, &ev, enq, deq, 0);
++}
++
++static __rte_always_inline void
++l2fwd_event_loop_burst(struct l2fwd_resources *rsrc,
++		       const uint32_t flags)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	const int port_id = l2fwd_get_free_event_port(evt_rsrc);
++	const uint8_t tx_q_id = evt_rsrc->evq.event_q_id[
++					evt_rsrc->evq.nb_queues - 1];
++	const uint64_t timer_period = rsrc->timer_period;
++	const uint8_t event_d_id = evt_rsrc->event_d_id;
++	const uint8_t deq_len = evt_rsrc->deq_depth;
++	struct rte_event ev[MAX_PKT_BURST];
++	uint16_t nb_rx = 0, nb_tx = 0;
++	uint8_t i;
++
++	if (port_id < 0)
++		return;
++
++	printf("%s(): entering eventdev main loop on lcore %u\n", __func__,
++		rte_lcore_id());
++
++	while (!rsrc->force_quit) {
++		/* Read packet from eventdev. 8< */
++		nb_rx = rte_event_dequeue_burst(event_d_id, port_id, ev,
++						deq_len, 0);
++		if (nb_rx == 0)
++			continue;
++
++		for (i = 0; i < nb_rx; i++) {
++			l2fwd_event_fwd(rsrc, &ev[i], tx_q_id, timer_period,
++					flags);
++		}
++		/* >8 End of reading packets from eventdev. */
++
++		if (flags & L2FWD_EVENT_TX_ENQ) {
++			/* Forwarding to destination ports. 8< */
++			nb_tx = rte_event_enqueue_burst(event_d_id, port_id,
++							ev, nb_rx);
++			while (nb_tx < nb_rx && !rsrc->force_quit)
++				nb_tx += rte_event_enqueue_burst(event_d_id,
++						port_id, ev + nb_tx,
++						nb_rx - nb_tx);
++			/* >8 End of forwarding to destination ports. */
++		}
++
++		if (flags & L2FWD_EVENT_TX_DIRECT) {
++			nb_tx = rte_event_eth_tx_adapter_enqueue(event_d_id,
++								 port_id, ev,
++								 nb_rx, 0);
++			while (nb_tx < nb_rx && !rsrc->force_quit)
++				nb_tx += rte_event_eth_tx_adapter_enqueue(
++						event_d_id, port_id,
++						ev + nb_tx, nb_rx - nb_tx, 0);
++		}
++	}
++
++	l2fwd_event_worker_cleanup(event_d_id, port_id, ev, nb_tx, nb_rx, 0);
++}
++
++static __rte_always_inline void
++l2fwd_event_loop(struct l2fwd_resources *rsrc,
++			const uint32_t flags)
++{
++	if (flags & L2FWD_EVENT_SINGLE)
++		l2fwd_event_loop_single(rsrc, flags);
++	if (flags & L2FWD_EVENT_BURST)
++		l2fwd_event_loop_burst(rsrc, flags);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_d(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop(rsrc,
++			 L2FWD_EVENT_TX_DIRECT | L2FWD_EVENT_SINGLE);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_d_brst(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop(rsrc, L2FWD_EVENT_TX_DIRECT | L2FWD_EVENT_BURST);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_q(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop(rsrc, L2FWD_EVENT_TX_ENQ | L2FWD_EVENT_SINGLE);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_q_brst(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop(rsrc, L2FWD_EVENT_TX_ENQ | L2FWD_EVENT_BURST);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_d_mac(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop(rsrc, L2FWD_EVENT_UPDT_MAC |
++			L2FWD_EVENT_TX_DIRECT | L2FWD_EVENT_SINGLE);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_d_brst_mac(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop(rsrc, L2FWD_EVENT_UPDT_MAC |
++			L2FWD_EVENT_TX_DIRECT | L2FWD_EVENT_BURST);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_q_mac(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop(rsrc, L2FWD_EVENT_UPDT_MAC |
++			L2FWD_EVENT_TX_ENQ | L2FWD_EVENT_SINGLE);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_q_brst_mac(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop(rsrc, L2FWD_EVENT_UPDT_MAC |
++			L2FWD_EVENT_TX_ENQ | L2FWD_EVENT_BURST);
++}
++
++static __rte_always_inline void
++l2fwd_event_vector_fwd(struct l2fwd_resources *rsrc,
++		       struct rte_event_vector *vec,
++		       const uint64_t timer_period, const uint32_t flags)
++{
++	struct rte_mbuf **mbufs = vec->mbufs;
++	uint16_t i, j;
++
++	rte_prefetch0(rte_pktmbuf_mtod(mbufs[0], void *));
++
++	/* If vector attribute is valid, mbufs will be from same port/queue */
++	if (vec->attr_valid) {
++		vec->port = rsrc->dst_ports[mbufs[0]->port];
++		if (flags & L2FWD_EVENT_TX_DIRECT)
++			vec->queue = 0;
++
++		if (timer_period > 0)
++			__atomic_fetch_add(&rsrc->port_stats[mbufs[0]->port].rx,
++					   vec->nb_elem, __ATOMIC_RELAXED);
++
++		for (i = 0, j = 1; i < vec->nb_elem; i++, j++) {
++			if (j < vec->nb_elem)
++				rte_prefetch0(
++					rte_pktmbuf_mtod(mbufs[j], void *));
++
++			if (flags & L2FWD_EVENT_UPDT_MAC)
++				l2fwd_mac_updating(
++					mbufs[i], vec->port,
++					&rsrc->eth_addr[vec->port]);
++		}
++
++		if (timer_period > 0)
++			__atomic_fetch_add(&rsrc->port_stats[vec->port].tx,
++					   vec->nb_elem, __ATOMIC_RELAXED);
++	} else {
++		for (i = 0, j = 1; i < vec->nb_elem; i++, j++) {
++			if (timer_period > 0)
++				__atomic_fetch_add(
++					&rsrc->port_stats[mbufs[i]->port].rx, 1,
++					__ATOMIC_RELAXED);
++
++			if (j < vec->nb_elem)
++				rte_prefetch0(
++					rte_pktmbuf_mtod(mbufs[j], void *));
++
++			mbufs[i]->port = rsrc->dst_ports[mbufs[i]->port];
++
++			if (flags & L2FWD_EVENT_UPDT_MAC)
++				l2fwd_mac_updating(
++					mbufs[i], mbufs[i]->port,
++					&rsrc->eth_addr[mbufs[i]->port]);
++
++			if (flags & L2FWD_EVENT_TX_DIRECT)
++				rte_event_eth_tx_adapter_txq_set(mbufs[i], 0);
++
++			if (timer_period > 0)
++				__atomic_fetch_add(
++					&rsrc->port_stats[mbufs[i]->port].tx, 1,
++					__ATOMIC_RELAXED);
++		}
++	}
++}
++
++static __rte_always_inline void
++l2fwd_event_loop_vector(struct l2fwd_resources *rsrc, const uint32_t flags)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	const int port_id = l2fwd_get_free_event_port(evt_rsrc);
++	const uint8_t tx_q_id =
++		evt_rsrc->evq.event_q_id[evt_rsrc->evq.nb_queues - 1];
++	const uint64_t timer_period = rsrc->timer_period;
++	const uint8_t event_d_id = evt_rsrc->event_d_id;
++	const uint8_t deq_len = evt_rsrc->deq_depth;
++	struct rte_event ev[MAX_PKT_BURST];
++	uint16_t nb_rx = 0, nb_tx = 0;
++	uint8_t i;
++
++	if (port_id < 0)
++		return;
++
++	printf("%s(): entering eventdev main loop on lcore %u\n", __func__,
++	       rte_lcore_id());
++
++	while (!rsrc->force_quit) {
++		nb_rx = rte_event_dequeue_burst(event_d_id, port_id, ev,
++						deq_len, 0);
++		if (nb_rx == 0)
++			continue;
++
++		for (i = 0; i < nb_rx; i++) {
++			if (flags & L2FWD_EVENT_TX_ENQ) {
++				ev[i].queue_id = tx_q_id;
++				ev[i].op = RTE_EVENT_OP_FORWARD;
++			}
++
++			l2fwd_event_vector_fwd(rsrc, ev[i].vec, timer_period,
++					       flags);
++		}
++
++		if (flags & L2FWD_EVENT_TX_ENQ) {
++			nb_tx = rte_event_enqueue_burst(event_d_id, port_id, ev,
++							nb_rx);
++			while (nb_tx < nb_rx && !rsrc->force_quit)
++				nb_tx += rte_event_enqueue_burst(
++					event_d_id, port_id, ev + nb_tx,
++					nb_rx - nb_tx);
++		}
++
++		if (flags & L2FWD_EVENT_TX_DIRECT) {
++			nb_tx = rte_event_eth_tx_adapter_enqueue(
++				event_d_id, port_id, ev, nb_rx, 0);
++			while (nb_tx < nb_rx && !rsrc->force_quit)
++				nb_tx += rte_event_eth_tx_adapter_enqueue(
++					event_d_id, port_id, ev + nb_tx,
++					nb_rx - nb_tx, 0);
++		}
++	}
++
++	l2fwd_event_worker_cleanup(event_d_id, port_id, ev, nb_tx, nb_rx, 1);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_d_vec(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop_vector(rsrc, L2FWD_EVENT_TX_DIRECT);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_d_brst_vec(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop_vector(rsrc, L2FWD_EVENT_TX_DIRECT);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_q_vec(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop_vector(rsrc, L2FWD_EVENT_TX_ENQ);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_q_brst_vec(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop_vector(rsrc, L2FWD_EVENT_TX_ENQ);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_d_mac_vec(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop_vector(rsrc,
++				L2FWD_EVENT_UPDT_MAC | L2FWD_EVENT_TX_DIRECT);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_d_brst_mac_vec(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop_vector(rsrc,
++				L2FWD_EVENT_UPDT_MAC | L2FWD_EVENT_TX_DIRECT);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_q_mac_vec(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop_vector(rsrc,
++				L2FWD_EVENT_UPDT_MAC | L2FWD_EVENT_TX_ENQ);
++}
++
++static void __rte_noinline
++l2fwd_event_main_loop_tx_q_brst_mac_vec(struct l2fwd_resources *rsrc)
++{
++	l2fwd_event_loop_vector(rsrc,
++				L2FWD_EVENT_UPDT_MAC | L2FWD_EVENT_TX_ENQ);
++}
++
++void
++l2fwd_event_resource_setup(struct l2fwd_resources *rsrc)
++{
++	/* [MAC_UPDT][TX_MODE][BURST] */
++	const event_loop_cb event_loop[2][2][2][2] = {
++		[0][0][0][0] = l2fwd_event_main_loop_tx_d,
++		[0][0][0][1] = l2fwd_event_main_loop_tx_d_brst,
++		[0][0][1][0] = l2fwd_event_main_loop_tx_q,
++		[0][0][1][1] = l2fwd_event_main_loop_tx_q_brst,
++		[0][1][0][0] = l2fwd_event_main_loop_tx_d_mac,
++		[0][1][0][1] = l2fwd_event_main_loop_tx_d_brst_mac,
++		[0][1][1][0] = l2fwd_event_main_loop_tx_q_mac,
++		[0][1][1][1] = l2fwd_event_main_loop_tx_q_brst_mac,
++		[1][0][0][0] = l2fwd_event_main_loop_tx_d_vec,
++		[1][0][0][1] = l2fwd_event_main_loop_tx_d_brst_vec,
++		[1][0][1][0] = l2fwd_event_main_loop_tx_q_vec,
++		[1][0][1][1] = l2fwd_event_main_loop_tx_q_brst_vec,
++		[1][1][0][0] = l2fwd_event_main_loop_tx_d_mac_vec,
++		[1][1][0][1] = l2fwd_event_main_loop_tx_d_brst_mac_vec,
++		[1][1][1][0] = l2fwd_event_main_loop_tx_q_mac_vec,
++		[1][1][1][1] = l2fwd_event_main_loop_tx_q_brst_mac_vec,
++	};
++	struct l2fwd_event_resources *evt_rsrc;
++	uint32_t event_queue_cfg;
++	int ret;
++
++	if (!rte_event_dev_count())
++		rte_panic("No Eventdev found\n");
++
++	evt_rsrc = rte_zmalloc("l2fwd_event",
++				 sizeof(struct l2fwd_event_resources), 0);
++	if (evt_rsrc == NULL)
++		rte_panic("Failed to allocate memory\n");
++
++	rsrc->evt_rsrc = evt_rsrc;
++
++	/* Setup eventdev capability callbacks */
++	l2fwd_event_capability_setup(evt_rsrc);
++
++	/* Event device configuration */
++	event_queue_cfg = evt_rsrc->ops.event_device_setup(rsrc);
++
++	/* Event queue configuration */
++	evt_rsrc->ops.event_queue_setup(rsrc, event_queue_cfg);
++
++	/* Event port configuration */
++	evt_rsrc->ops.event_port_setup(rsrc);
++
++	/* Rx/Tx adapters configuration */
++	evt_rsrc->ops.adapter_setup(rsrc);
++
++	/* Start event device */
++	ret = rte_event_dev_start(evt_rsrc->event_d_id);
++	if (ret < 0)
++		rte_panic("Error in starting eventdev\n");
++
++	evt_rsrc->ops.l2fwd_event_loop =
++		event_loop[rsrc->evt_vec.enabled][rsrc->mac_updating]
++			  [evt_rsrc->tx_mode_q][evt_rsrc->has_burst];
++}
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event.h b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event.h
+new file mode 100644
+index 0000000000000..78f22e5f9cda5
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event.h
+@@ -0,0 +1,73 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2019 Marvell International Ltd.
++ */
++
++#ifndef __L2FWD_EVENT_H__
++#define __L2FWD_EVENT_H__
++
++#include <rte_common.h>
++#include <rte_event_eth_rx_adapter.h>
++#include <rte_event_eth_tx_adapter.h>
++#include <rte_mbuf.h>
++#include <rte_spinlock.h>
++
++#include "l2fwd_common.h"
++
++typedef uint32_t (*event_device_setup_cb)(struct l2fwd_resources *rsrc);
++typedef void (*event_port_setup_cb)(struct l2fwd_resources *rsrc);
++typedef void (*event_queue_setup_cb)(struct l2fwd_resources *rsrc,
++				     uint32_t event_queue_cfg);
++typedef void (*adapter_setup_cb)(struct l2fwd_resources *rsrc);
++typedef void (*event_loop_cb)(struct l2fwd_resources *rsrc);
++
++struct event_queues {
++	uint8_t *event_q_id;
++	uint8_t	nb_queues;
++};
++
++struct event_ports {
++	uint8_t *event_p_id;
++	uint8_t	nb_ports;
++	rte_spinlock_t lock;
++};
++
++struct event_rx_adptr {
++	uint32_t service_id;
++	uint8_t	nb_rx_adptr;
++	uint8_t *rx_adptr;
++};
++
++struct event_tx_adptr {
++	uint32_t service_id;
++	uint8_t	nb_tx_adptr;
++	uint8_t *tx_adptr;
++};
++
++struct event_setup_ops {
++	event_device_setup_cb event_device_setup;
++	event_queue_setup_cb event_queue_setup;
++	event_port_setup_cb event_port_setup;
++	adapter_setup_cb adapter_setup;
++	event_loop_cb l2fwd_event_loop;
++};
++
++struct l2fwd_event_resources {
++	uint8_t tx_mode_q;
++	uint8_t deq_depth;
++	uint8_t has_burst;
++	uint8_t event_d_id;
++	uint8_t disable_implicit_release;
++	struct event_ports evp;
++	struct event_queues evq;
++	struct event_setup_ops ops;
++	struct event_rx_adptr rx_adptr;
++	struct event_tx_adptr tx_adptr;
++	struct rte_event_port_conf def_p_conf;
++};
++
++void l2fwd_event_resource_setup(struct l2fwd_resources *rsrc);
++void l2fwd_event_set_generic_ops(struct event_setup_ops *ops);
++void l2fwd_event_set_internal_port_ops(struct event_setup_ops *ops);
++void l2fwd_event_service_setup(struct l2fwd_resources *rsrc);
++
++#endif /* __L2FWD_EVENT_H__ */
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event_generic.c b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event_generic.c
+new file mode 100644
+index 0000000000000..a71b331d23ab5
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event_generic.c
+@@ -0,0 +1,352 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2019 Marvell International Ltd.
++ */
++
++#include <stdbool.h>
++#include <getopt.h>
++
++#include <rte_cycles.h>
++#include <rte_ethdev.h>
++#include <rte_eventdev.h>
++#include <rte_event_eth_rx_adapter.h>
++#include <rte_event_eth_tx_adapter.h>
++#include <rte_lcore.h>
++#include <rte_spinlock.h>
++
++#include "l2fwd_common.h"
++#include "l2fwd_event.h"
++
++static uint32_t
++l2fwd_event_device_setup_generic(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	/* Configures event device as per below configuration. 8< */
++	struct rte_event_dev_config event_d_conf = {
++		.nb_events_limit  = 4096,
++		.nb_event_queue_flows = 1024,
++		.nb_event_port_dequeue_depth = 128,
++		.nb_event_port_enqueue_depth = 128
++	};
++	/* >8 End of configuration event device as per below configuration. */
++	struct rte_event_dev_info dev_info;
++	const uint8_t event_d_id = 0; /* Always use first event device only */
++	uint32_t event_queue_cfg = 0;
++	uint16_t ethdev_count = 0;
++	uint16_t num_workers = 0;
++	uint16_t port_id;
++	int ret;
++
++	RTE_ETH_FOREACH_DEV(port_id) {
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++		ethdev_count++;
++	}
++
++	/* Event device configuration */
++	rte_event_dev_info_get(event_d_id, &dev_info);
++
++	/* Enable implicit release */
++	if (dev_info.event_dev_cap & RTE_EVENT_DEV_CAP_IMPLICIT_RELEASE_DISABLE)
++		evt_rsrc->disable_implicit_release = 0;
++
++	if (dev_info.event_dev_cap & RTE_EVENT_DEV_CAP_QUEUE_ALL_TYPES)
++		event_queue_cfg |= RTE_EVENT_QUEUE_CFG_ALL_TYPES;
++
++	/* One queue for each ethdev port + one Tx adapter Single link queue. */
++	event_d_conf.nb_event_queues = ethdev_count + 1;
++	if (dev_info.max_event_queues < event_d_conf.nb_event_queues)
++		event_d_conf.nb_event_queues = dev_info.max_event_queues;
++
++	if (dev_info.max_num_events < event_d_conf.nb_events_limit)
++		event_d_conf.nb_events_limit = dev_info.max_num_events;
++
++	if (dev_info.max_event_queue_flows < event_d_conf.nb_event_queue_flows)
++		event_d_conf.nb_event_queue_flows =
++						dev_info.max_event_queue_flows;
++
++	if (dev_info.max_event_port_dequeue_depth <
++				event_d_conf.nb_event_port_dequeue_depth)
++		event_d_conf.nb_event_port_dequeue_depth =
++				dev_info.max_event_port_dequeue_depth;
++
++	if (dev_info.max_event_port_enqueue_depth <
++				event_d_conf.nb_event_port_enqueue_depth)
++		event_d_conf.nb_event_port_enqueue_depth =
++				dev_info.max_event_port_enqueue_depth;
++
++	/* Ignore Main core and service cores. */
++	num_workers = rte_lcore_count() - 1 - rte_service_lcore_count();
++	if (dev_info.max_event_ports < num_workers)
++		num_workers = dev_info.max_event_ports;
++
++	event_d_conf.nb_event_ports = num_workers;
++	evt_rsrc->evp.nb_ports = num_workers;
++	evt_rsrc->evq.nb_queues = event_d_conf.nb_event_queues;
++
++	evt_rsrc->has_burst = !!(dev_info.event_dev_cap &
++				    RTE_EVENT_DEV_CAP_BURST_MODE);
++
++	ret = rte_event_dev_configure(event_d_id, &event_d_conf);
++	if (ret < 0)
++		rte_panic("Error in configuring event device\n");
++
++	evt_rsrc->event_d_id = event_d_id;
++	return event_queue_cfg;
++}
++
++static void
++l2fwd_event_port_setup_generic(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	uint8_t event_d_id = evt_rsrc->event_d_id;
++	/* Event port initialization. 8< */
++	struct rte_event_port_conf event_p_conf = {
++		.dequeue_depth = 32,
++		.enqueue_depth = 32,
++		.new_event_threshold = 4096
++	};
++	struct rte_event_port_conf def_p_conf;
++	uint8_t event_p_id;
++	int32_t ret;
++
++	evt_rsrc->evp.event_p_id = (uint8_t *)malloc(sizeof(uint8_t) *
++					evt_rsrc->evp.nb_ports);
++	if (!evt_rsrc->evp.event_p_id)
++		rte_panic("No space is available\n");
++
++	memset(&def_p_conf, 0, sizeof(struct rte_event_port_conf));
++	ret = rte_event_port_default_conf_get(event_d_id, 0, &def_p_conf);
++	if (ret < 0)
++		rte_panic("Error to get default configuration of event port\n");
++
++	if (def_p_conf.new_event_threshold < event_p_conf.new_event_threshold)
++		event_p_conf.new_event_threshold =
++			def_p_conf.new_event_threshold;
++
++	if (def_p_conf.dequeue_depth < event_p_conf.dequeue_depth)
++		event_p_conf.dequeue_depth = def_p_conf.dequeue_depth;
++
++	if (def_p_conf.enqueue_depth < event_p_conf.enqueue_depth)
++		event_p_conf.enqueue_depth = def_p_conf.enqueue_depth;
++
++	event_p_conf.event_port_cfg = 0;
++	if (evt_rsrc->disable_implicit_release)
++		event_p_conf.event_port_cfg |=
++			RTE_EVENT_PORT_CFG_DISABLE_IMPL_REL;
++
++	evt_rsrc->deq_depth = def_p_conf.dequeue_depth;
++
++	for (event_p_id = 0; event_p_id < evt_rsrc->evp.nb_ports;
++								event_p_id++) {
++		ret = rte_event_port_setup(event_d_id, event_p_id,
++					   &event_p_conf);
++		if (ret < 0)
++			rte_panic("Error in configuring event port %d\n",
++				  event_p_id);
++
++		ret = rte_event_port_link(event_d_id, event_p_id,
++					  evt_rsrc->evq.event_q_id,
++					  NULL,
++					  evt_rsrc->evq.nb_queues - 1);
++		if (ret != (evt_rsrc->evq.nb_queues - 1))
++			rte_panic("Error in linking event port %d to queues\n",
++				  event_p_id);
++		evt_rsrc->evp.event_p_id[event_p_id] = event_p_id;
++		/* >8 End of event port initialization. */
++	}
++	/* init spinlock */
++	rte_spinlock_init(&evt_rsrc->evp.lock);
++
++	evt_rsrc->def_p_conf = event_p_conf;
++}
++
++static void
++l2fwd_event_queue_setup_generic(struct l2fwd_resources *rsrc,
++			  uint32_t event_queue_cfg)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	uint8_t event_d_id = evt_rsrc->event_d_id;
++	/* Event queue initialization. 8< */
++	struct rte_event_queue_conf event_q_conf = {
++		.nb_atomic_flows = 1024,
++		.nb_atomic_order_sequences = 1024,
++		.event_queue_cfg = event_queue_cfg,
++		.priority = RTE_EVENT_DEV_PRIORITY_NORMAL
++	};
++	struct rte_event_queue_conf def_q_conf;
++	uint8_t event_q_id;
++	int32_t ret;
++
++	event_q_conf.schedule_type = rsrc->sched_type;
++	evt_rsrc->evq.event_q_id = (uint8_t *)malloc(sizeof(uint8_t) *
++					evt_rsrc->evq.nb_queues);
++	if (!evt_rsrc->evq.event_q_id)
++		rte_panic("Memory allocation failure\n");
++
++	ret = rte_event_queue_default_conf_get(event_d_id, 0, &def_q_conf);
++	if (ret < 0)
++		rte_panic("Error to get default config of event queue\n");
++	/* >8 End of event queue initialization. */
++
++	if (def_q_conf.nb_atomic_flows < event_q_conf.nb_atomic_flows)
++		event_q_conf.nb_atomic_flows = def_q_conf.nb_atomic_flows;
++
++	for (event_q_id = 0; event_q_id < (evt_rsrc->evq.nb_queues - 1);
++								event_q_id++) {
++		ret = rte_event_queue_setup(event_d_id, event_q_id,
++					    &event_q_conf);
++		if (ret < 0)
++			rte_panic("Error in configuring event queue\n");
++		evt_rsrc->evq.event_q_id[event_q_id] = event_q_id;
++	}
++
++	event_q_conf.event_queue_cfg |= RTE_EVENT_QUEUE_CFG_SINGLE_LINK;
++	event_q_conf.priority = RTE_EVENT_DEV_PRIORITY_HIGHEST;
++	ret = rte_event_queue_setup(event_d_id, event_q_id, &event_q_conf);
++	if (ret < 0)
++		rte_panic("Error in configuring event queue for Tx adapter\n");
++	evt_rsrc->evq.event_q_id[event_q_id] = event_q_id;
++}
++
++static void
++l2fwd_rx_tx_adapter_setup_generic(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	struct rte_event_eth_rx_adapter_queue_conf eth_q_conf;
++	uint8_t event_d_id = evt_rsrc->event_d_id;
++	uint8_t rx_adptr_id = 0;
++	uint8_t tx_adptr_id = 0;
++	uint8_t tx_port_id = 0;
++	uint16_t port_id;
++	uint32_t service_id;
++	int32_t ret, i = 0;
++
++	memset(&eth_q_conf, 0, sizeof(eth_q_conf));
++	eth_q_conf.ev.priority = RTE_EVENT_DEV_PRIORITY_NORMAL;
++
++	/* Rx adapter setup */
++	evt_rsrc->rx_adptr.nb_rx_adptr = 1;
++	evt_rsrc->rx_adptr.rx_adptr = (uint8_t *)malloc(sizeof(uint8_t) *
++					evt_rsrc->rx_adptr.nb_rx_adptr);
++	if (!evt_rsrc->rx_adptr.rx_adptr) {
++		free(evt_rsrc->evp.event_p_id);
++		free(evt_rsrc->evq.event_q_id);
++		rte_panic("Failed to allocate memory for Rx adapter\n");
++	}
++
++	ret = rte_event_eth_rx_adapter_create(rx_adptr_id, event_d_id,
++					      &evt_rsrc->def_p_conf);
++	if (ret)
++		rte_panic("Failed to create rx adapter\n");
++
++	/* Configure user requested sched type */
++	eth_q_conf.ev.sched_type = rsrc->sched_type;
++	RTE_ETH_FOREACH_DEV(port_id) {
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++		eth_q_conf.ev.queue_id = evt_rsrc->evq.event_q_id[i];
++		if (rsrc->evt_vec.enabled) {
++			uint32_t cap;
++
++			if (rte_event_eth_rx_adapter_caps_get(event_d_id,
++							      port_id, &cap))
++				rte_panic(
++					"Failed to get event rx adapter capability");
++
++			if (cap & RTE_EVENT_ETH_RX_ADAPTER_CAP_EVENT_VECTOR) {
++				eth_q_conf.vector_sz = rsrc->evt_vec.size;
++				eth_q_conf.vector_timeout_ns =
++					rsrc->evt_vec.timeout_ns;
++				eth_q_conf.vector_mp = rsrc->evt_vec_pool;
++				eth_q_conf.rx_queue_flags |=
++				RTE_EVENT_ETH_RX_ADAPTER_QUEUE_EVENT_VECTOR;
++			} else {
++				rte_panic(
++					"Rx adapter doesn't support event vector");
++			}
++		}
++
++		ret = rte_event_eth_rx_adapter_queue_add(rx_adptr_id, port_id,
++							 -1, &eth_q_conf);
++		if (ret)
++			rte_panic("Failed to add queues to Rx adapter\n");
++		if (i < evt_rsrc->evq.nb_queues)
++			i++;
++	}
++
++	ret = rte_event_eth_rx_adapter_service_id_get(rx_adptr_id, &service_id);
++	if (ret != -ESRCH && ret != 0)
++		rte_panic("Error getting the service ID for rx adptr\n");
++
++	rte_service_runstate_set(service_id, 1);
++	rte_service_set_runstate_mapped_check(service_id, 0);
++	evt_rsrc->rx_adptr.service_id = service_id;
++
++	ret = rte_event_eth_rx_adapter_start(rx_adptr_id);
++	if (ret)
++		rte_panic("Rx adapter[%d] start Failed\n", rx_adptr_id);
++
++	evt_rsrc->rx_adptr.rx_adptr[0] = rx_adptr_id;
++
++	/* Tx adapter setup */
++	evt_rsrc->tx_adptr.nb_tx_adptr = 1;
++	evt_rsrc->tx_adptr.tx_adptr = (uint8_t *)malloc(sizeof(uint8_t) *
++					evt_rsrc->tx_adptr.nb_tx_adptr);
++	if (!evt_rsrc->tx_adptr.tx_adptr) {
++		free(evt_rsrc->rx_adptr.rx_adptr);
++		free(evt_rsrc->evp.event_p_id);
++		free(evt_rsrc->evq.event_q_id);
++		rte_panic("Failed to allocate memory for Rx adapter\n");
++	}
++
++	ret = rte_event_eth_tx_adapter_create(tx_adptr_id, event_d_id,
++					      &evt_rsrc->def_p_conf);
++	if (ret)
++		rte_panic("Failed to create tx adapter\n");
++
++	RTE_ETH_FOREACH_DEV(port_id) {
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++		ret = rte_event_eth_tx_adapter_queue_add(tx_adptr_id, port_id,
++							 -1);
++		if (ret)
++			rte_panic("Failed to add queues to Tx adapter\n");
++	}
++
++	ret = rte_event_eth_tx_adapter_service_id_get(tx_adptr_id, &service_id);
++	if (ret != -ESRCH && ret != 0)
++		rte_panic("Failed to get Tx adapter service ID\n");
++
++	rte_service_runstate_set(service_id, 1);
++	rte_service_set_runstate_mapped_check(service_id, 0);
++	evt_rsrc->tx_adptr.service_id = service_id;
++
++	/* Extra port created. 8< */
++	ret = rte_event_eth_tx_adapter_event_port_get(tx_adptr_id, &tx_port_id);
++	if (ret)
++		rte_panic("Failed to get Tx adapter port id: %d\n", ret);
++
++	ret = rte_event_port_link(event_d_id, tx_port_id,
++				  &evt_rsrc->evq.event_q_id[
++					evt_rsrc->evq.nb_queues - 1],
++				  NULL, 1);
++	if (ret != 1)
++		rte_panic("Unable to link Tx adapter port to Tx queue:err=%d\n",
++			 ret);
++	/* >8 End of extra port created. */
++
++	ret = rte_event_eth_tx_adapter_start(tx_adptr_id);
++	if (ret)
++		rte_panic("Tx adapter[%d] start Failed\n", tx_adptr_id);
++
++	evt_rsrc->tx_adptr.tx_adptr[0] = tx_adptr_id;
++}
++
++void
++l2fwd_event_set_generic_ops(struct event_setup_ops *ops)
++{
++	ops->event_device_setup = l2fwd_event_device_setup_generic;
++	ops->event_queue_setup = l2fwd_event_queue_setup_generic;
++	ops->event_port_setup = l2fwd_event_port_setup_generic;
++	ops->adapter_setup = l2fwd_rx_tx_adapter_setup_generic;
++}
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event_internal_port.c b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event_internal_port.c
+new file mode 100644
+index 0000000000000..d7976a7eed6a6
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_event_internal_port.c
+@@ -0,0 +1,321 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2019 Marvell International Ltd.
++ */
++
++#include <stdbool.h>
++#include <getopt.h>
++
++#include <rte_cycles.h>
++#include <rte_ethdev.h>
++#include <rte_eventdev.h>
++#include <rte_event_eth_rx_adapter.h>
++#include <rte_event_eth_tx_adapter.h>
++#include <rte_lcore.h>
++#include <rte_spinlock.h>
++
++#include "l2fwd_common.h"
++#include "l2fwd_event.h"
++
++static uint32_t
++l2fwd_event_device_setup_internal_port(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	struct rte_event_dev_config event_d_conf = {
++		.nb_events_limit  = 4096,
++		.nb_event_queue_flows = 1024,
++		.nb_event_port_dequeue_depth = 128,
++		.nb_event_port_enqueue_depth = 128
++	};
++	struct rte_event_dev_info dev_info;
++	const uint8_t event_d_id = 0; /* Always use first event device only */
++	uint32_t event_queue_cfg = 0;
++	uint16_t ethdev_count = 0;
++	uint16_t num_workers = 0;
++	uint16_t port_id;
++	int ret;
++
++	RTE_ETH_FOREACH_DEV(port_id) {
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++		ethdev_count++;
++	}
++
++	/* Event device configuration */
++	rte_event_dev_info_get(event_d_id, &dev_info);
++
++	/* Enable implicit release */
++	if (dev_info.event_dev_cap & RTE_EVENT_DEV_CAP_IMPLICIT_RELEASE_DISABLE)
++		evt_rsrc->disable_implicit_release = 0;
++
++	if (dev_info.event_dev_cap & RTE_EVENT_DEV_CAP_QUEUE_ALL_TYPES)
++		event_queue_cfg |= RTE_EVENT_QUEUE_CFG_ALL_TYPES;
++
++	event_d_conf.nb_event_queues = ethdev_count;
++	if (dev_info.max_event_queues < event_d_conf.nb_event_queues)
++		event_d_conf.nb_event_queues = dev_info.max_event_queues;
++
++	if (dev_info.max_num_events < event_d_conf.nb_events_limit)
++		event_d_conf.nb_events_limit = dev_info.max_num_events;
++
++	if (dev_info.max_event_queue_flows < event_d_conf.nb_event_queue_flows)
++		event_d_conf.nb_event_queue_flows =
++						dev_info.max_event_queue_flows;
++
++	if (dev_info.max_event_port_dequeue_depth <
++				event_d_conf.nb_event_port_dequeue_depth)
++		event_d_conf.nb_event_port_dequeue_depth =
++				dev_info.max_event_port_dequeue_depth;
++
++	if (dev_info.max_event_port_enqueue_depth <
++				event_d_conf.nb_event_port_enqueue_depth)
++		event_d_conf.nb_event_port_enqueue_depth =
++				dev_info.max_event_port_enqueue_depth;
++
++	/* Ignore Main core. */
++	num_workers = rte_lcore_count() - 1;
++	if (dev_info.max_event_ports < num_workers)
++		num_workers = dev_info.max_event_ports;
++
++	event_d_conf.nb_event_ports = num_workers;
++	evt_rsrc->evp.nb_ports = num_workers;
++	evt_rsrc->evq.nb_queues = event_d_conf.nb_event_queues;
++	evt_rsrc->has_burst = !!(dev_info.event_dev_cap &
++				    RTE_EVENT_DEV_CAP_BURST_MODE);
++
++	ret = rte_event_dev_configure(event_d_id, &event_d_conf);
++	if (ret < 0)
++		rte_panic("Error in configuring event device\n");
++
++	evt_rsrc->event_d_id = event_d_id;
++	return event_queue_cfg;
++}
++
++static void
++l2fwd_event_port_setup_internal_port(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	uint8_t event_d_id = evt_rsrc->event_d_id;
++	struct rte_event_port_conf event_p_conf = {
++		.dequeue_depth = 32,
++		.enqueue_depth = 32,
++		.new_event_threshold = 4096
++	};
++	struct rte_event_port_conf def_p_conf;
++	uint8_t event_p_id;
++	int32_t ret;
++
++	evt_rsrc->evp.event_p_id = (uint8_t *)malloc(sizeof(uint8_t) *
++					evt_rsrc->evp.nb_ports);
++	if (!evt_rsrc->evp.event_p_id)
++		rte_panic("Failed to allocate memory for Event Ports\n");
++
++	ret = rte_event_port_default_conf_get(event_d_id, 0, &def_p_conf);
++	if (ret < 0)
++		rte_panic("Error to get default configuration of event port\n");
++
++	if (def_p_conf.new_event_threshold < event_p_conf.new_event_threshold)
++		event_p_conf.new_event_threshold =
++						def_p_conf.new_event_threshold;
++
++	if (def_p_conf.dequeue_depth < event_p_conf.dequeue_depth)
++		event_p_conf.dequeue_depth = def_p_conf.dequeue_depth;
++
++	if (def_p_conf.enqueue_depth < event_p_conf.enqueue_depth)
++		event_p_conf.enqueue_depth = def_p_conf.enqueue_depth;
++
++	event_p_conf.event_port_cfg = 0;
++	if (evt_rsrc->disable_implicit_release)
++		event_p_conf.event_port_cfg |=
++			RTE_EVENT_PORT_CFG_DISABLE_IMPL_REL;
++
++	for (event_p_id = 0; event_p_id < evt_rsrc->evp.nb_ports;
++								event_p_id++) {
++		ret = rte_event_port_setup(event_d_id, event_p_id,
++					   &event_p_conf);
++		if (ret < 0)
++			rte_panic("Error in configuring event port %d\n",
++				  event_p_id);
++
++		ret = rte_event_port_link(event_d_id, event_p_id, NULL,
++					  NULL, 0);
++		if (ret < 0)
++			rte_panic("Error in linking event port %d to queue\n",
++				  event_p_id);
++		evt_rsrc->evp.event_p_id[event_p_id] = event_p_id;
++
++		/* init spinlock */
++		rte_spinlock_init(&evt_rsrc->evp.lock);
++	}
++
++	evt_rsrc->def_p_conf = event_p_conf;
++}
++
++static void
++l2fwd_event_queue_setup_internal_port(struct l2fwd_resources *rsrc,
++				uint32_t event_queue_cfg)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	uint8_t event_d_id = evt_rsrc->event_d_id;
++	struct rte_event_queue_conf event_q_conf = {
++		.nb_atomic_flows = 1024,
++		.nb_atomic_order_sequences = 1024,
++		.event_queue_cfg = event_queue_cfg,
++		.priority = RTE_EVENT_DEV_PRIORITY_NORMAL
++	};
++	struct rte_event_queue_conf def_q_conf;
++	uint8_t event_q_id = 0;
++	int32_t ret;
++
++	ret = rte_event_queue_default_conf_get(event_d_id, event_q_id,
++					       &def_q_conf);
++	if (ret < 0)
++		rte_panic("Error to get default config of event queue\n");
++
++	if (def_q_conf.nb_atomic_flows < event_q_conf.nb_atomic_flows)
++		event_q_conf.nb_atomic_flows = def_q_conf.nb_atomic_flows;
++
++	if (def_q_conf.nb_atomic_order_sequences <
++					event_q_conf.nb_atomic_order_sequences)
++		event_q_conf.nb_atomic_order_sequences =
++					def_q_conf.nb_atomic_order_sequences;
++
++	event_q_conf.event_queue_cfg = event_queue_cfg;
++	event_q_conf.schedule_type = rsrc->sched_type;
++	evt_rsrc->evq.event_q_id = (uint8_t *)malloc(sizeof(uint8_t) *
++					evt_rsrc->evq.nb_queues);
++	if (!evt_rsrc->evq.event_q_id)
++		rte_panic("Memory allocation failure\n");
++
++	for (event_q_id = 0; event_q_id < evt_rsrc->evq.nb_queues;
++								event_q_id++) {
++		ret = rte_event_queue_setup(event_d_id, event_q_id,
++					    &event_q_conf);
++		if (ret < 0)
++			rte_panic("Error in configuring event queue\n");
++		evt_rsrc->evq.event_q_id[event_q_id] = event_q_id;
++	}
++}
++
++static void
++l2fwd_rx_tx_adapter_setup_internal_port(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++	struct rte_event_eth_rx_adapter_queue_conf eth_q_conf;
++	uint8_t event_d_id = evt_rsrc->event_d_id;
++	uint16_t adapter_id = 0;
++	uint16_t nb_adapter = 0;
++	uint16_t port_id;
++	uint8_t q_id = 0;
++	int ret;
++
++	memset(&eth_q_conf, 0, sizeof(eth_q_conf));
++	eth_q_conf.ev.priority = RTE_EVENT_DEV_PRIORITY_NORMAL;
++
++	RTE_ETH_FOREACH_DEV(port_id) {
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++		nb_adapter++;
++	}
++
++	evt_rsrc->rx_adptr.nb_rx_adptr = nb_adapter;
++	evt_rsrc->rx_adptr.rx_adptr = (uint8_t *)malloc(sizeof(uint8_t) *
++					evt_rsrc->rx_adptr.nb_rx_adptr);
++	if (!evt_rsrc->rx_adptr.rx_adptr) {
++		free(evt_rsrc->evp.event_p_id);
++		free(evt_rsrc->evq.event_q_id);
++		rte_panic("Failed to allocate memory for Rx adapter\n");
++	}
++
++	/* Assigned ethernet port. 8< */
++	RTE_ETH_FOREACH_DEV(port_id) {
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++
++		if (rsrc->evt_vec.enabled) {
++			uint32_t cap;
++
++			if (rte_event_eth_rx_adapter_caps_get(event_d_id,
++							      port_id, &cap))
++				rte_panic(
++					"Failed to get event rx adapter capability");
++
++			if (cap & RTE_EVENT_ETH_RX_ADAPTER_CAP_EVENT_VECTOR) {
++				eth_q_conf.vector_sz = rsrc->evt_vec.size;
++				eth_q_conf.vector_timeout_ns =
++					rsrc->evt_vec.timeout_ns;
++				eth_q_conf.vector_mp = rsrc->evt_vec_pool;
++				eth_q_conf.rx_queue_flags |=
++				RTE_EVENT_ETH_RX_ADAPTER_QUEUE_EVENT_VECTOR;
++			} else {
++				rte_panic(
++					"Rx adapter doesn't support event vector");
++			}
++		}
++
++		ret = rte_event_eth_rx_adapter_create(adapter_id, event_d_id,
++						&evt_rsrc->def_p_conf);
++		if (ret)
++			rte_panic("Failed to create rx adapter[%d]\n",
++				  adapter_id);
++
++		/* Configure user requested sched type*/
++		eth_q_conf.ev.sched_type = rsrc->sched_type;
++		eth_q_conf.ev.queue_id = evt_rsrc->evq.event_q_id[q_id];
++		ret = rte_event_eth_rx_adapter_queue_add(adapter_id, port_id,
++							 -1, &eth_q_conf);
++		if (ret)
++			rte_panic("Failed to add queues to Rx adapter\n");
++
++		ret = rte_event_eth_rx_adapter_start(adapter_id);
++		if (ret)
++			rte_panic("Rx adapter[%d] start Failed\n", adapter_id);
++
++		evt_rsrc->rx_adptr.rx_adptr[adapter_id] = adapter_id;
++		adapter_id++;
++		if (q_id < evt_rsrc->evq.nb_queues)
++			q_id++;
++	}
++
++	evt_rsrc->tx_adptr.nb_tx_adptr = nb_adapter;
++	evt_rsrc->tx_adptr.tx_adptr = (uint8_t *)malloc(sizeof(uint8_t) *
++					evt_rsrc->tx_adptr.nb_tx_adptr);
++	if (!evt_rsrc->tx_adptr.tx_adptr) {
++		free(evt_rsrc->rx_adptr.rx_adptr);
++		free(evt_rsrc->evp.event_p_id);
++		free(evt_rsrc->evq.event_q_id);
++		rte_panic("Failed to allocate memory for Rx adapter\n");
++	}
++
++	adapter_id = 0;
++	RTE_ETH_FOREACH_DEV(port_id) {
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++		ret = rte_event_eth_tx_adapter_create(adapter_id, event_d_id,
++						&evt_rsrc->def_p_conf);
++		if (ret)
++			rte_panic("Failed to create tx adapter[%d]\n",
++				  adapter_id);
++
++		ret = rte_event_eth_tx_adapter_queue_add(adapter_id, port_id,
++							 -1);
++		if (ret)
++			rte_panic("Failed to add queues to Tx adapter\n");
++
++		ret = rte_event_eth_tx_adapter_start(adapter_id);
++		if (ret)
++			rte_panic("Tx adapter[%d] start Failed\n", adapter_id);
++
++		evt_rsrc->tx_adptr.tx_adptr[adapter_id] = adapter_id;
++		adapter_id++;
++	}
++	/* >8 End of assigned ethernet port. */
++}
++
++void
++l2fwd_event_set_internal_port_ops(struct event_setup_ops *ops)
++{
++	ops->event_device_setup = l2fwd_event_device_setup_internal_port;
++	ops->event_queue_setup = l2fwd_event_queue_setup_internal_port;
++	ops->event_port_setup = l2fwd_event_port_setup_internal_port;
++	ops->adapter_setup = l2fwd_rx_tx_adapter_setup_internal_port;
++}
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_poll.c b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_poll.c
+new file mode 100644
+index 0000000000000..73fefac67b2c7
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_poll.c
+@@ -0,0 +1,185 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2019 Marvell International Ltd.
++ */
++
++#include "l2fwd_poll.h"
++
++static inline void
++l2fwd_poll_simple_forward(struct l2fwd_resources *rsrc, struct rte_mbuf *m,
++			  uint32_t portid)
++{
++	struct rte_eth_dev_tx_buffer *buffer;
++	uint32_t dst_port;
++	int sent;
++
++	dst_port = rsrc->dst_ports[portid];
++
++	if (rsrc->mac_updating)
++		l2fwd_mac_updating(m, dst_port, &rsrc->eth_addr[dst_port]);
++
++	buffer = ((struct l2fwd_poll_resources *)rsrc->poll_rsrc)->tx_buffer[
++								dst_port];
++	sent = rte_eth_tx_buffer(dst_port, 0, buffer, m);
++	if (sent)
++		rsrc->port_stats[dst_port].tx += sent;
++}
++
++/* main poll mode processing loop */
++static void
++l2fwd_poll_main_loop(struct l2fwd_resources *rsrc)
++{
++	uint64_t prev_tsc, diff_tsc, cur_tsc, drain_tsc;
++	struct l2fwd_poll_resources *poll_rsrc = rsrc->poll_rsrc;
++	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
++	struct rte_eth_dev_tx_buffer *buf;
++	struct lcore_queue_conf *qconf;
++	uint32_t i, j, port_id, nb_rx;
++	struct rte_mbuf *m;
++	uint32_t lcore_id;
++	int32_t sent;
++
++	drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
++			BURST_TX_DRAIN_US;
++	prev_tsc = 0;
++
++	lcore_id = rte_lcore_id();
++	qconf = &poll_rsrc->lcore_queue_conf[lcore_id];
++
++	if (qconf->n_rx_port == 0) {
++		printf("lcore %u has nothing to do\n", lcore_id);
++		return;
++	}
++
++	printf("entering main loop on lcore %u\n", lcore_id);
++
++	for (i = 0; i < qconf->n_rx_port; i++) {
++
++		port_id = qconf->rx_port_list[i];
++		printf(" -- lcoreid=%u port_id=%u\n", lcore_id, port_id);
++
++	}
++
++	while (!rsrc->force_quit) {
++
++		/* Draining TX queue in main loop. 8< */
++		cur_tsc = rte_rdtsc();
++
++		/*
++		 * TX burst queue drain
++		 */
++		diff_tsc = cur_tsc - prev_tsc;
++		if (unlikely(diff_tsc > drain_tsc)) {
++			for (i = 0; i < qconf->n_rx_port; i++) {
++				port_id =
++					rsrc->dst_ports[qconf->rx_port_list[i]];
++				buf = poll_rsrc->tx_buffer[port_id];
++				sent = rte_eth_tx_buffer_flush(port_id, 0, buf);
++				if (sent)
++					rsrc->port_stats[port_id].tx += sent;
++			}
++
++			prev_tsc = cur_tsc;
++		}
++		/* >8 End of draining TX queue in main loop. */
++
++		/* Reading ingress packets. 8< */
++
++		/* Read packet from RX queues */
++		for (i = 0; i < qconf->n_rx_port; i++) {
++
++			port_id = qconf->rx_port_list[i];
++			nb_rx = rte_eth_rx_burst(port_id, 0, pkts_burst,
++						 MAX_PKT_BURST);
++
++			rsrc->port_stats[port_id].rx += nb_rx;
++
++			for (j = 0; j < nb_rx; j++) {
++				m = pkts_burst[j];
++				rte_prefetch0(rte_pktmbuf_mtod(m, void *));
++				l2fwd_poll_simple_forward(rsrc, m, port_id);
++			}
++		}
++		/* >8 End of reading ingress packets. */
++	}
++}
++
++static void
++l2fwd_poll_lcore_config(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_poll_resources *poll_rsrc = rsrc->poll_rsrc;
++	struct lcore_queue_conf *qconf = NULL;
++	uint32_t rx_lcore_id = 0;
++	uint16_t port_id;
++
++	/* Initialize the port/queue configuration of each logical core */
++	RTE_ETH_FOREACH_DEV(port_id) {
++		/* skip ports that are not enabled */
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++
++		/* get the lcore_id for this port */
++		while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||
++		       rx_lcore_id == rte_get_main_lcore() ||
++		       poll_rsrc->lcore_queue_conf[rx_lcore_id].n_rx_port ==
++		       rsrc->rx_queue_per_lcore) {
++			rx_lcore_id++;
++			if (rx_lcore_id >= RTE_MAX_LCORE)
++				rte_panic("Not enough cores\n");
++		}
++
++		if (qconf != &poll_rsrc->lcore_queue_conf[rx_lcore_id]) {
++			/* Assigned a new logical core in the loop above. */
++			qconf = &poll_rsrc->lcore_queue_conf[rx_lcore_id];
++		}
++
++		qconf->rx_port_list[qconf->n_rx_port] = port_id;
++		qconf->n_rx_port++;
++		printf("Lcore %u: RX port %u\n", rx_lcore_id, port_id);
++	}
++}
++
++static void
++l2fwd_poll_init_tx_buffers(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_poll_resources *poll_rsrc = rsrc->poll_rsrc;
++	uint16_t port_id;
++	int ret;
++
++	RTE_ETH_FOREACH_DEV(port_id) {
++		/* Initialize TX buffers */
++		poll_rsrc->tx_buffer[port_id] = rte_zmalloc_socket("tx_buffer",
++				RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST), 0,
++				rte_eth_dev_socket_id(port_id));
++		if (poll_rsrc->tx_buffer[port_id] == NULL)
++			rte_panic("Cannot allocate buffer for tx on port %u\n",
++				  port_id);
++
++		rte_eth_tx_buffer_init(poll_rsrc->tx_buffer[port_id],
++				       MAX_PKT_BURST);
++
++		ret = rte_eth_tx_buffer_set_err_callback(
++				poll_rsrc->tx_buffer[port_id],
++				rte_eth_tx_buffer_count_callback,
++				&rsrc->port_stats[port_id].dropped);
++		if (ret < 0)
++			rte_panic("Cannot set error callback for tx buffer on port %u\n",
++				  port_id);
++	}
++}
++
++void
++l2fwd_poll_resource_setup(struct l2fwd_resources *rsrc)
++{
++	struct l2fwd_poll_resources *poll_rsrc;
++
++	poll_rsrc = rte_zmalloc("l2fwd_poll_rsrc",
++				sizeof(struct l2fwd_poll_resources), 0);
++	if (poll_rsrc == NULL)
++		rte_panic("Failed to allocate resources for l2fwd poll mode\n");
++
++	rsrc->poll_rsrc = poll_rsrc;
++	l2fwd_poll_lcore_config(rsrc);
++	l2fwd_poll_init_tx_buffers(rsrc);
++
++	poll_rsrc->poll_main_loop = l2fwd_poll_main_loop;
++}
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_poll.h b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_poll.h
+new file mode 100644
+index 0000000000000..d59b0c844b920
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/l2fwd_poll.h
+@@ -0,0 +1,25 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2019 Marvell International Ltd.
++ */
++
++#ifndef __L2FWD_POLL_H__
++#define __L2FWD_POLL_H__
++
++#include "l2fwd_common.h"
++
++typedef void (*poll_main_loop_cb)(struct l2fwd_resources *rsrc);
++
++struct lcore_queue_conf {
++	uint32_t rx_port_list[MAX_RX_QUEUE_PER_LCORE];
++	uint32_t n_rx_port;
++} __rte_cache_aligned;
++
++struct l2fwd_poll_resources {
++	poll_main_loop_cb poll_main_loop;
++	struct rte_eth_dev_tx_buffer *tx_buffer[RTE_MAX_ETHPORTS];
++	struct lcore_queue_conf lcore_queue_conf[RTE_MAX_LCORE];
++};
++
++void l2fwd_poll_resource_setup(struct l2fwd_resources *rsrc);
++
++#endif
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/main.c b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/main.c
+new file mode 100644
+index 0000000000000..14889d41261bb
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/main.c
+@@ -0,0 +1,1054 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2019 Marvell International Ltd.
++ */
++
++#include <rte_string_fns.h>
++
++#include "l2fwd_event.h"
++#include "l2fwd_poll.h"
++
++/* display usage */
++static void
++l2fwd_event_usage(const char *prgname)
++{
++	printf("%s [EAL options] -- -p PORTMASK [-q NQ]\n"
++	       "  -p PORTMASK: hexadecimal bitmask of ports to configure\n"
++	       "  -q NQ: number of queue (=ports) per lcore (default is 1)\n"
++	       "  -T PERIOD: statistics will be refreshed each PERIOD seconds "
++	       "		(0 to disable, 10 default, 86400 maximum)\n"
++	       "  --[no-]mac-updating: Enable or disable MAC addresses updating (enabled by default)\n"
++	       "      When enabled:\n"
++	       "       - The source MAC address is replaced by the TX port MAC address\n"
++	       "       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
++	       "  --rxq: Number of Rx queues created on each port. Default is 1\n"
++	       "  --txq: Number of Tx queues created on each port. Default is 1\n"
++	       "  --pfc: <port>:<rx_pfc>:<on/off>:<txq>:<tc>:<tx_pfc>:<on/off>:<rxq>:<tc>:<pause quanta>\n"
++	       "    - <port> : Port id on which PFC is to be enabled.\n"
++	       "    - <rx_pfc>:<on/off> : Enable reception of 802.1qbb flow control PFC frames.\n"
++	       "    - <txq> : Tx queue on which TC is to be mapped and will be paused if PFC is received with corresponding TC.\n"
++	       "    - <tc> : Traffic class which is used to pause mapped txq.\n"
++	       "    - <tx_pfc>:<on/off> : Enable xmit of 802.1qbb flow control PFC frames.\n"
++	       "    - <rxq> : Rx queue on which TC is to be mapped.\n"
++	       "    - <tc> : Traffic class which is mapped with rxq and used in PFC frame if threshold reaches.\n"
++	       "    - <pause quanta> : Pause quanta which is mapped with rxq and used in PFC frame if threshold reaches.\n"
++	       "  --mode: Packet transfer mode for I/O, poll or eventdev\n"
++	       "          Default mode = eventdev\n"
++	       "  --eventq-sched: Event queue schedule type, ordered, atomic or parallel.\n"
++	       "                  Default: atomic\n"
++	       "                  Valid only if --mode=eventdev\n"
++	       "  --event-vector:  Enable event vectorization.\n"
++	       "  --event-vector-size: Max vector size if event vectorization is enabled.\n"
++	       "  --event-vector-tmo: Max timeout to form vector in nanoseconds if event vectorization is enabled\n"
++	       "  --config: Configure forwarding port pair mapping\n"
++	       "	    Default: alternate port pairs\n\n",
++	       prgname);
++}
++
++static int
++l2fwd_event_parse_pfc(char *optarg, struct l2fwd_resources *rsrc)
++{
++	char *pfc_str, *token;
++	uint16_t portid;
++	uint16_t index;
++	size_t len;
++	int rc = 0;
++
++	len = strlen(optarg);
++	len++;
++	pfc_str = malloc(len);
++	if (pfc_str == NULL) {
++		printf("Memory allocation failed\n");
++		rc = -1;
++		goto error;
++	}
++	strcpy(pfc_str, optarg);
++
++	/* <portid>:<rx_pfc>:<on/off>:<txq>:<tc>:<tx_pfc>:<on/off>:<rxq>:<tc>:<pause quanta> */
++	token = strtok(pfc_str, ":");
++	if (token == NULL) {
++		printf("port ID is expected\n");
++		rc = -1;
++		goto error;
++	}
++	portid = atoi(token);
++	if (portid >= RTE_MAX_ETHPORTS) {
++		printf("port ID is invalid\n");
++		rc = -1;
++		goto error;
++	}
++	if ((rsrc->enabled_port_mask & (1 << portid)) == 0) {
++		printf("port is not enabled\n");
++		rc = -1;
++		goto error;
++	}
++	index = rsrc->pfc_config_cnt[portid];
++
++	token = strtok(NULL, ":");
++	if (token == NULL) {
++		printf("rx_pfc is expected\n");
++		rc = -1;
++		goto error;
++	}
++	if (strncmp(token, "rx_pfc", 6)) {
++		printf("Invalid string\n");
++		rc = -1;
++		goto error;
++	}
++
++	token = strtok(NULL, ":");
++	if (token == NULL) {
++		printf("either on or off is expected\n");
++		rc = -1;
++		goto error;
++	}
++	if (!strncmp(token, "on", 2)) {
++		rsrc->pfc_config[portid][index].rx_pfc = true;
++	} else if (!strncmp(token, "off", 3)) {
++		rsrc->pfc_config[portid][index].rx_pfc = false;
++	} else {
++		printf("Invalid rx_pfc option\n");
++		rc = -1;
++		goto error;
++	}
++
++	token = strtok(NULL, ":");
++	if (token == NULL) {
++		printf("txq is expected\n");
++		rc = -1;
++		goto error;
++	}
++	rsrc->pfc_config[portid][index].txq = atoi(token);
++
++	token = strtok(NULL, ":");
++	if (token == NULL) {
++		printf("tx_tc is expected\n");
++		rc = -1;
++		goto error;
++	}
++	rsrc->pfc_config[portid][index].tx_tc = atoi(token);
++
++	token = strtok(NULL, ":");
++	if (token == NULL) {
++		printf("tx_pfc is expected\n");
++		rc = -1;
++		goto error;
++	}
++	if (strncmp(token, "tx_pfc", 6)) {
++		printf("Invalid string\n");
++		rc = -1;
++		goto error;
++	}
++
++	token = strtok(NULL, ":");
++	if (token == NULL) {
++		printf("either on or off is expected\n");
++		rc = -1;
++		goto error;
++	}
++	if (!strncmp(token, "on", 2)) {
++		rsrc->pfc_config[portid][index].tx_pfc = true;
++	} else if (!strncmp(token, "off", 3)) {
++		rsrc->pfc_config[portid][index].tx_pfc = false;
++	} else {
++		printf("Invalid tx_pfc option\n");
++		rc = -1;
++		goto error;
++	}
++
++	token = strtok(NULL, ":");
++	if (token == NULL) {
++		printf("rxq is expected\n");
++		rc = -1;
++		goto error;
++	}
++	rsrc->pfc_config[portid][index].rxq = atoi(token);
++
++	token = strtok(NULL, ":");
++	if (token == NULL) {
++		printf("rx_tc is expected\n");
++		rc = -1;
++		goto error;
++	}
++	rsrc->pfc_config[portid][index].rx_tc = atoi(token);
++
++	token = strtok(NULL, ":");
++	if (token == NULL) {
++		printf("pause quanta is expected\n");
++		rc = -1;
++		goto error;
++	}
++	rsrc->pfc_config[portid][index].pause = atoi(token);
++	rsrc->pfc_config_cnt[portid]++;
++
++error:
++	free(pfc_str);
++	return rc;
++}
++
++static int
++l2fwd_event_parse_portmask(const char *portmask)
++{
++	char *end = NULL;
++	unsigned long pm;
++
++	/* parse hexadecimal string */
++	pm = strtoul(portmask, &end, 16);
++	if ((portmask[0] == '\0') || (end == NULL) || (*end != '\0'))
++		return 0;
++
++	return pm;
++}
++
++static unsigned int
++l2fwd_event_parse_nqueue(const char *q_arg)
++{
++	char *end = NULL;
++	unsigned long n;
++
++	/* parse hexadecimal string */
++	n = strtoul(q_arg, &end, 10);
++	if ((q_arg[0] == '\0') || (end == NULL) || (*end != '\0'))
++		return 0;
++	if (n == 0)
++		return 0;
++	if (n >= MAX_RX_QUEUE_PER_LCORE)
++		return 0;
++
++	return n;
++}
++
++static int
++l2fwd_event_parse_timer_period(const char *q_arg)
++{
++	char *end = NULL;
++	int n;
++
++	/* parse number string */
++	n = strtol(q_arg, &end, 10);
++	if ((q_arg[0] == '\0') || (end == NULL) || (*end != '\0'))
++		return -1;
++	if (n >= MAX_TIMER_PERIOD)
++		return -1;
++
++	return n;
++}
++
++static void
++l2fwd_event_parse_mode(const char *optarg,
++		       struct l2fwd_resources *rsrc)
++{
++	if (!strncmp(optarg, "poll", 4))
++		rsrc->event_mode = false;
++	else if (!strncmp(optarg, "eventdev", 8))
++		rsrc->event_mode = true;
++}
++
++static void
++l2fwd_event_parse_eventq_sched(const char *optarg,
++			       struct l2fwd_resources *rsrc)
++{
++	if (!strncmp(optarg, "ordered", 7))
++		rsrc->sched_type = RTE_SCHED_TYPE_ORDERED;
++	else if (!strncmp(optarg, "atomic", 6))
++		rsrc->sched_type = RTE_SCHED_TYPE_ATOMIC;
++	else if (!strncmp(optarg, "parallel", 8))
++		rsrc->sched_type = RTE_SCHED_TYPE_PARALLEL;
++}
++
++static int
++l2fwd_parse_port_pair_config(const char *q_arg, struct l2fwd_resources *rsrc)
++{
++	enum fieldnames {
++		FLD_PORT1 = 0,
++		FLD_PORT2,
++		_NUM_FLD
++	};
++	const char *p, *p0 = q_arg;
++	uint16_t int_fld[_NUM_FLD];
++	char *str_fld[_NUM_FLD];
++	uint16_t port_pair = 0;
++	unsigned int size;
++	char s[256];
++	char *end;
++	int i;
++
++	while ((p = strchr(p0, '(')) != NULL) {
++		++p;
++		p0 = strchr(p, ')');
++		if (p0 == NULL)
++			return -1;
++
++		size = p0 - p;
++		if (size >= sizeof(s))
++			return -1;
++
++		memcpy(s, p, size);
++		if (rte_strsplit(s, sizeof(s), str_fld,
++					_NUM_FLD, ',') != _NUM_FLD)
++			return -1;
++
++		for (i = 0; i < _NUM_FLD; i++) {
++			errno = 0;
++			int_fld[i] = strtoul(str_fld[i], &end, 0);
++			if (errno != 0 || end == str_fld[i] ||
++			    int_fld[i] >= RTE_MAX_ETHPORTS)
++				return -1;
++		}
++
++		if (port_pair >= RTE_MAX_ETHPORTS / 2) {
++			printf("exceeded max number of port pair params: Current %d Max = %d\n",
++			       port_pair, RTE_MAX_ETHPORTS / 2);
++			return -1;
++		}
++
++		if ((rsrc->dst_ports[int_fld[FLD_PORT1]] != UINT32_MAX) ||
++			(rsrc->dst_ports[int_fld[FLD_PORT2]] != UINT32_MAX)) {
++			printf("Duplicate port pair (%d,%d) config\n",
++					int_fld[FLD_PORT1], int_fld[FLD_PORT2]);
++			return -1;
++		}
++
++		rsrc->dst_ports[int_fld[FLD_PORT1]] = int_fld[FLD_PORT2];
++		rsrc->dst_ports[int_fld[FLD_PORT2]] = int_fld[FLD_PORT1];
++
++		port_pair++;
++	}
++
++	rsrc->port_pairs = true;
++
++	return 0;
++}
++
++static const char short_options[] =
++	"p:"  /* portmask */
++	"q:"  /* number of queues */
++	"T:"  /* timer period */
++	;
++
++#define CMD_LINE_OPT_MAC_UPDATING "mac-updating"
++#define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
++#define CMD_LINE_OPT_MODE "mode"
++#define CMD_LINE_OPT_RXQ "rxq"
++#define CMD_LINE_OPT_TXQ "txq"
++#define CMD_LINE_OPT_PFC "pfc"
++#define CMD_LINE_OPT_EVENTQ_SCHED "eventq-sched"
++#define CMD_LINE_OPT_PORT_PAIR_CONF "config"
++#define CMD_LINE_OPT_ENABLE_VECTOR "event-vector"
++#define CMD_LINE_OPT_VECTOR_SIZE "event-vector-size"
++#define CMD_LINE_OPT_VECTOR_TMO_NS "event-vector-tmo"
++
++enum {
++	/* long options mapped to a short option */
++
++	/* first long only option value must be >= 256, so that we won't
++	 * conflict with short options
++	 */
++	CMD_LINE_OPT_MIN_NUM = 256,
++	CMD_LINE_OPT_MODE_NUM,
++	CMD_LINE_OPT_RXQ_NUM,
++	CMD_LINE_OPT_TXQ_NUM,
++	CMD_LINE_OPT_PFC_NUM,
++	CMD_LINE_OPT_EVENTQ_SCHED_NUM,
++	CMD_LINE_OPT_PORT_PAIR_CONF_NUM,
++	CMD_LINE_OPT_ENABLE_VECTOR_NUM,
++	CMD_LINE_OPT_VECTOR_SIZE_NUM,
++	CMD_LINE_OPT_VECTOR_TMO_NS_NUM
++};
++
++/* Parse the argument given in the command line of the application */
++static int
++l2fwd_event_parse_args(int argc, char **argv, struct l2fwd_resources *rsrc)
++{
++	int mac_updating = 1;
++	struct option lgopts[] = {
++		{ CMD_LINE_OPT_MAC_UPDATING, no_argument, &mac_updating, 1},
++		{ CMD_LINE_OPT_NO_MAC_UPDATING, no_argument, &mac_updating, 0},
++		{ CMD_LINE_OPT_MODE, required_argument, NULL, CMD_LINE_OPT_MODE_NUM},
++		{ CMD_LINE_OPT_RXQ, required_argument, NULL, CMD_LINE_OPT_RXQ_NUM},
++		{ CMD_LINE_OPT_TXQ, required_argument, NULL, CMD_LINE_OPT_TXQ_NUM},
++		{ CMD_LINE_OPT_PFC, required_argument, NULL, CMD_LINE_OPT_PFC_NUM},
++		{ CMD_LINE_OPT_EVENTQ_SCHED, required_argument, NULL,
++						CMD_LINE_OPT_EVENTQ_SCHED_NUM},
++		{ CMD_LINE_OPT_PORT_PAIR_CONF, required_argument, NULL,
++					CMD_LINE_OPT_PORT_PAIR_CONF_NUM},
++		{CMD_LINE_OPT_ENABLE_VECTOR, no_argument, NULL,
++					CMD_LINE_OPT_ENABLE_VECTOR_NUM},
++		{CMD_LINE_OPT_VECTOR_SIZE, required_argument, NULL,
++					CMD_LINE_OPT_VECTOR_SIZE_NUM},
++		{CMD_LINE_OPT_VECTOR_TMO_NS, required_argument, NULL,
++					CMD_LINE_OPT_VECTOR_TMO_NS_NUM},
++		{NULL, 0, 0, 0}
++	};
++	int opt, ret, timer_secs;
++	char *prgname = argv[0];
++	uint16_t port_id;
++	int option_index;
++	char **argvopt;
++
++	/* Reset l2fwd_dst_ports. 8< */
++	for (port_id = 0; port_id < RTE_MAX_ETHPORTS; port_id++)
++		rsrc->dst_ports[port_id] = UINT32_MAX;
++
++	argvopt = argv;
++	while ((opt = getopt_long(argc, argvopt, short_options,
++				  lgopts, &option_index)) != EOF) {
++
++		switch (opt) {
++		/* portmask */
++		case 'p':
++			rsrc->enabled_port_mask =
++					l2fwd_event_parse_portmask(optarg);
++			if (rsrc->enabled_port_mask == 0) {
++				printf("invalid portmask\n");
++				l2fwd_event_usage(prgname);
++				return -1;
++			}
++			break;
++
++		/* nqueue */
++		case 'q':
++			rsrc->rx_queue_per_lcore =
++					l2fwd_event_parse_nqueue(optarg);
++			if (rsrc->rx_queue_per_lcore == 0) {
++				printf("invalid queue number\n");
++				l2fwd_event_usage(prgname);
++				return -1;
++			}
++			break;
++
++		/* timer period */
++		case 'T':
++			timer_secs = l2fwd_event_parse_timer_period(optarg);
++			if (timer_secs < 0) {
++				printf("invalid timer period\n");
++				l2fwd_event_usage(prgname);
++				return -1;
++			}
++			rsrc->timer_period = timer_secs;
++			/* convert to number of cycles */
++			rsrc->timer_period *= rte_get_timer_hz();
++			break;
++
++		case CMD_LINE_OPT_MODE_NUM:
++			l2fwd_event_parse_mode(optarg, rsrc);
++			break;
++
++		case CMD_LINE_OPT_RXQ_NUM:
++			rsrc->num_rxq = l2fwd_event_parse_nqueue(optarg);
++			if (rsrc->num_rxq == 0) {
++				printf("invalid number of Rx queues\n");
++				l2fwd_event_usage(prgname);
++				return -1;
++			}
++			break;
++
++		case CMD_LINE_OPT_TXQ_NUM:
++			rsrc->num_txq = l2fwd_event_parse_nqueue(optarg);
++			if (rsrc->num_txq == 0) {
++				printf("invalid number of Tx queues\n");
++				l2fwd_event_usage(prgname);
++				return -1;
++			}
++			break;
++
++		case CMD_LINE_OPT_PFC_NUM:
++			ret = l2fwd_event_parse_pfc(optarg, rsrc);
++			if (ret) {
++				printf("invalid PFC configuration\n");
++				l2fwd_event_usage(prgname);
++				return -1;
++			}
++			break;
++
++		case CMD_LINE_OPT_EVENTQ_SCHED_NUM:
++			l2fwd_event_parse_eventq_sched(optarg, rsrc);
++			break;
++
++		case CMD_LINE_OPT_PORT_PAIR_CONF_NUM:
++			ret = l2fwd_parse_port_pair_config(optarg, rsrc);
++			if (ret) {
++				printf("Invalid port pair config\n");
++				l2fwd_event_usage(prgname);
++				return -1;
++			}
++			break;
++		case CMD_LINE_OPT_ENABLE_VECTOR_NUM:
++			printf("event vectorization is enabled\n");
++			rsrc->evt_vec.enabled = 1;
++			break;
++		case CMD_LINE_OPT_VECTOR_SIZE_NUM:
++			rsrc->evt_vec.size = strtol(optarg, NULL, 10);
++			break;
++		case CMD_LINE_OPT_VECTOR_TMO_NS_NUM:
++			rsrc->evt_vec.timeout_ns = strtoull(optarg, NULL, 10);
++			break;
++
++		/* long options */
++		case 0:
++			break;
++
++		default:
++			l2fwd_event_usage(prgname);
++			return -1;
++		}
++	}
++
++	rsrc->mac_updating = mac_updating;
++
++	if (rsrc->evt_vec.enabled && !rsrc->evt_vec.size) {
++		rsrc->evt_vec.size = VECTOR_SIZE_DEFAULT;
++		printf("vector size set to default (%" PRIu16 ")\n",
++		       rsrc->evt_vec.size);
++	}
++
++	if (rsrc->evt_vec.enabled && !rsrc->evt_vec.timeout_ns) {
++		rsrc->evt_vec.timeout_ns = VECTOR_TMO_NS_DEFAULT;
++		printf("vector timeout set to default (%" PRIu64 " ns)\n",
++		       rsrc->evt_vec.timeout_ns);
++	}
++
++	if (optind >= 0)
++		argv[optind-1] = prgname;
++
++	ret = optind-1;
++	optind = 1; /* reset getopt lib */
++	return ret;
++	/* >8 End of reset l2fwd_dst_ports. */
++}
++
++/*
++ * Check port pair config with enabled port mask,
++ * and for valid port pair combinations.
++ */
++static int
++check_port_pair_config(struct l2fwd_resources *rsrc)
++{
++	uint32_t port_pair_mask = 0;
++	uint32_t portid;
++	uint16_t index;
++
++	for (index = 0; index < rte_eth_dev_count_avail(); index++) {
++		if ((rsrc->enabled_port_mask & (1 << index)) == 0 ||
++		    (port_pair_mask & (1 << index)))
++			continue;
++
++		portid = rsrc->dst_ports[index];
++		if (portid == UINT32_MAX) {
++			printf("port %u is enabled in but no valid port pair\n",
++			       index);
++			return -1;
++		}
++
++		if (!rte_eth_dev_is_valid_port(index)) {
++			printf("port %u is not valid\n", index);
++			return -1;
++		}
++
++		if (!rte_eth_dev_is_valid_port(portid)) {
++			printf("port %u is not valid\n", portid);
++			return -1;
++		}
++
++		if (port_pair_mask & (1 << portid) &&
++				rsrc->dst_ports[portid] != index) {
++			printf("port %u is used in other port pairs\n", portid);
++			return -1;
++		}
++
++		port_pair_mask |= (1 << portid);
++		port_pair_mask |= (1 << index);
++	}
++
++	return 0;
++}
++
++static int
++l2fwd_launch_one_lcore(void *args)
++{
++	struct l2fwd_resources *rsrc = args;
++	struct l2fwd_poll_resources *poll_rsrc = rsrc->poll_rsrc;
++	struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++
++	if (rsrc->event_mode)
++		evt_rsrc->ops.l2fwd_event_loop(rsrc);
++	else
++		poll_rsrc->poll_main_loop(rsrc);
++
++	return 0;
++}
++
++/* Check the link status of all ports in up to 9s, and print them finally */
++static void
++check_all_ports_link_status(struct l2fwd_resources *rsrc, uint32_t port_mask)
++{
++#define CHECK_INTERVAL 100 /* 100ms */
++#define MAX_CHECK_TIME 90 /* 9s (90 * 100ms) in total */
++	char link_status_text[RTE_ETH_LINK_MAX_STR_LEN];
++	uint8_t count, all_ports_up, print_flag = 0;
++	struct rte_eth_link link;
++	uint16_t port_id;
++	int ret;
++
++	printf("\nChecking link status...");
++	fflush(stdout);
++	for (count = 0; count <= MAX_CHECK_TIME; count++) {
++		if (rsrc->force_quit)
++			return;
++
++		all_ports_up = 1;
++		RTE_ETH_FOREACH_DEV(port_id) {
++			if (rsrc->force_quit)
++				return;
++
++			if ((port_mask & (1 << port_id)) == 0)
++				continue;
++
++			memset(&link, 0, sizeof(link));
++			ret = rte_eth_link_get_nowait(port_id, &link);
++			if (ret < 0) {
++				all_ports_up = 0;
++				if (print_flag == 1)
++					printf("Port %u link get failed: %s\n",
++						port_id, rte_strerror(-ret));
++				continue;
++			}
++
++			/* print link status if flag set */
++			if (print_flag == 1) {
++				rte_eth_link_to_str(link_status_text,
++						    sizeof(link_status_text), &link);
++				printf("Port %d %s\n", port_id, link_status_text);
++				continue;
++			}
++
++			/* clear all_ports_up flag if any link down */
++			if (link.link_status == RTE_ETH_LINK_DOWN) {
++				all_ports_up = 0;
++				break;
++			}
++		}
++		/* after finally printing all link status, get out */
++		if (print_flag == 1)
++			break;
++
++		if (all_ports_up == 0) {
++			printf(".");
++			fflush(stdout);
++			rte_delay_ms(CHECK_INTERVAL);
++		}
++
++		/* set the print_flag if all ports up or timeout */
++		if (all_ports_up == 1 || count == (MAX_CHECK_TIME - 1)) {
++			print_flag = 1;
++			printf("done\n");
++		}
++	}
++}
++
++/* Print out statistics on packets dropped */
++static void
++print_stats(struct l2fwd_resources *rsrc)
++{
++	uint64_t total_packets_dropped, total_packets_tx, total_packets_rx;
++	uint32_t port_id;
++
++	total_packets_dropped = 0;
++	total_packets_tx = 0;
++	total_packets_rx = 0;
++
++	const char clr[] = {27, '[', '2', 'J', '\0' };
++	const char topLeft[] = {27, '[', '1', ';', '1', 'H', '\0' };
++
++		/* Clear screen and move to top left */
++	printf("%s%s", clr, topLeft);
++
++	printf("\nPort statistics ====================================");
++
++	for (port_id = 0; port_id < RTE_MAX_ETHPORTS; port_id++) {
++		/* skip disabled ports */
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++		printf("\nStatistics for port %u ------------------------------"
++			   "\nPackets sent: %29"PRIu64
++			   "\nPackets received: %25"PRIu64
++			   "\nPackets dropped: %26"PRIu64,
++			   port_id,
++			   rsrc->port_stats[port_id].tx,
++			   rsrc->port_stats[port_id].rx,
++			   rsrc->port_stats[port_id].dropped);
++
++		total_packets_dropped +=
++					rsrc->port_stats[port_id].dropped;
++		total_packets_tx += rsrc->port_stats[port_id].tx;
++		total_packets_rx += rsrc->port_stats[port_id].rx;
++	}
++
++	if (rsrc->event_mode) {
++		struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++		struct rte_event_eth_rx_adapter_stats rx_adptr_stats;
++		struct rte_event_eth_tx_adapter_stats tx_adptr_stats;
++		int ret, i;
++
++		for (i = 0; i < evt_rsrc->rx_adptr.nb_rx_adptr; i++) {
++			ret = rte_event_eth_rx_adapter_stats_get(
++					evt_rsrc->rx_adptr.rx_adptr[i],
++					&rx_adptr_stats);
++			if (ret < 0)
++				continue;
++			printf("\nRx adapter[%d] statistics===================="
++				   "\nReceive queue poll count: %17"PRIu64
++				   "\nReceived packet count: %20"PRIu64
++				   "\nEventdev enqueue count: %19"PRIu64
++				   "\nEventdev enqueue retry count: %13"PRIu64
++				   "\nReceived packet dropped count: %12"PRIu64
++				   "\nRx enqueue start timestamp: %15"PRIu64
++				   "\nRx enqueue block cycles: %18"PRIu64
++				   "\nRx enqueue unblock timestamp: %13"PRIu64,
++				   evt_rsrc->rx_adptr.rx_adptr[i],
++				   rx_adptr_stats.rx_poll_count,
++				   rx_adptr_stats.rx_packets,
++				   rx_adptr_stats.rx_enq_count,
++				   rx_adptr_stats.rx_enq_retry,
++				   rx_adptr_stats.rx_dropped,
++				   rx_adptr_stats.rx_enq_start_ts,
++				   rx_adptr_stats.rx_enq_block_cycles,
++				   rx_adptr_stats.rx_enq_end_ts);
++		}
++		for (i = 0; i <  evt_rsrc->tx_adptr.nb_tx_adptr; i++) {
++			ret = rte_event_eth_tx_adapter_stats_get(
++					evt_rsrc->tx_adptr.tx_adptr[i],
++					&tx_adptr_stats);
++			if (ret < 0)
++				continue;
++			printf("\nTx adapter[%d] statistics===================="
++				   "\n Number of transmit retries: %15"PRIu64
++				   "\n Number of packets transmitted: %12"PRIu64
++				   "\n Number of packets dropped: %16"PRIu64,
++				   evt_rsrc->tx_adptr.tx_adptr[i],
++				   tx_adptr_stats.tx_retry,
++				   tx_adptr_stats.tx_packets,
++				   tx_adptr_stats.tx_dropped);
++		}
++	}
++	printf("\nAggregate lcore statistics ========================="
++		   "\nTotal packets sent: %23"PRIu64
++		   "\nTotal packets received: %19"PRIu64
++		   "\nTotal packets dropped: %20"PRIu64,
++		   total_packets_tx,
++		   total_packets_rx,
++		   total_packets_dropped);
++	printf("\n====================================================\n");
++
++	fflush(stdout);
++}
++
++static void
++l2fwd_event_print_stats(struct l2fwd_resources *rsrc)
++{
++	uint64_t prev_tsc = 0, diff_tsc, cur_tsc, timer_tsc = 0;
++	const uint64_t timer_period = rsrc->timer_period;
++
++	while (!rsrc->force_quit) {
++		/* if timer is enabled */
++		if (timer_period > 0) {
++			cur_tsc = rte_rdtsc();
++			diff_tsc = cur_tsc - prev_tsc;
++
++			/* advance the timer */
++			timer_tsc += diff_tsc;
++
++			/* if timer has reached its timeout */
++			if (unlikely(timer_tsc >= timer_period)) {
++				print_stats(rsrc);
++				/* reset the timer */
++				timer_tsc = 0;
++			}
++			prev_tsc = cur_tsc;
++		}
++	}
++}
++
++static void
++signal_handler(int signum)
++{
++	struct l2fwd_resources *rsrc = l2fwd_get_rsrc();
++
++	if (signum == SIGINT || signum == SIGTERM) {
++		printf("\n\nSignal %d received, preparing to exit...\n", signum);
++		rsrc->force_quit = true;
++	}
++}
++
++int
++main(int argc, char **argv)
++{
++	struct rte_eth_pfc_queue_conf pfc_conf;
++	struct rte_flow_item_vlan vlan, mask;
++	struct rte_flow_action_queue conf;
++	struct rte_flow_action actions[4];
++	struct rte_flow_item pattern[4];
++	uint16_t nb_ports_available = 0;
++	struct rte_eth_fc_conf fc_conf;
++	uint32_t nb_ports_in_mask = 0;
++	struct l2fwd_resources *rsrc;
++	uint16_t port_id, last_port;
++	struct rte_flow_attr attr;
++	struct rte_flow *flow;
++	uint32_t nb_mbufs;
++	uint16_t nb_ports;
++	int i, ret, j = 7;
++	char name[32];
++
++	/* Init EAL. 8< */
++	ret = rte_eal_init(argc, argv);
++	if (ret < 0)
++		rte_panic("Invalid EAL arguments\n");
++	argc -= ret;
++	argv += ret;
++
++	rsrc = l2fwd_get_rsrc();
++
++	signal(SIGINT, signal_handler);
++	signal(SIGTERM, signal_handler);
++
++	/* parse application arguments (after the EAL ones) */
++	ret = l2fwd_event_parse_args(argc, argv, rsrc);
++	if (ret < 0)
++		rte_panic("Invalid L2FWD arguments\n");
++	/* >8 End of init EAL. */
++
++	printf("MAC updating %s\n", rsrc->mac_updating ? "enabled" : "disabled");
++
++	nb_ports = rte_eth_dev_count_avail();
++	if (nb_ports == 0)
++		rte_panic("No Ethernet ports - bye\n");
++
++	/* check port mask to possible port mask */
++	if (rsrc->enabled_port_mask & ~((1 << nb_ports) - 1))
++		rte_panic("Invalid portmask; possible (0x%x)\n", (1 << nb_ports) - 1);
++
++	if (!rsrc->port_pairs) {
++		last_port = 0;
++		/*
++		 * Each logical core is assigned a dedicated TX queue on each port.
++		 */
++		RTE_ETH_FOREACH_DEV(port_id) {
++			/* skip ports that are not enabled */
++			if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++				continue;
++
++			if (nb_ports_in_mask % 2) {
++				rsrc->dst_ports[port_id] = last_port;
++				rsrc->dst_ports[last_port] = port_id;
++			} else {
++				last_port = port_id;
++			}
++
++			nb_ports_in_mask++;
++		}
++		if (nb_ports_in_mask % 2) {
++			printf("Notice: odd number of ports in portmask.\n");
++			rsrc->dst_ports[last_port] = last_port;
++		}
++	} else {
++		if (check_port_pair_config(rsrc) < 0)
++			rte_panic("Invalid port pair config\n");
++	}
++
++	nb_mbufs = RTE_MAX(nb_ports * (RX_DESC_DEFAULT + TX_DESC_DEFAULT + MAX_PKT_BURST +
++				       rte_lcore_count() * MEMPOOL_CACHE_SIZE), 8192U);
++
++	RTE_ETH_FOREACH_DEV(port_id) {
++		/* skip ports that are not enabled */
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++
++		/* Create the mbuf pool. 8< */
++		for (i = 0; i < rsrc->num_rxq; i++) {
++			snprintf(name, 32, "port%d_rxq%d_pool", port_id, i);
++			rsrc->pktmbuf_pool[port_id][i] = rte_pktmbuf_pool_create(name, nb_mbufs,
++					MEMPOOL_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
++					rte_socket_id());
++			if (rsrc->pktmbuf_pool[port_id][i] == NULL)
++				rte_panic("Cannot init mbuf pool\n");
++		}
++		/* >8 End of creation of mbuf pool. */
++	}
++
++	if (rsrc->evt_vec.enabled) {
++		unsigned int nb_vec, vec_size;
++
++		vec_size = rsrc->evt_vec.size;
++		nb_vec = (nb_mbufs + vec_size - 1) / vec_size;
++		nb_vec = RTE_MAX(512U, nb_vec);
++		nb_vec += rte_lcore_count() * 32;
++		rsrc->evt_vec_pool = rte_event_vector_pool_create(
++			"vector_pool", nb_vec, 32, vec_size, rte_socket_id());
++		if (rsrc->evt_vec_pool == NULL)
++			rte_panic("Cannot init event vector pool\n");
++	}
++
++	nb_ports_available = l2fwd_event_init_ports(rsrc);
++	if (!nb_ports_available)
++		rte_panic("All available ports are disabled. Please set portmask.\n");
++
++	/* Configure eventdev parameters if required */
++	if (rsrc->event_mode)
++		l2fwd_event_resource_setup(rsrc);
++	else
++		l2fwd_poll_resource_setup(rsrc);
++
++	/* initialize port stats */
++	memset(&rsrc->port_stats, 0, sizeof(struct l2fwd_port_statistics));
++
++	if (rsrc->event_mode)
++		l2fwd_event_service_setup(rsrc);
++
++	RTE_ETH_FOREACH_DEV(port_id) {
++		/* skip ports that are not enabled */
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++
++		for (i = 0; i < rsrc->num_rxq; i++, j--) {
++			/* Attributes */
++			attr.group = 0;
++			attr.priority = j;
++			attr.ingress = 1;
++
++			/* Pattern */
++			memset(&vlan, 0, sizeof(struct rte_flow_item_vlan));
++			vlan.hdr.vlan_tci = RTE_BE16(i << 13);
++			vlan.has_more_vlan = 0;
++
++			memset(&mask, 0, sizeof(struct rte_flow_item_vlan));
++			mask.hdr.vlan_tci = RTE_BE16(0xe000);
++
++			pattern[0].type = RTE_FLOW_ITEM_TYPE_VLAN;
++			pattern[0].spec = &vlan;
++			pattern[0].last = NULL;
++			pattern[0].mask = &mask;
++			pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
++
++			/* Actions */
++			memset(&conf, 0, sizeof(struct rte_flow_action_queue));
++			conf.index = i;
++			actions[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
++			actions[0].conf = &conf;
++			actions[1].type = RTE_FLOW_ACTION_TYPE_END;
++			flow = rte_flow_create(port_id, &attr, pattern, actions, NULL);
++			if (flow == NULL)
++				printf("Flow Error\n");
++		}
++	}
++
++	RTE_ETH_FOREACH_DEV(port_id) {
++		/* skip ports that are not enabled */
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++
++		memset(&fc_conf, 0, sizeof(struct rte_eth_fc_conf));
++		fc_conf.mode = RTE_ETH_FC_NONE;
++		ret = rte_eth_dev_flow_ctrl_set(port_id, &fc_conf);
++		if (ret) {
++			printf("Error in configuring pause frame. Err = %d\n", ret);
++			return ret;
++		}
++
++		/* Enable Ethernet device for PFC */
++		for (i = 0; i < rsrc->pfc_config_cnt[port_id]; i++) {
++			if (rsrc->pfc_config[port_id][i].rx_pfc &&
++			    rsrc->pfc_config[port_id][i].tx_pfc)
++				pfc_conf.mode = RTE_ETH_FC_FULL;
++			else if (rsrc->pfc_config[port_id][i].rx_pfc)
++				pfc_conf.mode = RTE_ETH_FC_RX_PAUSE;
++			else if (rsrc->pfc_config[port_id][i].tx_pfc)
++				pfc_conf.mode = RTE_ETH_FC_TX_PAUSE;
++			else
++				pfc_conf.mode = RTE_ETH_FC_NONE;
++
++			pfc_conf.rx_pause.tx_qid = rsrc->pfc_config[port_id][i].txq;
++			pfc_conf.rx_pause.tc = rsrc->pfc_config[port_id][i].tx_tc;
++			pfc_conf.tx_pause.pause_time = rsrc->pfc_config[port_id][i].pause;
++			pfc_conf.tx_pause.rx_qid = rsrc->pfc_config[port_id][i].rxq;
++			pfc_conf.tx_pause.tc = rsrc->pfc_config[port_id][i].rx_tc;
++
++			ret = rte_eth_dev_priority_flow_ctrl_queue_configure(port_id,
++						&pfc_conf);
++			if (ret) {
++				printf("Error in setting PFC for port %u\n", port_id);
++				return ret;
++			}
++		}
++	}
++
++	/* All settings are done. Now enable eth devices */
++	RTE_ETH_FOREACH_DEV(port_id) {
++		/* skip ports that are not enabled */
++		if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++			continue;
++
++		ret = rte_eth_dev_start(port_id);
++		if (ret < 0)
++			rte_panic("rte_eth_dev_start:err=%d, port=%u\n", ret, port_id);
++
++		rte_eth_dev_priv_dump(port_id, stdout);
++	}
++
++	check_all_ports_link_status(rsrc, rsrc->enabled_port_mask);
++
++	/* launch per-lcore init on every lcore */
++	rte_eal_mp_remote_launch(l2fwd_launch_one_lcore, rsrc,
++				 SKIP_MAIN);
++	l2fwd_event_print_stats(rsrc);
++	if (rsrc->event_mode) {
++		struct l2fwd_event_resources *evt_rsrc = rsrc->evt_rsrc;
++
++		for (i = 0; i < evt_rsrc->rx_adptr.nb_rx_adptr; i++)
++			rte_event_eth_rx_adapter_stop(evt_rsrc->rx_adptr.rx_adptr[i]);
++
++		for (i = 0; i < evt_rsrc->tx_adptr.nb_tx_adptr; i++)
++			rte_event_eth_tx_adapter_stop(evt_rsrc->tx_adptr.tx_adptr[i]);
++
++		RTE_ETH_FOREACH_DEV(port_id) {
++			if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++				continue;
++			ret = rte_eth_dev_stop(port_id);
++			if (ret < 0)
++				printf("rte_eth_dev_stop:err=%d, port=%u\n", ret, port_id);
++		}
++
++		rte_eal_mp_wait_lcore();
++		RTE_ETH_FOREACH_DEV(port_id) {
++			if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++				continue;
++
++			printf("Closing port %d...", port_id);
++			rte_eth_dev_close(port_id);
++		}
++
++		rte_event_dev_stop(evt_rsrc->event_d_id);
++		rte_event_dev_close(evt_rsrc->event_d_id);
++		printf(" Done\n");
++	} else {
++		rte_eal_mp_wait_lcore();
++
++		RTE_ETH_FOREACH_DEV(port_id) {
++			if ((rsrc->enabled_port_mask & (1 << port_id)) == 0)
++				continue;
++
++			printf("Closing port %d...", port_id);
++			ret = rte_eth_dev_stop(port_id);
++			if (ret < 0)
++				printf("rte_eth_dev_stop:err=%d, port=%u\n", ret, port_id);
++
++			rte_eth_dev_close(port_id);
++			printf(" Done\n");
++		}
++	}
++
++	/* clean up the EAL */
++	rte_eal_cleanup();
++	printf("Bye...\n");
++
++	return 0;
++}
+diff --git a/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/meson.build b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/meson.build
+new file mode 100644
+index 0000000000000..ba1cfaf57214b
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/l2fwd_event_pfc/meson.build
+@@ -0,0 +1,25 @@
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright(C) 2019 Marvell International Ltd.
++#
++
++# Test directory name relative to build directory.
++test_dir = meson.current_build_dir()
++
++# Test executable
++test_exec = 'l2fwd-event-pfc'
++
++allow_experimental_apis = true
++deps += 'eventdev'
++
++# Create the test executable
++l2fwd_event_pfc_test=executable(
++    test_exec,
++    files('main.c', 'l2fwd_common.c', 'l2fwd_event.c',
++          'l2fwd_event_generic.c', 'l2fwd_event_internal_port.c',
++          'l2fwd_poll.c'),
++    link_whole: link_libs,
++    dependencies: test_dep_objs,
++    c_args: cflags,
++    install_dir: 'bin/cnxk/l2fwd_event_pfc',
++    install: true,
++)
+diff --git a/marvell-ci/test/cnxk-tests/meson.build b/marvell-ci/test/cnxk-tests/meson.build
+index 643849cd8982b..b549796fa2d36 100644
+--- a/marvell-ci/test/cnxk-tests/meson.build
++++ b/marvell-ci/test/cnxk-tests/meson.build
+@@ -71,6 +71,7 @@ test_subdirs = [
+         'mbuf_perf',
+         'hotplug_test',
+         'l2fwd_tmc',
++        'l2fwd_event_pfc',
+         'tx_vlan',
+         'ipsec_reassembly_perf',
+         'lso_test',
+-- 
+2.25.1
+

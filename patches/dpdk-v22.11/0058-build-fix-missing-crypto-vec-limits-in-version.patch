@@ -1,0 +1,35 @@
+From 806df064c01ab3dffc0e5f67fa7dd79c7755e33e Mon Sep 17 00:00:00 2001
+From: Volodymyr Fialko <vfialko@marvell.com>
+Date: Fri, 2 Dec 2022 15:02:27 +0100
+Subject: [PATCH 058/955] build: fix missing crypto vec limits in version
+
+Add missing function `rte_event_crypto_adapter_vector_limits_get` to
+version.map.
+Fixes: d5a9e8301676 ("eventdev: introduce event cryptodev vector type")
+
+Signed-off-by: Volodymyr Fialko <vfialko@marvell.com>
+Change-Id: I8096bfbd0fed3f43bb8c3358bc2977c7115c6c4b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91785
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit c2d585abd0b61586b7e42a7a72bd1d2390275ea4)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91863
+---
+ lib/eventdev/version.map | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/lib/eventdev/version.map b/lib/eventdev/version.map
+index dd63ec6f6809c..1a7fffd17ff06 100644
+--- a/lib/eventdev/version.map
++++ b/lib/eventdev/version.map
+@@ -20,6 +20,7 @@ DPDK_23 {
+ 	rte_event_crypto_adapter_stats_get;
+ 	rte_event_crypto_adapter_stats_reset;
+ 	rte_event_crypto_adapter_stop;
++	rte_event_crypto_adapter_vector_limits_get;
+ 	rte_event_dequeue_timeout_ticks;
+ 	rte_event_dev_attr_get;
+ 	rte_event_dev_close;
+-- 
+2.25.1
+

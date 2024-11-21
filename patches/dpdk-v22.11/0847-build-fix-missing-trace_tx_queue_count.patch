@@ -1,0 +1,33 @@
+From 3e5ec2f310e80c758840b1caa768461ad7ebc81b Mon Sep 17 00:00:00 2001
+From: Nawal Kishor <nkishor@marvell.com>
+Date: Thu, 11 Apr 2024 16:51:39 +0530
+Subject: [PATCH 847/955] build: fix missing trace_tx_queue_count
+
+Add missing function '__rte_eth_trace_tx_queue_count'
+in version.map.
+Fixes: da1a400dea9e ("ethdev: rename functions checking queue validity")
+
+Signed-off-by: Nawal Kishor <nkishor@marvell.com>
+Change-Id: I255b1f4e387f413e634d61fb9d23f4211d66153f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125200
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ lib/ethdev/version.map | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
+index e7f2d386efc02..ea29ab12f50d6 100644
+--- a/lib/ethdev/version.map
++++ b/lib/ethdev/version.map
+@@ -298,6 +298,7 @@ EXPERIMENTAL {
+ 	rte_eth_tx_queue_is_valid;
+ 
+ 	# added in 24.03
++	__rte_eth_trace_tx_queue_count;
+ 	rte_eth_tx_queue_count;
+ };
+ 
+-- 
+2.25.1
+

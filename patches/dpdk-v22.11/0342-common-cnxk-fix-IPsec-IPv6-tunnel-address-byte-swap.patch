@@ -1,0 +1,64 @@
+From 196e6a047204e7fe6cb95f7764a2ac7787361c54 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Wed, 29 Mar 2023 14:29:49 +0530
+Subject: [PATCH 342/955] common/cnxk: fix IPsec IPv6 tunnel address byte swap
+
+Fixes the IPsec IPv6 tunnel address bytes swap during SA
+configurations in session create/update.
+
+Fixes: 78d03027f2c ("common/cnxk: add IPsec common code")
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I8a049cdc974dd4280e36f646f8cab1c2cfe43b3a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100214
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/cnxk_security.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index 79427d48fe4bc..13ca2c7791fc1 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -274,6 +274,14 @@ ot_ipsec_inb_ctx_size(struct roc_ot_ipsec_inb_sa *sa)
+ 	return size;
+ }
+ 
++static void
++ot_ipsec_update_ipv6_addr_endianness(uint64_t *addr)
++{
++	*addr = rte_be_to_cpu_64(*addr);
++	addr++;
++	*addr = rte_be_to_cpu_64(*addr);
++}
++
+ static int
+ ot_ipsec_inb_tunnel_hdr_fill(struct roc_ot_ipsec_inb_sa *sa,
+ 			     struct rte_security_ipsec_xform *ipsec_xfrm)
+@@ -310,6 +318,10 @@ ot_ipsec_inb_tunnel_hdr_fill(struct roc_ot_ipsec_inb_sa *sa,
+ 		memcpy(&sa->outer_hdr.ipv6.dst_addr, &tunnel->ipv6.dst_addr,
+ 		       sizeof(struct in6_addr));
+ 
++		/* IP Source and Dest are in LE/CPU endian */
++		ot_ipsec_update_ipv6_addr_endianness((uint64_t *)&sa->outer_hdr.ipv6.src_addr);
++		ot_ipsec_update_ipv6_addr_endianness((uint64_t *)&sa->outer_hdr.ipv6.dst_addr);
++
+ 		break;
+ 	default:
+ 		return -EINVAL;
+@@ -499,6 +511,10 @@ cnxk_ot_ipsec_outb_sa_fill(struct roc_ot_ipsec_outb_sa *sa,
+ 		memcpy(&sa->outer_hdr.ipv6.dst_addr, &tunnel->ipv6.dst_addr,
+ 		       sizeof(struct in6_addr));
+ 
++		/* IP Source and Dest are in LE/CPU endian */
++		ot_ipsec_update_ipv6_addr_endianness((uint64_t *)&sa->outer_hdr.ipv6.src_addr);
++		ot_ipsec_update_ipv6_addr_endianness((uint64_t *)&sa->outer_hdr.ipv6.dst_addr);
++
+ 		/* Outer header flow label source */
+ 		if (!ipsec_xfrm->options.copy_flabel) {
+ 			sa->w2.s.ipv4_df_src_or_ipv6_flw_lbl_src =
+-- 
+2.25.1
+

@@ -1,0 +1,656 @@
+From d7234b3bc811746897da59b776dacc8ade10ea64 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Sat, 3 Jun 2023 22:22:57 -0700
+Subject: [PATCH 478/955] crypto/cnxk: add support for sm4
+
+Add support for SM4 cipher
+Support for modes: SM4_CBC, SM4_ECB, SM4_CTR, SM4_OFB, SM4_CFB
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I81a950aa0a422329d14456b1d00a584383ca0dc5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104755
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104829
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ doc/guides/cryptodevs/cnxk.rst                |   1 +
+ doc/guides/cryptodevs/features/cn10k.ini      |   1 +
+ drivers/common/cnxk/hw/cpt.h                  |   5 +-
+ drivers/common/cnxk/roc_se.c                  |   3 +
+ drivers/common/cnxk/roc_se.h                  |  20 ++
+ drivers/crypto/cnxk/cnxk_cryptodev.h          |   2 +-
+ .../crypto/cnxk/cnxk_cryptodev_capabilities.c | 111 ++++++-
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c      |   5 +-
+ drivers/crypto/cnxk/cnxk_se.h                 | 278 +++++++++++++++++-
+ 9 files changed, 419 insertions(+), 7 deletions(-)
+
+diff --git a/doc/guides/cryptodevs/cnxk.rst b/doc/guides/cryptodevs/cnxk.rst
+index 991bbc2f99ef9..ebd3b5d6f43e8 100644
+--- a/doc/guides/cryptodevs/cnxk.rst
++++ b/doc/guides/cryptodevs/cnxk.rst
+@@ -41,6 +41,7 @@ Cipher algorithms:
+ * ``RTE_CRYPTO_CIPHER_KASUMI_F8``
+ * ``RTE_CRYPTO_CIPHER_SNOW3G_UEA2``
+ * ``RTE_CRYPTO_CIPHER_ZUC_EEA3``
++* ``RTE_CRYPTO_CIPHER_SM4``
+ 
+ Hash algorithms:
+ 
+diff --git a/doc/guides/cryptodevs/features/cn10k.ini b/doc/guides/cryptodevs/features/cn10k.ini
+index f18b7f3d768d4..2a64bd531d857 100644
+--- a/doc/guides/cryptodevs/features/cn10k.ini
++++ b/doc/guides/cryptodevs/features/cn10k.ini
+@@ -38,6 +38,7 @@ DES CBC        = Y
+ KASUMI F8      = Y
+ SNOW3G UEA2    = Y
+ ZUC EEA3       = Y
++SM4            = Y
+ 
+ ;
+ ; Supported authentication algorithms of 'cn10k' crypto driver.
+diff --git a/drivers/common/cnxk/hw/cpt.h b/drivers/common/cnxk/hw/cpt.h
+index 82ea076e4c09e..5e1519e20237e 100644
+--- a/drivers/common/cnxk/hw/cpt.h
++++ b/drivers/common/cnxk/hw/cpt.h
+@@ -73,7 +73,10 @@ union cpt_eng_caps {
+ 		uint64_t __io des : 1;
+ 		uint64_t __io crc : 1;
+ 		uint64_t __io mmul : 1;
+-		uint64_t __io reserved_15_33 : 19;
++		uint64_t __io reserved_15_20 : 6;
++		uint64_t __io sm3 : 1;
++		uint64_t __io sm4 : 1;
++		uint64_t __io reserved_23_33 : 11;
+ 		uint64_t __io pdcp_chain : 1;
+ 		uint64_t __io sg_ver2 : 1;
+ 		uint64_t __io reserved_36_63 : 28;
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index fe4c03696848a..f441699c11af0 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -751,6 +751,9 @@ roc_se_ctx_init(struct roc_se_ctx *roc_se_ctx)
+ 	case ROC_SE_PDCP_CHAIN:
+ 		ctx_len = sizeof(struct roc_se_zuc_snow3g_chain_ctx);
+ 		break;
++	case ROC_SE_SM:
++		ctx_len = sizeof(struct roc_se_sm_context);
++		break;
+ 	default:
+ 		ctx_len = 0;
+ 	}
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index 93ab2b1870b7c..d540d70616287 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -17,6 +17,7 @@
+ #define ROC_SE_MAJOR_OP_PDCP	   0x37
+ #define ROC_SE_MAJOR_OP_KASUMI	   0x38
+ #define ROC_SE_MAJOR_OP_PDCP_CHAIN 0x3C
++#define ROC_SE_MAJOR_OP_SM	   0x3D
+ 
+ #define ROC_SE_MAJOR_OP_MISC		 0x01ULL
+ #define ROC_SE_MISC_MINOR_OP_PASSTHROUGH 0x03ULL
+@@ -28,6 +29,8 @@
+ 
+ #define ROC_SE_OFF_CTRL_LEN 8
+ 
++#define ROC_SE_SM4_KEY_LEN 16
++
+ #define ROC_SE_ZS_EA 0x1
+ #define ROC_SE_ZS_IA 0x2
+ #define ROC_SE_K_F8  0x4
+@@ -38,6 +41,7 @@
+ #define ROC_SE_KASUMI	  0x3
+ #define ROC_SE_HASH_HMAC  0x4
+ #define ROC_SE_PDCP_CHAIN 0x5
++#define ROC_SE_SM	  0x6
+ 
+ #define ROC_SE_OP_CIPHER_ENCRYPT 0x1
+ #define ROC_SE_OP_CIPHER_DECRYPT 0x2
+@@ -125,6 +129,14 @@ typedef enum {
+ 	ROC_SE_DES_DOCSISBPI = 0x96,
+ } roc_se_cipher_type;
+ 
++typedef enum {
++	ROC_SM4_ECB = 0x0,
++	ROC_SM4_CBC = 0x1,
++	ROC_SM4_CTR = 0x2,
++	ROC_SM4_CFB = 0x3,
++	ROC_SM4_OFB = 0x4,
++} roc_sm_cipher_type;
++
+ typedef enum {
+ 	/* Microcode errors */
+ 	ROC_SE_NO_ERR = 0x00,
+@@ -194,6 +206,13 @@ struct roc_se_context {
+ 	struct roc_se_hmac_context hmac;
+ };
+ 
++struct roc_se_sm_context {
++	uint64_t rsvd_56_60 : 5;
++	uint64_t enc_cipher : 3;
++	uint64_t rsvd_0_55 : 56;
++	uint8_t encr_key[16];
++};
++
+ struct roc_se_otk_zuc_ctx {
+ 	union {
+ 		uint64_t u64;
+@@ -327,6 +346,7 @@ struct roc_se_ctx {
+ 			struct roc_se_zuc_snow3g_ctx zs_ctx;
+ 			struct roc_se_zuc_snow3g_chain_ctx zs_ch_ctx;
+ 			struct roc_se_kasumi_ctx k_ctx;
++			struct roc_se_sm_context sm_ctx;
+ 		};
+ 	} se_ctx __plt_aligned(ROC_ALIGN);
+ 	uint8_t *auth_key;
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev.h b/drivers/crypto/cnxk/cnxk_cryptodev.h
+index ce45f5d01b4c9..09f5ba0650cd8 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev.h
++++ b/drivers/crypto/cnxk/cnxk_cryptodev.h
+@@ -10,7 +10,7 @@
+ 
+ #include "roc_cpt.h"
+ 
+-#define CNXK_CPT_MAX_CAPS	 49
++#define CNXK_CPT_MAX_CAPS	 54
+ #define CNXK_SEC_CRYPTO_MAX_CAPS 16
+ #define CNXK_SEC_MAX_CAPS	 9
+ #define CNXK_AE_EC_ID_MAX	 8
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+index a94b0737d1feb..71ec71c431ee6 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_capabilities.c
+@@ -1049,6 +1049,109 @@ static const struct rte_cryptodev_capabilities caps_null[] = {
+ 	},
+ };
+ 
++static const struct rte_cryptodev_capabilities caps_sm4[] = {
++	{	/* SM4 CBC */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_CIPHER,
++			{.cipher = {
++				.algo = RTE_CRYPTO_CIPHER_SM4_CBC,
++				.block_size = 16,
++				.key_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				},
++				.iv_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				}
++			}, }
++		}, }
++	},
++	{	/* SM4 ECB */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_CIPHER,
++			{.cipher = {
++				.algo = RTE_CRYPTO_CIPHER_SM4_ECB,
++				.block_size = 16,
++				.key_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				},
++				.iv_size = {
++					.min = 0,
++					.max = 0,
++					.increment = 0
++				}
++			}, }
++		}, }
++	},
++	{	/* SM4 CTR */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_CIPHER,
++			{.cipher = {
++				.algo = RTE_CRYPTO_CIPHER_SM4_CTR,
++				.block_size = 16,
++				.key_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				},
++				.iv_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				}
++			}, }
++		}, }
++	},
++	{	/* SM4 OFB */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_CIPHER,
++			{.cipher = {
++				.algo = RTE_CRYPTO_CIPHER_SM4_OFB,
++				.block_size = 16,
++				.key_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				},
++				.iv_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				}
++			}, }
++		}, }
++	},
++	{	/* SM4 CFB */
++		.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,
++		{.sym = {
++			.xform_type = RTE_CRYPTO_SYM_XFORM_CIPHER,
++			{.cipher = {
++				.algo = RTE_CRYPTO_CIPHER_SM4_CFB,
++				.block_size = 16,
++				.key_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				},
++				.iv_size = {
++					.min = 16,
++					.max = 16,
++					.increment = 0
++				}
++			}, }
++		}, }
++	},
++};
++
+ static const struct rte_cryptodev_capabilities caps_end[] = {
+ 	RTE_CRYPTODEV_END_OF_CAPABILITIES_LIST()
+ };
+@@ -1513,9 +1616,11 @@ cn9k_crypto_caps_add(struct rte_cryptodev_capabilities cnxk_caps[], int *cur_pos
+ }
+ 
+ static void
+-cn10k_crypto_caps_add(struct rte_cryptodev_capabilities cnxk_caps[], int *cur_pos)
++cn10k_crypto_caps_add(struct rte_cryptodev_capabilities cnxk_caps[],
++		     union cpt_eng_caps *hw_caps, int *cur_pos)
+ {
+-	cpt_caps_add(cnxk_caps, cur_pos, caps_sm3, RTE_DIM(caps_sm3));
++	CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, sm3);
++	CPT_CAPS_ADD(cnxk_caps, cur_pos, hw_caps, sm4);
+ }
+ 
+ static void
+@@ -1537,7 +1642,7 @@ crypto_caps_populate(struct rte_cryptodev_capabilities cnxk_caps[],
+ 		cn9k_crypto_caps_add(cnxk_caps, &cur_pos);
+ 
+ 	if (roc_model_is_cn10k())
+-		cn10k_crypto_caps_add(cnxk_caps, &cur_pos);
++		cn10k_crypto_caps_add(cnxk_caps, hw_caps, &cur_pos);
+ 
+ 	cpt_caps_add(cnxk_caps, &cur_pos, caps_null, RTE_DIM(caps_null));
+ 	cpt_caps_add(cnxk_caps, &cur_pos, caps_end, RTE_DIM(caps_end));
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index d0c99d37e82e1..50150d3f06666 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -660,7 +660,7 @@ cnxk_cpt_inst_w7_get(struct cnxk_se_sess *sess, struct roc_cpt *roc_cpt)
+ 
+ 	/* Set the engine group */
+ 	if (sess->zsk_flag || sess->aes_ctr_eea2 || sess->is_sha3 || sess->is_sm3 ||
+-	    sess->passthrough)
++	    sess->passthrough || sess->is_sm4)
+ 		inst_w7.s.egrp = roc_cpt->eng_grp[CPT_ENG_TYPE_SE];
+ 	else
+ 		inst_w7.s.egrp = roc_cpt->eng_grp[CPT_ENG_TYPE_IE];
+@@ -704,6 +704,9 @@ sym_session_configure(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xfor
+ 		case ROC_SE_PDCP_CHAIN:
+ 			thr_type = CPT_DP_THREAD_TYPE_PDCP_CHAIN;
+ 			break;
++		case ROC_SE_SM:
++			thr_type = CPT_DP_THREAD_TYPE_SM;
++			break;
+ 		default:
+ 			plt_err("Invalid op type");
+ 			ret = -ENOTSUP;
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index dcb02e6e01cf3..b058775ec313b 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -23,6 +23,7 @@ enum cpt_dp_thread_type {
+ 	CPT_DP_THREAD_TYPE_PDCP,
+ 	CPT_DP_THREAD_TYPE_PDCP_CHAIN,
+ 	CPT_DP_THREAD_TYPE_KASUMI,
++	CPT_DP_THREAD_TYPE_SM,
+ 	CPT_DP_THREAD_AUTH_ONLY,
+ 	CPT_DP_THREAD_GENERIC,
+ 	CPT_DP_THREAD_TYPE_PT,
+@@ -49,7 +50,8 @@ struct cnxk_se_sess {
+ 	uint8_t short_iv : 1;
+ 	uint8_t is_sm3 : 1;
+ 	uint8_t passthrough : 1;
+-	uint8_t rsvd : 4;
++	uint8_t is_sm4 : 1;
++	uint8_t rsvd : 3;
+ 	uint8_t mac_len;
+ 	uint8_t iv_length;
+ 	uint8_t auth_iv_length;
+@@ -1062,6 +1064,100 @@ pdcp_chain_sg2_prep(struct roc_se_fc_params *params, struct roc_se_ctx *cpt_ctx,
+ 	return ret;
+ }
+ 
++static __rte_always_inline int
++cpt_sm_prep(uint32_t flags, uint64_t d_offs, uint64_t d_lens, struct roc_se_fc_params *fc_params,
++	    struct cpt_inst_s *inst, const bool is_sg_ver2, int decrypt)
++{
++	int32_t inputlen, outputlen, enc_dlen;
++	union cpt_inst_w4 cpt_inst_w4;
++	uint32_t passthrough_len = 0;
++	struct roc_se_ctx *se_ctx;
++	uint32_t encr_data_len;
++	uint32_t encr_offset;
++	uint64_t offset_ctrl;
++	uint8_t iv_len = 16;
++	uint8_t *src = NULL;
++	void *offset_vaddr;
++	int ret;
++
++	encr_offset = ROC_SE_ENCR_OFFSET(d_offs);
++	encr_data_len = ROC_SE_ENCR_DLEN(d_lens);
++
++	se_ctx = fc_params->ctx;
++	cpt_inst_w4.u64 = se_ctx->template_w4.u64;
++
++	if (unlikely(!(flags & ROC_SE_VALID_IV_BUF)))
++		iv_len = 0;
++
++	encr_offset += iv_len;
++	enc_dlen = encr_data_len + encr_offset;
++	enc_dlen = RTE_ALIGN_CEIL(encr_data_len, 8) + encr_offset;
++
++	inputlen = enc_dlen;
++	outputlen = enc_dlen;
++
++	cpt_inst_w4.s.param1 = encr_data_len;
++
++	if (unlikely(encr_offset >> 8)) {
++		plt_dp_err("Offset not supported");
++		plt_dp_err("enc_offset: %d", encr_offset);
++		return -1;
++	}
++
++	offset_ctrl = rte_cpu_to_be_64((uint64_t)encr_offset);
++
++	/*
++	 * In cn9k, cn10k since we have a limitation of
++	 * IV & Offset control word not part of instruction
++	 * and need to be part of Data Buffer, we check if
++	 * head room is there and then only do the Direct mode processing
++	 */
++	if (likely((flags & ROC_SE_SINGLE_BUF_INPLACE) && (flags & ROC_SE_SINGLE_BUF_HEADROOM))) {
++		void *dm_vaddr = fc_params->bufs[0].vaddr;
++
++		/* Use Direct mode */
++
++		offset_vaddr = PLT_PTR_SUB(dm_vaddr, ROC_SE_OFF_CTRL_LEN + iv_len);
++		*(uint64_t *)offset_vaddr = offset_ctrl;
++
++		/* DPTR */
++		inst->dptr = (uint64_t)offset_vaddr;
++
++		/* RPTR should just exclude offset control word */
++		inst->rptr = (uint64_t)dm_vaddr - iv_len;
++
++		cpt_inst_w4.s.dlen = inputlen + ROC_SE_OFF_CTRL_LEN;
++
++		if (likely(iv_len)) {
++			void *dst = PLT_PTR_ADD(offset_vaddr, ROC_SE_OFF_CTRL_LEN);
++			uint64_t *src = fc_params->iv_buf;
++
++			rte_memcpy(dst, src, 16);
++		}
++		inst->w4.u64 = cpt_inst_w4.u64;
++	} else {
++		if (likely(iv_len))
++			src = fc_params->iv_buf;
++
++		inst->w4.u64 = cpt_inst_w4.u64;
++
++		if (is_sg_ver2)
++			ret = sg2_inst_prep(fc_params, inst, offset_ctrl, src, iv_len, 0, 0,
++					    inputlen, outputlen, passthrough_len, flags, 0,
++					    decrypt);
++		else
++			ret = sg_inst_prep(fc_params, inst, offset_ctrl, src, iv_len, 0, 0,
++					   inputlen, outputlen, passthrough_len, flags, 0, decrypt);
++
++		if (unlikely(ret)) {
++			plt_dp_err("sg prep failed");
++			return -1;
++		}
++	}
++
++	return 0;
++}
++
+ static __rte_always_inline int
+ cpt_enc_hmac_prep(uint32_t flags, uint64_t d_offs, uint64_t d_lens,
+ 		  struct roc_se_fc_params *fc_params, struct cpt_inst_s *inst,
+@@ -1902,6 +1998,71 @@ fill_sess_aead(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 	return 0;
+ }
+ 
++static __rte_always_inline int
++fill_sm_sess_cipher(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
++{
++	struct roc_se_sm_context *sm_ctx = &sess->roc_se_ctx.se_ctx.sm_ctx;
++	struct rte_crypto_cipher_xform *c_form;
++	roc_sm_cipher_type enc_type = 0;
++
++	c_form = &xform->cipher;
++
++	if (c_form->op == RTE_CRYPTO_CIPHER_OP_ENCRYPT) {
++		sess->cpt_op |= ROC_SE_OP_CIPHER_ENCRYPT;
++		sess->roc_se_ctx.template_w4.s.opcode_minor = ROC_SE_FC_MINOR_OP_ENCRYPT;
++	} else if (c_form->op == RTE_CRYPTO_CIPHER_OP_DECRYPT) {
++		sess->cpt_op |= ROC_SE_OP_CIPHER_DECRYPT;
++		sess->roc_se_ctx.template_w4.s.opcode_minor = ROC_SE_FC_MINOR_OP_DECRYPT;
++	} else {
++		plt_dp_err("Unknown cipher operation\n");
++		return -1;
++	}
++
++	switch (c_form->algo) {
++	case RTE_CRYPTO_CIPHER_SM4_CBC:
++		enc_type = ROC_SM4_CBC;
++		break;
++	case RTE_CRYPTO_CIPHER_SM4_ECB:
++		enc_type = ROC_SM4_ECB;
++		break;
++	case RTE_CRYPTO_CIPHER_SM4_CTR:
++		enc_type = ROC_SM4_CTR;
++		break;
++	case RTE_CRYPTO_CIPHER_SM4_CFB:
++		enc_type = ROC_SM4_CFB;
++		break;
++	case RTE_CRYPTO_CIPHER_SM4_OFB:
++		enc_type = ROC_SM4_OFB;
++		break;
++	default:
++		plt_dp_err("Crypto: Undefined cipher algo %u specified", c_form->algo);
++		return -1;
++	}
++
++	sess->iv_offset = c_form->iv.offset;
++	sess->iv_length = c_form->iv.length;
++
++	if (c_form->key.length != ROC_SE_SM4_KEY_LEN) {
++		plt_dp_err("Invalid cipher params keylen %u", c_form->key.length);
++		return -1;
++	}
++
++	sess->zsk_flag = 0;
++	sess->zs_cipher = 0;
++	sess->aes_gcm = 0;
++	sess->aes_ctr = 0;
++	sess->is_null = 0;
++	sess->is_sm4 = 1;
++	sess->roc_se_ctx.fc_type = ROC_SE_SM;
++
++	sess->roc_se_ctx.template_w4.s.opcode_major = ROC_SE_MAJOR_OP_SM;
++
++	memcpy(sm_ctx->encr_key, c_form->key.data, ROC_SE_SM4_KEY_LEN);
++	sm_ctx->enc_cipher = enc_type;
++
++	return 0;
++}
++
+ static __rte_always_inline int
+ fill_sess_cipher(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ {
+@@ -1912,6 +2073,13 @@ fill_sess_cipher(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ 
+ 	c_form = &xform->cipher;
+ 
++	if ((c_form->algo == RTE_CRYPTO_CIPHER_SM4_CBC) ||
++	    (c_form->algo == RTE_CRYPTO_CIPHER_SM4_ECB) ||
++	    (c_form->algo == RTE_CRYPTO_CIPHER_SM4_CTR) ||
++	    (c_form->algo == RTE_CRYPTO_CIPHER_SM4_CFB) ||
++	    (c_form->algo == RTE_CRYPTO_CIPHER_SM4_OFB))
++		return fill_sm_sess_cipher(xform, sess);
++
+ 	if (c_form->op == RTE_CRYPTO_CIPHER_OP_ENCRYPT)
+ 		sess->cpt_op |= ROC_SE_OP_CIPHER_ENCRYPT;
+ 	else if (c_form->op == RTE_CRYPTO_CIPHER_OP_DECRYPT) {
+@@ -2841,6 +3009,110 @@ fill_pdcp_chain_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 	return ret;
+ }
+ 
++static __rte_always_inline int
++fill_sm_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
++	       struct cpt_qp_meta_info *m_info, struct cpt_inflight_req *infl_req,
++	       struct cpt_inst_s *inst, const bool is_sg_ver2)
++{
++	struct rte_crypto_sym_op *sym_op = cop->sym;
++	struct roc_se_fc_params fc_params;
++	struct rte_mbuf *m_src, *m_dst;
++	uint8_t cpt_op = sess->cpt_op;
++	uint64_t d_offs, d_lens;
++	char src[SRC_IOV_SIZE];
++	char dst[SRC_IOV_SIZE];
++	void *mdata = NULL;
++#ifdef CPT_ALWAYS_USE_SG_MODE
++	uint8_t inplace = 0;
++#else
++	uint8_t inplace = 1;
++#endif
++	uint32_t flags = 0;
++	int ret;
++
++	uint32_t ci_data_length = sym_op->cipher.data.length;
++	uint32_t ci_data_offset = sym_op->cipher.data.offset;
++
++	fc_params.cipher_iv_len = sess->iv_length;
++	fc_params.auth_iv_len = 0;
++	fc_params.auth_iv_buf = NULL;
++	fc_params.iv_buf = NULL;
++	fc_params.mac_buf.size = 0;
++	fc_params.mac_buf.vaddr = 0;
++
++	if (likely(sess->iv_length)) {
++		flags |= ROC_SE_VALID_IV_BUF;
++		fc_params.iv_buf = rte_crypto_op_ctod_offset(cop, uint8_t *, sess->iv_offset);
++	}
++
++	m_src = sym_op->m_src;
++	m_dst = sym_op->m_dst;
++
++	d_offs = ci_data_offset;
++	d_offs = (d_offs << 16);
++
++	d_lens = ci_data_length;
++	d_lens = (d_lens << 32);
++
++	fc_params.ctx = &sess->roc_se_ctx;
++
++	if (likely(!m_dst && inplace)) {
++		fc_params.dst_iov = fc_params.src_iov = (void *)src;
++
++		prepare_iov_from_pkt_inplace(m_src, &fc_params, &flags);
++
++	} else {
++		/* Out of place processing */
++		fc_params.src_iov = (void *)src;
++		fc_params.dst_iov = (void *)dst;
++
++		/* Store SG I/O in the api for reuse */
++		if (prepare_iov_from_pkt(m_src, fc_params.src_iov, 0)) {
++			plt_dp_err("Prepare src iov failed");
++			ret = -EINVAL;
++			goto err_exit;
++		}
++
++		if (unlikely(m_dst != NULL)) {
++			if (prepare_iov_from_pkt(m_dst, fc_params.dst_iov, 0)) {
++				plt_dp_err("Prepare dst iov failed for m_dst %p", m_dst);
++				ret = -EINVAL;
++				goto err_exit;
++			}
++		} else {
++			fc_params.dst_iov = (void *)src;
++		}
++	}
++
++	fc_params.meta_buf.vaddr = NULL;
++
++	if (unlikely(!((flags & ROC_SE_SINGLE_BUF_INPLACE) &&
++		       (flags & ROC_SE_SINGLE_BUF_HEADROOM)))) {
++		mdata = alloc_op_meta(&fc_params.meta_buf, m_info->mlen, m_info->pool, infl_req);
++		if (mdata == NULL) {
++			plt_dp_err("Error allocating meta buffer for request");
++			return -ENOMEM;
++		}
++	}
++
++	/* Finally prepare the instruction */
++	ret = cpt_sm_prep(flags, d_offs, d_lens, &fc_params, inst, is_sg_ver2,
++			  !(cpt_op & ROC_SE_OP_ENCODE));
++
++	if (unlikely(ret)) {
++		plt_dp_err("Preparing request failed due to bad input arg");
++		goto free_mdata_and_exit;
++	}
++
++	return 0;
++
++free_mdata_and_exit:
++	if (infl_req->op_flags & CPT_OP_FLAGS_METABUF)
++		rte_mempool_put(m_info->pool, infl_req->mdata);
++err_exit:
++	return ret;
++}
++
+ static __rte_always_inline void
+ compl_auth_verify(struct rte_crypto_op *op, uint8_t *gen_mac, uint64_t mac_len)
+ {
+@@ -3071,6 +3343,10 @@ cpt_sym_inst_fill(struct cnxk_cpt_qp *qp, struct rte_crypto_op *op, struct cnxk_
+ 		ret = fill_fc_params(op, sess, &qp->meta_info, infl_req, inst, true, false,
+ 				     is_sg_ver2);
+ 		break;
++	case CPT_DP_THREAD_TYPE_SM:
++		ret = fill_sm_params(op, sess, &qp->meta_info, infl_req, inst, is_sg_ver2);
++		break;
++
+ 	case CPT_DP_THREAD_AUTH_ONLY:
+ 		ret = fill_digest_params(op, sess, &qp->meta_info, infl_req, inst, is_sg_ver2);
+ 		break;
+-- 
+2.25.1
+

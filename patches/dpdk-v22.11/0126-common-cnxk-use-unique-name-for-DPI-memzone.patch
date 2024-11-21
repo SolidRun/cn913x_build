@@ -1,0 +1,42 @@
+From 548695e80b27b34cb2ccafe9425ffac7f12896b1 Mon Sep 17 00:00:00 2001
+From: Radha Mohan Chintakuntla <radhac@marvell.com>
+Date: Fri, 17 Jun 2022 01:50:50 +0000
+Subject: [PATCH 126/955] common/cnxk: use unique name for DPI memzone
+
+roc_dpi was using vfid as part of name for memzone allocation.
+This led to memzone allocation failure in case of multiple
+physical functions.
+vfid is not unique by itself since multiple physical functions
+can have the same virtual function indices.
+So use complete DBDF as part of memzone name to make it unique.
+
+Signed-off-by: Radha Mohan Chintakuntla <radhac@marvell.com>
+Change-Id: I845ae46d985450eaba96e0769340cae1b2175f0c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92532
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/common/cnxk/roc_dpi.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dpi.c b/drivers/common/cnxk/roc_dpi.c
+index 93c8318a3d214..0e2f803077edc 100644
+--- a/drivers/common/cnxk/roc_dpi.c
++++ b/drivers/common/cnxk/roc_dpi.c
+@@ -81,10 +81,10 @@ roc_dpi_configure(struct roc_dpi *roc_dpi)
+ 		return rc;
+ 	}
+ 
+-	snprintf(name, sizeof(name), "dpimem%d", roc_dpi->vfid);
++	snprintf(name, sizeof(name), "dpimem%d:%d:%d:%d", pci_dev->addr.domain, pci_dev->addr.bus,
++		 pci_dev->addr.devid, pci_dev->addr.function);
+ 	buflen = DPI_CMD_QUEUE_SIZE * DPI_CMD_QUEUE_BUFS;
+-	dpi_mz = plt_memzone_reserve_aligned(name, buflen, 0,
+-					     DPI_CMD_QUEUE_SIZE);
++	dpi_mz = plt_memzone_reserve_aligned(name, buflen, 0, DPI_CMD_QUEUE_SIZE);
+ 	if (dpi_mz == NULL) {
+ 		plt_err("dpi memzone reserve failed");
+ 		rc = -ENOMEM;
+-- 
+2.25.1
+

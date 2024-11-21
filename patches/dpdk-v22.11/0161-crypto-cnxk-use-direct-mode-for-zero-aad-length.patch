@@ -1,0 +1,36 @@
+From 9714be092f06ae54b60e09861147f47702c54adf Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 3 Jan 2023 12:44:41 +0530
+Subject: [PATCH 161/955] crypto/cnxk: use direct mode for zero aad length
+
+Using direct mode if aad length is zero.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I250359994ae38671f88de5f19b220b896a3f9dae
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93540
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/crypto/cnxk/cnxk_se.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/crypto/cnxk/cnxk_se.h b/drivers/crypto/cnxk/cnxk_se.h
+index c16027ec75bc8..69cd343eea1bb 100644
+--- a/drivers/crypto/cnxk/cnxk_se.h
++++ b/drivers/crypto/cnxk/cnxk_se.h
+@@ -2258,9 +2258,9 @@ fill_fc_params(struct rte_crypto_op *cop, struct cnxk_se_sess *sess,
+ 
+ 		aad_data = sym_op->aead.aad.data;
+ 		aad_len = sess->aad_length;
+-		if (likely((aad_data + aad_len) ==
+-			   rte_pktmbuf_mtod_offset(m_src, uint8_t *,
+-						   sym_op->aead.data.offset))) {
++		if (likely((aad_len == 0) ||
++			   ((aad_data + aad_len) ==
++			    rte_pktmbuf_mtod_offset(m_src, uint8_t *, sym_op->aead.data.offset)))) {
+ 			d_offs = (d_offs - aad_len) | (d_offs << 16);
+ 			d_lens = (d_lens + aad_len) | (d_lens << 32);
+ 		} else {
+-- 
+2.25.1
+

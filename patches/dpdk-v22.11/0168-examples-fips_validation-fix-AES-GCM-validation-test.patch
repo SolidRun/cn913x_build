@@ -1,0 +1,67 @@
+From 0f9825af9b6c41cfda20d0afa7f27b6dc302fdbf Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Mon, 16 Jan 2023 12:26:34 +0530
+Subject: [PATCH 168/955] examples/fips_validation: fix AES GCM validation
+ tests
+
+AES GCM validation tests fail in FIPS validation due to incorrect
+fields populated in response file. This patch fixes them.
+
+Fixes: 5b540bebac8e ("examples/fips_validation: fix GMAC decryption output")
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: Ib5c5ce2a956485339fce67884914068f3ef2f4e5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94608
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ examples/fips_validation/fips_validation_gcm.c | 12 +++++-------
+ 1 file changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/examples/fips_validation/fips_validation_gcm.c b/examples/fips_validation/fips_validation_gcm.c
+index a80d8b3e4d477..bf08d1b99596c 100644
+--- a/examples/fips_validation/fips_validation_gcm.c
++++ b/examples/fips_validation/fips_validation_gcm.c
+@@ -79,7 +79,7 @@ parser_read_gcm_pt_len(const char *key, char *src,
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	if (vec.pt.len == 0) {
++	if (info.algo == FIPS_TEST_ALGO_AES_GMAC && vec.pt.len == 0) {
+ 		info.interim_info.gcm_data.is_gmac = 1;
+ 		test_ops.prepare_sym_op = prepare_auth_op;
+ 		test_ops.prepare_sym_xform = prepare_gmac_xform;
+@@ -296,6 +296,7 @@ parse_test_gcm_json_writeback(struct fips_val *val)
+ 			tmp_val.val = val->val;
+ 			tmp_val.len = vec.pt.len;
+ 
++			info.one_line_text[0] = '\0';
+ 			writeback_hex_str("", info.one_line_text, &tmp_val);
+ 			ct = json_string(info.one_line_text);
+ 			json_object_set_new(json_info.json_write_case, CT_JSON_STR, ct);
+@@ -326,6 +327,7 @@ parse_test_gcm_json_writeback(struct fips_val *val)
+ 				tmp_val.val = val->val;
+ 				tmp_val.len = vec.pt.len;
+ 
++				info.one_line_text[0] = '\0';
+ 				writeback_hex_str("", info.one_line_text, &tmp_val);
+ 				json_object_set_new(json_info.json_write_case, PT_JSON_STR,
+ 					json_string(info.one_line_text));
+@@ -334,12 +336,8 @@ parse_test_gcm_json_writeback(struct fips_val *val)
+ 					json_true());
+ 			}
+ 		} else {
+-			if (!info.interim_info.gcm_data.is_gmac)
+-				json_object_set_new(json_info.json_write_case, PT_JSON_STR,
+-					json_string(""));
+-			else
+-				json_object_set_new(json_info.json_write_case, "testPassed",
+-					json_false());
++			json_object_set_new(json_info.json_write_case, "testPassed",
++				json_false());
+ 		}
+ 	}
+ 
+-- 
+2.25.1
+

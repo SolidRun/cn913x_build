@@ -1,0 +1,89 @@
+From d8140cba226a58b55e518f9a3c19d7345a7302a5 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Fri, 18 Aug 2023 10:02:18 +0530
+Subject: [PATCH 607/955] net/cnxk: fix code format issues
+
+Fix code format issues.
+
+Fixes: fb8c058988d6 ("net/cnxk: add get flow aged ops")
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: Iab9bdd65834907881b148e303e60eccba1a55cdc
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110044
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_flow.c | 6 +++---
+ drivers/net/cnxk/cn9k_flow.c  | 6 +++---
+ drivers/net/cnxk/cnxk_flow.c  | 4 ++--
+ 3 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_flow.c b/drivers/net/cnxk/cn10k_flow.c
+index 4faed04c9ac18..db5e4273629ad 100644
+--- a/drivers/net/cnxk/cn10k_flow.c
++++ b/drivers/net/cnxk/cn10k_flow.c
+@@ -137,7 +137,7 @@ cn10k_flow_create(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 	void *mcs_flow = NULL;
+ 	int vtag_actions = 0;
+ 	uint32_t req_act = 0;
+-	int mark_actions = 0;
++	int mark_actions;
+ 	int i, rc;
+ 
+ 	for (i = 0; actions[i].type != RTE_FLOW_ACTION_TYPE_END; i++) {
+@@ -251,8 +251,8 @@ cn10k_flow_destroy(struct rte_eth_dev *eth_dev, struct rte_flow *rte_flow,
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	struct roc_npc *npc = &dev->npc;
+ 	int vtag_actions = 0;
+-	int mark_actions = 0;
+-	uint16_t match_id = 0;
++	int mark_actions;
++	uint16_t match_id;
+ 	uint32_t mtr_id;
+ 	int rc;
+ 
+diff --git a/drivers/net/cnxk/cn9k_flow.c b/drivers/net/cnxk/cn9k_flow.c
+index b9ce1112a7b6d..dc5476a189ac5 100644
+--- a/drivers/net/cnxk/cn9k_flow.c
++++ b/drivers/net/cnxk/cn9k_flow.c
+@@ -16,7 +16,7 @@ cn9k_flow_create(struct rte_eth_dev *eth_dev, const struct rte_flow_attr *attr,
+ 	struct roc_npc *npc = &dev->npc;
+ 	struct roc_npc_flow *flow;
+ 	int vtag_actions = 0;
+-	int mark_actions = 0;
++	int mark_actions;
+ 
+ 	flow = cnxk_flow_create(eth_dev, attr, pattern, actions, error);
+ 	if (!flow)
+@@ -47,8 +47,8 @@ cn9k_flow_destroy(struct rte_eth_dev *eth_dev, struct rte_flow *rte_flow,
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	struct roc_npc *npc = &dev->npc;
+ 	int vtag_actions = 0;
+-	uint16_t match_id = 0;
+-	int mark_actions = 0;
++	uint16_t match_id;
++	int mark_actions;
+ 
+ 	match_id = (flow->npc_action >> NPC_RX_ACT_MATCH_OFFSET) &
+ 		   NPC_RX_ACT_MATCH_MASK;
+diff --git a/drivers/net/cnxk/cnxk_flow.c b/drivers/net/cnxk/cnxk_flow.c
+index 9d69dd90e34ac..e0aeb5ea5fca3 100644
+--- a/drivers/net/cnxk/cnxk_flow.c
++++ b/drivers/net/cnxk/cnxk_flow.c
+@@ -504,9 +504,9 @@ cnxk_flow_get_aged_flows(struct rte_eth_dev *eth_dev, void **context,
+ 	do {
+ 		sn = plt_seqcount_read_begin(&flow_age->seq_cnt);
+ 
+-		if (nb_contexts == 0)
++		if (nb_contexts == 0) {
+ 			cnt = flow_age->aged_flows_cnt;
+-		else {
++		} else {
+ 			start_id = flow_age->start_id;
+ 			end_id = flow_age->end_id;
+ 			for (i = start_id; i <= end_id; i++) {
+-- 
+2.25.1
+

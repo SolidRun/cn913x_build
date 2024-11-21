@@ -1,0 +1,177 @@
+From 6be5bb8ad063b6a79d5fe691ffb4553572f80d54 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Thu, 30 Mar 2023 18:13:05 +0530
+Subject: [PATCH 343/955] ci: msns: fix issue with perf mode other algs
+
+Fix issue with perf mode alg 1..3 with port > 1.
+Make sure the sa_index is computed by hardware as expected.
+Also add helper script to generate pcaps for 8 ports.
+Fixes: db20ade87359 ("ci: msns: add perf mode with event worker")
+
+Change-Id: I381a33bc3b413b212bc18a451c27946a361c1547
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/ipsec_msns/README  |  2 +-
+ .../test/cnxk-tests/ipsec_msns/gentraffic.py  | 16 ++++--
+ .../test/cnxk-tests/ipsec_msns/ipsec_msns.c   | 23 +++++---
+ .../test/cnxk-tests/ipsec_msns/pcap_gen.sh    | 52 +++++++++++++++++++
+ 4 files changed, 80 insertions(+), 13 deletions(-)
+ create mode 100755 marvell-ci/test/cnxk-tests/ipsec_msns/pcap_gen.sh
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/README b/marvell-ci/test/cnxk-tests/ipsec_msns/README
+index 96e6cc2119591..76ef6bd18ff95 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/README
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/README
+@@ -45,7 +45,7 @@ Perf mode:
+ When "--perf" argument is given, the application runs in perf mode by creating one inbound SA per
+ ALG for each port and then listening on the inbound inline traffic and forwarding successfully
+ decrypted packets. To generate the pcap for matching SPI, ipsec_msns/gentraffic.py script can be
+-used.
++used. pcap_gen.sh can be used to generate for 7 ports.
+ 
+ PFC:
+ ====
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py b/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py
+index 4c0f8a26e396f..a9f7863274dbf 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/gentraffic.py
+@@ -13,11 +13,15 @@
+ parser.add_argument("--spi", type=str, help="SPI of ESP packet",
+ 		    default=None)
+ parser.add_argument("--dmac", type=str, help="DMAC of pkts",
+-		    default=dmac)
++		    default=None)
++parser.add_argument("--name", type=str, help="Name of pcap",
++		    default=None)
+ 
+ args = parser.parse_args()
+ if args.spi != None:
+ 	spi = int(args.spi, 16)
++if args.dmac != None:
++	dmac = args.dmac
+ 
+ key = b'\xfe\xff\xe9\x92\x86\x65\x73\x1c\x6d\x6a\x8f\x94\x67\x30\x83\x08\xca\xfe\xba\xbe'
+ eth = Ether(src='12:12:12:12:12:12', dst=dmac)
+@@ -33,10 +37,12 @@
+ 
+ p=ip/TCP()/Raw(5 * 'a')
+ 
+-pkt.append(eth/p)
+-ep.append(eth/sa.encrypt(p))
++pkt=Ether(src='12:12:12:12:12:12', dst=dmac)/sa.encrypt(p)
+ 
+-pcap_name = 'inbound_%08x.pcap' % spi
+-wrpcap(pcap_name, ep)
++if args.name != None:
++	pcap_name = args.name
++else:
++	pcap_name = 'inb_%08x.pcap' % spi
++wrpcap(pcap_name, pkt)
+ 
+ sys.stdout.write("Generated %s with SPI %08x\n" % (pcap_name, spi))
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+index 4c33470dbf3c3..345aaeb505ce1 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/ipsec_msns.c
+@@ -1489,24 +1489,33 @@ ut_ipsec_ipv4_perf(void)
+ 
+ 			switch (alg) {
+ 			case RTE_PMD_CNXK_SEC_ACTION_ALG0:
+-				spi = (0x1 << 28 | sa_index);
++				spi = (0x2 << 28 | sa_index);
+ 				sa_hi = (spi >> 16) & 0xffff;
+ 				sa_lo = 0x0;
+ 				break;
+ 			case RTE_PMD_CNXK_SEC_ACTION_ALG1:
+-				spi = (sa_index << 28) | 0x0000001;
++				/* Only SPI[31:28] are considered as SA[3:0] hence use.
++				 * rest from SPI[15:4].
++				 */
++				spi = ((sa_index & 0xF) << 28) | ((sa_index >> 4) << 4);
+ 				sa_hi = (spi >> 16) & 0xffff;
+-				sa_lo = 0x0001;
++				sa_lo = 0x0000;
+ 				break;
+ 			case RTE_PMD_CNXK_SEC_ACTION_ALG2:
+-				spi = (sa_index << 25) | 0x00000001;
++				/* Only SPI[27:25] are considered as SA[2:0] hence use.
++				 * rest from SPI[15:3].
++				 */
++				spi = ((sa_index & 0x7) << 25) | ((sa_index >> 3) << 3);
+ 				sa_hi = (spi >> 16) & 0xffff;
+-				sa_lo = 0x0001;
++				sa_lo = 0x0000;
+ 				break;
+ 			case RTE_PMD_CNXK_SEC_ACTION_ALG3:
+-				spi = (sa_index << 25) | 0x00000001;
++				/* Only SPI[28:25] are considered as SA[3:0] hence use.
++				 * rest from SPI[15:4].
++				 */
++				spi = ((sa_index & 0xF) << 25) | ((sa_index >> 4) << 4);
+ 				sa_hi = (spi >> 16) & 0xffff;
+-				sa_lo = 0x0001;
++				sa_lo = 0x0000;
+ 				break;
+ 			default:
+ 				break;
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_msns/pcap_gen.sh b/marvell-ci/test/cnxk-tests/ipsec_msns/pcap_gen.sh
+new file mode 100755
+index 0000000000000..0e2cd8f581829
+--- /dev/null
++++ b/marvell-ci/test/cnxk-tests/ipsec_msns/pcap_gen.sh
+@@ -0,0 +1,52 @@
++#!/bin/bash
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2023 Marvell.
++
++PORT0_DMAC="DA:90:4F:9E:4F:33"
++PORT1_DMAC="8A:87:2D:D2:EF:A1"
++PORT2_DMAC="A6:68:22:58:94:7C"
++PORT3_DMAC="5A:59:EA:EF:2E:3E"
++PORT4_DMAC="92:06:36:41:05:B0"
++PORT5_DMAC="46:68:D3:16:83:13"
++PORT6_DMAC="12:D5:E4:C6:1B:04"
++PORT7_DMAC="D2:7E:BD:7B:04:11"
++
++./gentraffic.py  --spi 0x20000000 --name port0.pcap --dmac $PORT0_DMAC
++./gentraffic.py  --spi 0x10000000 --name port0_1.pcap --dmac $PORT0_DMAC
++./gentraffic.py  --spi 0x4000000 --name port0_2.pcap --dmac $PORT0_DMAC
++./gentraffic.py  --spi 0x6000000 --name port0_3.pcap --dmac $PORT0_DMAC
++
++./gentraffic.py  --spi 0x20000010 --name port1.pcap --dmac $PORT1_DMAC
++./gentraffic.py  --spi 0x10000010 --name port1_1.pcap --dmac $PORT1_DMAC
++./gentraffic.py  --spi 0x4000010 --name port1_2.pcap --dmac $PORT1_DMAC
++./gentraffic.py  --spi 0x6000010 --name port1_3.pcap --dmac $PORT1_DMAC
++
++./gentraffic.py  --spi 0x20000040 --name port2.pcap --dmac $PORT2_DMAC
++./gentraffic.py  --spi 0x10000040 --name port2_1.pcap --dmac $PORT2_DMAC
++./gentraffic.py  --spi 0x4000040 --name port2_2.pcap --dmac $PORT2_DMAC
++./gentraffic.py  --spi 0x6000040 --name port2_3.pcap --dmac $PORT2_DMAC
++
++./gentraffic.py  --spi 0x20000050 --name port3.pcap --dmac $PORT3_DMAC
++./gentraffic.py  --spi 0x10000050 --name port3_1.pcap --dmac $PORT3_DMAC
++./gentraffic.py  --spi 0x4000050 --name port3_2.pcap --dmac $PORT3_DMAC
++./gentraffic.py  --spi 0x6000050 --name port3_3.pcap --dmac $PORT3_DMAC
++
++./gentraffic.py  --spi 0x20000080 --name port4.pcap --dmac $PORT4_DMAC
++./gentraffic.py  --spi 0x10000080 --name port4_1.pcap --dmac $PORT4_DMAC
++./gentraffic.py  --spi 0x4000080 --name port4_2.pcap --dmac $PORT4_DMAC
++./gentraffic.py  --spi 0x6000080 --name port4_3.pcap --dmac $PORT4_DMAC
++
++./gentraffic.py  --spi 0x20000090 --name port5.pcap --dmac $PORT5_DMAC
++./gentraffic.py  --spi 0x10000090 --name port5_1.pcap --dmac $PORT5_DMAC
++./gentraffic.py  --spi 0x4000090 --name port5_2.pcap --dmac $PORT5_DMAC
++./gentraffic.py  --spi 0x6000090 --name port5_3.pcap --dmac $PORT5_DMAC
++
++./gentraffic.py  --spi 0x200000c0 --name port6.pcap --dmac $PORT6_DMAC
++./gentraffic.py  --spi 0x10000090 --name port6_1.pcap --dmac $PORT6_DMAC
++./gentraffic.py  --spi 0x40000c0 --name port6_2.pcap --dmac $PORT6_DMAC
++./gentraffic.py  --spi 0x60000c0 --name port6_3.pcap --dmac $PORT6_DMAC
++
++./gentraffic.py  --spi 0x200000d0 --name port7.pcap --dmac $PORT7_DMAC
++./gentraffic.py  --spi 0x100000d0 --name port7_1.pcap --dmac $PORT7_DMAC
++./gentraffic.py  --spi 0x40000d0 --name port7_2.pcap --dmac $PORT7_DMAC
++./gentraffic.py  --spi 0x60000d0 --name port7_3.pcap --dmac $PORT7_DMAC
+-- 
+2.25.1
+

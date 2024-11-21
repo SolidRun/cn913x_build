@@ -1,0 +1,162 @@
+From 0b94cf411eb3dbef05f4d697d59bca9c63514742 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Mon, 2 Jan 2023 04:31:06 -0800
+Subject: [PATCH 137/955] net/octeon_ep: port ISM changes to CNXK
+
+add ISM support for CNXK EP
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: Ie647e9b956f89643435854013ae222f320630636
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93509
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_vf.c    | 35 +++++++++++++++++++++++++--
+ drivers/net/octeon_ep/cnxk_ep_vf.h    |  6 ++++-
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 15 ++++++++----
+ 3 files changed, 48 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.c b/drivers/net/octeon_ep/cnxk_ep_vf.c
+index 35b96471278c4..1f9f97524ccd8 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.c
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.c
+@@ -6,8 +6,9 @@
+ 
+ #include <rte_common.h>
+ #include <rte_cycles.h>
+-
++#include <rte_memzone.h>
+ #include "cnxk_ep_vf.h"
++#include "common/cnxk/hw/sdp.h"
+ 
+ static void
+ cnxk_ep_vf_setup_global_iq_reg(struct otx_ep_device *otx_ep, int q_no)
+@@ -89,6 +90,7 @@ cnxk_ep_vf_setup_iq_regs(struct otx_ep_device *otx_ep, uint32_t iq_no)
+ 	struct otx_ep_instr_queue *iq = otx_ep->instr_queue[iq_no];
+ 	uint64_t loop = OTX_EP_BUSY_LOOP_COUNT;
+ 	volatile uint64_t reg_val = 0ull;
++	uint64_t ism_addr;
+ 
+ 	reg_val = oct_ep_read64(otx_ep->hw_addr + CNXK_EP_R_IN_CONTROL(iq_no));
+ 
+@@ -136,6 +138,19 @@ cnxk_ep_vf_setup_iq_regs(struct otx_ep_device *otx_ep, uint32_t iq_no)
+ 	 */
+ 	oct_ep_write64(OTX_EP_CLEAR_SDP_IN_INT_LVLS,
+ 		       otx_ep->hw_addr + CNXK_EP_R_IN_INT_LEVELS(iq_no));
++	/* Set up IQ ISM registers and structures */
++	ism_addr = (otx_ep->ism_buffer_mz->iova | CNXK_EP_ISM_EN
++		    | CNXK_EP_ISM_MSIX_DIS)
++		    + CNXK_EP_IQ_ISM_OFFSET(iq_no);
++	rte_write64(ism_addr, (uint8_t *)otx_ep->hw_addr +
++		    SDP_VF_R_IN_CNTS_ISM(iq_no));
++	iq->inst_cnt_ism =
++		(uint32_t *)((uint8_t *)otx_ep->ism_buffer_mz->addr
++			     + CNXK_EP_IQ_ISM_OFFSET(iq_no));
++	otx_ep_err("SDP_R[%d] INST Q ISM virt: %p, dma: %p", iq_no,
++		   (void *)iq->inst_cnt_ism, (void *)ism_addr);
++	*iq->inst_cnt_ism = 0;
++	iq->inst_cnt_ism_prev = 0;
+ 
+ 	return 0;
+ }
+@@ -147,6 +162,7 @@ cnxk_ep_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 	uint64_t oq_ctl = 0ull;
+ 	uint64_t loop = OTX_EP_BUSY_LOOP_COUNT;
+ 	struct otx_ep_droq *droq = otx_ep->droq[oq_no];
++	uint64_t ism_addr;
+ 
+ 	/* Wait on IDLE to set to 1, supposed to configure BADDR
+ 	 * as long as IDLE is 0
+@@ -205,7 +221,22 @@ cnxk_ep_vf_setup_oq_regs(struct otx_ep_device *otx_ep, uint32_t oq_no)
+ 	reg_val = rte_read32(droq->pkts_sent_reg);
+ 	rte_write32((uint32_t)reg_val, droq->pkts_sent_reg);
+ 
+-	otx_ep_dbg("SDP_R[%d]_sent: %x", oq_no, rte_read32(droq->pkts_sent_reg));
++	otx_ep_dbg("SDP_R[%d]_sent: %x", oq_no,
++		   rte_read32(droq->pkts_sent_reg));
++	/* Set up ISM registers and structures */
++	ism_addr = (otx_ep->ism_buffer_mz->iova | CNXK_EP_ISM_EN
++		    | CNXK_EP_ISM_MSIX_DIS)
++		    + CNXK_EP_OQ_ISM_OFFSET(oq_no);
++	rte_write64(ism_addr, (uint8_t *)otx_ep->hw_addr +
++		    SDP_VF_R_OUT_CNTS_ISM(oq_no));
++	droq->pkts_sent_ism =
++		(uint32_t *)((uint8_t *)otx_ep->ism_buffer_mz->addr
++			     + CNXK_EP_OQ_ISM_OFFSET(oq_no));
++	otx_ep_err("SDP_R[%d] OQ ISM virt: %p, dma: %p", oq_no,
++		   (void *)droq->pkts_sent_ism, (void *)ism_addr);
++	*droq->pkts_sent_ism = 0;
++	droq->pkts_sent_ism_prev = 0;
++
+ 	loop = OTX_EP_BUSY_LOOP_COUNT;
+ 
+ 	while (((rte_read32(droq->pkts_sent_reg)) != 0ull)) {
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.h b/drivers/net/octeon_ep/cnxk_ep_vf.h
+index aaa57745528a3..95303fe962f99 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.h
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.h
+@@ -160,5 +160,9 @@ struct cnxk_ep_instr_64B {
+ 	/* Additional headers available in a 64-byte instruction. */
+ 	uint64_t exhdr[4];
+ };
+-
++#define CNXK_EP_IQ_ISM_OFFSET(queue)    (RTE_CACHE_LINE_SIZE * (queue) + 4)
++#define CNXK_EP_OQ_ISM_OFFSET(queue)    (RTE_CACHE_LINE_SIZE * (queue))
++#define CNXK_EP_ISM_EN                  (0x1)
++#define CNXK_EP_ISM_MSIX_DIS            (0x2)
++#define CNXK_EP_MAX_RX_PKT_LEN          (16384)
+ #endif /*_CNXK_EP_VF_H_ */
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 6a786a19bba10..8832275ee825d 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -100,21 +100,24 @@ otx_ep_dev_stop(struct rte_eth_dev *eth_dev)
+  * We only need 2 uint32_t locations per IOQ, but separate these so
+  * each IOQ has the variables on its own cache line.
+  */
+-#define OTX2_EP_ISM_BUFFER_SIZE	(OTX_EP_MAX_IOQS_PER_VF * RTE_CACHE_LINE_SIZE)
++#define OTX_EP_ISM_BUFFER_SIZE	(OTX_EP_MAX_IOQS_PER_VF * RTE_CACHE_LINE_SIZE)
+ static int
+-otx2_ep_ism_setup(struct otx_ep_device *otx_epvf)
++otx_ep_ism_setup(struct otx_ep_device *otx_epvf)
+ {
+ 	otx_epvf->ism_buffer_mz =
+ 		rte_eth_dma_zone_reserve(otx_epvf->eth_dev, "ism",
+-					 0, OTX2_EP_ISM_BUFFER_SIZE,
++					 0, OTX_EP_ISM_BUFFER_SIZE,
+ 					 OTX_EP_PCI_RING_ALIGN, 0);
+ 
+ 	/* Same DMA buffer is shared by OQ and IQ, clear it at start */
+-	memset(otx_epvf->ism_buffer_mz->addr, 0, OTX2_EP_ISM_BUFFER_SIZE);
++	memset(otx_epvf->ism_buffer_mz->addr, 0, OTX_EP_ISM_BUFFER_SIZE);
+ 	if (otx_epvf->ism_buffer_mz == NULL) {
+ 		otx_ep_err("Failed to allocate ISM buffer\n");
+ 		return(-1);
+ 	}
++	otx_ep_dbg("ISM: virt: 0x%p, dma: %p\n",
++		    (void *)otx_epvf->ism_buffer_mz->addr,
++		   (void *)otx_epvf->ism_buffer_mz->iova);
+ 
+ 	return 0;
+ }
+@@ -139,7 +142,7 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = otx2_ep_vf_setup_device(otx_epvf);
+ 		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+-		if (otx2_ep_ism_setup(otx_epvf))
++		if (otx_ep_ism_setup(otx_epvf))
+ 			ret = -EINVAL;
+ 		break;
+ 	case PCI_DEVID_CN10KA_EP_NET_VF:
+@@ -149,6 +152,8 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = cnxk_ep_vf_setup_device(otx_epvf);
+ 		otx_epvf->fn_list.disable_io_queues(otx_epvf);
++		if (otx_ep_ism_setup(otx_epvf))
++			ret = -EINVAL;
+ 		break;
+ 	default:
+ 		otx_ep_err("Unsupported device\n");
+-- 
+2.25.1
+

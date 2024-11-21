@@ -1,0 +1,75 @@
+From 45f20c49a192b200c3397086f8f990792fe7ba03 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Mon, 4 Dec 2023 22:13:29 -0800
+Subject: [PATCH 092/513] crypto/cnxk: validate the combinations supported in
+ TLS
+
+Validate the cipher and auth combination to allow only the
+ones supported by hardware.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I958b9b7500a59285e593b282f31b31b1d2982376
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117707
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/crypto/cnxk/cn10k_tls.c | 35 ++++++++++++++++++++++++++++++++-
+ 1 file changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/crypto/cnxk/cn10k_tls.c b/drivers/crypto/cnxk/cn10k_tls.c
+index e1ed65b06afc8..fa3ce3e758abf 100644
+--- a/drivers/crypto/cnxk/cn10k_tls.c
++++ b/drivers/crypto/cnxk/cn10k_tls.c
+@@ -17,6 +17,36 @@
+ #include "cnxk_cryptodev_ops.h"
+ #include "cnxk_security.h"
+ 
++static int
++tls_xform_cipher_auth_verify(struct rte_crypto_sym_xform *cipher_xform,
++			     struct rte_crypto_sym_xform *auth_xform)
++{
++	enum rte_crypto_cipher_algorithm c_algo = cipher_xform->cipher.algo;
++	enum rte_crypto_auth_algorithm a_algo = auth_xform->auth.algo;
++	int ret = -ENOTSUP;
++
++	switch (c_algo) {
++	case RTE_CRYPTO_CIPHER_NULL:
++		if ((a_algo == RTE_CRYPTO_AUTH_MD5_HMAC) || (a_algo == RTE_CRYPTO_AUTH_SHA1_HMAC) ||
++		    (a_algo == RTE_CRYPTO_AUTH_SHA256_HMAC))
++			ret = 0;
++		break;
++	case RTE_CRYPTO_CIPHER_3DES_CBC:
++		if (a_algo == RTE_CRYPTO_AUTH_SHA1_HMAC)
++			ret = 0;
++		break;
++	case RTE_CRYPTO_CIPHER_AES_CBC:
++		if ((a_algo == RTE_CRYPTO_AUTH_SHA1_HMAC) ||
++		    (a_algo == RTE_CRYPTO_AUTH_SHA256_HMAC))
++			ret = 0;
++		break;
++	default:
++		break;
++	}
++
++	return ret;
++}
++
+ static int
+ tls_xform_cipher_verify(struct rte_crypto_sym_xform *crypto_xform)
+ {
+@@ -138,7 +168,10 @@ cnxk_tls_xform_verify(struct rte_security_tls_record_xform *tls_xform,
+ 		ret = tls_xform_cipher_verify(cipher_xform);
+ 
+ 	if (!ret)
+-		return tls_xform_auth_verify(auth_xform);
++		ret = tls_xform_auth_verify(auth_xform);
++
++	if (cipher_xform && !ret)
++		return tls_xform_cipher_auth_verify(cipher_xform, auth_xform);
+ 
+ 	return ret;
+ }
+-- 
+2.25.1
+

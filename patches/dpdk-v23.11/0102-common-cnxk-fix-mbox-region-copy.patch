@@ -1,0 +1,38 @@
+From d57ec447ef6c4d501a59dce15a35507d9322d460 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Thu, 26 Oct 2023 20:52:58 +0530
+Subject: [PATCH 102/513] common/cnxk: fix mbox region copy
+
+Using proper API to perform copy to mbox device memory region
+
+Fixes: 02719901d50f ("common/cnxk: send link status event to VF")
+
+Change-Id: Ia784970c943374d8555e1642573c5bbc361e4403
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117880
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index e7e89bf3d6da0..084343c3b44d7 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -198,9 +198,8 @@ af_pf_wait_msg(struct dev *dev, uint16_t vf, int num_msg)
+ 			vf_msg = mbox_alloc_msg(&dev->mbox_vfpf_up, vf, sz);
+ 			if (vf_msg) {
+ 				mbox_req_init(MBOX_MSG_CGX_LINK_EVENT, vf_msg);
+-				memcpy((uint8_t *)vf_msg +
+-				       sizeof(struct mbox_msghdr), &linfo,
+-				       sizeof(struct cgx_link_user_info));
++				mbox_memcpy((uint8_t *)vf_msg + sizeof(struct mbox_msghdr), &linfo,
++					    sizeof(struct cgx_link_user_info));
+ 
+ 				vf_msg->rc = msg->rc;
+ 				vf_msg->pcifunc = msg->pcifunc;
+-- 
+2.25.1
+

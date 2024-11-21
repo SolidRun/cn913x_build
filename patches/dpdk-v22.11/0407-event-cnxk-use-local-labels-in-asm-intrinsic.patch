@@ -1,0 +1,223 @@
+From 225786d9ada01fccf27ea30192862696365cd846 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Thu, 20 Apr 2023 21:25:52 +0530
+Subject: [PATCH 407/955] event/cnxk: use local labels in asm intrinsic
+
+Using labels in asm generates them as regular function and shades
+callstack in tools like gdb or perf.
+Use local label instead for better visibility.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Ic613dcdccdc76ba0c26ec3414268ce328f9c374a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/102352
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_worker.h    |  8 ++---
+ drivers/event/cnxk/cn9k_worker.h     | 25 ++++++++--------
+ drivers/event/cnxk/cnxk_tim_worker.h | 44 ++++++++++++++--------------
+ drivers/event/cnxk/cnxk_worker.h     |  8 ++---
+ 4 files changed, 43 insertions(+), 42 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_worker.h b/drivers/event/cnxk/cn10k_worker.h
+index c361d70535584..c84cc83e58d80 100644
+--- a/drivers/event/cnxk/cn10k_worker.h
++++ b/drivers/event/cnxk/cn10k_worker.h
+@@ -291,12 +291,12 @@ cn10k_sso_hws_get_work_empty(struct cn10k_sso_hws *ws, struct rte_event *ev,
+ #ifdef RTE_ARCH_ARM64
+ 	asm volatile(PLT_CPU_FEATURE_PREAMBLE
+ 		     "		ldp %[tag], %[wqp], [%[tag_loc]]	\n"
+-		     "		tbz %[tag], 63, done%=			\n"
++		     "		tbz %[tag], 63, .Ldone%=		\n"
+ 		     "		sevl					\n"
+-		     "rty%=:	wfe					\n"
++		     ".Lrty%=:	wfe					\n"
+ 		     "		ldp %[tag], %[wqp], [%[tag_loc]]	\n"
+-		     "		tbnz %[tag], 63, rty%=			\n"
+-		     "done%=:	dmb ld					\n"
++		     "		tbnz %[tag], 63, .Lrty%=		\n"
++		     ".Ldone%=:	dmb ld					\n"
+ 		     : [tag] "=&r"(gw.u64[0]), [wqp] "=&r"(gw.u64[1])
+ 		     : [tag_loc] "r"(ws->base + SSOW_LF_GWS_WQE0)
+ 		     : "memory");
+diff --git a/drivers/event/cnxk/cn9k_worker.h b/drivers/event/cnxk/cn9k_worker.h
+index 965829a7f6fc9..0af391c13c788 100644
+--- a/drivers/event/cnxk/cn9k_worker.h
++++ b/drivers/event/cnxk/cn9k_worker.h
+@@ -236,18 +236,19 @@ cn9k_sso_hws_dual_get_work(uint64_t base, uint64_t pair_base,
+ 		rte_prefetch_non_temporal(dws->lookup_mem);
+ #ifdef RTE_ARCH_ARM64
+ 	asm volatile(PLT_CPU_FEATURE_PREAMBLE
+-		     "rty%=:					\n"
++		     ".Lrty%=:					\n"
+ 		     "		ldr %[tag], [%[tag_loc]]	\n"
+ 		     "		ldr %[wqp], [%[wqp_loc]]	\n"
+-		     "		tbnz %[tag], 63, rty%=		\n"
+-		     "done%=:	str %[gw], [%[pong]]		\n"
++		     "		tbnz %[tag], 63, .Lrty%=	\n"
++		     ".Ldone%=:	str %[gw], [%[pong]]		\n"
+ 		     "		dmb ld				\n"
+ 		     "		sub %[mbuf], %[wqp], #0x80	\n"
+ 		     "		prfm pldl1keep, [%[mbuf]]	\n"
+ 		     : [tag] "=&r"(gw.u64[0]), [wqp] "=&r"(gw.u64[1]),
+ 		       [mbuf] "=&r"(mbuf)
+ 		     : [tag_loc] "r"(base + SSOW_LF_GWS_TAG),
+-		       [wqp_loc] "r"(base + SSOW_LF_GWS_WQP), [gw] "r"(dws->gw_wdata),
++		       [wqp_loc] "r"(base + SSOW_LF_GWS_WQP),
++		       [gw] "r"(dws->gw_wdata),
+ 		       [pong] "r"(pair_base + SSOW_LF_GWS_OP_GET_WORK0));
+ #else
+ 	gw.u64[0] = plt_read64(base + SSOW_LF_GWS_TAG);
+@@ -286,13 +287,13 @@ cn9k_sso_hws_get_work(struct cn9k_sso_hws *ws, struct rte_event *ev,
+ 	asm volatile(PLT_CPU_FEATURE_PREAMBLE
+ 		     "		ldr %[tag], [%[tag_loc]]	\n"
+ 		     "		ldr %[wqp], [%[wqp_loc]]	\n"
+-		     "		tbz %[tag], 63, done%=		\n"
++		     "		tbz %[tag], 63, .Ldone%=	\n"
+ 		     "		sevl				\n"
+-		     "rty%=:	wfe				\n"
++		     ".Lrty%=:	wfe				\n"
+ 		     "		ldr %[tag], [%[tag_loc]]	\n"
+ 		     "		ldr %[wqp], [%[wqp_loc]]	\n"
+-		     "		tbnz %[tag], 63, rty%=		\n"
+-		     "done%=:	dmb ld				\n"
++		     "		tbnz %[tag], 63, .Lrty%=	\n"
++		     ".Ldone%=:	dmb ld				\n"
+ 		     "		sub %[mbuf], %[wqp], #0x80	\n"
+ 		     "		prfm pldl1keep, [%[mbuf]]	\n"
+ 		     : [tag] "=&r"(gw.u64[0]), [wqp] "=&r"(gw.u64[1]),
+@@ -334,13 +335,13 @@ cn9k_sso_hws_get_work_empty(uint64_t base, struct rte_event *ev,
+ 	asm volatile(PLT_CPU_FEATURE_PREAMBLE
+ 		     "		ldr %[tag], [%[tag_loc]]	\n"
+ 		     "		ldr %[wqp], [%[wqp_loc]]	\n"
+-		     "		tbz %[tag], 63, done%=		\n"
++		     "		tbz %[tag], 63, .Ldone%=	\n"
+ 		     "		sevl				\n"
+-		     "rty%=:	wfe				\n"
++		     ".Lrty%=:	wfe				\n"
+ 		     "		ldr %[tag], [%[tag_loc]]	\n"
+ 		     "		ldr %[wqp], [%[wqp_loc]]	\n"
+-		     "		tbnz %[tag], 63, rty%=		\n"
+-		     "done%=:	dmb ld				\n"
++		     "		tbnz %[tag], 63, .Lrty%=	\n"
++		     ".Ldone%=:	dmb ld				\n"
+ 		     "		sub %[mbuf], %[wqp], #0x80	\n"
+ 		     : [tag] "=&r"(gw.u64[0]), [wqp] "=&r"(gw.u64[1]),
+ 		       [mbuf] "=&r"(mbuf)
+diff --git a/drivers/event/cnxk/cnxk_tim_worker.h b/drivers/event/cnxk/cnxk_tim_worker.h
+index a326d5526afee..7b4b0df4a8b81 100644
+--- a/drivers/event/cnxk/cnxk_tim_worker.h
++++ b/drivers/event/cnxk/cnxk_tim_worker.h
+@@ -262,12 +262,12 @@ cnxk_tim_add_entry_sp(struct cnxk_tim_ring *const tim_ring,
+ #ifdef RTE_ARCH_ARM64
+ 			asm volatile(PLT_CPU_FEATURE_PREAMBLE
+ 				     "		ldxr %[hbt], [%[w1]]	\n"
+-				     "		tbz %[hbt], 33, dne%=	\n"
++				     "		tbz %[hbt], 33, .Ldne%=	\n"
+ 				     "		sevl			\n"
+-				     "rty%=:	wfe			\n"
++				     ".Lrty%=:	wfe			\n"
+ 				     "		ldxr %[hbt], [%[w1]]	\n"
+-				     "		tbnz %[hbt], 33, rty%=	\n"
+-				     "dne%=:				\n"
++				     "		tbnz %[hbt], 33, .Lrty%=\n"
++				     ".Ldne%=:				\n"
+ 				     : [hbt] "=&r"(hbt_state)
+ 				     : [w1] "r"((&bkt->w1))
+ 				     : "memory");
+@@ -345,12 +345,12 @@ cnxk_tim_add_entry_mp(struct cnxk_tim_ring *const tim_ring,
+ #ifdef RTE_ARCH_ARM64
+ 			asm volatile(PLT_CPU_FEATURE_PREAMBLE
+ 				     "		ldxr %[hbt], [%[w1]]	\n"
+-				     "		tbz %[hbt], 33, dne%=	\n"
++				     "		tbz %[hbt], 33, .Ldne%=	\n"
+ 				     "		sevl			\n"
+-				     "rty%=:	wfe			\n"
++				     ".Lrty%=:	wfe			\n"
+ 				     "		ldxr %[hbt], [%[w1]]	\n"
+-				     "		tbnz %[hbt], 33, rty%=	\n"
+-				     "dne%=:				\n"
++				     "		tbnz %[hbt], 33, .Lrty%=\n"
++				     ".Ldne%=:				\n"
+ 				     : [hbt] "=&r"(hbt_state)
+ 				     : [w1] "r"((&bkt->w1))
+ 				     : "memory");
+@@ -374,13 +374,13 @@ cnxk_tim_add_entry_mp(struct cnxk_tim_ring *const tim_ring,
+ 		cnxk_tim_bkt_dec_lock(bkt);
+ #ifdef RTE_ARCH_ARM64
+ 		asm volatile(PLT_CPU_FEATURE_PREAMBLE
+-			     "		ldxr %[rem], [%[crem]]	\n"
+-			     "		tbz %[rem], 63, dne%=		\n"
++			     "		ldxr %[rem], [%[crem]]		\n"
++			     "		tbz %[rem], 63, .Ldne%=		\n"
+ 			     "		sevl				\n"
+-			     "rty%=:	wfe				\n"
+-			     "		ldxr %[rem], [%[crem]]	\n"
+-			     "		tbnz %[rem], 63, rty%=		\n"
+-			     "dne%=:					\n"
++			     ".Lrty%=:	wfe				\n"
++			     "		ldxr %[rem], [%[crem]]		\n"
++			     "		tbnz %[rem], 63, .Lrty%=	\n"
++			     ".Ldne%=:					\n"
+ 			     : [rem] "=&r"(rem)
+ 			     : [crem] "r"(&bkt->w1)
+ 			     : "memory");
+@@ -478,12 +478,12 @@ cnxk_tim_add_entry_brst(struct cnxk_tim_ring *const tim_ring,
+ #ifdef RTE_ARCH_ARM64
+ 			asm volatile(PLT_CPU_FEATURE_PREAMBLE
+ 				     "		ldxr %[hbt], [%[w1]]	\n"
+-				     "		tbz %[hbt], 33, dne%=	\n"
++				     "		tbz %[hbt], 33, .Ldne%=	\n"
+ 				     "		sevl			\n"
+-				     "rty%=:	wfe			\n"
++				     ".Lrty%=:	wfe			\n"
+ 				     "		ldxr %[hbt], [%[w1]]	\n"
+-				     "		tbnz %[hbt], 33, rty%=	\n"
+-				     "dne%=:				\n"
++				     "		tbnz %[hbt], 33, .Lrty%=\n"
++				     ".Ldne%=:				\n"
+ 				     : [hbt] "=&r"(hbt_state)
+ 				     : [w1] "r"((&bkt->w1))
+ 				     : "memory");
+@@ -510,13 +510,13 @@ cnxk_tim_add_entry_brst(struct cnxk_tim_ring *const tim_ring,
+ 		asm volatile(PLT_CPU_FEATURE_PREAMBLE
+ 			     "		ldxrb %w[lock_cnt], [%[lock]]	\n"
+ 			     "		tst %w[lock_cnt], 255		\n"
+-			     "		beq dne%=			\n"
++			     "		beq .Ldne%=			\n"
+ 			     "		sevl				\n"
+-			     "rty%=:	wfe				\n"
++			     ".Lrty%=:	wfe				\n"
+ 			     "		ldxrb %w[lock_cnt], [%[lock]]	\n"
+ 			     "		tst %w[lock_cnt], 255		\n"
+-			     "		bne rty%=			\n"
+-			     "dne%=:					\n"
++			     "		bne .Lrty%=			\n"
++			     ".Ldne%=:					\n"
+ 			     : [lock_cnt] "=&r"(lock_cnt)
+ 			     : [lock] "r"(&bkt->lock)
+ 			     : "memory");
+diff --git a/drivers/event/cnxk/cnxk_worker.h b/drivers/event/cnxk/cnxk_worker.h
+index 22d90afba25f2..2bd41f8a5ed55 100644
+--- a/drivers/event/cnxk/cnxk_worker.h
++++ b/drivers/event/cnxk/cnxk_worker.h
+@@ -71,12 +71,12 @@ cnxk_sso_hws_swtag_wait(uintptr_t tag_op)
+ 
+ 	asm volatile(PLT_CPU_FEATURE_PREAMBLE
+ 		     "		ldr %[swtb], [%[swtp_loc]]	\n"
+-		     "		tbz %[swtb], 62, done%=		\n"
++		     "		tbz %[swtb], 62, .Ldone%=	\n"
+ 		     "		sevl				\n"
+-		     "rty%=:	wfe				\n"
++		     ".Lrty%=:	wfe				\n"
+ 		     "		ldr %[swtb], [%[swtp_loc]]	\n"
+-		     "		tbnz %[swtb], 62, rty%=		\n"
+-		     "done%=:					\n"
++		     "		tbnz %[swtb], 62, .Lrty%=	\n"
++		     ".Ldone%=:					\n"
+ 		     : [swtb] "=&r"(swtp)
+ 		     : [swtp_loc] "r"(tag_op));
+ #else
+-- 
+2.25.1
+

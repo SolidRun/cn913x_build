@@ -1,0 +1,74 @@
+From 23d6205eb2f44089fa699aa61e2d3c1121a84add Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Mon, 27 Nov 2023 21:20:52 +0530
+Subject: [PATCH 737/955] lib/dmadev: API to get dmadev from devid
+
+Add lib API to get dma device from dev id.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I55fcac142f221a6dbda6f5b70d0c0c5706a4c696
+---
+ lib/dmadev/rte_dmadev.c     |  9 +++++++++
+ lib/dmadev/rte_dmadev_pmd.h | 13 +++++++++++++
+ lib/dmadev/version.map      |  1 +
+ 3 files changed, 23 insertions(+)
+
+diff --git a/lib/dmadev/rte_dmadev.c b/lib/dmadev/rte_dmadev.c
+index 4da653eec7120..26526994151ec 100644
+--- a/lib/dmadev/rte_dmadev.c
++++ b/lib/dmadev/rte_dmadev.c
+@@ -396,6 +396,15 @@ rte_dma_is_valid(int16_t dev_id)
+ 		rte_dma_devices[dev_id].state != RTE_DMA_DEV_UNUSED;
+ }
+ 
++struct rte_dma_dev *
++rte_dma_pmd_get_dev_by_id(const int dev_id)
++{
++	if (!rte_dma_is_valid(dev_id))
++		return NULL;
++
++	return &rte_dma_devices[dev_id];
++}
++
+ uint16_t
+ rte_dma_count_avail(void)
+ {
+diff --git a/lib/dmadev/rte_dmadev_pmd.h b/lib/dmadev/rte_dmadev_pmd.h
+index c61cedfb23ca2..f062f82384f5e 100644
+--- a/lib/dmadev/rte_dmadev_pmd.h
++++ b/lib/dmadev/rte_dmadev_pmd.h
+@@ -167,6 +167,19 @@ struct rte_dma_dev *rte_dma_pmd_allocate(const char *name, int numa_node,
+ __rte_internal
+ int rte_dma_pmd_release(const char *name);
+ 
++/**
++ * @internal
++ * Get dmadev from dev_id.
++ *
++ * @param dev_id
++ *   DMA device id.
++ *
++ * @return
++ *   - A pointer to the DMA device on success, NULL on error.
++ */
++__rte_internal
++struct rte_dma_dev *rte_dma_pmd_get_dev_by_id(const int dev_id);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/dmadev/version.map b/lib/dmadev/version.map
+index 7031d6b335e91..a2941fe3e5017 100644
+--- a/lib/dmadev/version.map
++++ b/lib/dmadev/version.map
+@@ -26,6 +26,7 @@ INTERNAL {
+ 	rte_dma_fp_objs;
+ 	rte_dma_pmd_allocate;
+ 	rte_dma_pmd_release;
++	rte_dma_pmd_get_dev_by_id;
+ 
+ 	local: *;
+ };
+-- 
+2.25.1
+

@@ -1,0 +1,55 @@
+From 16a26b1b9c727ed721e7dbef79559e7d55ef9707 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Tue, 2 May 2023 17:01:18 +0530
+Subject: [PATCH 410/955] common/cnxk: configure PFC on SPB aura
+
+A RQ can be configured with lpb_aura and spb_aura at the same time
+and both can contribute to generate aura based back pressure from
+NIX to RPM.
+
+But currently PFC configuration are applied on lpb_aura only and
+spb_aura doesn't contribute to create back pressure.
+
+Patch adds support for the same.
+
+Change-Id: I8f433a06219a1db767e098886b80123c050e986b
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103473
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h    | 1 +
+ drivers/common/cnxk/roc_nix_fc.c | 6 ++++++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index db3be34e17a6b..9c2ba9a68534c 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -198,6 +198,7 @@ struct roc_nix_fc_cfg {
+ 			uint16_t cq_drop;
+ 			bool enable;
+ 			uint64_t pool;
++			uint64_t spb_pool;
+ 			uint64_t pool_drop_pct;
+ 		} rq_cfg;
+ 
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 6a34e7f1a2979..88439f8e6ba7d 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -303,6 +303,12 @@ nix_fc_rq_config_set(struct roc_nix *roc_nix, struct roc_nix_fc_cfg *fc_cfg)
+ 				      fc_cfg->rq_cfg.enable, roc_nix->force_rx_aura_bp,
+ 				      fc_cfg->rq_cfg.tc, pool_drop_pct);
+ 
++		if (rq->spb_ena) {
++			roc_nix_fc_npa_bp_cfg(roc_nix, fc_cfg->rq_cfg.spb_pool,
++					      fc_cfg->rq_cfg.enable, roc_nix->force_rx_aura_bp,
++					      fc_cfg->rq_cfg.tc, pool_drop_pct);
++		}
++
+ 		if (roc_nix->local_meta_aura_ena && roc_nix->meta_aura_handle)
+ 			roc_nix_fc_npa_bp_cfg(roc_nix, roc_nix->meta_aura_handle,
+ 					      fc_cfg->rq_cfg.enable, roc_nix->force_rx_aura_bp,
+-- 
+2.25.1
+

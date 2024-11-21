@@ -1,0 +1,65 @@
+From 7afe1b3a15764a05bb958f0e5c3fdbb930e79c62 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 14 Apr 2023 12:41:42 +0530
+Subject: [PATCH 373/955] app/crypto-perf: return ENOTSUP for unsupported cases
+
+dpdk-test-crypto-perf application returns failure for all
+the cases which are not supported by the device.
+
+This patch captures rte_errno to check if the case run is
+supported or not, if not supported, the application would
+now return ENOTSUP which can be used in automation to
+identify between failed and unsupported cases.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Iaec69753f44e3f19e65a36c58abdce0080ddef89
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101374
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101553
+---
+ app/test-crypto-perf/main.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/app/test-crypto-perf/main.c b/app/test-crypto-perf/main.c
+index af5bd0d23bdd8..7dbc172aef37c 100644
+--- a/app/test-crypto-perf/main.c
++++ b/app/test-crypto-perf/main.c
+@@ -9,6 +9,7 @@
+ #include <rte_malloc.h>
+ #include <rte_random.h>
+ #include <rte_eal.h>
++#include <rte_errno.h>
+ #include <rte_cryptodev.h>
+ #ifdef RTE_CRYPTO_SCHEDULER
+ #include <rte_cryptodev_scheduler.h>
+@@ -561,6 +562,7 @@ main(int argc, char **argv)
+ 
+ 	int ret;
+ 	uint32_t lcore_id;
++	bool cap_unsupported = false;
+ 
+ 	/* Initialise DPDK EAL */
+ 	ret = rte_eal_init(argc, argv);
+@@ -601,6 +603,7 @@ main(int argc, char **argv)
+ 	if (ret) {
+ 		RTE_LOG(ERR, USER1, "Crypto device type does not support "
+ 				"capabilities requested\n");
++		cap_unsupported = true;
+ 		goto err;
+ 	}
+ 
+@@ -816,6 +819,10 @@ main(int argc, char **argv)
+ 	rte_free(opts.imix_buffer_sizes);
+ 	free_test_vector(t_vec, &opts);
+ 
++	if (rte_errno == ENOTSUP || cap_unsupported) {
++		RTE_LOG(ERR, USER1, "Unsupported case: errno: %u\n", rte_errno);
++		return -ENOTSUP;
++	}
+ 	printf("\n");
+ 	return EXIT_FAILURE;
+ }
+-- 
+2.25.1
+

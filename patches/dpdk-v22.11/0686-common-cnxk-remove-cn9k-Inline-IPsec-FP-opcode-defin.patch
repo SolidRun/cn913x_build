@@ -1,0 +1,449 @@
+From 5ec31eadd811b4c725a3eea416f449dab219dcee Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 17 Nov 2023 10:39:35 +0530
+Subject: [PATCH 686/955] common/cnxk: remove cn9k Inline IPsec FP opcode
+ defines
+
+Since now Inline IPsec in cn9k is using same opcode as LA,
+remove the definitions of fast path opcode.
+
+Also fix devarg handling for ipsec_out_max_sa to allow 32-bit.
+
+Fixes: fe5846bcc076 ("net/cnxk: add devargs for min-max SPI")
+Change-Id: Ie1a49e8aa816f62ab06e3083faf52f95abe0008d
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116109
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/cnxk_security.c    | 209 -------------------------
+ drivers/common/cnxk/cnxk_security.h    |  12 --
+ drivers/common/cnxk/roc_ie_on.h        |  60 -------
+ drivers/common/cnxk/roc_nix_inl.h      |  50 +-----
+ drivers/common/cnxk/version.map        |   4 -
+ drivers/net/cnxk/cnxk_ethdev_devargs.c |   2 +-
+ 6 files changed, 3 insertions(+), 334 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_security.c b/drivers/common/cnxk/cnxk_security.c
+index a8c3ba90cdc02..3450d46ae5d03 100644
+--- a/drivers/common/cnxk/cnxk_security.c
++++ b/drivers/common/cnxk/cnxk_security.c
+@@ -638,215 +638,6 @@ ipsec_xfrm_verify(struct rte_security_ipsec_xform *ipsec_xfrm,
+ 	return 0;
+ }
+ 
+-static int
+-onf_ipsec_sa_common_param_fill(struct roc_ie_onf_sa_ctl *ctl, uint8_t *salt,
+-			       uint8_t *cipher_key, uint8_t *hmac_opad_ipad,
+-			       struct rte_security_ipsec_xform *ipsec_xfrm,
+-			       struct rte_crypto_sym_xform *crypto_xfrm)
+-{
+-	struct rte_crypto_sym_xform *auth_xfrm, *cipher_xfrm;
+-	int rc, length, auth_key_len;
+-	const uint8_t *key = NULL;
+-	uint8_t ccm_flag = 0;
+-
+-	/* Set direction */
+-	switch (ipsec_xfrm->direction) {
+-	case RTE_SECURITY_IPSEC_SA_DIR_INGRESS:
+-		ctl->direction = ROC_IE_SA_DIR_INBOUND;
+-		auth_xfrm = crypto_xfrm;
+-		cipher_xfrm = crypto_xfrm->next;
+-		break;
+-	case RTE_SECURITY_IPSEC_SA_DIR_EGRESS:
+-		ctl->direction = ROC_IE_SA_DIR_OUTBOUND;
+-		cipher_xfrm = crypto_xfrm;
+-		auth_xfrm = crypto_xfrm->next;
+-		break;
+-	default:
+-		return -EINVAL;
+-	}
+-
+-	/* Set protocol - ESP vs AH */
+-	switch (ipsec_xfrm->proto) {
+-	case RTE_SECURITY_IPSEC_SA_PROTO_ESP:
+-		ctl->ipsec_proto = ROC_IE_SA_PROTOCOL_ESP;
+-		break;
+-	case RTE_SECURITY_IPSEC_SA_PROTO_AH:
+-		return -ENOTSUP;
+-	default:
+-		return -EINVAL;
+-	}
+-
+-	/* Set mode - transport vs tunnel */
+-	switch (ipsec_xfrm->mode) {
+-	case RTE_SECURITY_IPSEC_SA_MODE_TRANSPORT:
+-		ctl->ipsec_mode = ROC_IE_SA_MODE_TRANSPORT;
+-		break;
+-	case RTE_SECURITY_IPSEC_SA_MODE_TUNNEL:
+-		ctl->ipsec_mode = ROC_IE_SA_MODE_TUNNEL;
+-		break;
+-	default:
+-		return -EINVAL;
+-	}
+-
+-	/* Set encryption algorithm */
+-	if (crypto_xfrm->type == RTE_CRYPTO_SYM_XFORM_AEAD) {
+-		length = crypto_xfrm->aead.key.length;
+-
+-		switch (crypto_xfrm->aead.algo) {
+-		case RTE_CRYPTO_AEAD_AES_GCM:
+-			ctl->enc_type = ROC_IE_ON_SA_ENC_AES_GCM;
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_NULL;
+-			memcpy(salt, &ipsec_xfrm->salt, 4);
+-			key = crypto_xfrm->aead.key.data;
+-			break;
+-		case RTE_CRYPTO_AEAD_AES_CCM:
+-			ctl->enc_type = ROC_IE_ON_SA_ENC_AES_CCM;
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_NULL;
+-			ccm_flag = 0x07 & ~ROC_CPT_AES_CCM_CTR_LEN;
+-			*salt = ccm_flag;
+-			memcpy(PLT_PTR_ADD(salt, 1), &ipsec_xfrm->salt, 3);
+-			key = crypto_xfrm->aead.key.data;
+-			break;
+-		default:
+-			return -ENOTSUP;
+-		}
+-
+-	} else {
+-		rc = ipsec_xfrm_verify(ipsec_xfrm, crypto_xfrm);
+-		if (rc)
+-			return rc;
+-
+-		switch (cipher_xfrm->cipher.algo) {
+-		case RTE_CRYPTO_CIPHER_AES_CBC:
+-			ctl->enc_type = ROC_IE_ON_SA_ENC_AES_CBC;
+-			break;
+-		case RTE_CRYPTO_CIPHER_AES_CTR:
+-			ctl->enc_type = ROC_IE_ON_SA_ENC_AES_CTR;
+-			break;
+-		default:
+-			return -ENOTSUP;
+-		}
+-
+-		switch (auth_xfrm->auth.algo) {
+-		case RTE_CRYPTO_AUTH_SHA1_HMAC:
+-			ctl->auth_type = ROC_IE_ON_SA_AUTH_SHA1;
+-			break;
+-		default:
+-			return -ENOTSUP;
+-		}
+-		auth_key_len = auth_xfrm->auth.key.length;
+-		if (auth_key_len < 20 || auth_key_len > 64)
+-			return -ENOTSUP;
+-
+-		key = cipher_xfrm->cipher.key.data;
+-		length = cipher_xfrm->cipher.key.length;
+-
+-		ipsec_hmac_opad_ipad_gen(auth_xfrm, hmac_opad_ipad);
+-	}
+-
+-	switch (length) {
+-	case ROC_CPT_AES128_KEY_LEN:
+-		ctl->aes_key_len = ROC_IE_SA_AES_KEY_LEN_128;
+-		break;
+-	case ROC_CPT_AES192_KEY_LEN:
+-		ctl->aes_key_len = ROC_IE_SA_AES_KEY_LEN_192;
+-		break;
+-	case ROC_CPT_AES256_KEY_LEN:
+-		ctl->aes_key_len = ROC_IE_SA_AES_KEY_LEN_256;
+-		break;
+-	default:
+-		return -EINVAL;
+-	}
+-
+-	memcpy(cipher_key, key, length);
+-
+-	if (ipsec_xfrm->options.esn)
+-		ctl->esn_en = 1;
+-
+-	ctl->spi = rte_cpu_to_be_32(ipsec_xfrm->spi);
+-	return 0;
+-}
+-
+-int
+-cnxk_onf_ipsec_inb_sa_fill(struct roc_onf_ipsec_inb_sa *sa,
+-			   struct rte_security_ipsec_xform *ipsec_xfrm,
+-			   struct rte_crypto_sym_xform *crypto_xfrm)
+-{
+-	struct roc_ie_onf_sa_ctl *ctl = &sa->ctl;
+-	int rc;
+-
+-	rc = onf_ipsec_sa_common_param_fill(ctl, sa->nonce, sa->cipher_key,
+-					    sa->hmac_key, ipsec_xfrm,
+-					    crypto_xfrm);
+-	if (rc)
+-		return rc;
+-
+-	rte_wmb();
+-
+-	/* Enable SA */
+-	ctl->valid = 1;
+-	return 0;
+-}
+-
+-int
+-cnxk_onf_ipsec_outb_sa_fill(struct roc_onf_ipsec_outb_sa *sa,
+-			    struct rte_security_ipsec_xform *ipsec_xfrm,
+-			    struct rte_crypto_sym_xform *crypto_xfrm)
+-{
+-	struct rte_security_ipsec_tunnel_param *tunnel = &ipsec_xfrm->tunnel;
+-	struct roc_ie_onf_sa_ctl *ctl = &sa->ctl;
+-	int rc;
+-
+-	/* Fill common params */
+-	rc = onf_ipsec_sa_common_param_fill(ctl, sa->nonce, sa->cipher_key,
+-					    sa->hmac_key, ipsec_xfrm,
+-					    crypto_xfrm);
+-	if (rc)
+-		return rc;
+-
+-	if (ipsec_xfrm->mode != RTE_SECURITY_IPSEC_SA_MODE_TUNNEL)
+-		goto skip_tunnel_info;
+-
+-	/* Tunnel header info */
+-	switch (tunnel->type) {
+-	case RTE_SECURITY_IPSEC_TUNNEL_IPV4:
+-		memcpy(&sa->ip_src, &tunnel->ipv4.src_ip,
+-		       sizeof(struct in_addr));
+-		memcpy(&sa->ip_dst, &tunnel->ipv4.dst_ip,
+-		       sizeof(struct in_addr));
+-		break;
+-	case RTE_SECURITY_IPSEC_TUNNEL_IPV6:
+-		return -ENOTSUP;
+-	default:
+-		return -EINVAL;
+-	}
+-
+-	/* Update udp encap ports */
+-	if (ipsec_xfrm->options.udp_encap == 1) {
+-		sa->udp_src = 4500;
+-		sa->udp_dst = 4500;
+-	}
+-
+-skip_tunnel_info:
+-	rte_wmb();
+-
+-	/* Enable SA */
+-	ctl->valid = 1;
+-	return 0;
+-}
+-
+-bool
+-cnxk_onf_ipsec_inb_sa_valid(struct roc_onf_ipsec_inb_sa *sa)
+-{
+-	return !!sa->ctl.valid;
+-}
+-
+-bool
+-cnxk_onf_ipsec_outb_sa_valid(struct roc_onf_ipsec_outb_sa *sa)
+-{
+-	return !!sa->ctl.valid;
+-}
+-
+ uint8_t
+ cnxk_ipsec_ivlen_get(enum rte_crypto_cipher_algorithm c_algo,
+ 		     enum rte_crypto_auth_algorithm a_algo,
+diff --git a/drivers/common/cnxk/cnxk_security.h b/drivers/common/cnxk/cnxk_security.h
+index 2277ce9144f54..72628ef3b8cc3 100644
+--- a/drivers/common/cnxk/cnxk_security.h
++++ b/drivers/common/cnxk/cnxk_security.h
+@@ -48,18 +48,6 @@ cnxk_ot_ipsec_outb_sa_fill(struct roc_ot_ipsec_outb_sa *sa,
+ bool __roc_api cnxk_ot_ipsec_inb_sa_valid(struct roc_ot_ipsec_inb_sa *sa);
+ bool __roc_api cnxk_ot_ipsec_outb_sa_valid(struct roc_ot_ipsec_outb_sa *sa);
+ 
+-/* [CN9K, CN10K) */
+-int __roc_api
+-cnxk_onf_ipsec_inb_sa_fill(struct roc_onf_ipsec_inb_sa *sa,
+-			   struct rte_security_ipsec_xform *ipsec_xfrm,
+-			   struct rte_crypto_sym_xform *crypto_xfrm);
+-int __roc_api
+-cnxk_onf_ipsec_outb_sa_fill(struct roc_onf_ipsec_outb_sa *sa,
+-			    struct rte_security_ipsec_xform *ipsec_xfrm,
+-			    struct rte_crypto_sym_xform *crypto_xfrm);
+-bool __roc_api cnxk_onf_ipsec_inb_sa_valid(struct roc_onf_ipsec_inb_sa *sa);
+-bool __roc_api cnxk_onf_ipsec_outb_sa_valid(struct roc_onf_ipsec_outb_sa *sa);
+-
+ /* [CN9K] */
+ int __roc_api
+ cnxk_on_ipsec_inb_sa_create(struct rte_security_ipsec_xform *ipsec,
+diff --git a/drivers/common/cnxk/roc_ie_on.h b/drivers/common/cnxk/roc_ie_on.h
+index 9933ffa148fe5..11c995e9d1928 100644
+--- a/drivers/common/cnxk/roc_ie_on.h
++++ b/drivers/common/cnxk/roc_ie_on.h
+@@ -269,66 +269,6 @@ struct roc_ie_on_inb_sa {
+ #define ROC_IE_ON_UCC_L2_HDR_INFO_ERR	  0xCF
+ #define ROC_IE_ON_UCC_L2_HDR_LEN_ERR	  0xE0
+ 
+-struct roc_ie_onf_sa_ctl {
+-	uint32_t spi;
+-	uint64_t exp_proto_inter_frag : 8;
+-	uint64_t rsvd_41_40 : 2;
+-	/* Disable SPI, SEQ data in RPTR for Inbound inline */
+-	uint64_t spi_seq_dis : 1;
+-	uint64_t esn_en : 1;
+-	uint64_t rsvd_44_45 : 2;
+-	uint64_t encap_type : 2;
+-	uint64_t enc_type : 3;
+-	uint64_t rsvd_48 : 1;
+-	uint64_t auth_type : 4;
+-	uint64_t valid : 1;
+-	uint64_t direction : 1;
+-	uint64_t outer_ip_ver : 1;
+-	uint64_t inner_ip_ver : 1;
+-	uint64_t ipsec_mode : 1;
+-	uint64_t ipsec_proto : 1;
+-	uint64_t aes_key_len : 2;
+-};
+-
+-struct roc_onf_ipsec_outb_sa {
+-	/* w0 */
+-	struct roc_ie_onf_sa_ctl ctl;
+-
+-	/* w1 */
+-	uint8_t nonce[4];
+-	uint16_t udp_src;
+-	uint16_t udp_dst;
+-
+-	/* w2 */
+-	uint32_t ip_src;
+-	uint32_t ip_dst;
+-
+-	/* w3-w6 */
+-	uint8_t cipher_key[32];
+-
+-	/* w7-w12 */
+-	uint8_t hmac_key[48];
+-};
+-
+-struct roc_onf_ipsec_inb_sa {
+-	/* w0 */
+-	struct roc_ie_onf_sa_ctl ctl;
+-
+-	/* w1 */
+-	uint8_t nonce[4]; /* Only for AES-GCM */
+-	uint32_t unused;
+-
+-	/* w2 */
+-	uint32_t esn_hi;
+-	uint32_t esn_low;
+-
+-	/* w3-w6 */
+-	uint8_t cipher_key[32];
+-
+-	/* w7-w12 */
+-	uint8_t hmac_key[48];
+-};
+-
+ #define ROC_ONF_IPSEC_INB_MAX_L2_SZ	  32UL
+ #define ROC_ONF_IPSEC_OUTB_MAX_L2_SZ	  30UL
+ #define ROC_ONF_IPSEC_OUTB_MAX_L2_INFO_SZ (ROC_ONF_IPSEC_OUTB_MAX_L2_SZ + 2)
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index ab1e9c0f98fd4..f5ce26f03f8b1 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -4,24 +4,6 @@
+ #ifndef _ROC_NIX_INL_H_
+ #define _ROC_NIX_INL_H_
+ 
+-/* ONF INB HW area */
+-#define ROC_NIX_INL_ONF_IPSEC_INB_HW_SZ                                        \
+-	PLT_ALIGN(sizeof(struct roc_onf_ipsec_inb_sa), ROC_ALIGN)
+-/* ONF INB SW reserved area */
+-#define ROC_NIX_INL_ONF_IPSEC_INB_SW_RSVD 384
+-#define ROC_NIX_INL_ONF_IPSEC_INB_SA_SZ                                        \
+-	(ROC_NIX_INL_ONF_IPSEC_INB_HW_SZ + ROC_NIX_INL_ONF_IPSEC_INB_SW_RSVD)
+-#define ROC_NIX_INL_ONF_IPSEC_INB_SA_SZ_LOG2 9
+-
+-/* ONF OUTB HW area */
+-#define ROC_NIX_INL_ONF_IPSEC_OUTB_HW_SZ                                       \
+-	PLT_ALIGN(sizeof(struct roc_onf_ipsec_outb_sa), ROC_ALIGN)
+-/* ONF OUTB SW reserved area */
+-#define ROC_NIX_INL_ONF_IPSEC_OUTB_SW_RSVD 128
+-#define ROC_NIX_INL_ONF_IPSEC_OUTB_SA_SZ                                       \
+-	(ROC_NIX_INL_ONF_IPSEC_OUTB_HW_SZ + ROC_NIX_INL_ONF_IPSEC_OUTB_SW_RSVD)
+-#define ROC_NIX_INL_ONF_IPSEC_OUTB_SA_SZ_LOG2 8
+-
+ /* ON INB HW area */
+ #define ROC_NIX_INL_ON_IPSEC_INB_HW_SZ                                         \
+ 	PLT_ALIGN(sizeof(struct roc_ie_on_inb_sa), ROC_ALIGN)
+@@ -31,10 +13,10 @@
+ 	(ROC_NIX_INL_ON_IPSEC_INB_HW_SZ + ROC_NIX_INL_ON_IPSEC_INB_SW_RSVD)
+ #define ROC_NIX_INL_ON_IPSEC_INB_SA_SZ_LOG2 10
+ 
+-/* ONF OUTB HW area */
++/* ON OUTB HW area */
+ #define ROC_NIX_INL_ON_IPSEC_OUTB_HW_SZ                                        \
+ 	PLT_ALIGN(sizeof(struct roc_ie_on_outb_sa), ROC_ALIGN)
+-/* ONF OUTB SW reserved area */
++/* ON OUTB SW reserved area */
+ #define ROC_NIX_INL_ON_IPSEC_OUTB_SW_RSVD 256
+ #define ROC_NIX_INL_ON_IPSEC_OUTB_SA_SZ                                        \
+ 	(ROC_NIX_INL_ON_IPSEC_OUTB_HW_SZ + ROC_NIX_INL_ON_IPSEC_OUTB_SW_RSVD)
+@@ -86,34 +68,6 @@ roc_nix_inl_on_ipsec_outb_sa_sw_rsvd(void *sa)
+ 	return PLT_PTR_ADD(sa, ROC_NIX_INL_ON_IPSEC_OUTB_HW_SZ);
+ }
+ 
+-static inline struct roc_onf_ipsec_inb_sa *
+-roc_nix_inl_onf_ipsec_inb_sa(uintptr_t base, uint64_t idx)
+-{
+-	uint64_t off = idx << ROC_NIX_INL_ONF_IPSEC_INB_SA_SZ_LOG2;
+-
+-	return PLT_PTR_ADD(base, off);
+-}
+-
+-static inline struct roc_onf_ipsec_outb_sa *
+-roc_nix_inl_onf_ipsec_outb_sa(uintptr_t base, uint64_t idx)
+-{
+-	uint64_t off = idx << ROC_NIX_INL_ONF_IPSEC_OUTB_SA_SZ_LOG2;
+-
+-	return PLT_PTR_ADD(base, off);
+-}
+-
+-static inline void *
+-roc_nix_inl_onf_ipsec_inb_sa_sw_rsvd(void *sa)
+-{
+-	return PLT_PTR_ADD(sa, ROC_NIX_INL_ONF_IPSEC_INB_HW_SZ);
+-}
+-
+-static inline void *
+-roc_nix_inl_onf_ipsec_outb_sa_sw_rsvd(void *sa)
+-{
+-	return PLT_PTR_ADD(sa, ROC_NIX_INL_ONF_IPSEC_OUTB_HW_SZ);
+-}
+-
+ /* Inline device SSO Work callback */
+ typedef void (*roc_nix_inl_sso_work_cb_t)(uint64_t *gw, void *args,
+ 					  uint32_t soft_exp_event);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 1726d0fe8e94d..1b6f635418e9f 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -16,10 +16,6 @@ INTERNAL {
+ 	cnxk_logtype_sso;
+ 	cnxk_logtype_tim;
+ 	cnxk_logtype_tm;
+-	cnxk_onf_ipsec_inb_sa_fill;
+-	cnxk_onf_ipsec_outb_sa_fill;
+-	cnxk_onf_ipsec_inb_sa_valid;
+-	cnxk_onf_ipsec_outb_sa_valid;
+ 	cnxk_ot_ipsec_inb_sa_fill;
+ 	cnxk_ot_ipsec_outb_sa_fill;
+ 	cnxk_ot_ipsec_inb_sa_valid;
+diff --git a/drivers/net/cnxk/cnxk_ethdev_devargs.c b/drivers/net/cnxk/cnxk_ethdev_devargs.c
+index 8e862be933346..a0e9300cfff71 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_devargs.c
++++ b/drivers/net/cnxk/cnxk_ethdev_devargs.c
+@@ -75,7 +75,7 @@ parse_ipsec_out_max_sa(const char *key, const char *value, void *extra_args)
+ 	if (errno)
+ 		val = 0;
+ 
+-	*(uint16_t *)extra_args = val;
++	*(uint32_t *)extra_args = val;
+ 
+ 	return 0;
+ }
+-- 
+2.25.1
+

@@ -1,0 +1,48 @@
+From 5c62e6a464249ac549ea5ea9e21ffb63f5296e3e Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Thu, 7 Sep 2023 13:14:56 +0530
+Subject: [PATCH 636/955] common/cnxk: fix initialization of MCAM ID
+
+The start and end mcam id is initialized when aged_flows_cnt is 0. The
+boolean variable aging_enabled is not needed.
+
+Fixes: 78bb2bf22fc2 ("common/cnxk: add support to get aged flows")
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Change-Id: Ib9e190e07bf59fff63a164b6c5b3738fb7d191aa
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/112312
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npc_aging.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc_aging.c b/drivers/common/cnxk/roc_npc_aging.c
+index 874a7cd4ff670..4b845954b4350 100644
+--- a/drivers/common/cnxk/roc_npc_aging.c
++++ b/drivers/common/cnxk/roc_npc_aging.c
+@@ -56,7 +56,6 @@ check_timeout_cycles(struct roc_npc *roc_npc, uint32_t mcam_id)
+ 	struct npc_age_flow_list_head *list;
+ 	struct npc_age_flow_entry *fl_iter;
+ 	struct roc_npc_flow_age *flow_age;
+-	bool aging_enabled = false;
+ 
+ 	flow_age = &roc_npc->flow_age;
+ 	list = &npc->age_flow_list;
+@@ -65,10 +64,9 @@ check_timeout_cycles(struct roc_npc *roc_npc, uint32_t mcam_id)
+ 		    fl_iter->flow->timeout_cycles < plt_tsc_cycles()) {
+ 			/* update bitmap */
+ 			plt_bitmap_set(flow_age->aged_flows, mcam_id);
+-			if (!aging_enabled) {
++			if (flow_age->aged_flows_cnt == 0) {
+ 				flow_age->start_id = mcam_id;
+ 				flow_age->end_id = mcam_id;
+-				aging_enabled = true;
+ 			}
+ 			if (flow_age->start_id > mcam_id)
+ 				flow_age->start_id = mcam_id;
+-- 
+2.25.1
+

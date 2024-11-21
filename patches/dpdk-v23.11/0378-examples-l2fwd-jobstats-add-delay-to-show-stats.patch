@@ -1,0 +1,43 @@
+From 8199dfdb9e55821bcad6b5d6539c3f9fbcad1039 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Mon, 10 Jun 2024 14:14:03 +0530
+Subject: [PATCH 378/513] examples/l2fwd-jobstats: add delay to show stats
+
+In main_loop function only one lock is acquired
+before fwd jobs has started and finished and then lock is released.
+Due to this most of the time lock is not available for
+show_lcore_stats() as a result stats are not updated periodically.
+This patch fixes the same by adding delay before accquring lock
+in loop
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Ifc31d76169320f7d4c901d60ee04de840a2e66a9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/129319
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 90f2a29b9c51acfdbfd16fc4fe2f91ce37eb9c3e)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130371
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ examples/l2fwd-jobstats/main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/examples/l2fwd-jobstats/main.c b/examples/l2fwd-jobstats/main.c
+index 2653db4735384..8a5b8e26a56e2 100644
+--- a/examples/l2fwd-jobstats/main.c
++++ b/examples/l2fwd-jobstats/main.c
+@@ -541,7 +541,7 @@ l2fwd_main_loop(void)
+ 		} while (likely(stats_read_pending == 0));
+ 
+ 		rte_spinlock_unlock(&qconf->lock);
+-		rte_pause();
++		rte_delay_us(10);
+ 	}
+ 	/* >8 End of minimize impact of stats reading. */
+ }
+-- 
+2.25.1
+

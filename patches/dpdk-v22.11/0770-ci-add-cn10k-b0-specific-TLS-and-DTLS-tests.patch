@@ -1,0 +1,74 @@
+From 56d5b7c58c590f7efc68550a49116f238fbff0f9 Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Tue, 16 Jan 2024 15:57:13 +0530
+Subject: [PATCH 770/955] ci: add cn10k-b0 specific TLS and DTLS tests
+
+Add cnxk_cryptodev_auto_test tests to run TLS and DTLS tests specific
+to cn10k-b0.
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I786eaf88476392b2db1702205381661889d6d347
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119833
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit de579b29751932364182f87c5ba561561b69ea61)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120029
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ marvell-ci/test/env/cn10k-a0.env |  5 ++++-
+ marvell-ci/test/env/cn10k-b0.env | 11 +++++++++++
+ marvell-ci/test/env/cn10k.env    |  1 +
+ 3 files changed, 16 insertions(+), 1 deletion(-)
+ create mode 100644 marvell-ci/test/env/cn10k-b0.env
+
+diff --git a/marvell-ci/test/env/cn10k-a0.env b/marvell-ci/test/env/cn10k-a0.env
+index 50e9930d2c473..58deda4ba4cf8 100644
+--- a/marvell-ci/test/env/cn10k-a0.env
++++ b/marvell-ci/test/env/cn10k-a0.env
+@@ -5,7 +5,10 @@
+ 
+ source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
+ 
+-RUN_TESTS="cnxk_dpdk_event_tests"
++RUN_TESTS="
++	cnxk_dpdk_event_tests
++	cryptodev_cnxk_autotest
++"
+ 
+ # Export the path to this conf so that other scripts can source this conf.
+ export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn10k-a0.env
+diff --git a/marvell-ci/test/env/cn10k-b0.env b/marvell-ci/test/env/cn10k-b0.env
+new file mode 100644
+index 0000000000000..dd3ad94491817
+--- /dev/null
++++ b/marvell-ci/test/env/cn10k-b0.env
+@@ -0,0 +1,11 @@
++#!/bin/bash
++
++# SPDX-License-Identifier: BSD-3-Clause
++# Copyright (C) 2024 Marvell.
++
++source $PROJECT_ROOT/marvell-ci/test/env/cn10k.env
++
++RUN_TESTS="cryptodev_cnxk_autotest"
++
++# Export the path to this conf so that other scripts can source this conf.
++export TEST_ENV_CONF=$PROJECT_ROOT/marvell-ci/test/env/cn10k-b0.env
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 1f4d8b65cc362..89bccdaea2dba 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -90,6 +90,7 @@ DEFAULT_SKIP_TESTS="
+ 	cryptodev_cn9k_autotest
+ 	cryptodev_cn10k_asym_autotest
+ 	cryptodev_cn10k_autotest
++	cryptodev_cnxk_autotest
+ 	cryptodev_dpaa_sec_autotest
+ 	cryptodev_dpaa2_sec_autotest
+ 	cryptodev_openssl_asym_autotest
+-- 
+2.25.1
+

@@ -1,0 +1,37 @@
+From 1385568d9ea7007d9e090138af6e549baa8ee939 Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Sun, 16 Jul 2023 17:13:57 +0530
+Subject: [PATCH 541/955] net/cnxk: add flag check for extension header when
+ used
+
+send_hdr_ext is being used, but it may be null when
+the flag check for NIX_TX_NEED_EXT_HDR is not done.
+Hence added a check here to avoid null pointer dereference.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I7c1eab2adab35fed0167f6db2e88eb17ad4d59d6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107580
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cn10k_tx.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index faae9ca9f2705..958ce5bafde0c 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -1011,7 +1011,8 @@ cn10k_nix_xmit_prepare(struct cn10k_eth_txq *txq,
+ 		send_hdr_ext->w0.markptr = markptr;
+ 	}
+ 
+-	if (flags & NIX_TX_OFFLOAD_TSO_F && (ol_flags & RTE_MBUF_F_TX_TCP_SEG)) {
++	if (flags & NIX_TX_NEED_EXT_HDR && flags & NIX_TX_OFFLOAD_TSO_F &&
++			(ol_flags & RTE_MBUF_F_TX_TCP_SEG)) {
+ 		uint16_t lso_sb;
+ 		uint64_t mask;
+ 
+-- 
+2.25.1
+

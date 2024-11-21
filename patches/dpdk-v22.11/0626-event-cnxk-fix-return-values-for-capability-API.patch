@@ -1,0 +1,135 @@
+From f07aa15801f25c7299cb156d0fe9740cc5c85e1d Mon Sep 17 00:00:00 2001
+From: Aakash Sasidharan <asasidharan@marvell.com>
+Date: Tue, 1 Aug 2023 18:20:01 +0530
+Subject: [PATCH 626/955] event/cnxk: fix return values for capability API
+
+crypto adapter capability now returns -ENOTSUP instead
+of -EINVAL when event_cnxk or crypto_cnxk device is not
+available. This would allow unit test to be skipped
+when the devices are not available.
+
+Fixes: 19f81cb59cb4 ("event/cnxk: add crypto adapter operations")
+
+Signed-off-by: Aakash Sasidharan <asasidharan@marvell.com>
+Change-Id: I15986bafae3ab948adef969a66233538ba2858f5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/110437
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_eventdev.c | 16 ++++++++--------
+ drivers/event/cnxk/cn9k_eventdev.c  | 16 ++++++++--------
+ drivers/event/cnxk/cnxk_eventdev.h  |  4 ++--
+ 3 files changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index 56482c20a17c7..cae2efbb691b8 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -928,8 +928,8 @@ static int
+ cn10k_crypto_adapter_caps_get(const struct rte_eventdev *event_dev,
+ 			      const struct rte_cryptodev *cdev, uint32_t *caps)
+ {
+-	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn10k");
+-	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn10k");
++	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn10k", ENOTSUP);
++	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn10k", ENOTSUP);
+ 
+ 	*caps = RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD |
+ 		RTE_EVENT_CRYPTO_ADAPTER_CAP_SESSION_PRIVATE_DATA |
+@@ -946,8 +946,8 @@ cn10k_crypto_adapter_qp_add(const struct rte_eventdev *event_dev,
+ {
+ 	int ret;
+ 
+-	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn10k");
+-	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn10k");
++	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn10k", EINVAL);
++	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn10k", EINVAL);
+ 
+ 	cn10k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
+ 
+@@ -961,8 +961,8 @@ static int
+ cn10k_crypto_adapter_qp_del(const struct rte_eventdev *event_dev, const struct rte_cryptodev *cdev,
+ 			    int32_t queue_pair_id)
+ {
+-	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn10k");
+-	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn10k");
++	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn10k", EINVAL);
++	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn10k", EINVAL);
+ 
+ 	return cnxk_crypto_adapter_qp_del(cdev, queue_pair_id);
+ }
+@@ -980,8 +980,8 @@ cn10k_crypto_adapter_vec_limits(const struct rte_eventdev *event_dev,
+ 				const struct rte_cryptodev *cdev,
+ 				struct rte_event_crypto_adapter_vector_limits *limits)
+ {
+-	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn10k");
+-	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn10k");
++	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn10k", EINVAL);
++	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn10k", EINVAL);
+ 
+ 	limits->log2_sz = false;
+ 	limits->min_sz = 0;
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 6cce5477f0bc6..f77a9d70856b1 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -942,11 +942,11 @@ cn9k_sso_tx_adapter_queue_del(uint8_t id, const struct rte_eventdev *event_dev,
+ }
+ 
+ static int
+-cn9k_crypto_adapter_caps_get(const struct rte_eventdev *event_dev,
+-			     const struct rte_cryptodev *cdev, uint32_t *caps)
++cn9k_crypto_adapter_caps_get(const struct rte_eventdev *event_dev, const struct rte_cryptodev *cdev,
++			     uint32_t *caps)
+ {
+-	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn9k");
+-	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn9k");
++	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn9k", ENOTSUP);
++	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn9k", ENOTSUP);
+ 
+ 	*caps = RTE_EVENT_CRYPTO_ADAPTER_CAP_INTERNAL_PORT_OP_FWD |
+ 		RTE_EVENT_CRYPTO_ADAPTER_CAP_SESSION_PRIVATE_DATA;
+@@ -962,8 +962,8 @@ cn9k_crypto_adapter_qp_add(const struct rte_eventdev *event_dev,
+ {
+ 	int ret;
+ 
+-	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn9k");
+-	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn9k");
++	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn9k", EINVAL);
++	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn9k", EINVAL);
+ 
+ 	cn9k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
+ 
+@@ -977,8 +977,8 @@ static int
+ cn9k_crypto_adapter_qp_del(const struct rte_eventdev *event_dev, const struct rte_cryptodev *cdev,
+ 			   int32_t queue_pair_id)
+ {
+-	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn9k");
+-	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn9k");
++	CNXK_VALID_DEV_OR_ERR_RET(event_dev->dev, "event_cn9k", EINVAL);
++	CNXK_VALID_DEV_OR_ERR_RET(cdev->device, "crypto_cn9k", EINVAL);
+ 
+ 	return cnxk_crypto_adapter_qp_del(cdev, queue_pair_id);
+ }
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index 898c6c05d8dc8..8a5ca0db8633a 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -48,10 +48,10 @@
+ 	(min + val / ((max + cnt - 1) / cnt))
+ #define CNXK_SSO_FLUSH_RETRY_MAX 0xfff
+ 
+-#define CNXK_VALID_DEV_OR_ERR_RET(dev, drv_name)                               \
++#define CNXK_VALID_DEV_OR_ERR_RET(dev, drv_name, err_val)                      \
+ 	do {                                                                   \
+ 		if (strncmp(dev->driver->name, drv_name, strlen(drv_name)))    \
+-			return -EINVAL;                                        \
++			return -err_val;                                       \
+ 	} while (0)
+ 
+ typedef void *(*cnxk_sso_init_hws_mem_t)(void *dev, uint8_t port_id);
+-- 
+2.25.1
+

@@ -1,0 +1,34 @@
+From ed0629afc0611f9f43b58d4f9ba4229283c590bc Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Sun, 16 Jul 2023 17:19:34 +0530
+Subject: [PATCH 543/955] event/cnxk: avoid null pointer dereference
+
+strdup() may return a null value and the return
+value should be checked for null dereferencing.
+
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: I6e09c35442aeda1042167762b1d19d73fd8181b3
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/107581
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cnxk_eventdev.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index 4e7b27a29e800..02cdd99e31852 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -543,6 +543,9 @@ parse_list(const char *value, void *opaque, param_parse_t fn)
+ 	char *end = NULL;
+ 	char *f = s;
+ 
++	if (s == NULL)
++		return;
++
+ 	while (*s) {
+ 		if (*s == '[')
+ 			start = s;
+-- 
+2.25.1
+

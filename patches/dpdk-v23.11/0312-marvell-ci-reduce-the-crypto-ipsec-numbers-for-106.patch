@@ -1,0 +1,62 @@
+From e241d72f8e2d7e7799f15af1b18d5c6a794fd783 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Mon, 22 Apr 2024 02:24:43 -0700
+Subject: [PATCH 312/513] marvell-ci: reduce the crypto ipsec numbers for 106
+
+Update the perf numbers for 106 crypto and ipsec
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: Iae3ae4c8ef5abc83b3bab8ee27f4d10060dbf72c
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/125822
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb          | 2 +-
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb          | 2 +-
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb         | 4 ++--
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb
+index 742277cba8d59..55b42657e3158 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lc.inb
+@@ -5,6 +5,6 @@ aes-cbc_sha1-hmac
+ <end>
+ aes-gcm
+ 64: 5578492
+-380: 5544307
++380: 5320000
+ 1410: 4188487
+ <end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb
+index f3171ed9a73c2..0ae84729e8e68 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.inb
+@@ -1,6 +1,6 @@
+ aes-cbc_sha1-hmac
+ 64: 8704792
+-380: 8688009
++380: 8300400
+ 1410: 4154536
+ <end>
+ aes-gcm
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb
+index 3bbeda6396506..666229d56ea3e 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp.outb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+ 64: 8923569
+-380: 9100614
++380: 8715600
+ 1410: 4400563
+ <end>
+ aes-gcm
+ 64: 8939536
+-380: 9057976
++380: 8648500
+ 1410: 4400562
+ <end>
+-- 
+2.25.1
+

@@ -1,0 +1,177 @@
+From 45bfb5a6f477a3aebb6bb3b2bb921f1e20052703 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Tue, 21 Nov 2023 14:00:10 +0530
+Subject: [PATCH 688/955] common/cnxk: add egress mirror support
+
+Added ROC api to send packets on multiple links when egress mirror
+enabled.
+
+Change-Id: I374eb48054a48bcbd428e3e07e539c0376bcc02c
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116354
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+(cherry picked from commit 7042190a34f3cf2eaf230a777cb286582d33d3e4)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/116611
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h        |  2 +
+ drivers/common/cnxk/roc_nix_tm_ops.c | 70 ++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_npc.c        | 26 +++++++++++
+ drivers/common/cnxk/version.map      |  1 +
+ 4 files changed, 99 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index dc96fc8104ad6..50e4568189fb1 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -755,6 +755,8 @@ int __roc_api roc_nix_tm_mark_config(struct roc_nix *roc_nix,
+ 				     int mark_red);
+ uint64_t __roc_api roc_nix_tm_mark_format_get(struct roc_nix *roc_nix,
+ 					      uint64_t *flags);
++int __roc_api roc_nix_tm_egress_link_cfg_set(struct roc_nix *roc_nix, uint64_t dst_pf_func,
++					     bool enable);
+ 
+ /* Ingress Policer API */
+ int __roc_api roc_nix_bpf_timeunit_get(struct roc_nix *roc_nix,
+diff --git a/drivers/common/cnxk/roc_nix_tm_ops.c b/drivers/common/cnxk/roc_nix_tm_ops.c
+index e1cef7a670b66..bef7c522ce636 100644
+--- a/drivers/common/cnxk/roc_nix_tm_ops.c
++++ b/drivers/common/cnxk/roc_nix_tm_ops.c
+@@ -1315,3 +1315,73 @@ roc_nix_tm_root_has_sp(struct roc_nix *roc_nix)
+ 		return false;
+ 	return true;
+ }
++
++static inline struct nix *
++pf_func_to_nix_get(uint16_t pf_func)
++{
++	struct roc_nix *roc_nix_tmp = NULL;
++	struct roc_nix_list *nix_list;
++
++	nix_list = roc_idev_nix_list_get();
++	if (nix_list == NULL)
++		return NULL;
++
++	/* Find the NIX of given pf_func */
++	TAILQ_FOREACH(roc_nix_tmp, nix_list, next) {
++		struct nix *nix = roc_nix_to_nix_priv(roc_nix_tmp);
++
++		if (nix->dev.pf_func == pf_func)
++			return nix;
++	}
++
++	return NULL;
++}
++
++int
++roc_nix_tm_egress_link_cfg_set(struct roc_nix *roc_nix, uint64_t dst_pf_func, bool enable)
++{
++	struct nix *src_nix = roc_nix_to_nix_priv(roc_nix), *dst_nix;
++	struct mbox *mbox = (&src_nix->dev)->mbox;
++	struct nix_txschq_config *req = NULL;
++	struct nix_tm_node_list *list;
++	struct nix_tm_node *node;
++	int rc = 0, k;
++
++	dst_nix = pf_func_to_nix_get(dst_pf_func);
++	if (!dst_nix)
++		return -EINVAL;
++
++	if (dst_nix == src_nix)
++		return 0;
++
++	list = nix_tm_node_list(src_nix, src_nix->tm_tree);
++	TAILQ_FOREACH(node, list, node) {
++		if (node->hw_lvl != src_nix->tm_link_cfg_lvl)
++			continue;
++
++		if (!(node->flags & NIX_TM_NODE_HWRES))
++			continue;
++
++		/* Allocating TL3 request */
++		req = mbox_alloc_msg_nix_txschq_cfg(mbox_get(mbox));
++		req->lvl = src_nix->tm_link_cfg_lvl;
++		k = 0;
++
++		/* Enable PFC/pause on the identified TL3 */
++		req->reg[k] = NIX_AF_TL3_TL2X_LINKX_CFG(node->hw_id, dst_nix->tx_link);
++		if (enable)
++			req->regval[k] |= BIT_ULL(12);
++		else
++			req->regval[k] &= ~(BIT_ULL(12));
++		req->regval_mask[k] = ~(BIT_ULL(12));
++		k++;
++
++		req->num_regs = k;
++		rc = mbox_process(mbox);
++		mbox_put(mbox);
++		if (rc)
++			goto err;
++	}
++err:
++	return rc;
++}
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index 9b08be942595c..ef351530fc85f 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -1576,6 +1576,21 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 		goto err_exit;
+ 	}
+ 
++	/* If Egress mirror requested then enable TL3_TL2_LINK_CFG */
++	if (flow->is_sampling_rule && (flow->nix_intf == NIX_INTF_TX)) {
++		if (flow->mcast_pf_funcs[0] == npc->pf_func)
++			rc = roc_nix_tm_egress_link_cfg_set(roc_npc->roc_nix,
++							    flow->mcast_pf_funcs[1], true);
++		else
++			rc = roc_nix_tm_egress_link_cfg_set(roc_npc->roc_nix,
++							    flow->mcast_pf_funcs[0], true);
++		if (rc) {
++			plt_err("Adding egress mirror failed");
++			*errcode = rc;
++			goto err_exit;
++		}
++	}
++
+ 	rc = npc_rss_action_program(roc_npc, actions, flow);
+ 	if (rc != 0) {
+ 		*errcode = rc;
+@@ -1695,6 +1710,17 @@ roc_npc_flow_destroy(struct roc_npc *roc_npc, struct roc_npc_flow *flow)
+ 			return rc;
+ 	}
+ 
++	/* Disable egress mirror rule */
++	if (flow->is_sampling_rule && (flow->nix_intf == NIX_INTF_TX)) {
++		if (flow->mcast_pf_funcs[0] == npc->pf_func)
++			rc = roc_nix_tm_egress_link_cfg_set(roc_npc->roc_nix,
++							    flow->mcast_pf_funcs[1], false);
++		else
++			rc = roc_nix_tm_egress_link_cfg_set(roc_npc->roc_nix,
++							    flow->mcast_pf_funcs[0], false);
++		if (rc)
++			plt_err("Failed to remove egress mirror rule");
++	}
+ 	if (flow->is_sampling_rule)
+ 		roc_nix_mcast_list_free(npc->mbox, flow->mcast_grp_index);
+ 
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 1b6f635418e9f..03698b9d09706 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -322,6 +322,7 @@ INTERNAL {
+ 	roc_nix_switch_hdr_set;
+ 	roc_nix_eeprom_info_get;
+ 	roc_nix_smq_flush;
++	roc_nix_tm_egress_link_cfg_set;
+ 	roc_nix_tm_dump;
+ 	roc_nix_tm_err_to_rte_err;
+ 	roc_nix_tm_fini;
+-- 
+2.25.1
+

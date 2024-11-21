@@ -1,0 +1,72 @@
+From 262b5b04df0ba33f94f02163bf87503b774dd49e Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Mon, 6 Mar 2023 12:53:22 +0530
+Subject: [PATCH 270/955] crypto/cnxk: return error for unsupported paths
+
+Returning error in control path for unsupported
+algorithm combinations.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Ib1bc06c445a7bd3c50d8699720b625fcd897c66f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98539
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/roc_se.c             | 12 +++++++++---
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c |  5 +++++
+ 2 files changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_se.c b/drivers/common/cnxk/roc_se.c
+index 5a894013a6357..aad2b513c7d7c 100644
+--- a/drivers/common/cnxk/roc_se.c
++++ b/drivers/common/cnxk/roc_se.c
+@@ -329,6 +329,11 @@ roc_se_auth_key_set(struct roc_se_ctx *se_ctx, roc_se_auth_type type,
+ 		if (!key_len)
+ 			return -1;
+ 
++		if (se_ctx->fc_type == ROC_SE_FC_GEN) {
++			plt_err("Cipher and Auth algorithm combination is not supported");
++			return -1;
++		}
++
+ 		if (roc_model_is_cn9k()) {
+ 			ci_key = zs_ctx->zuc.onk_ctx.ci_key;
+ 			zuc_const = zs_ctx->zuc.onk_ctx.zuc_const;
+@@ -454,12 +459,13 @@ roc_se_auth_key_set(struct roc_se_ctx *se_ctx, roc_se_auth_type type,
+ 		return 0;
+ 	}
+ 
+-	if (!se_ctx->fc_type ||
+-	    (type && type != ROC_SE_GMAC_TYPE && !se_ctx->enc_cipher))
++	if (!se_ctx->fc_type || (type && type != ROC_SE_GMAC_TYPE && !se_ctx->enc_cipher))
+ 		se_ctx->fc_type = ROC_SE_HASH_HMAC;
+ 
+-	if (se_ctx->fc_type == ROC_SE_FC_GEN && key_len > 64)
++	if (se_ctx->fc_type == ROC_SE_FC_GEN && key_len > 64) {
++		plt_err("Maximum auth key length supported is 64");
+ 		return -1;
++	}
+ 
+ 	/* For GMAC auth, cipher must be NULL */
+ 	if (type == ROC_SE_GMAC_TYPE) {
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 86efe75cc3b54..0f59a6c99cc85 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -551,6 +551,11 @@ cnxk_sess_fill(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xform,
+ 		return -EINVAL;
+ 	}
+ 
++	if (c_xfrm->cipher.algo == RTE_CRYPTO_CIPHER_AES_XTS) {
++		plt_err("AES XTS with auth algorithm is not supported");
++		return -ENOTSUP;
++	}
++
+ 	if (c_xfrm->cipher.algo == RTE_CRYPTO_CIPHER_3DES_CBC &&
+ 	    a_xfrm->auth.algo == RTE_CRYPTO_AUTH_SHA1) {
+ 		plt_dp_err("3DES-CBC + SHA1 is not supported");
+-- 
+2.25.1
+

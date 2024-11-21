@@ -1,0 +1,288 @@
+From d6f899936a5ef0ff5215682f5281549f829ab294 Mon Sep 17 00:00:00 2001
+From: Radha Mohan Chintakuntla <radhac@marvell.com>
+Date: Mon, 13 Jun 2022 13:03:43 -0700
+Subject: [PATCH 125/955] dma/cnxk: increase vchan per queue to max 4
+
+To support multiple directions in same queue make use of multiple vchan
+per queue. Each vchan can be configured in some direction and used.
+
+Signed-off-by: Radha Mohan Chintakuntla <radhac@marvell.com>
+Change-Id: I2e5538e5683adc6b003b1f18e579cf8988c3448f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92530
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.c | 103 ++++++++++++++-------------------
+ drivers/dma/cnxk/cnxk_dmadev.h |   3 +-
+ 2 files changed, 46 insertions(+), 60 deletions(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index a6f4a31e0e3c5..ce090e4e9a5b1 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -24,12 +24,11 @@ cnxk_dmadev_info_get(const struct rte_dma_dev *dev,
+ 	RTE_SET_USED(dev);
+ 	RTE_SET_USED(size);
+ 
+-	dev_info->max_vchans = 1;
+-	dev_info->nb_vchans = 1;
+-	dev_info->dev_capa = RTE_DMA_CAPA_MEM_TO_MEM |
+-		RTE_DMA_CAPA_MEM_TO_DEV | RTE_DMA_CAPA_DEV_TO_MEM |
+-		RTE_DMA_CAPA_DEV_TO_DEV | RTE_DMA_CAPA_OPS_COPY |
+-		RTE_DMA_CAPA_OPS_COPY_SG;
++	dev_info->max_vchans = MAX_VCHANS_PER_QUEUE;
++	dev_info->nb_vchans = MAX_VCHANS_PER_QUEUE;
++	dev_info->dev_capa = RTE_DMA_CAPA_MEM_TO_MEM | RTE_DMA_CAPA_MEM_TO_DEV |
++			     RTE_DMA_CAPA_DEV_TO_MEM | RTE_DMA_CAPA_DEV_TO_DEV |
++			     RTE_DMA_CAPA_OPS_COPY | RTE_DMA_CAPA_OPS_COPY_SG;
+ 	dev_info->max_desc = DPI_MAX_DESC;
+ 	dev_info->min_desc = 1;
+ 	dev_info->max_sges = DPI_MAX_POINTER;
+@@ -63,10 +62,9 @@ cnxk_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ {
+ 	struct cnxk_dpi_vf_s *dpivf = dev->fp_obj->dev_private;
+ 	struct cnxk_dpi_compl_s *comp_data;
+-	union dpi_instr_hdr_s *header = &dpivf->conf.hdr;
++	union dpi_instr_hdr_s *header = &dpivf->conf[vchan].hdr;
+ 	int i;
+ 
+-	RTE_SET_USED(vchan);
+ 	RTE_SET_USED(conf_sz);
+ 
+ 	header->cn9k.pt = DPI_HDR_PT_ZBW_CA;
+@@ -103,11 +101,11 @@ cnxk_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 			return -ENOMEM;
+ 		}
+ 		comp_data->cdata = DPI_REQ_CDATA;
+-		dpivf->conf.c_desc.compl_ptr[i] = comp_data;
++		dpivf->conf[vchan].c_desc.compl_ptr[i] = comp_data;
+ 	};
+-	dpivf->conf.c_desc.max_cnt = DPI_MAX_DESC;
+-	dpivf->conf.c_desc.head = 0;
+-	dpivf->conf.c_desc.tail = 0;
++	dpivf->conf[vchan].c_desc.max_cnt = DPI_MAX_DESC;
++	dpivf->conf[vchan].c_desc.head = 0;
++	dpivf->conf[vchan].c_desc.tail = 0;
+ 
+ 	return 0;
+ }
+@@ -119,10 +117,9 @@ cn10k_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ {
+ 	struct cnxk_dpi_vf_s *dpivf = dev->fp_obj->dev_private;
+ 	struct cnxk_dpi_compl_s *comp_data;
+-	union dpi_instr_hdr_s *header = &dpivf->conf.hdr;
++	union dpi_instr_hdr_s *header = &dpivf->conf[vchan].hdr;
+ 	int i;
+ 
+-	RTE_SET_USED(vchan);
+ 	RTE_SET_USED(conf_sz);
+ 
+ 	header->cn10k.pt = DPI_HDR_PT_ZBW_CA;
+@@ -159,11 +156,11 @@ cn10k_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 			return -ENOMEM;
+ 		}
+ 		comp_data->cdata = DPI_REQ_CDATA;
+-		dpivf->conf.c_desc.compl_ptr[i] = comp_data;
++		dpivf->conf[vchan].c_desc.compl_ptr[i] = comp_data;
+ 	};
+-	dpivf->conf.c_desc.max_cnt = DPI_MAX_DESC;
+-	dpivf->conf.c_desc.head = 0;
+-	dpivf->conf.c_desc.tail = 0;
++	dpivf->conf[vchan].c_desc.max_cnt = DPI_MAX_DESC;
++	dpivf->conf[vchan].c_desc.head = 0;
++	dpivf->conf[vchan].c_desc.tail = 0;
+ 
+ 	return 0;
+ }
+@@ -279,22 +276,21 @@ __dpi_queue_write(struct roc_dpi *dpi, uint64_t *cmds, int cmd_count)
+ }
+ 
+ static int
+-cnxk_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src,
+-		 rte_iova_t dst, uint32_t length, uint64_t flags)
++cnxk_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t dst, uint32_t length,
++		 uint64_t flags)
+ {
+ 	struct cnxk_dpi_vf_s *dpivf = dev_private;
+-	union dpi_instr_hdr_s *header = &dpivf->conf.hdr;
++	struct cnxk_dpi_conf *dpi_conf = &dpivf->conf[vchan];
++	union dpi_instr_hdr_s *header = &dpivf->conf[vchan].hdr;
+ 	struct cnxk_dpi_compl_s *comp_ptr;
+ 	rte_iova_t fptr, lptr;
+ 	int num_words = 0;
+ 	int rc;
+ 
+-	RTE_SET_USED(vchan);
+-
+-	comp_ptr = dpivf->conf.c_desc.compl_ptr[dpivf->conf.c_desc.tail];
++	comp_ptr = dpi_conf->c_desc.compl_ptr[dpi_conf->c_desc.tail];
+ 	comp_ptr->cdata = DPI_REQ_CDATA;
+ 	header->cn9k.ptr = (uint64_t)comp_ptr;
+-	STRM_INC(dpivf->conf.c_desc);
++	STRM_INC(dpi_conf->c_desc);
+ 
+ 	header->cn9k.nfst = 1;
+ 	header->cn9k.nlst = 1;
+@@ -336,24 +332,21 @@ cnxk_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src,
+ }
+ 
+ static int
+-cnxk_dmadev_copy_sg(void *dev_private, uint16_t vchan,
+-		    const struct rte_dma_sge *src,
+-		    const struct rte_dma_sge *dst,
+-		    uint16_t nb_src, uint16_t nb_dst, uint64_t flags)
++cnxk_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge *src,
++		    const struct rte_dma_sge *dst, uint16_t nb_src, uint16_t nb_dst, uint64_t flags)
+ {
+ 	struct cnxk_dpi_vf_s *dpivf = dev_private;
+-	union dpi_instr_hdr_s *header = &dpivf->conf.hdr;
++	struct cnxk_dpi_conf *dpi_conf = &dpivf->conf[vchan];
++	union dpi_instr_hdr_s *header = &dpivf->conf[vchan].hdr;
+ 	const struct rte_dma_sge *fptr, *lptr;
+ 	struct cnxk_dpi_compl_s *comp_ptr;
+ 	int num_words = 0;
+ 	int i, rc;
+ 
+-	RTE_SET_USED(vchan);
+-
+-	comp_ptr = dpivf->conf.c_desc.compl_ptr[dpivf->conf.c_desc.tail];
++	comp_ptr = dpi_conf->c_desc.compl_ptr[dpi_conf->c_desc.tail];
+ 	comp_ptr->cdata = DPI_REQ_CDATA;
+ 	header->cn9k.ptr = (uint64_t)comp_ptr;
+-	STRM_INC(dpivf->conf.c_desc);
++	STRM_INC(dpi_conf->c_desc);
+ 
+ 	/*
+ 	 * For inbound case, src pointers are last pointers.
+@@ -402,22 +395,21 @@ cnxk_dmadev_copy_sg(void *dev_private, uint16_t vchan,
+ }
+ 
+ static int
+-cn10k_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src,
+-		  rte_iova_t dst, uint32_t length, uint64_t flags)
++cn10k_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src, rte_iova_t dst,
++		  uint32_t length, uint64_t flags)
+ {
+ 	struct cnxk_dpi_vf_s *dpivf = dev_private;
+-	union dpi_instr_hdr_s *header = &dpivf->conf.hdr;
++	struct cnxk_dpi_conf *dpi_conf = &dpivf->conf[vchan];
++	union dpi_instr_hdr_s *header = &dpivf->conf[vchan].hdr;
+ 	struct cnxk_dpi_compl_s *comp_ptr;
+ 	rte_iova_t fptr, lptr;
+ 	int num_words = 0;
+ 	int rc;
+ 
+-	RTE_SET_USED(vchan);
+-
+-	comp_ptr = dpivf->conf.c_desc.compl_ptr[dpivf->conf.c_desc.tail];
++	comp_ptr = dpi_conf->c_desc.compl_ptr[dpi_conf->c_desc.tail];
+ 	comp_ptr->cdata = DPI_REQ_CDATA;
+ 	header->cn10k.ptr = (uint64_t)comp_ptr;
+-	STRM_INC(dpivf->conf.c_desc);
++	STRM_INC(dpi_conf->c_desc);
+ 
+ 	header->cn10k.nfst = 1;
+ 	header->cn10k.nlst = 1;
+@@ -450,24 +442,22 @@ cn10k_dmadev_copy(void *dev_private, uint16_t vchan, rte_iova_t src,
+ }
+ 
+ static int
+-cn10k_dmadev_copy_sg(void *dev_private, uint16_t vchan,
+-		     const struct rte_dma_sge *src,
+-		     const struct rte_dma_sge *dst, uint16_t nb_src,
+-		     uint16_t nb_dst, uint64_t flags)
++cn10k_dmadev_copy_sg(void *dev_private, uint16_t vchan, const struct rte_dma_sge *src,
++		     const struct rte_dma_sge *dst, uint16_t nb_src, uint16_t nb_dst,
++		     uint64_t flags)
+ {
+ 	struct cnxk_dpi_vf_s *dpivf = dev_private;
+-	union dpi_instr_hdr_s *header = &dpivf->conf.hdr;
++	struct cnxk_dpi_conf *dpi_conf = &dpivf->conf[vchan];
++	union dpi_instr_hdr_s *header = &dpivf->conf[vchan].hdr;
+ 	const struct rte_dma_sge *fptr, *lptr;
+ 	struct cnxk_dpi_compl_s *comp_ptr;
+ 	int num_words = 0;
+ 	int i, rc;
+ 
+-	RTE_SET_USED(vchan);
+-
+-	comp_ptr = dpivf->conf.c_desc.compl_ptr[dpivf->conf.c_desc.tail];
++	comp_ptr = dpi_conf->c_desc.compl_ptr[dpi_conf->c_desc.tail];
+ 	comp_ptr->cdata = DPI_REQ_CDATA;
+ 	header->cn10k.ptr = (uint64_t)comp_ptr;
+-	STRM_INC(dpivf->conf.c_desc);
++	STRM_INC(dpi_conf->c_desc);
+ 
+ 	header->cn10k.nfst = nb_src & 0xf;
+ 	header->cn10k.nlst = nb_dst & 0xf;
+@@ -512,14 +502,11 @@ cnxk_dmadev_completed(void *dev_private, uint16_t vchan, const uint16_t nb_cpls,
+ 	struct cnxk_dpi_vf_s *dpivf = dev_private;
+ 	int cnt;
+ 
+-	RTE_SET_USED(vchan);
+-
+ 	if (dpivf->stats.submitted == dpivf->stats.completed)
+ 		return 0;
+ 
+ 	for (cnt = 0; cnt < nb_cpls; cnt++) {
+-		struct cnxk_dpi_compl_s *comp_ptr =
+-			dpivf->conf.c_desc.compl_ptr[cnt];
++		struct cnxk_dpi_compl_s *comp_ptr = dpivf->conf[vchan].c_desc.compl_ptr[cnt];
+ 
+ 		if (comp_ptr->cdata) {
+ 			if (comp_ptr->cdata == DPI_REQ_CDATA)
+@@ -531,7 +518,7 @@ cnxk_dmadev_completed(void *dev_private, uint16_t vchan, const uint16_t nb_cpls,
+ 	}
+ 
+ 	*last_idx = cnt - 1;
+-	dpivf->conf.c_desc.tail = cnt;
++	dpivf->conf[vchan].c_desc.tail = cnt;
+ 	dpivf->stats.completed += cnt;
+ 
+ 	return cnt;
+@@ -545,11 +532,9 @@ cnxk_dmadev_completed_status(void *dev_private, uint16_t vchan,
+ 	struct cnxk_dpi_vf_s *dpivf = dev_private;
+ 	int cnt;
+ 
+-	RTE_SET_USED(vchan);
+ 	RTE_SET_USED(last_idx);
+ 	for (cnt = 0; cnt < nb_cpls; cnt++) {
+-		struct cnxk_dpi_compl_s *comp_ptr =
+-			dpivf->conf.c_desc.compl_ptr[cnt];
++		struct cnxk_dpi_compl_s *comp_ptr = dpivf->conf[vchan].c_desc.compl_ptr[cnt];
+ 		status[cnt] = comp_ptr->cdata;
+ 		if (status[cnt]) {
+ 			if (status[cnt] == DPI_REQ_CDATA)
+@@ -560,7 +545,7 @@ cnxk_dmadev_completed_status(void *dev_private, uint16_t vchan,
+ 	}
+ 
+ 	*last_idx = cnt - 1;
+-	dpivf->conf.c_desc.tail = 0;
++	dpivf->conf[vchan].c_desc.tail = 0;
+ 	dpivf->stats.completed += cnt;
+ 
+ 	return cnt;
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.h b/drivers/dma/cnxk/cnxk_dmadev.h
+index e1f5694f50766..3483b30c27574 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.h
++++ b/drivers/dma/cnxk/cnxk_dmadev.h
+@@ -9,6 +9,7 @@
+ #define DPI_QUEUE_START		0x1
+ #define STRM_INC(s)		((s).tail = ((s).tail + 1) % (s).max_cnt)
+ #define DPI_MAX_DESC		1024
++#define MAX_VCHANS_PER_QUEUE	4
+ 
+ /* Set Completion data to 0xFF when request submitted,
+  * upon successful request completion engine reset to completion status
+@@ -34,7 +35,7 @@ struct cnxk_dpi_conf {
+ 
+ struct cnxk_dpi_vf_s {
+ 	struct roc_dpi rdpi;
+-	struct cnxk_dpi_conf conf;
++	struct cnxk_dpi_conf conf[MAX_VCHANS_PER_QUEUE];
+ 	struct rte_dma_stats stats;
+ 	uint64_t cmd[DPI_MAX_CMD_SIZE];
+ 	uint32_t num_words;
+-- 
+2.25.1
+

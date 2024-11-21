@@ -1,0 +1,62 @@
+From b7265013ef21fad355c2ee6e9f6acbe65e081c3c Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Thu, 15 Jun 2023 17:16:51 +0530
+Subject: [PATCH 597/955] common/cnxk: add API to get Rx chan count from NIX
+
+For SDP, provide an API to get Rx chan count from NIX as
+all channels are always active.
+
+Change-Id: I51fbe7d0ae7f2989330402bacc0a52a6c68cb4d9
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.c   | 8 ++++++++
+ drivers/common/cnxk/roc_nix.h   | 1 +
+ drivers/common/cnxk/version.map | 1 +
+ 3 files changed, 10 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_nix.c b/drivers/common/cnxk/roc_nix.c
+index 498328d6eddcc..f64933a1d9467 100644
+--- a/drivers/common/cnxk/roc_nix.c
++++ b/drivers/common/cnxk/roc_nix.c
+@@ -21,6 +21,14 @@ roc_nix_get_base_chan(struct roc_nix *roc_nix)
+ 	return nix->rx_chan_base;
+ }
+ 
++uint8_t
++roc_nix_get_rx_chan_cnt(struct roc_nix *roc_nix)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++
++	return nix->rx_chan_cnt;
++}
++
+ uint16_t
+ roc_nix_get_vwqe_interval(struct roc_nix *roc_nix)
+ {
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 407f331bea414..b403141de57b4 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -528,6 +528,7 @@ bool __roc_api roc_nix_is_sdp(struct roc_nix *roc_nix);
+ bool __roc_api roc_nix_is_pf(struct roc_nix *roc_nix);
+ bool __roc_api roc_nix_is_vf_or_sdp(struct roc_nix *roc_nix);
+ int __roc_api roc_nix_get_base_chan(struct roc_nix *roc_nix);
++uint8_t __roc_api roc_nix_get_rx_chan_cnt(struct roc_nix *roc_nix);
+ int __roc_api roc_nix_get_pf(struct roc_nix *roc_nix);
+ int __roc_api roc_nix_get_vf(struct roc_nix *roc_nix);
+ uint16_t __roc_api roc_nix_get_pf_func(struct roc_nix *roc_nix);
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index b719f0bf38f16..d3036ba7a8689 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -185,6 +185,7 @@ INTERNAL {
+ 	roc_nix_get_base_chan;
+ 	roc_nix_get_pf;
+ 	roc_nix_get_pf_func;
++	roc_nix_get_rx_chan_cnt;
+ 	roc_nix_get_vf;
+ 	roc_nix_get_vwqe_interval;
+ 	roc_nix_inl_cb_register;
+-- 
+2.25.1
+

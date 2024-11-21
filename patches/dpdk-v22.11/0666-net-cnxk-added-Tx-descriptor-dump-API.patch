@@ -1,0 +1,66 @@
+From 5084785a91eb87f89238966fc7994da45992ecba Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Wed, 25 Oct 2023 10:01:15 +0530
+Subject: [PATCH 666/955] net/cnxk: added Tx descriptor dump API
+
+New API to dump selected descriptor entries from SQE list.
+
+Change-Id: If8738f7ba14a222e7a5ef0f03fe6cd28447f1c20
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114536
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c     |  1 +
+ drivers/net/cnxk/cnxk_ethdev.h     |  2 ++
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 10 ++++++++++
+ 3 files changed, 13 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index 5e11bbb017ea7..e8f3dc2ad2d75 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1821,6 +1821,7 @@ struct eth_dev_ops cnxk_eth_dev_ops = {
+ 	.cman_config_init = cnxk_nix_cman_config_init,
+ 	.cman_config_set = cnxk_nix_cman_config_set,
+ 	.cman_config_get = cnxk_nix_cman_config_get,
++	.eth_tx_descriptor_dump = cnxk_nix_tx_descriptor_dump,
+ };
+ 
+ void
+diff --git a/drivers/net/cnxk/cnxk_ethdev.h b/drivers/net/cnxk/cnxk_ethdev.h
+index 4d3ebf123b6c3..4232cae3d2e82 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.h
++++ b/drivers/net/cnxk/cnxk_ethdev.h
+@@ -557,6 +557,8 @@ int cnxk_nix_tm_mark_ip_ecn(struct rte_eth_dev *eth_dev, int mark_green,
+ int cnxk_nix_tm_mark_ip_dscp(struct rte_eth_dev *eth_dev, int mark_green,
+ 			     int mark_yellow, int mark_red,
+ 			     struct rte_tm_error *error);
++int cnxk_nix_tx_descriptor_dump(const struct rte_eth_dev *eth_dev, uint16_t qid, uint16_t offset,
++				uint16_t num, FILE *file);
+ 
+ /* MTR */
+ int cnxk_nix_mtr_ops_get(struct rte_eth_dev *dev, void *ops);
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index 5de2919047c17..e9ab8da7812a8 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -1313,3 +1313,13 @@ nix_priority_flow_ctrl_sq_conf(struct rte_eth_dev *eth_dev, uint16_t qid,
+ exit:
+ 	return rc;
+ }
++
++int
++cnxk_nix_tx_descriptor_dump(const struct rte_eth_dev *eth_dev, uint16_t qid, uint16_t offset,
++			    uint16_t num, FILE *file)
++{
++	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
++	struct roc_nix *nix = &dev->nix;
++
++	return roc_nix_sq_desc_dump(nix, qid, offset, num, file);
++}
+-- 
+2.25.1
+

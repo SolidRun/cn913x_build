@@ -1,0 +1,196 @@
+From ebd49c2f9e81afde5e470516d7dcee8a3d39a1db Mon Sep 17 00:00:00 2001
+From: Akhil Goyal <gakhil@marvell.com>
+Date: Fri, 19 May 2023 01:16:02 +0530
+Subject: [PATCH 434/955] common/cnxk: add MACsec FIPS mbox
+
+Added MACsec FIPS configuration mbox
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Signed-off-by: Akhil Goyal <gakhil@marvell.com>
+Change-Id: Iaac11597f3c7a3f7f5ed3a19bc18734a664ce09c
+---
+ drivers/common/cnxk/roc_mbox.h | 74 ++++++++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_mcs.h  | 69 +++++++++++++++++++++++++++++++
+ 2 files changed, 143 insertions(+)
+
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index 92e7b4e5fd249..a486f30e09a04 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -330,6 +330,15 @@ struct mbox_msghdr {
+ 	M(MCS_PORT_CFG_GET, 0xa020, mcs_port_cfg_get, mcs_port_cfg_get_req, mcs_port_cfg_get_rsp)  \
+ 	M(MCS_CUSTOM_TAG_CFG_GET, 0xa021, mcs_custom_tag_cfg_get, mcs_custom_tag_cfg_get_req,      \
+ 	  mcs_custom_tag_cfg_get_rsp)                                                              \
++	M(MCS_FIPS_RESET, 0xa040, mcs_fips_reset, mcs_fips_req, msg_rsp)                           \
++	M(MCS_FIPS_MODE_SET, 0xa041, mcs_fips_mode_set, mcs_fips_mode_req, msg_rsp)                \
++	M(MCS_FIPS_CTL_SET, 0xa042, mcs_fips_ctl_set, mcs_fips_ctl_req, msg_rsp)                   \
++	M(MCS_FIPS_IV_SET, 0xa043, mcs_fips_iv_set, mcs_fips_iv_req, msg_rsp)                      \
++	M(MCS_FIPS_CTR_SET, 0xa044, mcs_fips_ctr_set, mcs_fips_ctr_req, msg_rsp)                   \
++	M(MCS_FIPS_KEY_SET, 0xa045, mcs_fips_key_set, mcs_fips_key_req, msg_rsp)                   \
++	M(MCS_FIPS_BLOCK_SET, 0xa046, mcs_fips_block_set, mcs_fips_block_req, msg_rsp)             \
++	M(MCS_FIPS_START, 0xa047, mcs_fips_start, mcs_fips_req, msg_rsp)                           \
++	M(MCS_FIPS_RESULT_GET, 0xa048, mcs_fips_result_get, mcs_fips_req, mcs_fips_result_rsp)
+ 
+ /* Messages initiated by AF (range 0xC00 - 0xDFF) */
+ #define MBOX_UP_CGX_MESSAGES                                                   \
+@@ -1119,6 +1128,71 @@ struct mcs_clear_stats {
+ 	uint8_t __io all; /* All resources stats mapped to PF are cleared */
+ };
+ 
++struct mcs_fips_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++};
++
++struct mcs_fips_mode_req {
++	struct mbox_msghdr hdr;
++	uint64_t __io mode;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++};
++
++struct mcs_fips_ctl_req {
++	struct mbox_msghdr hdr;
++	uint64_t __io ctl;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++};
++
++struct mcs_fips_iv_req {
++	struct mbox_msghdr hdr;
++	uint32_t __io iv_bits95_64;
++	uint64_t __io iv_bits63_0;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++};
++
++struct mcs_fips_ctr_req {
++	struct mbox_msghdr hdr;
++	uint32_t __io fips_ctr;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++};
++
++struct mcs_fips_key_req {
++	struct mbox_msghdr hdr;
++	uint64_t __io sak_bits255_192;
++	uint64_t __io sak_bits191_128;
++	uint64_t __io sak_bits127_64;
++	uint64_t __io sak_bits63_0;
++	uint64_t __io hashkey_bits127_64;
++	uint64_t __io hashkey_bits63_0;
++	uint8_t __io sak_len;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++};
++
++struct mcs_fips_block_req {
++	struct mbox_msghdr hdr;
++	uint64_t __io blk_bits127_64;
++	uint64_t __io blk_bits63_0;
++	uint8_t __io mcs_id;
++	uint8_t __io dir;
++};
++
++struct mcs_fips_result_rsp {
++	struct mbox_msghdr hdr;
++	uint64_t __io blk_bits127_64;
++	uint64_t __io blk_bits63_0;
++	uint64_t __io icv_bits127_64;
++	uint64_t __io icv_bits63_0;
++	uint8_t __io result_pass;
++};
++
+ /* NPA mbox message formats */
+ 
+ /* NPA mailbox error codes
+diff --git a/drivers/common/cnxk/roc_mcs.h b/drivers/common/cnxk/roc_mcs.h
+index c9b57ed1dff4d..88c8f3da2770a 100644
+--- a/drivers/common/cnxk/roc_mcs.h
++++ b/drivers/common/cnxk/roc_mcs.h
+@@ -426,6 +426,56 @@ struct roc_mcs_event_desc {
+ 	union roc_mcs_event_data metadata;
+ };
+ 
++struct roc_mcs_fips_req {
++	uint8_t dir;
++};
++
++struct roc_mcs_fips_mode {
++	uint64_t mode;
++	uint8_t dir;
++};
++
++struct roc_mcs_fips_ctl {
++	uint64_t ctl;
++	uint8_t dir;
++};
++
++struct roc_mcs_fips_iv {
++	uint32_t iv_bits95_64;
++	uint64_t iv_bits63_0;
++	uint8_t dir;
++};
++
++struct roc_mcs_fips_ctr {
++	uint32_t fips_ctr;
++	uint8_t dir;
++};
++
++struct roc_mcs_fips_key {
++	uint64_t sak_bits255_192;
++	uint64_t sak_bits191_128;
++	uint64_t sak_bits127_64;
++	uint64_t sak_bits63_0;
++	uint64_t hashkey_bits127_64;
++	uint64_t hashkey_bits63_0;
++	uint8_t sak_len;
++	uint8_t dir;
++};
++
++struct roc_mcs_fips_block {
++	uint64_t blk_bits127_64;
++	uint64_t blk_bits63_0;
++	uint8_t dir;
++};
++
++struct roc_mcs_fips_result_rsp {
++	uint64_t blk_bits127_64;
++	uint64_t blk_bits63_0;
++	uint64_t icv_bits127_64;
++	uint64_t icv_bits63_0;
++	uint8_t result_pass;
++};
++
+ /** User application callback to be registered for any notifications from driver. */
+ typedef int (*roc_mcs_dev_cb_fn)(void *userdata, struct roc_mcs_event_desc *desc, void *cb_arg);
+ 
+@@ -547,4 +597,23 @@ __roc_api int roc_mcs_intr_configure(struct roc_mcs *mcs, struct roc_mcs_intr_cf
+ __roc_api int roc_mcs_port_recovery(struct roc_mcs *mcs, union roc_mcs_event_data *mdata,
+ 				    uint8_t port_id);
+ 
++/* FIPS reset */
++__roc_api int roc_mcs_fips_reset(struct roc_mcs *mcs, struct roc_mcs_fips_req *req);
++/* FIPS mode set */
++__roc_api int roc_mcs_fips_mode_set(struct roc_mcs *mcs, struct roc_mcs_fips_mode *req);
++/* FIPS ctl set */
++__roc_api int roc_mcs_fips_ctl_set(struct roc_mcs *mcs, struct roc_mcs_fips_ctl *req);
++/* FIPS iv set */
++__roc_api int roc_mcs_fips_iv_set(struct roc_mcs *mcs, struct roc_mcs_fips_iv *req);
++/* FIPS ctr set */
++__roc_api int roc_mcs_fips_ctr_set(struct roc_mcs *mcs, struct roc_mcs_fips_ctr *req);
++/* FIPS key set */
++__roc_api int roc_mcs_fips_key_set(struct roc_mcs *mcs, struct roc_mcs_fips_key *req);
++/* FIPS block set */
++__roc_api int roc_mcs_fips_block_set(struct roc_mcs *mcs, struct roc_mcs_fips_block *req);
++/* FIPS start */
++__roc_api int roc_mcs_fips_start(struct roc_mcs *mcs, struct roc_mcs_fips_req *req);
++/* FIPS result */
++__roc_api int roc_mcs_fips_result_get(struct roc_mcs *mcs, struct roc_mcs_fips_req *req,
++				      struct roc_mcs_fips_result_rsp *rsp);
+ #endif /* _ROC_MCS_H_ */
+-- 
+2.25.1
+

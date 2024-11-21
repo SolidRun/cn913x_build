@@ -1,0 +1,97 @@
+From 3a9d87d87ff6fcaa5b11d0eb2e0fed0c9c125280 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Tue, 9 May 2023 12:52:40 +0530
+Subject: [PATCH 398/955] ci/ipsec_reassembly: update reference numbers
+
+Update reference numbers as reassembly performance
+is reduced with support of inline ingress session with
+out-of-place.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: If6d8b98b782ec88333d226bdc4c6793355021a72
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103107
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.inb   | 4 ++--
+ .../cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb            | 8 ++++----
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb    | 4 ++--
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb | 8 ++++----
+ 4 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.inb b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.inb
+index e251f7a9a85bb..7970b4c85e5b8 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev.inb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+-64: 7960000
++64: 7720000
+ 380: 6800000
+ 1410: 3900000
+ <end>
+ aes-gcm
+-64: 7960000
++64: 7720000
+ 380: 6800000
+ 1410: 3900000
+ <end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb
+index 23d0a3b36b14f..99f3f88ff3464 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_ev_ss.inb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+-64: 11000000
+-380: 10900000
++64: 10550000
++380: 10500000
+ 1410: 4660000
+ <end>
+ aes-gcm
+-64: 11000000
+-380: 10900000
++64: 10520000
++380: 10500000
+ 1410: 4590000
+ <end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb
+index 99dbe4001314c..d0f53ad149d0c 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p.inb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+-64: 7300000
++64: 7200000
+ 380: 6800000
+ 1410: 3900000
+ <end>
+ aes-gcm
+-64: 7300000
++64: 7200000
+ 380: 6800000
+ 1410: 3800000
+ <end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb
+index b440e41079c70..aec5e3882dc4f 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_reassembly_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.inb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+-64: 10600000
+-380: 10500000
++64: 10200000
++380: 10100000
+ 1410: 4660000
+ <end>
+ aes-gcm
+-64: 10580000
+-380: 10500000
++64: 10200000
++380: 10100000
+ 1410: 4590000
+ <end>
+-- 
+2.25.1
+

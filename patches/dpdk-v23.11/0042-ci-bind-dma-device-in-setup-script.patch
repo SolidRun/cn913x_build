@@ -1,0 +1,50 @@
+From 36634bfe29e15bff2ae48ac529bc9db474cefc72 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Tue, 5 Dec 2023 13:17:13 +0530
+Subject: [PATCH 042/513] ci: bind dma device in setup script
+
+Bind dma device in setup script for dma tests.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: Ib1087ce3120bbf46d79e5499755ff4a61007d5b2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/117606
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/board/cnxk-target-setup.sh | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/marvell-ci/test/board/cnxk-target-setup.sh b/marvell-ci/test/board/cnxk-target-setup.sh
+index 79a05666bdf09..2f74353c0c81d 100755
+--- a/marvell-ci/test/board/cnxk-target-setup.sh
++++ b/marvell-ci/test/board/cnxk-target-setup.sh
+@@ -81,6 +81,8 @@ function setup_hp() {
+ function setup_devices() {
+ 	local npa_pf
+ 	local sso_pf
++	local dma_pf
++	local dma_vf
+ 	local cpt_pf=""
+ 	local cpt_vf=""
+ 	local inl_pf
+@@ -121,6 +123,15 @@ function setup_devices() {
+ 	devs+=" $sso_pf"
+ 	devs+=" $npa_pf"
+ 
++	# DMA device
++	dma_pf=$(lspci -d :a080 | tail -1 | awk -e '{ print $1 }')
++	if [[ -e /sys/bus/pci/devices/$dma_pf/sriov_numvfs ]]; then
++		echo 0 > /sys/bus/pci/devices/$dma_pf/sriov_numvfs
++		echo 1 > /sys/bus/pci/devices/$dma_pf/sriov_numvfs
++		dma_vf=$(lspci -d :a081 | tail -1 | awk -e '{ print $1 }')
++		devs+=" $dma_vf"
++	fi
++
+ 	if [[ $CPU == "cn10ka" ]]; then
+ 		inl_pf=${INL_DEV:-$(lspci -d :a0f0 | tail -1 | awk -e '{ print $1 }')}
+ 		devs+=" $inl_pf"
+-- 
+2.25.1
+

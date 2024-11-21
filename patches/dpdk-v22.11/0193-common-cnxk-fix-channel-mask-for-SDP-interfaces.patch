@@ -1,0 +1,58 @@
+From 1874d33b54304f096560660bd1de40c18105498c Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Thu, 2 Feb 2023 09:25:14 +0530
+Subject: [PATCH 193/955] common/cnxk: fix channel mask for SDP interfaces
+
+Fix channel mask of SDP interfaces on CN10K.
+
+Fixes: f1375663333 ("common/cnxk: support setting channel mask for SDP interfaces")
+Cc: stable@dpdk.org
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I2f173d0b5893cbc0f52c8cfe2a404003456ee1ba
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95870
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_npc.c      | 9 +++++++--
+ drivers/common/cnxk/roc_npc_priv.h | 3 +++
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_npc.c b/drivers/common/cnxk/roc_npc.c
+index d81fc0487ef6c..0f86f38ea556b 100644
+--- a/drivers/common/cnxk/roc_npc.c
++++ b/drivers/common/cnxk/roc_npc.c
+@@ -1380,8 +1380,13 @@ roc_npc_flow_create(struct roc_npc *roc_npc, const struct roc_npc_attr *attr,
+ 			/* By default set the channel and mask to cover
+ 			 * the whole SDP channel range.
+ 			 */
+-			npc->sdp_channel = (uint16_t)NIX_CHAN_SDP_CH_START;
+-			npc->sdp_channel_mask = (uint16_t)NIX_CHAN_SDP_CH_START;
++			if (roc_model_is_cn10k()) {
++				npc->sdp_channel = (uint16_t)CN10K_SDP_CH_START;
++				npc->sdp_channel_mask = (uint16_t)CN10K_SDP_CH_MASK;
++			} else {
++				npc->sdp_channel = (uint16_t)NIX_CHAN_SDP_CH_START;
++				npc->sdp_channel_mask = (uint16_t)NIX_CHAN_SDP_CH_START;
++			}
+ 		}
+ 	}
+ 
+diff --git a/drivers/common/cnxk/roc_npc_priv.h b/drivers/common/cnxk/roc_npc_priv.h
+index 2a7d3137fb9c8..aa27228354b9e 100644
+--- a/drivers/common/cnxk/roc_npc_priv.h
++++ b/drivers/common/cnxk/roc_npc_priv.h
+@@ -77,6 +77,9 @@
+ #define NPC_LFLAG_LC_OFFSET (NPC_LTYPE_OFFSET_START + 6)
+ #define NPC_LTYPE_LC_OFFSET (NPC_LTYPE_OFFSET_START + 8)
+ 
++#define CN10K_SDP_CH_START 0x80
++#define CN10K_SDP_CH_MASK  0xF80
++
+ struct npc_action_vtag_info {
+ 	uint16_t vlan_id;
+ 	uint16_t vlan_ethtype;
+-- 
+2.25.1
+

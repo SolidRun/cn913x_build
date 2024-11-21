@@ -1,0 +1,65 @@
+From c8aaf7ac018d532550e64687d6e6ab97fff5a9b7 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Mon, 4 Mar 2024 16:34:56 +0530
+Subject: [PATCH 832/955] doc: fix aging poll frequency devargs information
+
+The information for CNXK NPC MCAM aging poll frequency devargs is moved to
+runtime config options section for ethdev device. Initially it was
+incorrectly placed in runtime config options section for inline device.
+
+Fixes: fb8c058988d6 ("net/cnxk: add get flow aged ops")
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Change-Id: I38a5890402c1b40a405e591da7b44a946bfb2d5f
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123129
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ doc/guides/nics/cnxk.rst | 24 ++++++++++++------------
+ 1 file changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/doc/guides/nics/cnxk.rst b/doc/guides/nics/cnxk.rst
+index 822fd7157226f..7f695267cf20d 100644
+--- a/doc/guides/nics/cnxk.rst
++++ b/doc/guides/nics/cnxk.rst
+@@ -431,6 +431,18 @@ Runtime Config Options
+    With the above configuration, driver would enable packet inject from ARM cores
+    to crypto to process and send back in Rx path.
+ 
++- ``NPC MCAM Aging poll frequency in seconds`` (default ``10``)
++
++   Poll frequency for aging control thread can be specified by
++   ``aging_poll_freq`` ``devargs`` parameter.
++
++   For example::
++
++      -a 0002:01:00.2,aging_poll_freq=50
++
++   With the above configuration, driver would poll for aging flows every 50
++   seconds.
++
+ .. note::
+ 
+    Above devarg parameters are configurable per device, user needs to pass the
+@@ -614,18 +626,6 @@ Runtime Config Options for inline device
+    With the above configuration, driver would poll for soft expiry events every
+    1000 usec.
+ 
+-- ``NPC MCAM Aging poll frequency in seconds`` (default ``10``)
+-
+-   Poll frequency for aging control thread can be specified by
+-   ``aging_poll_freq`` ``devargs`` parameter.
+-
+-   For example::
+-
+-      -a 0002:01:00.2,aging_poll_freq=50
+-
+-   With the above configuration, driver would poll for aging flows every 50
+-   seconds.
+-
+ - ``Rx Inject Enable inbound inline IPsec for second pass`` (default ``0``)
+ 
+    Rx packet inject feature for inbound inline IPsec processing can be enabled
+-- 
+2.25.1
+

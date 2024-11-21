@@ -1,0 +1,40 @@
+From a03196aab0b08683c020ec8fd648a69b7b6b0d78 Mon Sep 17 00:00:00 2001
+From: Kommula Shiva Shankar <kshankar@marvell.com>
+Date: Wed, 4 Oct 2023 16:53:34 +0530
+Subject: [PATCH 648/955] common/cnxk: add support to use pool in opaque mode
+
+This patch adds support to use packet pool in
+opaque mode
+
+Signed-off-by: Kommula Shiva Shankar <kshankar@marvell.com>
+Change-Id: Ife4588159d6b8f41502d35ab255072b29cea615a
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/113140
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ drivers/common/cnxk/roc_npa.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_npa.c b/drivers/common/cnxk/roc_npa.c
+index bcf8c306ad332..f61b2fbbdf946 100644
+--- a/drivers/common/cnxk/roc_npa.c
++++ b/drivers/common/cnxk/roc_npa.c
+@@ -517,7 +517,11 @@ npa_aura_pool_pair_alloc(struct npa_lf *lf, const uint32_t block_size,
+ 	/* Update pool fields */
+ 	pool->stack_base = mz->iova;
+ 	pool->ena = 1;
+-	pool->buf_size = block_size / ROC_ALIGN;
++	/* In opaque mode buffer size must be 0 */
++	if (!pool->nat_align)
++		pool->buf_size = 0;
++	else
++		pool->buf_size = block_size / ROC_ALIGN;
+ 	pool->stack_max_pages = stack_size;
+ 	pool->shift = plt_log2_u32(block_count);
+ 	pool->shift = pool->shift < 8 ? 0 : pool->shift - 8;
+-- 
+2.25.1
+

@@ -1,0 +1,94 @@
+From 8f817a81a85ec6ec3a6ca3d917b9c66fce05fad1 Mon Sep 17 00:00:00 2001
+From: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Date: Fri, 15 Mar 2024 13:13:55 +0530
+Subject: [PATCH 280/513] test/crypto: add modex tests for zero padded operands
+
+Add modex tests for zero padded operands, as in ASN encoding.
+
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Change-Id: I1beb860b6af6d052a762806744f804639242a31b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123886
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ app/test/test_cryptodev_asym.c             |  8 +++++
+ app/test/test_cryptodev_mod_test_vectors.h | 35 ++++++++++++++++++++++
+ 2 files changed, 43 insertions(+)
+
+diff --git a/app/test/test_cryptodev_asym.c b/app/test/test_cryptodev_asym.c
+index 566ab2b8b7f59..0d37b499d5ed1 100644
+--- a/app/test/test_cryptodev_asym.c
++++ b/app/test/test_cryptodev_asym.c
+@@ -3272,6 +3272,10 @@ static struct unit_test_suite cryptodev_openssl_asym_testsuite  = {
+ 			"Modex test",
+ 			ut_setup_asym, ut_teardown_asym,
+ 			modular_exponentiation, &modex_test_cases[0]),
++		TEST_CASE_NAMED_WITH_DATA(
++			"Modex test for zero padding",
++			ut_setup_asym, ut_teardown_asym,
++			modular_exponentiation, &modex_test_cases[1]),
+ 		TEST_CASE_NAMED_WITH_DATA(
+ 			"Modex Group 5 test",
+ 			ut_setup_asym, ut_teardown_asym,
+@@ -3350,6 +3354,10 @@ static struct unit_test_suite cryptodev_octeontx_asym_testsuite  = {
+ 			"Modex test",
+ 			ut_setup_asym, ut_teardown_asym,
+ 			modular_exponentiation, &modex_test_cases[0]),
++		TEST_CASE_NAMED_WITH_DATA(
++			"Modex test for zero padding",
++			ut_setup_asym, ut_teardown_asym,
++			modular_exponentiation, &modex_test_cases[1]),
+ 		TEST_CASE_NAMED_WITH_DATA(
+ 			"Modex Group 5 test",
+ 			ut_setup_asym, ut_teardown_asym,
+diff --git a/app/test/test_cryptodev_mod_test_vectors.h b/app/test/test_cryptodev_mod_test_vectors.h
+index b2250dc95afe0..34275cfe75472 100644
+--- a/app/test/test_cryptodev_mod_test_vectors.h
++++ b/app/test/test_cryptodev_mod_test_vectors.h
+@@ -292,6 +292,41 @@ modex_test_data modex_test_cases[] = {
+ 		},
+ 		.len = 129
+ 	}
++},
++{
++	.description = "Modular Exponentiation tests for 0 MSBs",
++	.xform_type = RTE_CRYPTO_ASYM_XFORM_MODEX,
++	.base = {
++		.data = {
++			0x00, 0x00, 0x45, 0xCA, 0x2C, 0x5C, 0x3A, 0x90,
++			0x00, 0xC4, 0xD7, 0x47, 0xA8, 0x2B, 0x12, 0x07,
++			0xBD, 0x1F, 0xD7, 0x81
++		},
++		.len = 20
++	},
++	.exponent = {
++		.data = {
++			0x00, 0x00, 0x00, 0x75, 0x74, 0x19, 0x19, 0x69,
++			0xBF, 0x15, 0x2A, 0xAC
++		},
++		.len = 12
++	},
++	.reminder = {
++		.data = {
++			0x5c, 0x94, 0x8f, 0x00, 0x79, 0xe3, 0xe1, 0x0b,
++			0x3f, 0x3e, 0x36, 0x75, 0xed, 0x1d, 0x84, 0xc6,
++			0x36, 0x9e
++		},
++		.len = 18
++	},
++	.modulus = {
++		.data = {
++			0x00, 0x00, 0x99, 0x28, 0x09, 0x8A, 0xE9, 0x89,
++			0xBB, 0x81, 0x3B, 0x07, 0x0E, 0x31, 0x00, 0x7F,
++			0x79, 0x97, 0xED, 0x35
++		},
++		.len = 20
++	}
+ }
+ };
+ 
+-- 
+2.25.1
+

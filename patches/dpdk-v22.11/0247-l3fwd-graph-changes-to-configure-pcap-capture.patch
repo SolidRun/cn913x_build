@@ -1,0 +1,193 @@
+From 8dc93fddba233e685bf688a7d16d88fd9df6c704 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Mon, 9 Jan 2023 16:36:14 +0530
+Subject: [PATCH 247/955] l3fwd-graph: changes to configure pcap capture
+
+Added support to configure pcap capture.
+
+Change-Id: I19fbe53f84de0cdf810d7d97b5f330030521a222
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94105
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ doc/guides/sample_app_ug/l3_forward_graph.rst | 23 +++++++
+ examples/l3fwd-graph/main.c                   | 62 ++++++++++++++++++-
+ 2 files changed, 83 insertions(+), 2 deletions(-)
+
+diff --git a/doc/guides/sample_app_ug/l3_forward_graph.rst b/doc/guides/sample_app_ug/l3_forward_graph.rst
+index 0a3e0d44ecea9..3043dba8e2740 100644
+--- a/doc/guides/sample_app_ug/l3_forward_graph.rst
++++ b/doc/guides/sample_app_ug/l3_forward_graph.rst
+@@ -51,6 +51,9 @@ The application has a number of command line options similar to l3fwd::
+                                    [--max-pkt-len PKTLEN]
+                                    [--no-numa]
+                                    [--per-port-pool]
++                                   [--pcap-enable]
++                                   [--pcap-num-cap]
++                                   [--pcap-file-name]
+ 
+ Where,
+ 
+@@ -69,6 +72,12 @@ Where,
+ 
+ * ``--per-port-pool:`` Optional, set to use independent buffer pools per port. Without this option, single buffer pool is used for all ports.
+ 
++* ``--pcap-enable:`` Optional, Enables packet capture in pcap format on each node with mbuf and node metadata.
++
++* ``--pcap-num-cap:`` Optional, Number of packets to be captured per core.
++
++* ``--pcap-file-name:`` Optional, Pcap filename to capture packets in.
++
+ For example, consider a dual processor socket platform with 8 physical cores, where cores 0-7 and 16-23 appear on socket 0,
+ while cores 8-15 and 24-31 appear on socket 1.
+ 
+@@ -99,6 +108,20 @@ In this command:
+ |          |           |           |                                     |
+ +----------+-----------+-----------+-------------------------------------+
+ 
++To enable pcap trace on each graph, use following command:
++
++.. code-block:: console
++
++    ./<build_dir>/examples/dpdk-l3fwd-graph -l 1,2 -n 4 -- -p 0x3 --config="(0,0,1),(1,0,2)" --pcap-enable --pcap-num-cap=<number of packets> --pcap-file-name "</filepath/filename>"
++
++In this command:
++
++*   The --pcap-enable option enables pcap trace on graph nodes.
++
++*   The --pcap-num-cap option enables user to configure number packets to be captured per graph. Default 1024 packets per graph are captured.
++
++*   The --pcap-file-name option enables user to give filename in which packets are to be captured.
++
+ Refer to the *DPDK Getting Started Guide* for general information on running applications and
+ the Environment Abstraction Layer (EAL) options.
+ 
+diff --git a/examples/l3fwd-graph/main.c b/examples/l3fwd-graph/main.c
+index 6dcb6ee92b926..5feeab4f0fb02 100644
+--- a/examples/l3fwd-graph/main.c
++++ b/examples/l3fwd-graph/main.c
+@@ -76,6 +76,12 @@ xmm_t val_eth[RTE_MAX_ETHPORTS];
+ /* Mask of enabled ports */
+ static uint32_t enabled_port_mask;
+ 
++/* Pcap trace */
++static char pcap_filename[RTE_GRAPH_PCAP_FILE_SZ];
++static uint64_t packet_to_capture;
++static int pcap_trace_enable;
++
++
+ struct lcore_rx_queue {
+ 	uint16_t port_id;
+ 	uint8_t queue_id;
+@@ -261,7 +267,8 @@ print_usage(const char *prgname)
+ 		" [--eth-dest=X,MM:MM:MM:MM:MM:MM]"
+ 		" [--max-pkt-len PKTLEN]"
+ 		" [--no-numa]"
+-		" [--per-port-pool]\n\n"
++		" [--per-port-pool]"
++		" [--num-pkt-cap]\n\n"
+ 
+ 		"  -p PORTMASK: Hexadecimal bitmask of ports to configure\n"
+ 		"  -P : Enable promiscuous mode\n"
+@@ -270,10 +277,30 @@ print_usage(const char *prgname)
+ 		"port X\n"
+ 		"  --max-pkt-len PKTLEN: maximum packet length in decimal (64-9600)\n"
+ 		"  --no-numa: Disable numa awareness\n"
+-		"  --per-port-pool: Use separate buffer pool per port\n\n",
++		"  --per-port-pool: Use separate buffer pool per port\n"
++		"  --pcap-enable: Enables pcap capture\n"
++		"  --pcap-num-cap NUMPKT: Number of packets to capture\n"
++		"  --pcap-file-name NAME: Pcap file name\n\n",
+ 		prgname);
+ }
+ 
++static uint64_t
++parse_num_pkt_cap(const char *num_pkt_cap)
++{
++	uint64_t num_pkt;
++	char *end = NULL;
++
++	/* Parse decimal string */
++	num_pkt = strtoull(num_pkt_cap, &end, 10);
++	if ((num_pkt_cap[0] == '\0') || (end == NULL) || (*end != '\0'))
++		return 0;
++
++	if (num_pkt == 0)
++		return 0;
++
++	return num_pkt;
++}
++
+ static int
+ parse_max_pkt_len(const char *pktlen)
+ {
+@@ -404,6 +431,9 @@ static const char short_options[] = "p:" /* portmask */
+ #define CMD_LINE_OPT_NO_NUMA	   "no-numa"
+ #define CMD_LINE_OPT_MAX_PKT_LEN   "max-pkt-len"
+ #define CMD_LINE_OPT_PER_PORT_POOL "per-port-pool"
++#define CMD_LINE_OPT_PCAP_ENABLE   "pcap-enable"
++#define CMD_LINE_OPT_NUM_PKT_CAP   "pcap-num-cap"
++#define CMD_LINE_OPT_PCAP_FILENAME "pcap-file-name"
+ enum {
+ 	/* Long options mapped to a short option */
+ 
+@@ -416,6 +446,9 @@ enum {
+ 	CMD_LINE_OPT_NO_NUMA_NUM,
+ 	CMD_LINE_OPT_MAX_PKT_LEN_NUM,
+ 	CMD_LINE_OPT_PARSE_PER_PORT_POOL,
++	CMD_LINE_OPT_PARSE_PCAP_ENABLE,
++	CMD_LINE_OPT_PARSE_NUM_PKT_CAP,
++	CMD_LINE_OPT_PCAP_FILENAME_CAP,
+ };
+ 
+ static const struct option lgopts[] = {
+@@ -424,6 +457,9 @@ static const struct option lgopts[] = {
+ 	{CMD_LINE_OPT_NO_NUMA, 0, 0, CMD_LINE_OPT_NO_NUMA_NUM},
+ 	{CMD_LINE_OPT_MAX_PKT_LEN, 1, 0, CMD_LINE_OPT_MAX_PKT_LEN_NUM},
+ 	{CMD_LINE_OPT_PER_PORT_POOL, 0, 0, CMD_LINE_OPT_PARSE_PER_PORT_POOL},
++	{CMD_LINE_OPT_PCAP_ENABLE, 0, 0, CMD_LINE_OPT_PARSE_PCAP_ENABLE},
++	{CMD_LINE_OPT_NUM_PKT_CAP, 1, 0, CMD_LINE_OPT_PARSE_NUM_PKT_CAP},
++	{CMD_LINE_OPT_PCAP_FILENAME, 1, 0, CMD_LINE_OPT_PCAP_FILENAME_CAP},
+ 	{NULL, 0, 0, 0},
+ };
+ 
+@@ -498,6 +534,23 @@ parse_args(int argc, char **argv)
+ 			per_port_pool = 1;
+ 			break;
+ 
++		case CMD_LINE_OPT_PARSE_PCAP_ENABLE:
++			printf("Packet capture enabled\n");
++			pcap_trace_enable = 1;
++			break;
++
++		case CMD_LINE_OPT_PARSE_NUM_PKT_CAP:
++			packet_to_capture = parse_num_pkt_cap(optarg);
++			printf("Number of packets to capture: %"PRIu64"\n",
++			       packet_to_capture);
++			break;
++
++		case CMD_LINE_OPT_PCAP_FILENAME_CAP:
++			rte_strlcpy(pcap_filename, optarg,
++				    sizeof(pcap_filename));
++			printf("Pcap file name: %s\n", pcap_filename);
++			break;
++
+ 		default:
+ 			print_usage(prgname);
+ 			return -1;
+@@ -1027,6 +1080,11 @@ main(int argc, char **argv)
+ 	memset(&graph_conf, 0, sizeof(graph_conf));
+ 	graph_conf.node_patterns = node_patterns;
+ 
++	/* Pcap config */
++	graph_conf.pcap_enable = pcap_trace_enable;
++	graph_conf.num_pkt_to_capture = packet_to_capture;
++	graph_conf.pcap_filename = pcap_filename;
++
+ 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+ 		rte_graph_t graph_id;
+ 		rte_edge_t i;
+-- 
+2.25.1
+

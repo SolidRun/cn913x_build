@@ -1,0 +1,51 @@
+From 5e254d90715e5442d5ed40d9261e49574845a282 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Tue, 6 Feb 2024 20:52:11 +0530
+Subject: [PATCH 249/513] common/cnxk: sync VF root weight with kernel
+
+By default set VF root scheduling weight same as other kernel
+configured VFs.
+
+Change-Id: I3bd1162117618731af1be455d2aba2c05adf6fd7
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121370
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix.h    | 1 +
+ drivers/common/cnxk/roc_nix_tm.c | 6 +++++-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index bd3e540f457ba..63bcd5b25ee40 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -473,6 +473,7 @@ struct roc_nix {
+ 	bool force_rx_aura_bp;
+ 	bool custom_meta_aura_ena;
+ 	bool rx_inj_ena;
++	uint32_t root_sched_weight;
+ 	/* End of input parameters */
+ 	/* LMT line base for "Per Core Tx LMT line" mode*/
+ 	uintptr_t lmt_base;
+diff --git a/drivers/common/cnxk/roc_nix_tm.c b/drivers/common/cnxk/roc_nix_tm.c
+index 4e6a28f82776b..ac522f82351ba 100644
+--- a/drivers/common/cnxk/roc_nix_tm.c
++++ b/drivers/common/cnxk/roc_nix_tm.c
+@@ -1589,7 +1589,11 @@ nix_tm_prepare_default_tree(struct roc_nix *roc_nix)
+ 		node->id = nonleaf_id;
+ 		node->parent_id = parent;
+ 		node->priority = 0;
+-		node->weight = NIX_TM_DFLT_RR_WT;
++		/* Default VF root RR_QUANTUM is in sync with kernel */
++		if (lvl == ROC_TM_LVL_ROOT && !nix_tm_have_tl1_access(nix))
++			node->weight = roc_nix->root_sched_weight;
++		else
++			node->weight = NIX_TM_DFLT_RR_WT;
+ 		node->shaper_profile_id = ROC_NIX_TM_SHAPER_PROFILE_NONE;
+ 		node->lvl = lvl;
+ 		node->tree = ROC_NIX_TM_DEFAULT;
+-- 
+2.25.1
+

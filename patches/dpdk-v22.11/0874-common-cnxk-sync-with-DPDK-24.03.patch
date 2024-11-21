@@ -1,0 +1,139 @@
+From 0b6d1930e459c7623b73bdd41e0affeb7bc03c73 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Fri, 21 Jun 2024 15:29:29 +0530
+Subject: [PATCH 874/955] common/cnxk: sync with DPDK 24.03
+
+Sync with DPDK 24.03.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I430cf3665db543ce2b0101112eb0df20d4ad757e
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/130004
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c |  8 +++----
+ drivers/common/cnxk/roc_cpt.h | 45 ++++++++++++++++++++++-------------
+ drivers/common/cnxk/roc_se.h  |  1 +
+ 3 files changed, 34 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index 38e46d65c15aa..9f283ceb2efaf 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -463,7 +463,7 @@ cpt_available_lfs_get(struct dev *dev, uint16_t *nb_lf)
+ 
+ int
+ cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blkaddr, bool inl_dev_sso,
+-	      bool ctx_ilen_valid, uint8_t ctx_ilen, bool rxc_ena, uint16_t rx_inj_lf)
++	      bool ctx_ilen_valid, uint8_t ctx_ilen, bool rxc_ena, uint16_t rx_inject_qp)
+ {
+ 	struct cpt_lf_alloc_req_msg *req;
+ 	struct mbox *mbox = mbox_get(dev->mbox);
+@@ -491,7 +491,7 @@ cpt_lfs_alloc(struct dev *dev, uint8_t eng_grpmsk, uint8_t blkaddr, bool inl_dev
+ 	req->ctx_ilen = ctx_ilen;
+ 	if (rxc_ena) {
+ 		req->rxc_ena = 1;
+-		req->rxc_ena_lf_id = rx_inj_lf;
++		req->rxc_ena_lf_id = rx_inject_qp;
+ 	}
+ 
+ 	rc = mbox_process(mbox);
+@@ -590,7 +590,7 @@ cpt_iq_init(struct roc_cpt_lf *lf)
+ }
+ 
+ int
+-roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena, uint16_t rx_inj_lf)
++roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena, uint16_t rx_inject_qp)
+ {
+ 	struct cpt *cpt = roc_cpt_to_cpt_priv(roc_cpt);
+ 	uint8_t blkaddr[ROC_CPT_MAX_BLKS];
+@@ -635,7 +635,7 @@ roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena, uint16_t
+ 	}
+ 
+ 	rc = cpt_lfs_alloc(&cpt->dev, eng_grpmsk, blkaddr[blknum], false, ctx_ilen_valid, ctx_ilen,
+-			   rxc_ena, rx_inj_lf);
++			   rxc_ena, rx_inject_qp);
+ 	if (rc)
+ 		goto lfs_detach;
+ 
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index f3646d0867ff7..8ef9062ae0827 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -30,23 +30,36 @@
+ /* Vector of sizes in the burst of 16 CPT inst except first in 63:19 of
+  * APT_LMT_ARG_S
+  */
+-#define ROC_CN10K_CPT_LMT_ARG                                                  \
+-	(ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 0) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 1) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 2) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 3) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 4) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 5) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 6) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 7) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 8) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 9) |                            \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 10) |                           \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 11) |                           \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 12) |                           \
+-	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 13) |                           \
++#define ROC_CN10K_CPT_LMT_ARG                                                                      \
++	(ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 0) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 1) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 2) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 3) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 4) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 5) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 6) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 7) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 8) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 9) |     \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 10) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 11) |   \
++	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 12) | ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 13) |   \
+ 	 ROC_CN10K_CPT_INST_DW_M1 << (19 + 3 * 14))
+ 
++/* Vector of sizes in the burst of 2 * 16 CPT inst except first in 63:19 of
++ * APT_LMT_ARG_S
++ */
++#define ROC_CN10K_DUAL_CPT_LMT_ARG                                                                 \
++	(ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 0) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 1) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 2) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 3) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 4) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 5) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 6) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 7) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 8) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 9) |                                            \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 10) |                                           \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 11) |                                           \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 12) |                                           \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 13) |                                           \
++	 ROC_CN10K_TWO_CPT_INST_DW_M1 << (19 + 3 * 14))
++
+ /* CPT helper macros */
+ #define ROC_CPT_AH_HDR_LEN	12
+ #define ROC_CPT_AES_GCM_IV_LEN	8
+@@ -170,7 +183,7 @@ int __roc_api roc_cpt_dev_fini(struct roc_cpt *roc_cpt);
+ int __roc_api roc_cpt_eng_grp_add(struct roc_cpt *roc_cpt,
+ 				  enum cpt_eng_type eng_type);
+ int __roc_api roc_cpt_dev_configure(struct roc_cpt *roc_cpt, int nb_lf, bool rxc_ena,
+-				    uint16_t rx_inj_lf);
++				    uint16_t rx_inject_qp);
+ void __roc_api roc_cpt_dev_clear(struct roc_cpt *roc_cpt);
+ int __roc_api roc_cpt_lf_init(struct roc_cpt *roc_cpt, struct roc_cpt_lf *lf);
+ void __roc_api roc_cpt_lf_fini(struct roc_cpt_lf *lf);
+diff --git a/drivers/common/cnxk/roc_se.h b/drivers/common/cnxk/roc_se.h
+index ddcf6bdb44853..50741a0b81b3a 100644
+--- a/drivers/common/cnxk/roc_se.h
++++ b/drivers/common/cnxk/roc_se.h
+@@ -169,6 +169,7 @@ typedef enum {
+ 	ROC_SE_ERR_SSL_CIPHER_UNSUPPORTED = 0x84,
+ 	ROC_SE_ERR_SSL_MAC_UNSUPPORTED = 0x85,
+ 	ROC_SE_ERR_SSL_VERSION_UNSUPPORTED = 0x86,
++	ROC_SE_ERR_SSL_POST_PROCESS = 0x88,
+ 	ROC_SE_ERR_SSL_MAC_MISMATCH = 0x89,
+ 	ROC_SE_ERR_SSL_PKT_REPLAY_SEQ_OUT_OF_WINDOW = 0xC1,
+ 	ROC_SE_ERR_SSL_PKT_REPLAY_SEQ = 0xC9,
+-- 
+2.25.1
+

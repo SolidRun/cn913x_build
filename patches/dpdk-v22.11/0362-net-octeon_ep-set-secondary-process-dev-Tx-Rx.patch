@@ -1,0 +1,53 @@
+From acfd6865158852079380cd785d5f4cb9ff388197 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Tue, 11 Apr 2023 11:12:09 +0530
+Subject: [PATCH 362/955] net/octeon_ep: set secondary process dev Tx Rx
+
+attach eth dev transmit and receive methods  to
+secondary process to support multi-process.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I5eb05fadb91a12a2061a422cb69ee85590a2a6fb
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/101055
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index abca7014ac6eb..4a4e916c2d356 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -211,6 +211,8 @@ otx_ep_dev_close(struct rte_eth_dev *eth_dev)
+ 
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+ 		eth_dev->dev_ops = NULL;
++		eth_dev->rx_pkt_burst = NULL;
++		eth_dev->tx_pkt_burst = NULL;
+ 		return 0;
+ 	}
+ 
+@@ -621,6 +623,8 @@ otx_ep_eth_dev_uninit(struct rte_eth_dev *eth_dev)
+ {
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+ 		eth_dev->dev_ops = NULL;
++		eth_dev->rx_pkt_burst = NULL;
++		eth_dev->tx_pkt_burst = NULL;
+ 		return 0;
+ 	}
+ 
+@@ -673,6 +677,8 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	/* Single process support */
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
+ 		eth_dev->dev_ops = &otx_ep_eth_dev_ops;
++		eth_dev->rx_pkt_burst = &otx_ep_recv_pkts;
++		eth_dev->tx_pkt_burst = &otx2_ep_xmit_pkts;
+ 		return 0;
+ 	}
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,81 @@
+From 880a55eccc6f63c5608dfd9f147d6308ab0d3771 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Tue, 25 Jul 2023 17:03:46 +0530
+Subject: [PATCH 565/955] dma/cnxk: reset DMA dev stats
+
+Reset dma device stats while starting dma device.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I861e80aabecd50178a3bf3cbd6b59a9b95f6cade
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108239
+Reviewed-by: Vamsi Krishna Attunuru <vattunuru@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit 3e6fd5253766af7720ff166aaa070bc3e1391aac)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/108535
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.c | 18 ++++++------------
+ 1 file changed, 6 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.c b/drivers/dma/cnxk/cnxk_dmadev.c
+index 17e9e2dc764c5..2f0d5687cc7cd 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.c
++++ b/drivers/dma/cnxk/cnxk_dmadev.c
+@@ -16,6 +16,8 @@
+ 
+ #include <cnxk_dmadev.h>
+ 
++static int cnxk_stats_reset(struct rte_dma_dev *dev, uint16_t vchan);
++
+ static int
+ cnxk_dmadev_info_get(const struct rte_dma_dev *dev, struct rte_dma_info *dev_info, uint32_t size)
+ {
+@@ -174,11 +176,6 @@ cnxk_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 	}
+ 
+ 	dpi_conf->c_desc.max_cnt = (max_desc - 1);
+-	dpi_conf->c_desc.head = 0;
+-	dpi_conf->c_desc.tail = 0;
+-	dpi_conf->pnum_words = 0;
+-	dpi_conf->pending = 0;
+-	dpi_conf->desc_idx = 0;
+ 
+ 	return 0;
+ }
+@@ -264,11 +261,6 @@ cn10k_dmadev_vchan_setup(struct rte_dma_dev *dev, uint16_t vchan,
+ 	}
+ 
+ 	dpi_conf->c_desc.max_cnt = (max_desc - 1);
+-	dpi_conf->c_desc.head = 0;
+-	dpi_conf->c_desc.tail = 0;
+-	dpi_conf->pnum_words = 0;
+-	dpi_conf->pending = 0;
+-	dpi_conf->desc_idx = 0;
+ 
+ 	return 0;
+ }
+@@ -283,8 +275,6 @@ cnxk_dmadev_start(struct rte_dma_dev *dev)
+ 	if (dpivf->flag & CNXK_DPI_DEV_START)
+ 		return 0;
+ 
+-	roc_dpi_enable(&dpivf->rdpi);
+-
+ 	for (i = 0; i < dpivf->num_vchans; i++) {
+ 		dpi_conf = &dpivf->conf[i];
+ 		dpi_conf->c_desc.head = 0;
+@@ -296,8 +286,12 @@ cnxk_dmadev_start(struct rte_dma_dev *dev)
+ 			if (dpi_conf->c_desc.compl_ptr[j])
+ 				dpi_conf->c_desc.compl_ptr[j]->cdata = DPI_REQ_CDATA;
+ 		}
++
++		cnxk_stats_reset(dev, i);
+ 	}
+ 
++	roc_dpi_enable(&dpivf->rdpi);
++
+ 	dpivf->flag |= CNXK_DPI_DEV_START;
+ 
+ 	return 0;
+-- 
+2.25.1
+

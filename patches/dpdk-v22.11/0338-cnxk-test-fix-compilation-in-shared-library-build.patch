@@ -1,0 +1,119 @@
+From 72e7e01bad16e1c52d2002a12a8140f94d707794 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 28 Mar 2023 16:54:52 +0530
+Subject: [PATCH 338/955] cnxk-test: fix compilation in shared library build
+
+Fix compilation in shared library build.
+
+Fixes: b2bc5f0888ae ("cnxk-tests: add hwpool feature verification tests")
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: Iccd993547d894ace0060ba2ebc141f653b3f6929
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100102
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/hwpool/hwpool.c | 30 +++++++++++-----------
+ 1 file changed, 15 insertions(+), 15 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/hwpool/hwpool.c b/marvell-ci/test/cnxk-tests/hwpool/hwpool.c
+index 8b4578bba6e04..c4f0e4a325186 100644
+--- a/marvell-ci/test/cnxk-tests/hwpool/hwpool.c
++++ b/marvell-ci/test/cnxk-tests/hwpool/hwpool.c
+@@ -126,14 +126,14 @@ pktmbuf_alloc(struct rte_mempool *pool)
+ 	 */
+ 	hp = pool;
+ 	mp = (struct rte_mempool *)((uint64_t)hp->pool_config & ~0xFUL);
+-	count_hp1 = rte_mempool_ops_get_count(hp);
+-	count_mp1 = rte_mempool_ops_get_count(mp);
++	count_hp1 = rte_mempool_avail_count(hp);
++	count_mp1 = rte_mempool_avail_count(mp);
+ 	m = rte_pktmbuf_alloc(hp);
+ 	if (!m)
+ 		return NULL;
+ 
+-	count_hp2 = rte_mempool_ops_get_count(hp);
+-	count_mp2 = rte_mempool_ops_get_count(mp);
++	count_hp2 = rte_mempool_avail_count(hp);
++	count_mp2 = rte_mempool_avail_count(mp);
+ 
+ 	if ((count_hp1 - count_hp2 != 1) || (count_mp1 - count_mp2 != 1))
+ 		EXIT("Count not decrementing properly after alloc hwpool=%s (prev=%u, curr=%u) "
+@@ -156,11 +156,11 @@ pktmbuf_free(struct rte_mbuf *m)
+ 	 */
+ 	hp = m->pool;
+ 	mp = (struct rte_mempool *)((uint64_t)hp->pool_config & ~0xFUL);
+-	count_hp1 = rte_mempool_ops_get_count(hp);
+-	count_mp1 = rte_mempool_ops_get_count(mp);
++	count_hp1 = rte_mempool_avail_count(hp);
++	count_mp1 = rte_mempool_avail_count(mp);
+ 	rte_pktmbuf_free(m);
+-	count_hp2 = rte_mempool_ops_get_count(hp);
+-	count_mp2 = rte_mempool_ops_get_count(mp);
++	count_hp2 = rte_mempool_avail_count(hp);
++	count_mp2 = rte_mempool_avail_count(mp);
+ 
+ 	if ((count_hp2 - count_hp1 != 1) || (count_mp2 - count_mp1 != 1))
+ 		EXIT("Count not incrementing properly after free hwpool=%s (prev=%u, curr=%u) "
+@@ -227,7 +227,7 @@ test_mbuf_exchange(void)
+ 		}
+ 
+ 		/* Make sure that master pool has depleted by the number of hwpool allocs */
+-		if (rte_mempool_ops_get_count(mp) != HWPOOL_NUM_BUFS - hwpool_allocs)
++		if (rte_mempool_avail_count(mp) != HWPOOL_NUM_BUFS - hwpool_allocs)
+ 			EXIT("Master pool not reflecting allocs from hwpools");
+ 
+ 		/* Exchange the randomly allocated mbufs */
+@@ -242,19 +242,19 @@ test_mbuf_exchange(void)
+ 			pktmbuf_free(mbufs[j]);
+ 
+ 		/* Make sure that master pool has got replenished */
+-		if (rte_mempool_ops_get_count(mp) != HWPOOL_NUM_BUFS)
++		if (rte_mempool_avail_count(mp) != HWPOOL_NUM_BUFS)
+ 			EXIT("Master pool not replenished\n");
+ 
+ 		/* Make sure that all other pools also has replenished */
+ 		for (j = 0; j < HWPOOL_NUM_POOLS; j++)
+-			if (rte_mempool_ops_get_count(pools[j]) != HWPOOL_NUM_BUFS)
++			if (rte_mempool_avail_count(pools[j]) != HWPOOL_NUM_BUFS)
+ 				EXIT("Pool %s not replenished\n", pools[j]->name);
+ 	}
+ 
+ 	for (i = 0; i < HWPOOL_NUM_POOLS; i++)
+ 		rte_mempool_free(pools[i]);
+ 
+-	if (rte_mempool_ops_get_count(mp) != HWPOOL_NUM_BUFS)
++	if (rte_mempool_avail_count(mp) != HWPOOL_NUM_BUFS)
+ 		EXIT("Master pool not full after hwpool destroy\n");
+ 
+ 	free(mbufs);
+@@ -304,7 +304,7 @@ test_hwpool_mbuf_alloc_free(void)
+ 
+ 		/* Make sure that all pools are depleted */
+ 		for (j = 0; j < HWPOOL_NUM_POOLS + 1; j++)
+-			if (rte_mempool_ops_get_count(pools[j]))
++			if (rte_mempool_avail_count(pools[j]))
+ 				EXIT("Pool %s not depleted\n", pools[j]->name);
+ 
+ 		/* Free all allocated mbufs */
+@@ -313,7 +313,7 @@ test_hwpool_mbuf_alloc_free(void)
+ 
+ 		/* Make sure that all pools are replenished */
+ 		for (j = 0; j < HWPOOL_NUM_POOLS + 1; j++)
+-			if (rte_mempool_ops_get_count(pools[j]) != HWPOOL_NUM_BUFS)
++			if (rte_mempool_avail_count(pools[j]) != HWPOOL_NUM_BUFS)
+ 				EXIT("Pool %s not replenished\n", pools[j]->name);
+ 	}
+ 
+@@ -321,7 +321,7 @@ test_hwpool_mbuf_alloc_free(void)
+ 	for (i = HWPOOL_NUM_POOLS; i >= 1; i--)
+ 		rte_mempool_free(pools[i]);
+ 
+-	if (rte_mempool_ops_get_count(pools[0]) != HWPOOL_NUM_BUFS)
++	if (rte_mempool_avail_count(pools[0]) != HWPOOL_NUM_BUFS)
+ 		EXIT("Master pool not full after hwpool destroy\n");
+ 
+ 	rte_mempool_free(pools[0]);
+-- 
+2.25.1
+

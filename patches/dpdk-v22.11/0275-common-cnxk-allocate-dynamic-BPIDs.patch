@@ -1,0 +1,462 @@
+From 6a74e5479aa9fa022541fb9e2354b5b3d6936c3e Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 24 Feb 2023 15:54:01 +0530
+Subject: [PATCH 275/955] common/cnxk: allocate dynamic BPIDs
+
+New mail box to allocate/free dynamic BPIDs based on NIX type.
+Added to new mail box APIs to get/set RX channel config with
+new BPIDs.
+
+Change-Id: I0469212dfb378d1f4b680b791d54b6ed8c3835d4
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95608
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_cpt.c      |  10 +-
+ drivers/common/cnxk/roc_cpt.h      |   3 +-
+ drivers/common/cnxk/roc_features.h |   7 ++
+ drivers/common/cnxk/roc_mbox.h     |  31 ++++-
+ drivers/common/cnxk/roc_nix.h      |  21 ++++
+ drivers/common/cnxk/roc_nix_fc.c   | 182 +++++++++++++++++++++++++++++
+ drivers/common/cnxk/roc_nix_inl.c  |  24 ++--
+ drivers/common/cnxk/roc_nix_priv.h |   1 +
+ drivers/common/cnxk/version.map    |   5 +
+ 9 files changed, 266 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_cpt.c b/drivers/common/cnxk/roc_cpt.c
+index dff2fbf2a481d..d235ff51ca875 100644
+--- a/drivers/common/cnxk/roc_cpt.c
++++ b/drivers/common/cnxk/roc_cpt.c
+@@ -311,8 +311,7 @@ roc_cpt_inline_ipsec_inb_cfg_read(struct roc_cpt *roc_cpt,
+ }
+ 
+ int
+-roc_cpt_inline_ipsec_inb_cfg(struct roc_cpt *roc_cpt, uint16_t param1,
+-			     uint16_t param2, uint16_t opcode)
++roc_cpt_inline_ipsec_inb_cfg(struct roc_cpt *roc_cpt, struct roc_cpt_inline_ipsec_inb_cfg *cfg)
+ {
+ 	struct cpt *cpt = roc_cpt_to_cpt_priv(roc_cpt);
+ 	struct cpt_rx_inline_lf_cfg_msg *req;
+@@ -328,9 +327,10 @@ roc_cpt_inline_ipsec_inb_cfg(struct roc_cpt *roc_cpt, uint16_t param1,
+ 	}
+ 
+ 	req->sso_pf_func = idev_sso_pffunc_get();
+-	req->param1 = param1;
+-	req->param2 = param2;
+-	req->opcode = opcode;
++	req->param1 = cfg->param1;
++	req->param2 = cfg->param2;
++	req->opcode = cfg->opcode;
++	req->bpid = cfg->bpid;
+ 
+ 	rc = mbox_process(mbox);
+ exit:
+diff --git a/drivers/common/cnxk/roc_cpt.h b/drivers/common/cnxk/roc_cpt.h
+index fab0dd289c2b7..c8b8d01f2b395 100644
+--- a/drivers/common/cnxk/roc_cpt.h
++++ b/drivers/common/cnxk/roc_cpt.h
+@@ -178,8 +178,7 @@ int __roc_api roc_cpt_inline_ipsec_cfg(struct dev *dev, uint8_t slot,
+ int __roc_api roc_cpt_inline_ipsec_inb_cfg_read(struct roc_cpt *roc_cpt,
+ 					struct roc_cpt_inline_ipsec_inb_cfg *cfg);
+ int __roc_api roc_cpt_inline_ipsec_inb_cfg(struct roc_cpt *roc_cpt,
+-					   uint16_t param1, uint16_t param2,
+-					   uint16_t opcode);
++					   struct roc_cpt_inline_ipsec_inb_cfg *cfg);
+ int __roc_api roc_cpt_afs_print(struct roc_cpt *roc_cpt);
+ int __roc_api roc_cpt_lfs_print(struct roc_cpt *roc_cpt);
+ void __roc_api roc_cpt_iq_disable(struct roc_cpt_lf *lf);
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index 252f306a86251..c2893faa65be6 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -40,4 +40,11 @@ roc_feature_nix_has_reass(void)
+ 	return roc_model_is_cn10ka();
+ }
+ 
++static inline bool
++roc_feature_nix_has_rxchan_multi_bpid(void)
++{
++	if (roc_model_is_cn10kb() || roc_model_is_cn10ka_b0())
++		return true;
++	return false;
++}
+ #endif
+diff --git a/drivers/common/cnxk/roc_mbox.h b/drivers/common/cnxk/roc_mbox.h
+index bbfc0e274166e..93c5451c0f6a9 100644
+--- a/drivers/common/cnxk/roc_mbox.h
++++ b/drivers/common/cnxk/roc_mbox.h
+@@ -290,7 +290,12 @@ struct mbox_msghdr {
+ 	M(NIX_SPI_TO_SA_ADD, 0x8026, nix_spi_to_sa_add, nix_spi_to_sa_add_req, \
+ 	  nix_spi_to_sa_add_rsp)                                               \
+ 	M(NIX_SPI_TO_SA_DELETE, 0x8027, nix_spi_to_sa_delete,                  \
+-	  nix_spi_to_sa_delete_req, msg_rsp)
++	  nix_spi_to_sa_delete_req, msg_rsp)                                   \
++	M(NIX_ALLOC_BPIDS, 0x8028, nix_alloc_bpids, nix_alloc_bpid_req,        \
++	  nix_bpids)                                                           \
++	M(NIX_FREE_BPIDS, 0x8029, nix_free_bpids, nix_bpids, msg_rsp)          \
++	M(NIX_RX_CHAN_CFG, 0x802a, nix_rx_chan_cfg, nix_rx_chan_cfg,           \
++	  nix_rx_chan_cfg)
+ 
+ /* Messages initiated by AF (range 0xC00 - 0xDFF) */
+ #define MBOX_UP_CGX_MESSAGES                                                   \
+@@ -1201,6 +1206,30 @@ struct nix_bp_cfg_rsp {
+ 	uint8_t __io chan_cnt;
+ };
+ 
++struct nix_alloc_bpid_req {
++	struct mbox_msghdr hdr;
++	uint8_t __io bpid_cnt;
++	uint8_t __io type;
++	uint64_t __io rsvd;
++};
++
++struct nix_bpids {
++#define ROC_NIX_MAX_BPID_CNT	8
++	struct mbox_msghdr hdr;
++	uint8_t __io bpid_cnt;
++	uint16_t __io bpids[ROC_NIX_MAX_BPID_CNT];
++	uint64_t __io rsvd;
++};
++
++struct nix_rx_chan_cfg {
++	struct mbox_msghdr hdr;
++	uint8_t __io type; /* Interface type(CGX/CPT/LBK) */
++	uint8_t __io read;
++	uint16_t __io chan; /* RX channel to be configured */
++	uint64_t __io val; /* NIX_AF_RX_CHAN_CFG value */
++	uint64_t __io rsvd;
++};
++
+ /* Global NIX inline IPSec configuration */
+ struct nix_inline_ipsec_cfg {
+ 	struct mbox_msghdr hdr;
+diff --git a/drivers/common/cnxk/roc_nix.h b/drivers/common/cnxk/roc_nix.h
+index 6147e07d5cc3d..188b8800d3976 100644
+--- a/drivers/common/cnxk/roc_nix.h
++++ b/drivers/common/cnxk/roc_nix.h
+@@ -16,6 +16,17 @@
+ #define ROC_NIX_SQB_LOWER_THRESH      70U
+ #define ROC_NIX_SQB_SLACK	      12U
+ 
++/* Reserved interface types for BPID allocation */
++#define ROC_NIX_INTF_TYPE_CGX  0
++#define ROC_NIX_INTF_TYPE_LBK  1
++#define ROC_NIX_INTF_TYPE_SDP  2
++#define ROC_NIX_INTF_TYPE_CPT  3
++#define ROC_NIX_INTF_TYPE_RSVD 4
++
++/* Application based types for BPID allocation, start from end (255 unused rsvd) */
++#define ROC_NIX_INTF_TYPE_CPT_NIX 254
++#define ROC_NIX_INTF_TYPE_SSO     253
++
+ enum roc_nix_rss_reta_sz {
+ 	ROC_NIX_RSS_RETA_SZ_64 = 64,
+ 	ROC_NIX_RSS_RETA_SZ_128 = 128,
+@@ -840,6 +851,16 @@ enum roc_nix_fc_mode __roc_api roc_nix_fc_mode_get(struct roc_nix *roc_nix);
+ 
+ void __roc_api roc_nix_fc_npa_bp_cfg(struct roc_nix *roc_nix, uint64_t pool_id,
+ 				     uint8_t ena, uint8_t force, uint8_t tc);
++int __roc_api roc_nix_bpids_alloc(struct roc_nix *roc_nix, uint8_t type,
++				  uint8_t bp_cnt, uint16_t *bpids);
++int __roc_api roc_nix_bpids_free(struct roc_nix *roc_nix, uint8_t bp_cnt,
++				 uint16_t *bpids);
++int __roc_api roc_nix_rx_chan_cfg_get(struct roc_nix *roc_nix, uint16_t chan,
++				      bool is_cpt, uint64_t *cfg);
++int __roc_api roc_nix_rx_chan_cfg_set(struct roc_nix *roc_nix, uint16_t chan,
++				      bool is_cpt, uint64_t val);
++int __roc_api roc_nix_chan_bpid_set(struct roc_nix *roc_nix, uint16_t chan,
++				    uint64_t bpid, int ena, bool cpt_chan);
+ 
+ /* NPC */
+ int __roc_api roc_nix_npc_promisc_ena_dis(struct roc_nix *roc_nix, int enable);
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 60e765b61d3b0..3618d2920b33c 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -104,6 +104,17 @@ nix_fc_rxchan_bpid_set(struct roc_nix *roc_nix, bool enable)
+ 		nix->cpt_lbpid = 0;
+ 	}
+ 
++	/* CPT to NIX BP on all channels */
++	if (!roc_feature_nix_has_rxchan_multi_bpid() || !nix->cpt_nixbpid)
++		goto exit;
++
++	mbox_put(mbox);
++	for (i = 0; i < nix->rx_chan_cnt; i++) {
++		rc = roc_nix_chan_bpid_set(roc_nix, i, nix->cpt_nixbpid, enable, false);
++		if (rc)
++			break;
++	}
++	return rc;
+ exit:
+ 	mbox_put(mbox);
+ 	return rc;
+@@ -627,3 +638,174 @@ roc_nix_chan_count_get(struct roc_nix *roc_nix)
+ 
+ 	return nix->chan_cnt;
+ }
++
++/* Allocate BPID for requested type
++ * Returns number of BPIDs allocated
++ *	0 if no BPIDs available
++ *	-ve value on error
++ */
++int
++roc_nix_bpids_alloc(struct roc_nix *roc_nix, uint8_t type, uint8_t bp_cnt, uint16_t *bpids)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct mbox *mbox = mbox_get(nix->dev.mbox);
++	struct nix_alloc_bpid_req *req;
++	struct nix_bpids *rsp;
++	int rc = -EINVAL;
++
++	/* Use this api for unreserved interface types */
++	if ((type < ROC_NIX_INTF_TYPE_RSVD) || (bp_cnt > ROC_NIX_MAX_BPID_CNT) || !bpids)
++		goto exit;
++
++	rc = -ENOSPC;
++	req = mbox_alloc_msg_nix_alloc_bpids(mbox);
++	if (req == NULL)
++		goto exit;
++	req->type = type;
++	req->bpid_cnt = bp_cnt;
++
++	rc = mbox_process_msg(mbox, (void *)&rsp);
++	if (rc)
++		goto exit;
++
++	for (rc = 0; rc < rsp->bpid_cnt; rc++)
++		bpids[rc] = rsp->bpids[rc];
++exit:
++	mbox_put(mbox);
++	return rc;
++}
++
++int
++roc_nix_bpids_free(struct roc_nix *roc_nix, uint8_t bp_cnt, uint16_t *bpids)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct mbox *mbox = mbox_get(nix->dev.mbox);
++	struct nix_bpids *req;
++	int rc = -EINVAL;
++
++	/* Use this api for unreserved interface types */
++	if ((bp_cnt > ROC_NIX_MAX_BPID_CNT) || !bpids)
++		goto exit;
++
++	rc = -ENOSPC;
++	req = mbox_alloc_msg_nix_free_bpids(mbox);
++	if (req == NULL)
++		goto exit;
++	for (rc = 0; rc < bp_cnt; rc++)
++		req->bpids[rc] = bpids[rc];
++	req->bpid_cnt = rc;
++
++	rc = mbox_process(mbox);
++exit:
++	mbox_put(mbox);
++	return rc;
++}
++
++int
++roc_nix_rx_chan_cfg_get(struct roc_nix *roc_nix, uint16_t chan, bool is_cpt, uint64_t *cfg)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct mbox *mbox = mbox_get(nix->dev.mbox);
++	struct nix_rx_chan_cfg *req;
++	struct nix_rx_chan_cfg *rsp;
++	int rc = -EINVAL;
++
++	req = mbox_alloc_msg_nix_rx_chan_cfg(mbox);
++	if (req == NULL)
++		goto exit;
++	if (is_cpt)
++		req->type = ROC_NIX_INTF_TYPE_CPT;
++	req->chan = chan;
++	req->read = 1;
++
++	rc = mbox_process_msg(mbox, (void *)&rsp);
++	if (rc)
++		goto exit;
++	*cfg = rsp->val;
++exit:
++	mbox_put(mbox);
++	return rc;
++}
++
++int
++roc_nix_rx_chan_cfg_set(struct roc_nix *roc_nix, uint16_t chan, bool is_cpt, uint64_t val)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct mbox *mbox = mbox_get(nix->dev.mbox);
++	struct nix_rx_chan_cfg *req;
++	int rc = -EINVAL;
++
++	req = mbox_alloc_msg_nix_rx_chan_cfg(mbox);
++	if (req == NULL)
++		goto exit;
++	if (is_cpt)
++		req->type = ROC_NIX_INTF_TYPE_CPT;
++	req->chan = chan;
++	req->val = val;
++	req->read = 0;
++
++	rc = mbox_process(mbox);
++	if (rc)
++		goto exit;
++exit:
++	mbox_put(mbox);
++	return rc;
++}
++
++#define NIX_BPID1_ENA 15
++#define NIX_BPID2_ENA 14
++#define NIX_BPID3_ENA 13
++
++#define NIX_BPID1_OFF 20
++#define NIX_BPID2_OFF 32
++#define NIX_BPID3_OFF 44
++
++int
++roc_nix_chan_bpid_set(struct roc_nix *roc_nix, uint16_t chan, uint64_t bpid, int ena, bool cpt_chan)
++{
++	uint64_t cfg;
++	int rc;
++
++	if (!roc_feature_nix_has_rxchan_multi_bpid())
++		return -ENOTSUP;
++
++	rc = roc_nix_rx_chan_cfg_get(roc_nix, chan, cpt_chan, &cfg);
++	if (rc)
++		return rc;
++
++	if (ena) {
++		if ((((cfg >> NIX_BPID1_OFF) & GENMASK_ULL(8, 0)) == bpid) ||
++		    (((cfg >> NIX_BPID2_OFF) & GENMASK_ULL(8, 0)) == bpid) ||
++		    (((cfg >> NIX_BPID3_OFF) & GENMASK_ULL(8, 0)) == bpid))
++			return 0;
++
++		if (!(cfg & BIT_ULL(NIX_BPID1_ENA))) {
++			cfg &= ~GENMASK_ULL(NIX_BPID1_OFF + 8, NIX_BPID1_OFF);
++			cfg |= (((uint64_t)bpid << NIX_BPID1_OFF) | BIT_ULL(NIX_BPID1_ENA));
++		} else if (!(cfg & BIT_ULL(NIX_BPID2_ENA))) {
++			cfg &= ~GENMASK_ULL(NIX_BPID2_OFF + 8, NIX_BPID2_OFF);
++			cfg |= (((uint64_t)bpid << NIX_BPID2_OFF) | BIT_ULL(NIX_BPID2_ENA));
++		} else if (!(cfg & BIT_ULL(NIX_BPID3_ENA))) {
++			cfg &= ~GENMASK_ULL(NIX_BPID3_OFF + 8, NIX_BPID3_OFF);
++			cfg |= (((uint64_t)bpid << NIX_BPID3_OFF) | BIT_ULL(NIX_BPID3_ENA));
++		} else {
++			plt_nix_dbg("Exceed maximum BPIDs");
++			return -ENOSPC;
++		}
++	} else {
++		if (((cfg >> NIX_BPID1_OFF) & GENMASK_ULL(8, 0)) == bpid) {
++			cfg &= ~(GENMASK_ULL(NIX_BPID1_OFF + 8, NIX_BPID1_OFF) |
++				 BIT_ULL(NIX_BPID1_ENA));
++		} else if (((cfg >> NIX_BPID2_OFF) & GENMASK_ULL(8, 0)) == bpid) {
++			cfg &= ~(GENMASK_ULL(NIX_BPID2_OFF + 8, NIX_BPID2_OFF) |
++				 BIT_ULL(NIX_BPID2_ENA));
++		} else if (((cfg >> NIX_BPID3_OFF) & GENMASK_ULL(8, 0)) == bpid) {
++			cfg &= ~(GENMASK_ULL(NIX_BPID3_OFF + 8, NIX_BPID3_OFF) |
++				 BIT_ULL(NIX_BPID3_ENA));
++		} else {
++			plt_nix_dbg("BPID not found");
++			return -EINVAL;
++		}
++	}
++	return roc_nix_rx_chan_cfg_set(roc_nix, chan, cpt_chan, cfg);
++}
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 4ccb9481fea68..b16756d6423e7 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -606,11 +606,10 @@ int
+ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ {
+ 	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct roc_cpt_inline_ipsec_inb_cfg cfg;
+ 	struct idev_cfg *idev = idev_get_cfg();
++	uint16_t bpids[ROC_NIX_MAX_BPID_CNT];
+ 	struct roc_cpt *roc_cpt;
+-	uint16_t opcode;
+-	uint16_t param1;
+-	uint16_t param2;
+ 	int rc;
+ 
+ 	if (idev == NULL)
+@@ -627,9 +626,9 @@ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ 	}
+ 
+ 	if (roc_model_is_cn9k()) {
+-		param1 = (ROC_ONF_IPSEC_INB_MAX_L2_SZ >> 3) & 0xf;
+-		param2 = ROC_IE_ON_INB_IKEV2_SINGLE_SA_SUPPORT;
+-		opcode =
++		cfg.param1 = (ROC_ONF_IPSEC_INB_MAX_L2_SZ >> 3) & 0xf;
++		cfg.param2 = ROC_IE_ON_INB_IKEV2_SINGLE_SA_SUPPORT;
++		cfg.opcode =
+ 			((ROC_IE_ON_INB_MAX_CTX_LEN << 8) |
+ 			 (ROC_IE_ON_MAJOR_OP_PROCESS_INBOUND_IPSEC | (1 << 6)));
+ 	} else {
+@@ -637,13 +636,18 @@ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ 
+ 		u.u16 = 0;
+ 		u.s.esp_trailer_disable = 1;
+-		param1 = u.u16;
+-		param2 = 0;
+-		opcode = (ROC_IE_OT_MAJOR_OP_PROCESS_INBOUND_IPSEC | (1 << 6));
++		cfg.param1 = u.u16;
++		cfg.param2 = 0;
++		cfg.opcode = (ROC_IE_OT_MAJOR_OP_PROCESS_INBOUND_IPSEC | (1 << 6));
++		rc = roc_nix_bpids_alloc(roc_nix, ROC_NIX_INTF_TYPE_CPT_NIX, 1, bpids);
++		if (rc > 0) {
++			nix->cpt_nixbpid = bpids[0];
++			cfg.bpid = nix->cpt_nixbpid;
++		}
+ 	}
+ 
+ 	/* Do onetime Inbound Inline config in CPTPF */
+-	rc = roc_cpt_inline_ipsec_inb_cfg(roc_cpt, param1, param2, opcode);
++	rc = roc_cpt_inline_ipsec_inb_cfg(roc_cpt, &cfg);
+ 	if (rc && rc != -EEXIST) {
+ 		plt_err("Failed to setup inbound lf, rc=%d", rc);
+ 		return rc;
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index 2fe90933246d9..99e27cdc56501 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -208,6 +208,7 @@ struct nix {
+ 	uint16_t outb_se_ring_cnt;
+ 	uint16_t outb_se_ring_base;
+ 	uint16_t cpt_lbpid;
++	uint16_t cpt_nixbpid;
+ 	bool need_meta_aura;
+ 	/* Mode provided by driver */
+ 	bool inb_inl_dev;
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index c426cd9f69471..ff31f4b536915 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -119,6 +119,9 @@ INTERNAL {
+ 	roc_nix_bpf_stats_reset;
+ 	roc_nix_bpf_stats_to_idx;
+ 	roc_nix_bpf_timeunit_get;
++	roc_nix_bpids_alloc;
++	roc_nix_bpids_free;
++	roc_nix_chan_bpid_set;
+ 	roc_nix_chan_count_get;
+ 	roc_nix_cq_dump;
+ 	roc_nix_cq_fini;
+@@ -249,6 +252,8 @@ INTERNAL {
+ 	roc_nix_rss_key_set;
+ 	roc_nix_rss_reta_get;
+ 	roc_nix_rss_reta_set;
++	roc_nix_rx_chan_cfg_get;
++	roc_nix_rx_chan_cfg_set;
+ 	roc_nix_rx_drop_re_set;
+ 	roc_nix_rx_queue_intr_disable;
+ 	roc_nix_rx_queue_intr_enable;
+-- 
+2.25.1
+

@@ -1,0 +1,44 @@
+From ad30f432d8769e9a0e027d4de560b95e13f494d6 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Wed, 3 Apr 2024 17:46:10 +0530
+Subject: [PATCH 854/955] net/cnxk: add RSS config via ethdev configure API
+
+Currently user passed RSS configuration is ignored via
+rte_eth_dev_configure() API. Instead default RSS setup is done by
+driver.
+
+Adding handling for user passed RSS configuration too via
+rte_eth_dev_configure().
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I1a6e66d0417dd12d5ed7392980efe8e1a6c250a6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/124911
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Kiran Kumar Kokkilagadda <kirankumark@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev.c b/drivers/net/cnxk/cnxk_ethdev.c
+index f92ee1356e437..db8feca620c79 100644
+--- a/drivers/net/cnxk/cnxk_ethdev.c
++++ b/drivers/net/cnxk/cnxk_ethdev.c
+@@ -1391,6 +1391,13 @@ cnxk_nix_configure(struct rte_eth_dev *eth_dev)
+ 		goto free_nix_lf;
+ 	}
+ 
++	/* Overwrite default RSS setup if requested by user */
++	rc = cnxk_nix_rss_hash_update(eth_dev, &conf->rx_adv_conf.rss_conf);
++	if (rc) {
++		plt_err("Failed to configure rss rc=%d", rc);
++		goto free_nix_lf;
++	}
++
+ 	/* Init the default TM scheduler hierarchy */
+ 	rc = roc_nix_tm_init(nix);
+ 	if (rc) {
+-- 
+2.25.1
+

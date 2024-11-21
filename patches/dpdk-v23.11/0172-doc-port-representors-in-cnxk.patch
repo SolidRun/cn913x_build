@@ -1,0 +1,164 @@
+From 1ae63326fbe71a7ede5c03a239adfd541cfaf180 Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Thu, 14 Dec 2023 12:34:21 +0530
+Subject: [PATCH 172/513] doc: port representors in cnxk
+
+Updating the CNXK PMD documentation with the added support
+for port representors.
+
+Change-Id: Ic53dec3bcff59646262920281ad7b6a69f18644b
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+---
+ MAINTAINERS                           |  1 +
+ doc/guides/nics/cnxk.rst              | 42 +++++++++++++++++++++++++++
+ doc/guides/nics/features/cnxk.ini     |  4 +++
+ doc/guides/nics/features/cnxk_vec.ini |  4 +++
+ doc/guides/nics/features/cnxk_vf.ini  |  5 ++++
+ 5 files changed, 56 insertions(+)
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 0d1c8126e3e55..2716178e18df1 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -827,6 +827,7 @@ M: Nithin Dabilpuram <ndabilpuram@marvell.com>
+ M: Kiran Kumar K <kirankumark@marvell.com>
+ M: Sunil Kumar Kori <skori@marvell.com>
+ M: Satha Rao <skoteshwar@marvell.com>
++M: Harman Kalra <hkalra@marvell.com>
+ T: git://dpdk.org/next/dpdk-next-net-mrvl
+ F: drivers/common/cnxk/
+ F: drivers/net/cnxk/
+diff --git a/doc/guides/nics/cnxk.rst b/doc/guides/nics/cnxk.rst
+index 39660dba82873..337a85042c3be 100644
+--- a/doc/guides/nics/cnxk.rst
++++ b/doc/guides/nics/cnxk.rst
+@@ -37,6 +37,9 @@ Features of the CNXK Ethdev PMD are:
+ - Inline IPsec processing support
+ - Ingress meter support
+ - Queue based priority flow control support
++- Port representors
++- Represented port pattern matching and action
++- Port representor pattern matching and action
+ 
+ Prerequisites
+ -------------
+@@ -640,6 +643,41 @@ Runtime Config Options for inline device
+    With the above configuration, driver would enable packet inject from ARM cores
+    to crypto to process and send back in Rx path.
+ 
++Port Representors
++-----------------
++
++The CNXK driver supports port representor model by adding virtual ethernet
++ports providing a logical representation in DPDK for physical function(PF) or
++SR-IOV virtual function (VF) devices for control and monitoring.
++
++Base device or parent device underneath the representor ports is a eswitch
++device which is not a cnxk ethernet device but has NIC RX and TX capabilities.
++Each representor port is represented by a RQ and SQ pair of this eswitch
++device.
++
++Implementation supports representors for both physical function and virtual
++function.
++
++Port representor ethdev instances can be spawned on an as needed basis
++through configuration parameters passed to the driver of the underlying
++base device using devargs ``-a <base PCI BDF>,representor=pf*vf*``
++
++.. note::
++
++   Representor ports to be created for respective representees should be
++   defined via standard representor devargs patterns
++   Eg. To create a representor for representee PF1VF0, devargs to be passed
++   is ``-a <base PCI BDF>,representor=pf01vf0``
++
++   Implementation supports creation of multiple port representors with pattern:
++   ``-a <base PCI BDF>,representor=[pf0vf[1,2],pf1vf[2-5]]``
++
++Port representor PMD supports following operations:
++
++- Get and clear VF statistics
++- Set mac address
++- Flow operations - create, validate, destroy, query, flush, dump
++
+ Debugging Options
+ -----------------
+ 
+@@ -654,3 +692,7 @@ Debugging Options
+    +---+------------+-------------------------------------------------------+
+    | 2 | NPC        | --log-level='pmd\.net.cnxk\.flow,8'                   |
+    +---+------------+-------------------------------------------------------+
++   | 3 | REP        | --log-level='pmd\.net.cnxk\.rep,8'                    |
++   +---+------------+-------------------------------------------------------+
++   | 4 | ESW        | --log-level='pmd\.net.cnxk\.esw,8'                    |
++   +---+------------+-------------------------------------------------------+
+diff --git a/doc/guides/nics/features/cnxk.ini b/doc/guides/nics/features/cnxk.ini
+index 8957eba46b7b8..b5d9f7e579fc6 100644
+--- a/doc/guides/nics/features/cnxk.ini
++++ b/doc/guides/nics/features/cnxk.ini
+@@ -71,6 +71,7 @@ ipv6_routing_ext     = Y
+ mark                 = Y
+ mpls                 = Y
+ nvgre                = Y
++port_representor     = Y
+ pppoes               = Y
+ raw                  = Y
+ represented_port     = Y
+@@ -95,6 +96,7 @@ of_set_vlan_pcp      = Y
+ of_set_vlan_vid      = Y
+ pf                   = Y
+ port_id              = Y
++port_representor     = Y
+ queue                = Y
+ represented_port     = Y
+ rss                  = Y
+@@ -102,3 +104,5 @@ sample               = Y
+ security             = Y
+ skip_cman            = Y
+ vf                   = Y
++vxlan_decap          = I
++vxlan_encap          = I
+diff --git a/doc/guides/nics/features/cnxk_vec.ini b/doc/guides/nics/features/cnxk_vec.ini
+index 6086b3d73ffbb..da73a816bced7 100644
+--- a/doc/guides/nics/features/cnxk_vec.ini
++++ b/doc/guides/nics/features/cnxk_vec.ini
+@@ -85,7 +85,11 @@ of_push_vlan         = Y
+ of_set_vlan_pcp      = Y
+ of_set_vlan_vid      = Y
+ pf                   = Y
++port_representor     = Y
+ queue                = Y
++represented_port     = Y
+ rss                  = Y
+ security             = Y
+ vf                   = Y
++vxlan_decap          = I
++vxlan_encap          = I
+diff --git a/doc/guides/nics/features/cnxk_vf.ini b/doc/guides/nics/features/cnxk_vf.ini
+index 667285014d59b..a55f0e7ce5ec9 100644
+--- a/doc/guides/nics/features/cnxk_vf.ini
++++ b/doc/guides/nics/features/cnxk_vf.ini
+@@ -62,6 +62,7 @@ ipv6_routing_ext     = Y
+ mark                 = Y
+ mpls                 = Y
+ nvgre                = Y
++port_representor     = Y
+ pppoes               = Y
+ raw                  = Y
+ represented_port     = Y
+@@ -85,8 +86,12 @@ of_push_vlan         = Y
+ of_set_vlan_pcp      = Y
+ of_set_vlan_vid      = Y
+ pf                   = Y
++port_representor     = Y
+ queue                = Y
++represented_port     = Y
+ rss                  = Y
+ security             = Y
+ skip_cman            = Y
+ vf                   = Y
++vxlan_decap          = I
++vxlan_encap          = I
+-- 
+2.25.1
+

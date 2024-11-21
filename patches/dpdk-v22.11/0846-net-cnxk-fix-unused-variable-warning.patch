@@ -1,0 +1,48 @@
+From 86e89263881795c7495e8e0bc710ab4db7e633ba Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 1 Apr 2024 18:47:50 +0530
+Subject: [PATCH 846/955] net/cnxk: fix unused variable warning
+
+Fix Unused variable warnings.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: Iff10183a44d9b7555b697fd818bc9e55b1e68e12
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/124776
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cn10k_tx_select.c | 2 --
+ drivers/net/cnxk/cn9k_tx_select.c  | 2 --
+ 2 files changed, 4 deletions(-)
+
+diff --git a/drivers/net/cnxk/cn10k_tx_select.c b/drivers/net/cnxk/cn10k_tx_select.c
+index 0c13b5a7d7d0d..074a880e0046c 100644
+--- a/drivers/net/cnxk/cn10k_tx_select.c
++++ b/drivers/net/cnxk/cn10k_tx_select.c
+@@ -90,8 +90,6 @@ void
+ cn10k_eth_set_tx_function(struct rte_eth_dev *eth_dev)
+ {
+ #if defined(RTE_ARCH_ARM64)
+-	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+-
+ 	cn10k_eth_set_tx_blk_func(eth_dev);
+ 	cn10k_eth_set_tx_tmplt_func(eth_dev);
+ 
+diff --git a/drivers/net/cnxk/cn9k_tx_select.c b/drivers/net/cnxk/cn9k_tx_select.c
+index 972f4e45312fc..ffe6cc87b1f47 100644
+--- a/drivers/net/cnxk/cn9k_tx_select.c
++++ b/drivers/net/cnxk/cn9k_tx_select.c
+@@ -86,8 +86,6 @@ void
+ cn9k_eth_set_tx_function(struct rte_eth_dev *eth_dev)
+ {
+ #if defined(RTE_ARCH_ARM64)
+-	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+-
+ 	cn9k_eth_set_tx_blk_func(eth_dev);
+ 	cn9k_eth_set_tx_tmplt_func(eth_dev);
+ 
+-- 
+2.25.1
+

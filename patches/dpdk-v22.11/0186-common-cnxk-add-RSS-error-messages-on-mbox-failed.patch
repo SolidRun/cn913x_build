@@ -1,0 +1,57 @@
+From f3a45ce9229051cf220e6ceae70f449163ce0f3e Mon Sep 17 00:00:00 2001
+From: Hiral <hshah@marvell.com>
+Date: Thu, 26 Jan 2023 12:25:38 -0800
+Subject: [PATCH 186/955] common/cnxk: add RSS error messages on mbox failed
+
+ Clarifying otx2_process_msgs() RSS error messages
+
+Change-Id: Ia53680ed52554e86fe0d685a1450ceb2a6a2d2e8
+Signed-off-by: Hiral <hshah@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95328
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+(cherry picked from commit cbeb9e5ea00a5f5af34f54c3c2b68277ad9f371c)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95451
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c   | 4 ++--
+ drivers/common/cnxk/roc_utils.c | 6 ++++++
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 826887a97b6f9..2388237186268 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -441,8 +441,8 @@ process_msgs(struct dev *dev, struct mbox *mbox)
+ 
+ 		default:
+ 			if (msg->rc)
+-				plt_err("Message (%s) response has err=%d",
+-					mbox_id2name(msg->id), msg->rc);
++				plt_err("Message (%s) response has err=%d (%s)",
++					mbox_id2name(msg->id), msg->rc, roc_error_msg_get(msg->rc));
+ 			break;
+ 		}
+ 		offset = mbox->rx_start + msg->next_msgoff;
+diff --git a/drivers/common/cnxk/roc_utils.c b/drivers/common/cnxk/roc_utils.c
+index 495e62a315fed..fe291fce96540 100644
+--- a/drivers/common/cnxk/roc_utils.c
++++ b/drivers/common/cnxk/roc_utils.c
+@@ -229,6 +229,12 @@ roc_error_msg_get(int errorcode)
+ 	case UTIL_ERR_INVALID_MODEL:
+ 		err_msg = "Invalid RoC model";
+ 		break;
++	case NIX_AF_ERR_RSS_NOSPC_FIELD:
++		err_msg = "No space or unsupported fields";
++		break;
++	case NIX_AF_ERR_RSS_NOSPC_ALGO:
++		err_msg = "No space to add new flow hash algo";
++		break;
+ 	default:
+ 		/**
+ 		 * Handle general error (as defined in linux errno.h)
+-- 
+2.25.1
+

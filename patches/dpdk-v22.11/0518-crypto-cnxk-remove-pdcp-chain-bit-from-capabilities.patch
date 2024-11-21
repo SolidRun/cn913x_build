@@ -1,0 +1,92 @@
+From 5143ec82b95ba14fed4330e1885e61058b40f0a1 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 27 Jun 2023 15:04:43 +0530
+Subject: [PATCH 518/955] crypto/cnxk: remove pdcp chain bit from capabilities
+
+Removing pdcp_chain bit from capabilities as it is
+supported on all platforms.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Icf12f64401ae5dfeb8b1c926038973db79fcfd6b
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106433
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit f4539c3fecb45d2938980961829680a1e116558d)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/106479
+---
+ drivers/common/cnxk/hw/cpt.h             |  3 +--
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c | 15 ++++-----------
+ 2 files changed, 5 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/common/cnxk/hw/cpt.h b/drivers/common/cnxk/hw/cpt.h
+index 5e1519e20237e..96a863322a4d4 100644
+--- a/drivers/common/cnxk/hw/cpt.h
++++ b/drivers/common/cnxk/hw/cpt.h
+@@ -76,8 +76,7 @@ union cpt_eng_caps {
+ 		uint64_t __io reserved_15_20 : 6;
+ 		uint64_t __io sm3 : 1;
+ 		uint64_t __io sm4 : 1;
+-		uint64_t __io reserved_23_33 : 11;
+-		uint64_t __io pdcp_chain : 1;
++		uint64_t __io reserved_23_34 : 12;
+ 		uint64_t __io sg_ver2 : 1;
+ 		uint64_t __io reserved_36_63 : 28;
+ 	};
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 50150d3f06666..99bf85323463b 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -484,18 +484,13 @@ is_valid_pdcp_cipher_alg(struct rte_crypto_sym_xform *c_xfrm,
+ }
+ 
+ static int
+-cnxk_sess_fill(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xform,
+-	       struct cnxk_se_sess *sess)
++cnxk_sess_fill(struct rte_crypto_sym_xform *xform, struct cnxk_se_sess *sess)
+ {
+ 	struct rte_crypto_sym_xform *aead_xfrm = NULL;
+ 	struct rte_crypto_sym_xform *c_xfrm = NULL;
+ 	struct rte_crypto_sym_xform *a_xfrm = NULL;
+-	bool pdcp_chain_supported = false;
+ 	bool ciph_then_auth = false;
+ 
+-	if (roc_cpt->hw_caps[CPT_ENG_TYPE_SE].pdcp_chain)
+-		pdcp_chain_supported = true;
+-
+ 	if (xform == NULL)
+ 		return -EINVAL;
+ 
+@@ -591,8 +586,7 @@ cnxk_sess_fill(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xform,
+ 			case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
+ 			case RTE_CRYPTO_AUTH_ZUC_EIA3:
+ 			case RTE_CRYPTO_AUTH_AES_CMAC:
+-				if (!pdcp_chain_supported ||
+-				    !is_valid_pdcp_cipher_alg(c_xfrm, sess))
++				if (!is_valid_pdcp_cipher_alg(c_xfrm, sess))
+ 					return -ENOTSUP;
+ 				break;
+ 			default:
+@@ -627,8 +621,7 @@ cnxk_sess_fill(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xform,
+ 		case RTE_CRYPTO_AUTH_SNOW3G_UIA2:
+ 		case RTE_CRYPTO_AUTH_ZUC_EIA3:
+ 		case RTE_CRYPTO_AUTH_AES_CMAC:
+-			if (!pdcp_chain_supported ||
+-			    !is_valid_pdcp_cipher_alg(c_xfrm, sess))
++			if (!is_valid_pdcp_cipher_alg(c_xfrm, sess))
+ 				return -ENOTSUP;
+ 			break;
+ 		default:
+@@ -679,7 +672,7 @@ sym_session_configure(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xfor
+ 	if (is_session_less)
+ 		memset(sess_priv, 0, sizeof(struct cnxk_se_sess));
+ 
+-	ret = cnxk_sess_fill(roc_cpt, xform, sess_priv);
++	ret = cnxk_sess_fill(xform, sess_priv);
+ 	if (ret)
+ 		goto priv_put;
+ 
+-- 
+2.25.1
+

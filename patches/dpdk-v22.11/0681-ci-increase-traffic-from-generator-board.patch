@@ -1,0 +1,53 @@
+From a0b1ddb9fd23e435fc23cc3557b0c84164545a04 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Tue, 7 Nov 2023 16:11:54 +0530
+Subject: [PATCH 681/955] ci: increase traffic from generator board
+
+Increased traffic from testpmd for IPsec Inline outbound
+tests and updated reference numbers of poll mode single-SA.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I88a96da75990d07e01d0998dd730cb56fd0565c4
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/115454
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh  | 4 ++--
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb    | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh
+index 89b9d1db66dd6..2b56cd808d09d 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf_gen.sh
+@@ -49,8 +49,8 @@ launch_testpmd_rx()
+ launch_testpmd_tx_outb()
+ {
+ 	testpmd_launch $1 \
+-		"-c 0x3800 -a $PORT0" \
+-		"--nb-cores=2 --forward-mode=txonly --tx-ip=192.168.$2.1,192.168.$2.2" \
++		"-c 0xF800 -a $PORT0" \
++		"--nb-cores=3 --forward-mode=txonly --tx-ip=192.168.$2.1,192.168.$2.2 --txq=3 --rxq=3" \
+ 		</dev/null 2>/dev/null &
+ 	sleep 1
+ 	testpmd_cmd $1 "port stop 0"
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb
+index 30fdfc86e58d8..c72d17215eacd 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.ip_p_ss.outb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+-64: 32324430
++64: 35700000
+ 380: 25390368
+ 1410: 8322766
+ <end>
+ aes-gcm
+-64: 32375952
++64: 33400000
+ 380: 27294253
+ 1410: 8389795
+ <end>
+-- 
+2.25.1
+

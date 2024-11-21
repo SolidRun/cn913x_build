@@ -1,0 +1,57 @@
+From 0ae284463fde433fe8d8fdf55c963299b96bb9c6 Mon Sep 17 00:00:00 2001
+From: Satheesh Paul <psatheesh@marvell.com>
+Date: Fri, 16 Feb 2024 10:06:08 +0530
+Subject: [PATCH 827/955] common/cnxk: fix Coverity issues
+
+Fix Out-of-bounds access and remove dead code
+reported by Coverity.
+
+Coverity issue: 384431, 384439, 380992
+Fixes: 585bb3e538f9 ("common/cnxk: add VF support to base device class")
+Fixes: da1ec39060b2 ("common/cnxk: delay inline device RQ enable to dev start")
+Cc: stable@dpdk.org
+
+Signed-off-by: Satheesh Paul <psatheesh@marvell.com>
+Change-Id: I7d4e96e83bbb8595deef8d3c6231959fb98f87c5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/122744
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-by: Harman Kalra <hkalra@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_dev.c     | 2 ++
+ drivers/common/cnxk/roc_nix_inl.c | 3 +--
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_dev.c b/drivers/common/cnxk/roc_dev.c
+index 276a1628b8154..d7b94efd6d437 100644
+--- a/drivers/common/cnxk/roc_dev.c
++++ b/drivers/common/cnxk/roc_dev.c
+@@ -502,6 +502,8 @@ pf_vf_mbox_send_up_msg(struct dev *dev, void *rec_msg)
+ 	size_t size;
+ 
+ 	size = PLT_ALIGN(mbox_id2size(msg->hdr.id), MBOX_MSG_ALIGN);
++	if (size < sizeof(struct mbox_msghdr))
++		return;
+ 	/* Send UP message to all VF's */
+ 	for (vf = 0; vf < vf_mbox->ndevs; vf++) {
+ 		/* VF active */
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index a205c658e9205..7dbeae5017292 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -677,8 +677,7 @@ roc_nix_reassembly_configure(uint32_t max_wait_time, uint16_t max_frags)
+ 		return -EFAULT;
+ 
+ 	PLT_SET_USED(max_frags);
+-	if (idev == NULL)
+-		return -ENOTSUP;
++
+ 	roc_cpt = idev->cpt;
+ 	if (!roc_cpt) {
+ 		plt_err("Cannot support inline inbound, cryptodev not probed");
+-- 
+2.25.1
+

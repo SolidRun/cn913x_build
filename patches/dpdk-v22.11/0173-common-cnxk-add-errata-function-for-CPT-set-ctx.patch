@@ -1,0 +1,105 @@
+From db9943f3e62d74a6b49b167e6d54b52dc04b49bc Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Wed, 18 Jan 2023 16:19:13 +0530
+Subject: [PATCH 173/955] common/cnxk: add errata function for CPT set ctx
+
+Adding function in errata header file for CPT ctx_val
+and replace CPT revision_id checks with function call.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: Icd89ebe103a23db0a65a37953fc1cff035c485e9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/94741
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ drivers/common/cnxk/roc_errata.h         |  9 +++++++++
+ drivers/crypto/cnxk/cnxk_cryptodev_ops.c | 13 ++++++++-----
+ 2 files changed, 17 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_errata.h b/drivers/common/cnxk/roc_errata.h
+index 36e6db467a488..9954b7da321c3 100644
+--- a/drivers/common/cnxk/roc_errata.h
++++ b/drivers/common/cnxk/roc_errata.h
+@@ -4,6 +4,8 @@
+ #ifndef _ROC_ERRATA_H_
+ #define _ROC_ERRATA_H_
+ 
++#include "roc_model.h"
++
+ /* Errata IPBUNIXRX-40129 */
+ static inline bool
+ roc_errata_nix_has_no_drop_re(void)
+@@ -98,4 +100,11 @@ roc_errata_nix_sdp_send_has_mtu_size_16k(void)
+ 		roc_model_is_cn96_a0() || roc_model_is_cn96_b0());
+ }
+ 
++/* Errata IPBUCPT-38753 */
++static inline bool
++roc_errata_cpt_hang_on_mixed_ctx_val(void)
++{
++	return roc_model_is_cn10ka_a0() || roc_model_is_cn10ka_a1();
++}
++
+ #endif /* _ROC_ERRATA_H_ */
+diff --git a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+index 67bd7e3243d42..adc1c7652b07e 100644
+--- a/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
++++ b/drivers/crypto/cnxk/cnxk_cryptodev_ops.c
+@@ -8,6 +8,7 @@
+ 
+ #include "roc_ae_fpm_tables.h"
+ #include "roc_cpt.h"
++#include "roc_errata.h"
+ #include "roc_ie_on.h"
+ 
+ #include "cnxk_ae.h"
+@@ -636,7 +637,7 @@ cnxk_cpt_inst_w7_get(struct cnxk_se_sess *sess, struct roc_cpt *roc_cpt)
+ 
+ 	inst_w7.s.cptr = (uint64_t)&sess->roc_se_ctx.se_ctx;
+ 
+-	if (roc_cpt->cpt_revision == ROC_CPT_REVISION_ID_106XX)
++	if (roc_errata_cpt_hang_on_mixed_ctx_val())
+ 		inst_w7.s.ctx_val = 1;
+ 	else
+ 		inst_w7.s.cptr += 8;
+@@ -709,7 +710,7 @@ sym_session_configure(struct roc_cpt *roc_cpt, struct rte_crypto_sym_xform *xfor
+ 
+ 	sess_priv->cpt_inst_w7 = cnxk_cpt_inst_w7_get(sess_priv, roc_cpt);
+ 
+-	if (roc_cpt->cpt_revision == ROC_CPT_REVISION_ID_106XX)
++	if (roc_errata_cpt_hang_on_mixed_ctx_val())
+ 		roc_se_ctx_init(&sess_priv->roc_se_ctx);
+ 
+ 	return 0;
+@@ -735,7 +736,8 @@ sym_session_clear(struct rte_cryptodev_sym_session *sess, bool is_session_less)
+ 	struct cnxk_se_sess *sess_priv = (struct cnxk_se_sess *)sess;
+ 
+ 	/* Trigger CTX flush + invalidate to remove from CTX_CACHE */
+-	roc_cpt_lf_ctx_flush(sess_priv->lf, &sess_priv->roc_se_ctx.se_ctx, true);
++	if (roc_errata_cpt_hang_on_mixed_ctx_val())
++		roc_cpt_lf_ctx_flush(sess_priv->lf, &sess_priv->roc_se_ctx.se_ctx, true);
+ 
+ 	if (sess_priv->roc_se_ctx.auth_key != NULL)
+ 		plt_free(sess_priv->roc_se_ctx.auth_key);
+@@ -763,7 +765,8 @@ cnxk_ae_session_clear(struct rte_cryptodev *dev, struct rte_cryptodev_asym_sessi
+ 	struct cnxk_ae_sess *priv = (struct cnxk_ae_sess *)sess;
+ 
+ 	/* Trigger CTX flush + invalidate to remove from CTX_CACHE */
+-	roc_cpt_lf_ctx_flush(priv->lf, &priv->hw_ctx, true);
++	if (roc_errata_cpt_hang_on_mixed_ctx_val())
++		roc_cpt_lf_ctx_flush(priv->lf, &priv->hw_ctx, true);
+ 
+ 	/* Free resources allocated in session_cfg */
+ 	cnxk_ae_free_session_parameters(priv);
+@@ -792,7 +795,7 @@ cnxk_ae_session_cfg(struct rte_cryptodev *dev, struct rte_crypto_asym_xform *xfo
+ 	w7.u64 = 0;
+ 	w7.s.egrp = roc_cpt->eng_grp[CPT_ENG_TYPE_AE];
+ 
+-	if (vf->cpt.cpt_revision == ROC_CPT_REVISION_ID_106XX) {
++	if (roc_errata_cpt_hang_on_mixed_ctx_val()) {
+ 		hwc = &priv->hw_ctx;
+ 		hwc->w0.s.aop_valid = 1;
+ 		hwc->w0.s.ctx_hdr_size = 0;
+-- 
+2.25.1
+

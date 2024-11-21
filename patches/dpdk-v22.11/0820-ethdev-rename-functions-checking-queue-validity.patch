@@ -1,0 +1,136 @@
+From 9887f1f728a23a013f4a7201952c38341b1a1cd3 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Mon, 5 Feb 2024 22:58:55 +0530
+Subject: [PATCH 820/955] ethdev: rename functions checking queue validity
+
+Two functions helping to check Rx/Tx queues validity
+were added in DPDK 23.07-rc1.
+As the release is not closed, it is still time to rename.
+
+The name proposed originally
+        rte_eth_dev_is_valid_*xq
+is consistent with this function:
+        rte_eth_dev_is_valid_port()
+However, the suffixes "rxq" and "txq" are uncommon in ethdev functions.
+
+Also for shortness, many functions are dropping "_dev_"
+as these functions which manage the queues:
+        rte_eth_*x_queue_info_get()
+        rte_eth_*x_queue_setup()
+        rte_eth_*x_hairpin_queue_setup
+For completeness, there are some old functions having "_dev_":
+        rte_eth_dev_*x_queue_start()
+        rte_eth_dev_*x_queue_stop()
+Anyway in all above examples, the subject is after the prefix,
+and the verb is at the end.
+
+That's why I propose renaming into:
+        rte_eth_*x_queue_is_valid()
+
+Fixes: 7ea7e0cd3a08 ("ethdev: add functions to check queue validity")
+
+Change-Id: Ifb0d56fe8735210818df043308669c22d4b1ebbd
+Signed-off-by: Thomas Monjalon <thomas@monjalon.net>
+Acked-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Acked-by: Stephen Hemminger <stephen@networkplumber.org>
+Acked-by: Andrew Rybchenko <andrew.rybchenko@oktetlabs.ru>
+---
+ app/test-pmd/cmdline.c  | 6 +++---
+ lib/ethdev/rte_ethdev.c | 4 ++--
+ lib/ethdev/rte_ethdev.h | 4 ++--
+ lib/ethdev/version.map  | 4 ++--
+ 4 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/app/test-pmd/cmdline.c b/app/test-pmd/cmdline.c
+index 8a34572532840..a45ed833f0aaa 100644
+--- a/app/test-pmd/cmdline.c
++++ b/app/test-pmd/cmdline.c
+@@ -12267,7 +12267,7 @@ cmd_show_rx_tx_desc_status_parsed(void *parsed_result,
+ 	int rc;
+ 
+ 	if (!strcmp(res->cmd_keyword, "rxq")) {
+-		if (rte_eth_dev_is_valid_rxq(res->cmd_pid, res->cmd_qid) != 0) {
++		if (rte_eth_rx_queue_is_valid(res->cmd_pid, res->cmd_qid) != 0) {
+ 			fprintf(stderr,
+ 				"Invalid input: port id = %d, queue id = %d\n",
+ 				res->cmd_pid, res->cmd_qid);
+@@ -12288,7 +12288,7 @@ cmd_show_rx_tx_desc_status_parsed(void *parsed_result,
+ 		else
+ 			printf("Desc status = UNAVAILABLE\n");
+ 	} else if (!strcmp(res->cmd_keyword, "txq")) {
+-		if (rte_eth_dev_is_valid_txq(res->cmd_pid, res->cmd_qid) != 0) {
++		if (rte_eth_tx_queue_is_valid(res->cmd_pid, res->cmd_qid) != 0) {
+ 			fprintf(stderr,
+ 				"Invalid input: port id = %d, queue id = %d\n",
+ 				res->cmd_pid, res->cmd_qid);
+@@ -12373,7 +12373,7 @@ cmd_show_rx_queue_desc_used_count_parsed(void *parsed_result,
+ 	struct cmd_show_rx_queue_desc_used_count_result *res = parsed_result;
+ 	int rc;
+ 
+-	if (rte_eth_dev_is_valid_rxq(res->cmd_pid, res->cmd_qid) != 0) {
++	if (rte_eth_rx_queue_is_valid(res->cmd_pid, res->cmd_qid) != 0) {
+ 		fprintf(stderr,
+ 			"Invalid input: port id = %d, queue id = %d\n",
+ 			res->cmd_pid, res->cmd_qid);
+diff --git a/lib/ethdev/rte_ethdev.c b/lib/ethdev/rte_ethdev.c
+index 3416e292f63ab..07577465b2fb3 100644
+--- a/lib/ethdev/rte_ethdev.c
++++ b/lib/ethdev/rte_ethdev.c
+@@ -771,7 +771,7 @@ eth_dev_validate_tx_queue(const struct rte_eth_dev *dev, uint16_t tx_queue_id)
+ }
+ 
+ int
+-rte_eth_dev_is_valid_rxq(uint16_t port_id, uint16_t queue_id)
++rte_eth_rx_queue_is_valid(uint16_t port_id, uint16_t queue_id)
+ {
+ 	struct rte_eth_dev *dev;
+ 
+@@ -782,7 +782,7 @@ rte_eth_dev_is_valid_rxq(uint16_t port_id, uint16_t queue_id)
+ }
+ 
+ int
+-rte_eth_dev_is_valid_txq(uint16_t port_id, uint16_t queue_id)
++rte_eth_tx_queue_is_valid(uint16_t port_id, uint16_t queue_id)
+ {
+ 	struct rte_eth_dev *dev;
+ 
+diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
+index 3992d16f87077..9f880bd070c22 100644
+--- a/lib/ethdev/rte_ethdev.h
++++ b/lib/ethdev/rte_ethdev.h
+@@ -2635,7 +2635,7 @@ int rte_eth_dev_is_valid_port(uint16_t port_id);
+  *   - 0 if Rx queue is valid.
+  */
+ __rte_experimental
+-int rte_eth_dev_is_valid_rxq(uint16_t port_id, uint16_t queue_id);
++int rte_eth_rx_queue_is_valid(uint16_t port_id, uint16_t queue_id);
+ 
+ /**
+  * @warning
+@@ -2654,7 +2654,7 @@ int rte_eth_dev_is_valid_rxq(uint16_t port_id, uint16_t queue_id);
+  *   - 0 if Tx queue is valid.
+  */
+ __rte_experimental
+-int rte_eth_dev_is_valid_txq(uint16_t port_id, uint16_t queue_id);
++int rte_eth_tx_queue_is_valid(uint16_t port_id, uint16_t queue_id);
+ 
+ /**
+  * Start specified Rx queue of a port. It is used when rx_deferred_start
+diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
+index 7676129ba42fd..e7f2d386efc02 100644
+--- a/lib/ethdev/version.map
++++ b/lib/ethdev/version.map
+@@ -294,8 +294,8 @@ EXPERIMENTAL {
+ 	rte_mtr_meter_profile_get;
+ 
+  	# added in 23.07
+-	rte_eth_dev_is_valid_rxq;
+-	rte_eth_dev_is_valid_txq;
++	rte_eth_rx_queue_is_valid;
++	rte_eth_tx_queue_is_valid;
+ 
+ 	# added in 24.03
+ 	rte_eth_tx_queue_count;
+-- 
+2.25.1
+

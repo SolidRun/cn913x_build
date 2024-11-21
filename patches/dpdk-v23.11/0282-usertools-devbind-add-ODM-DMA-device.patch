@@ -1,0 +1,44 @@
+From ad5eb53d4fedf6f944884f0de80ddc5c172df5eb Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Wed, 13 Mar 2024 11:35:02 +0000
+Subject: [PATCH 282/513] usertools/devbind: add ODM DMA device
+
+Add support for ODM DMA device in devbind.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Signed-off-by: Gowrishankar Muthukrishnan <gmuthukrishn@marvell.com>
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I8c10f2c960d7f8795b3e422dfa2dbd8d0ff0b3dd
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/123779
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ usertools/dpdk-devbind.py | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/usertools/dpdk-devbind.py b/usertools/dpdk-devbind.py
+index a278f5e7f3fea..6493877caaa9f 100755
+--- a/usertools/dpdk-devbind.py
++++ b/usertools/dpdk-devbind.py
+@@ -48,6 +48,8 @@
+ 
+ hisilicon_dma = {'Class': '08', 'Vendor': '19e5', 'Device': 'a122',
+                  'SVendor': None, 'SDevice': None}
++odm_dma = {'Class': '08', 'Vendor': '177d', 'Device': 'a08c',
++           'SVendor': None, 'SDevice': None}
+ 
+ intel_dlb = {'Class': '0b', 'Vendor': '8086', 'Device': '270b,2710,2714',
+              'SVendor': None, 'SDevice': None}
+@@ -82,7 +84,8 @@
+ baseband_devices = [acceleration_class]
+ crypto_devices = [encryption_class, intel_processor_class]
+ dma_devices = [cnxk_dma, hisilicon_dma,
+-               intel_idxd_spr, intel_ioat_bdw, intel_ioat_icx, intel_ioat_skx]
++               intel_idxd_spr, intel_ioat_bdw, intel_ioat_icx, intel_ioat_skx,
++               odm_dma]
+ eventdev_devices = [cavium_sso, cavium_tim, intel_dlb, cnxk_sso]
+ mempool_devices = [cavium_fpa, cnxk_npa]
+ compress_devices = [cavium_zip]
+-- 
+2.25.1
+

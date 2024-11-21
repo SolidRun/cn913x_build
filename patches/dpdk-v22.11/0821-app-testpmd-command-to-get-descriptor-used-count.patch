@@ -1,0 +1,256 @@
+From 9e651efe859d69a3a783bd60e09036aa3b796c45 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 5 Jan 2024 12:11:15 -0500
+Subject: [PATCH 821/955] app/testpmd: command to get descriptor used count
+
+Existing Rx desc used count command extended to get Tx queue
+used count.
+    testpmd> show port 0 rxq 0 desc used count
+    testpmd> show port 0 txq 0 desc used count
+
+Change-Id: Ic6b90cb0c3d0b82ddc82980665472005a354aa3e
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120083
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ app/test-pmd/cmdline.c                      | 184 +++++++++++---------
+ doc/guides/testpmd_app_ug/testpmd_funcs.rst |  10 +-
+ 2 files changed, 104 insertions(+), 90 deletions(-)
+
+diff --git a/app/test-pmd/cmdline.c b/app/test-pmd/cmdline.c
+index a45ed833f0aaa..7f2ba48b33b91 100644
+--- a/app/test-pmd/cmdline.c
++++ b/app/test-pmd/cmdline.c
+@@ -12246,6 +12246,104 @@ static cmdline_parse_inst_t cmd_show_port_supported_ptypes = {
+ 	},
+ };
+ 
++/* *** display rx/tx queue descriptor used count *** */
++struct cmd_show_rx_tx_queue_desc_used_count_result {
++	cmdline_fixed_string_t cmd_show;
++	cmdline_fixed_string_t cmd_port;
++	cmdline_fixed_string_t cmd_dir;
++	cmdline_fixed_string_t cmd_desc;
++	cmdline_fixed_string_t cmd_used;
++	cmdline_fixed_string_t cmd_count;
++	portid_t cmd_pid;
++	portid_t cmd_qid;
++};
++
++static void
++cmd_show_rx_tx_queue_desc_used_count_parsed(void *parsed_result, __rte_unused struct cmdline *cl,
++					    __rte_unused void *data)
++{
++	struct cmd_show_rx_tx_queue_desc_used_count_result *res = parsed_result;
++	int rc;
++
++	if (!strcmp(res->cmd_dir, "rxq")) {
++		if (rte_eth_rx_queue_is_valid(res->cmd_pid, res->cmd_qid) != 0) {
++			fprintf(stderr, "Invalid input: port id = %d, queue id = %d\n",
++				res->cmd_pid, res->cmd_qid);
++			return;
++		}
++
++		rc = rte_eth_rx_queue_count(res->cmd_pid, res->cmd_qid);
++		if (rc < 0) {
++			fprintf(stderr, "Invalid queueid = %d\n", res->cmd_qid);
++			return;
++		}
++		printf("RxQ %d used desc count = %d\n", res->cmd_qid, rc);
++	} else if (!strcmp(res->cmd_dir, "txq")) {
++		if (rte_eth_tx_queue_is_valid(res->cmd_pid, res->cmd_qid) != 0) {
++			fprintf(stderr, "Invalid input: port id = %d, queue id = %d\n",
++				res->cmd_pid, res->cmd_qid);
++			return;
++		}
++
++		rc = rte_eth_tx_queue_count(res->cmd_pid, res->cmd_qid);
++		if (rc < 0) {
++			fprintf(stderr, "Tx queue count get failed rc=%d queue_id=%d\n", rc,
++				res->cmd_qid);
++			return;
++		}
++		printf("TxQ %d used desc count = %d\n", res->cmd_qid, rc);
++	}
++}
++
++static cmdline_parse_token_string_t cmd_show_rx_tx_queue_desc_used_count_show =
++	TOKEN_STRING_INITIALIZER
++		(struct cmd_show_rx_tx_queue_desc_used_count_result,
++		 cmd_show, "show");
++static cmdline_parse_token_string_t cmd_show_rx_tx_queue_desc_used_count_port =
++	TOKEN_STRING_INITIALIZER
++		(struct cmd_show_rx_tx_queue_desc_used_count_result,
++		 cmd_port, "port");
++static cmdline_parse_token_num_t cmd_show_rx_tx_queue_desc_used_count_pid =
++	TOKEN_NUM_INITIALIZER
++		(struct cmd_show_rx_tx_queue_desc_used_count_result,
++		 cmd_pid, RTE_UINT16);
++static cmdline_parse_token_string_t cmd_show_rx_tx_queue_desc_used_count_dir =
++	TOKEN_STRING_INITIALIZER
++		(struct cmd_show_rx_tx_queue_desc_used_count_result,
++		 cmd_dir, "rxq#txq");
++static cmdline_parse_token_num_t cmd_show_rx_tx_queue_desc_used_count_qid =
++	TOKEN_NUM_INITIALIZER
++		(struct cmd_show_rx_tx_queue_desc_used_count_result,
++		 cmd_qid, RTE_UINT16);
++static cmdline_parse_token_string_t cmd_show_rx_tx_queue_desc_used_count_desc =
++	TOKEN_STRING_INITIALIZER
++		(struct cmd_show_rx_tx_queue_desc_used_count_result,
++		 cmd_desc, "desc");
++static cmdline_parse_token_string_t cmd_show_rx_tx_queue_desc_used_count_used =
++	TOKEN_STRING_INITIALIZER
++		(struct cmd_show_rx_tx_queue_desc_used_count_result,
++		 cmd_count, "used");
++static cmdline_parse_token_string_t cmd_show_rx_tx_queue_desc_used_count_count =
++	TOKEN_STRING_INITIALIZER
++		(struct cmd_show_rx_tx_queue_desc_used_count_result,
++		 cmd_count, "count");
++static cmdline_parse_inst_t cmd_show_rx_tx_queue_desc_used_count = {
++	.f = cmd_show_rx_tx_queue_desc_used_count_parsed,
++	.data = NULL,
++	.help_str = "show port <port_id> rxq|txq <queue_id> desc used count",
++	.tokens = {
++		(void *)&cmd_show_rx_tx_queue_desc_used_count_show,
++		(void *)&cmd_show_rx_tx_queue_desc_used_count_port,
++		(void *)&cmd_show_rx_tx_queue_desc_used_count_pid,
++		(void *)&cmd_show_rx_tx_queue_desc_used_count_dir,
++		(void *)&cmd_show_rx_tx_queue_desc_used_count_qid,
++		(void *)&cmd_show_rx_tx_queue_desc_used_count_desc,
++		(void *)&cmd_show_rx_tx_queue_desc_used_count_used,
++		(void *)&cmd_show_rx_tx_queue_desc_used_count_count,
++		NULL,
++	},
++};
++
+ /* *** display rx/tx descriptor status *** */
+ struct cmd_show_rx_tx_desc_status_result {
+ 	cmdline_fixed_string_t cmd_show;
+@@ -12353,90 +12451,6 @@ static cmdline_parse_inst_t cmd_show_rx_tx_desc_status = {
+ 	},
+ };
+ 
+-/* *** display rx queue desc used count *** */
+-struct cmd_show_rx_queue_desc_used_count_result {
+-	cmdline_fixed_string_t cmd_show;
+-	cmdline_fixed_string_t cmd_port;
+-	cmdline_fixed_string_t cmd_rxq;
+-	cmdline_fixed_string_t cmd_desc;
+-	cmdline_fixed_string_t cmd_used;
+-	cmdline_fixed_string_t cmd_count;
+-	portid_t cmd_pid;
+-	portid_t cmd_qid;
+-};
+-
+-static void
+-cmd_show_rx_queue_desc_used_count_parsed(void *parsed_result,
+-		__rte_unused struct cmdline *cl,
+-		__rte_unused void *data)
+-{
+-	struct cmd_show_rx_queue_desc_used_count_result *res = parsed_result;
+-	int rc;
+-
+-	if (rte_eth_rx_queue_is_valid(res->cmd_pid, res->cmd_qid) != 0) {
+-		fprintf(stderr,
+-			"Invalid input: port id = %d, queue id = %d\n",
+-			res->cmd_pid, res->cmd_qid);
+-		return;
+-	}
+-
+-	rc = rte_eth_rx_queue_count(res->cmd_pid, res->cmd_qid);
+-	if (rc < 0) {
+-		fprintf(stderr, "Invalid queueid = %d\n", res->cmd_qid);
+-		return;
+-	}
+-	printf("Used desc count = %d\n", rc);
+-}
+-
+-static cmdline_parse_token_string_t cmd_show_rx_queue_desc_used_count_show =
+-	TOKEN_STRING_INITIALIZER
+-		(struct cmd_show_rx_queue_desc_used_count_result,
+-		 cmd_show, "show");
+-static cmdline_parse_token_string_t cmd_show_rx_queue_desc_used_count_port =
+-	TOKEN_STRING_INITIALIZER
+-		(struct cmd_show_rx_queue_desc_used_count_result,
+-		 cmd_port, "port");
+-static cmdline_parse_token_num_t cmd_show_rx_queue_desc_used_count_pid =
+-	TOKEN_NUM_INITIALIZER
+-		(struct cmd_show_rx_queue_desc_used_count_result,
+-		 cmd_pid, RTE_UINT16);
+-static cmdline_parse_token_string_t cmd_show_rx_queue_desc_used_count_rxq =
+-	TOKEN_STRING_INITIALIZER
+-		(struct cmd_show_rx_queue_desc_used_count_result,
+-		 cmd_rxq, "rxq");
+-static cmdline_parse_token_num_t cmd_show_rx_queue_desc_used_count_qid =
+-	TOKEN_NUM_INITIALIZER
+-		(struct cmd_show_rx_queue_desc_used_count_result,
+-		 cmd_qid, RTE_UINT16);
+-static cmdline_parse_token_string_t cmd_show_rx_queue_desc_used_count_desc =
+-	TOKEN_STRING_INITIALIZER
+-		(struct cmd_show_rx_queue_desc_used_count_result,
+-		 cmd_count, "desc");
+-static cmdline_parse_token_string_t cmd_show_rx_queue_desc_used_count_used =
+-	TOKEN_STRING_INITIALIZER
+-		(struct cmd_show_rx_queue_desc_used_count_result,
+-		 cmd_count, "used");
+-static cmdline_parse_token_string_t cmd_show_rx_queue_desc_used_count_count =
+-	TOKEN_STRING_INITIALIZER
+-		(struct cmd_show_rx_queue_desc_used_count_result,
+-		 cmd_count, "count");
+-static cmdline_parse_inst_t cmd_show_rx_queue_desc_used_count = {
+-	.f = cmd_show_rx_queue_desc_used_count_parsed,
+-	.data = NULL,
+-	.help_str = "show port <port_id> rxq <queue_id> desc used count",
+-	.tokens = {
+-		(void *)&cmd_show_rx_queue_desc_used_count_show,
+-		(void *)&cmd_show_rx_queue_desc_used_count_port,
+-		(void *)&cmd_show_rx_queue_desc_used_count_pid,
+-		(void *)&cmd_show_rx_queue_desc_used_count_rxq,
+-		(void *)&cmd_show_rx_queue_desc_used_count_qid,
+-		(void *)&cmd_show_rx_queue_desc_used_count_desc,
+-		(void *)&cmd_show_rx_queue_desc_used_count_used,
+-		(void *)&cmd_show_rx_queue_desc_used_count_count,
+-		NULL,
+-	},
+-};
+-
+ /* Common result structure for set port ptypes */
+ struct cmd_set_port_ptypes_result {
+ 	cmdline_fixed_string_t set;
+@@ -12861,7 +12875,7 @@ static cmdline_parse_ctx_t builtin_ctx[] = {
+ 	(cmdline_parse_inst_t *)&cmd_config_tx_metadata_specific,
+ 	(cmdline_parse_inst_t *)&cmd_show_tx_metadata,
+ 	(cmdline_parse_inst_t *)&cmd_show_rx_tx_desc_status,
+-	(cmdline_parse_inst_t *)&cmd_show_rx_queue_desc_used_count,
++	(cmdline_parse_inst_t *)&cmd_show_rx_tx_queue_desc_used_count,
+ 	(cmdline_parse_inst_t *)&cmd_set_raw,
+ 	(cmdline_parse_inst_t *)&cmd_show_set_raw,
+ 	(cmdline_parse_inst_t *)&cmd_show_set_raw_all,
+diff --git a/doc/guides/testpmd_app_ug/testpmd_funcs.rst b/doc/guides/testpmd_app_ug/testpmd_funcs.rst
+index a52058d1d14be..953daa0c7c81c 100644
+--- a/doc/guides/testpmd_app_ug/testpmd_funcs.rst
++++ b/doc/guides/testpmd_app_ug/testpmd_funcs.rst
+@@ -264,13 +264,13 @@ Display information for a given port's RX/TX descriptor status::
+ 
+    testpmd> show port (port_id) (rxq|txq) (queue_id) desc (desc_id) status
+ 
+-show rxq desc used count
+-~~~~~~~~~~~~~~~~~~~~~~~~
++show desc used count(rxq|txq)
++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 
+-Display the number of receive packet descriptors currently filled by hardware
+-and ready to be processed by the driver on a given RX queue::
++Display the number of packet descriptors currently used by hardware for a given
++port's RX/TX queue::
+ 
+-   testpmd> show port (port_id) rxq (queue_id) desc used count
++   testpmd> show port (port_id) (rxq|txq) (queue_id) desc used count
+ 
+ show config
+ ~~~~~~~~~~~
+-- 
+2.25.1
+

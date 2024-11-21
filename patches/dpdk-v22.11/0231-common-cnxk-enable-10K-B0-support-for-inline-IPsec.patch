@@ -1,0 +1,249 @@
+From 3c7c7ac0f6818c1d7e5ea23ccb789116e56a8e86 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Sat, 11 Feb 2023 00:27:02 +0530
+Subject: [PATCH 231/955] common/cnxk: enable 10K B0 support for inline IPsec
+
+Enable support similar to CN10KB as CN10KA_B0 is similar
+to CN10KB.
+
+Change-Id: If16da6d9b74e0e75780edc1cb620509aa0a2c33e
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96698
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/common/cnxk/roc_features.h  | 24 ++++++++++++++++++++++++
+ drivers/common/cnxk/roc_nix_debug.c | 16 +++++++++-------
+ drivers/common/cnxk/roc_nix_fc.c    | 10 ++++++++--
+ drivers/common/cnxk/roc_nix_inl.c   | 11 ++---------
+ drivers/common/cnxk/roc_nix_inl.h   |  1 -
+ drivers/common/cnxk/roc_nix_queue.c |  5 +++--
+ drivers/common/cnxk/version.map     |  1 -
+ drivers/net/cnxk/cn10k_ethdev.c     |  4 ++--
+ drivers/net/cnxk/cn10k_ethdev_sec.c |  2 +-
+ 9 files changed, 49 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/common/cnxk/roc_features.h b/drivers/common/cnxk/roc_features.h
+index c92f397361745..753edbf6cb2d5 100644
+--- a/drivers/common/cnxk/roc_features.h
++++ b/drivers/common/cnxk/roc_features.h
+@@ -10,4 +10,28 @@ roc_feature_sso_has_stash(void)
+ 	return roc_model_is_cn103xx() ? true : false;
+ }
+ 
++static inline bool
++roc_feature_nix_has_inl_ipsec_mseg(void)
++{
++	return (roc_model_is_cn10kb() || roc_model_is_cn10ka_b0());
++}
++
++static inline bool
++roc_feature_nix_has_inl_rq_mask(void)
++{
++	return (roc_model_is_cn10kb() || roc_model_is_cn10ka_b0());
++}
++
++static inline bool
++roc_feature_nix_has_late_bp(void)
++{
++	return (roc_model_is_cn10kb() || roc_model_is_cn10ka_b0());
++}
++
++static inline bool
++roc_feature_nix_has_reass(void)
++{
++	return roc_model_is_cn10ka();
++}
++
+ #endif
+diff --git a/drivers/common/cnxk/roc_nix_debug.c b/drivers/common/cnxk/roc_nix_debug.c
+index 97d86f9a974a3..399d0d7eaea48 100644
+--- a/drivers/common/cnxk/roc_nix_debug.c
++++ b/drivers/common/cnxk/roc_nix_debug.c
+@@ -661,6 +661,12 @@ nix_lf_cq_dump(__io struct nix_cq_ctx_s *ctx, FILE *file)
+ 		 ctx->qint_idx);
+ 	nix_dump(file, "W1: bpid  \t\t\t%d\nW1: bp_ena \t\t\t%d\n", ctx->bpid,
+ 		 ctx->bp_ena);
++	nix_dump(file,
++		 "W1: lbpid_high \t\t\t0x%03x\nW1: lbpid_med \t\t\t0x%03x\n"
++		 "W1: lbpid_low \t\t\t0x%03x\n(W1: lbpid) \t\t\t0x%03x\n",
++		 ctx->lbpid_high, ctx->lbpid_med, ctx->lbpid_low,
++		 ctx->lbpid_high << 6 | ctx->lbpid_med << 3 | ctx->lbpid_low);
++	nix_dump(file, "W1: lbp_ena \t\t\t\t%d\n", ctx->lbp_ena);
+ 
+ 	nix_dump(file, "W2: update_time \t\t%d\nW2: avg_level \t\t\t%d",
+ 		 ctx->update_time, ctx->avg_level);
+@@ -671,14 +677,10 @@ nix_lf_cq_dump(__io struct nix_cq_ctx_s *ctx, FILE *file)
+ 		 ctx->cq_err_int_ena, ctx->cq_err_int);
+ 	nix_dump(file, "W3: qsize \t\t\t%d\nW3: caching \t\t\t%d", ctx->qsize,
+ 		 ctx->caching);
+-	nix_dump(file, "W3: substream \t\t\t0x%03x\nW3: ena \t\t\t%d\nW3: lbp_ena \t\t\t%d",
+-		 ctx->substream, ctx->ena, ctx->lbp_ena);
+-	nix_dump(file,
+-		 "W3: lbpid_high \t\t\t0x%03x\nW3: lbpid_med \t\t\t0x%03x\n"
+-		 "W3: lbpid_low \t\t\t0x%03x\n(W3: lbpid) \t\t\t0x%03x",
+-		 ctx->lbpid_high, ctx->lbpid_med, ctx->lbpid_low,
+-		 ctx->lbpid_high << 6 | ctx->lbpid_med << 3 | ctx->lbpid_low);
+ 	nix_dump(file, "W3: lbp_frac \t\t\t%d\n", ctx->lbp_frac);
++	nix_dump(file, "W3: substream \t\t\t0x%03x\nW3: cpt_drop_err_en \t\t\t%d\n",
++		 ctx->substream, ctx->cpt_drop_err_en);
++	nix_dump(file, "W3: ena \t\t\t%d\n", ctx->ena);
+ 	nix_dump(file, "W3: drop_ena \t\t\t%d\nW3: drop \t\t\t%d", ctx->drop_ena,
+ 		 ctx->drop);
+ 	nix_dump(file, "W3: bp \t\t\t\t%d\n", ctx->bp);
+diff --git a/drivers/common/cnxk/roc_nix_fc.c b/drivers/common/cnxk/roc_nix_fc.c
+index 39c16995cd4d7..7574a88bf6a55 100644
+--- a/drivers/common/cnxk/roc_nix_fc.c
++++ b/drivers/common/cnxk/roc_nix_fc.c
+@@ -77,7 +77,10 @@ nix_fc_rxchan_bpid_set(struct roc_nix *roc_nix, bool enable)
+ 		if (req == NULL)
+ 			goto exit;
+ 		req->chan_base = 0;
+-		req->chan_cnt = 1;
++		if (roc_nix_is_lbk(roc_nix) || roc_nix_is_sdp(roc_nix))
++			req->chan_cnt = NIX_LBK_MAX_CHAN;
++		else
++			req->chan_cnt = NIX_CGX_MAX_CHAN;
+ 		req->bpid_per_chan = 0;
+ 
+ 		rc = mbox_process_msg(mbox, (void *)&rsp);
+@@ -89,7 +92,10 @@ nix_fc_rxchan_bpid_set(struct roc_nix *roc_nix, bool enable)
+ 		if (req == NULL)
+ 			goto exit;
+ 		req->chan_base = 0;
+-		req->chan_cnt = 1;
++		if (roc_nix_is_lbk(roc_nix) || roc_nix_is_sdp(roc_nix))
++			req->chan_cnt = NIX_LBK_MAX_CHAN;
++		else
++			req->chan_cnt = NIX_CGX_MAX_CHAN;
+ 		req->bpid_per_chan = 0;
+ 
+ 		rc = mbox_process_msg(mbox, (void *)&rsp);
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 70b4ae9277a74..19f500ee54ff7 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -485,13 +485,6 @@ nix_inl_rq_mask_cfg(struct roc_nix *roc_nix, bool enable)
+ 	return rc;
+ }
+ 
+-bool
+-roc_nix_has_reass_support(struct roc_nix *nix)
+-{
+-	PLT_SET_USED(nix);
+-	return !!roc_model_is_cn10ka();
+-}
+-
+ int
+ roc_nix_inl_inb_init(struct roc_nix *roc_nix)
+ {
+@@ -574,7 +567,7 @@ roc_nix_inl_inb_fini(struct roc_nix *roc_nix)
+ 			nix_inl_meta_aura_destroy();
+ 	}
+ 
+-	if (roc_model_is_cn10kb_a0()) {
++	if (roc_feature_nix_has_inl_rq_mask()) {
+ 		rc = nix_inl_rq_mask_cfg(roc_nix, false);
+ 		if (rc) {
+ 			plt_err("Failed to get rq mask rc=%d", rc);
+@@ -1046,7 +1039,7 @@ roc_nix_inl_rq_ena_dis(struct roc_nix *roc_nix, bool enable)
+ 	if (!idev)
+ 		return -EFAULT;
+ 
+-	if (roc_model_is_cn10kb_a0()) {
++	if (roc_feature_nix_has_inl_rq_mask()) {
+ 		rc = nix_inl_rq_mask_cfg(roc_nix, true);
+ 		if (rc) {
+ 			plt_err("Failed to get rq mask rc=%d", rc);
+diff --git a/drivers/common/cnxk/roc_nix_inl.h b/drivers/common/cnxk/roc_nix_inl.h
+index 3bb37ce225758..105a9e4ec4e86 100644
+--- a/drivers/common/cnxk/roc_nix_inl.h
++++ b/drivers/common/cnxk/roc_nix_inl.h
+@@ -182,7 +182,6 @@ int __roc_api roc_nix_inl_ts_pkind_set(struct roc_nix *roc_nix, bool ts_ena,
+ 				       bool inb_inl_dev);
+ int __roc_api roc_nix_inl_rq_ena_dis(struct roc_nix *roc_nix, bool ena);
+ int __roc_api roc_nix_inl_meta_aura_check(struct roc_nix_rq *rq);
+-bool __roc_api roc_nix_has_reass_support(struct roc_nix *nix);
+ 
+ /* NIX Inline Outbound API */
+ int __roc_api roc_nix_inl_outb_init(struct roc_nix *roc_nix);
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 4eba511638cde..a6d7d754cc0c9 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -863,7 +863,7 @@ roc_nix_cq_init(struct roc_nix *roc_nix, struct roc_nix_cq *cq)
+ 	cq_ctx->avg_level = 0xff;
+ 	cq_ctx->cq_err_int_ena = BIT(NIX_CQERRINT_CQE_FAULT);
+ 	cq_ctx->cq_err_int_ena |= BIT(NIX_CQERRINT_DOOR_ERR);
+-	if (roc_model_is_cn10kb() && roc_nix_inl_inb_is_enabled(roc_nix)) {
++	if (roc_feature_nix_has_late_bp() && roc_nix_inl_inb_is_enabled(roc_nix)) {
+ 		cq_ctx->cq_err_int_ena |= BIT(NIX_CQERRINT_CPT_DROP);
+ 		cq_ctx->cpt_drop_err_en = 1;
+ 		/* Enable Late BP only when non zero CPT BPID */
+@@ -900,6 +900,7 @@ roc_nix_cq_init(struct roc_nix *roc_nix, struct roc_nix_cq *cq)
+ 			cq_ctx->drop_ena = 1;
+ 		}
+ 	}
++	cq_ctx->bp = cq->drop_thresh;
+ 
+ 	rc = mbox_process(mbox);
+ 	mbox_put(mbox);
+@@ -960,7 +961,7 @@ roc_nix_cq_fini(struct roc_nix_cq *cq)
+ 		aq->cq.bp_ena = 0;
+ 		aq->cq_mask.ena = ~aq->cq_mask.ena;
+ 		aq->cq_mask.bp_ena = ~aq->cq_mask.bp_ena;
+-		if (roc_model_is_cn10kb() && roc_nix_inl_inb_is_enabled(cq->roc_nix)) {
++		if (roc_feature_nix_has_late_bp() && roc_nix_inl_inb_is_enabled(cq->roc_nix)) {
+ 			aq->cq.lbp_ena = 0;
+ 			aq->cq_mask.lbp_ena = ~aq->cq_mask.lbp_ena;
+ 		}
+diff --git a/drivers/common/cnxk/version.map b/drivers/common/cnxk/version.map
+index 6dda6230b50ff..efe411d1fb184 100644
+--- a/drivers/common/cnxk/version.map
++++ b/drivers/common/cnxk/version.map
+@@ -138,7 +138,6 @@ INTERNAL {
+ 	roc_nix_get_pf_func;
+ 	roc_nix_get_vf;
+ 	roc_nix_get_vwqe_interval;
+-	roc_nix_has_reass_support;
+ 	roc_nix_inl_cb_register;
+ 	roc_nix_inl_cb_unregister;
+ 	roc_nix_inl_ctx_write;
+diff --git a/drivers/net/cnxk/cn10k_ethdev.c b/drivers/net/cnxk/cn10k_ethdev.c
+index b84fed6d903b8..cb88bd2dc199d 100644
+--- a/drivers/net/cnxk/cn10k_ethdev.c
++++ b/drivers/net/cnxk/cn10k_ethdev.c
+@@ -591,7 +591,7 @@ cn10k_nix_reassembly_capability_get(struct rte_eth_dev *eth_dev,
+ 	int rc = -ENOTSUP;
+ 	RTE_SET_USED(eth_dev);
+ 
+-	if (!roc_nix_has_reass_support(&dev->nix))
++	if (!roc_feature_nix_has_reass())
+ 		return -ENOTSUP;
+ 
+ 	if (dev->rx_offloads & RTE_ETH_RX_OFFLOAD_SECURITY) {
+@@ -621,7 +621,7 @@ cn10k_nix_reassembly_conf_set(struct rte_eth_dev *eth_dev,
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	int rc = 0;
+ 
+-	if (!roc_nix_has_reass_support(&dev->nix))
++	if (!roc_feature_nix_has_reass())
+ 		return -ENOTSUP;
+ 
+ 	if (!conf->flags) {
+diff --git a/drivers/net/cnxk/cn10k_ethdev_sec.c b/drivers/net/cnxk/cn10k_ethdev_sec.c
+index ed5c335787945..3c32de0f94b50 100644
+--- a/drivers/net/cnxk/cn10k_ethdev_sec.c
++++ b/drivers/net/cnxk/cn10k_ethdev_sec.c
+@@ -809,7 +809,7 @@ cn10k_eth_sec_session_create(void *device,
+ 		sess_priv.chksum = (!ipsec->options.ip_csum_enable << 1 |
+ 				    !ipsec->options.l4_csum_enable);
+ 		sess_priv.dec_ttl = ipsec->options.dec_ttl;
+-		if (roc_model_is_cn10kb_a0())
++		if (roc_feature_nix_has_inl_ipsec_mseg())
+ 			sess_priv.nixtx_off = 1;
+ 
+ 		/* Pointer from eth_sec -> outb_sa */
+-- 
+2.25.1
+

@@ -1,0 +1,165 @@
+From 6f18bd92044f62d3e17ea506a460f44ac9da0f2e Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 17 Jan 2024 08:34:43 -0800
+Subject: [PATCH 202/513] test/security: unit test to verify zero TLS records
+
+Add unit tests to verify the zero len TLS records. Zero len packets are
+allowed when content type is app data while zero packet length with
+other content type (such as handshake) would result in an error.
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I631e0bbd1c90be2af8aa158eff9847d5249dcd92
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119952
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 4595a4f1bfc94c93a40aacae04373fb6a351ef96)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121288
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c                     | 51 ++++++++++++++++++-
+ app/test/test_cryptodev_security_tls_record.c |  5 +-
+ app/test/test_cryptodev_security_tls_record.h |  2 +-
+ 3 files changed, 55 insertions(+), 3 deletions(-)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index f71e5242c1b39..7f07295fa66f2 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12032,6 +12032,9 @@ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ 		payload_len = TLS_RECORD_PLAINTEXT_MIN_LEN;
+ 		if (flags->nb_segs_in_mbuf)
+ 			payload_len = RTE_MAX(payload_len, flags->nb_segs_in_mbuf);
++
++		if (flags->zero_len)
++			payload_len = 0;
+ again:
+ 		test_tls_record_td_prepare(sec_alg_list[i].param1, sec_alg_list[i].param2, flags,
+ 					   td_outb, nb_pkts, payload_len);
+@@ -12040,8 +12043,16 @@ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ 		if (ret == TEST_SKIPPED)
+ 			continue;
+ 
+-		if (ret == TEST_FAILED)
++		if (flags->zero_len &&
++		    ((flags->content_type == TLS_RECORD_TEST_CONTENT_TYPE_HANDSHAKE) ||
++		    (flags->content_type == TLS_RECORD_TEST_CONTENT_TYPE_HANDSHAKE) ||
++		    (flags->content_type == TLS_RECORD_TEST_CONTENT_TYPE_HANDSHAKE))) {
++			if (ret == TEST_SUCCESS)
++				return TEST_FAILED;
++			goto skip_decrypt;
++		} else if (ret == TEST_FAILED) {
+ 			return TEST_FAILED;
++		}
+ 
+ 		test_tls_record_td_update(td_inb, td_outb, nb_pkts, flags);
+ 
+@@ -12057,6 +12068,7 @@ test_tls_record_proto_all(const struct tls_record_test_flags *flags)
+ 				return TEST_FAILED;
+ 		}
+ 
++skip_decrypt:
+ 		if (flags->data_walkthrough && (++payload_len <= max_payload_len))
+ 			goto again;
+ 
+@@ -12145,6 +12157,35 @@ test_tls_record_proto_custom_content_type(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_tls_record_proto_zero_len(void)
++{
++	struct tls_record_test_flags flags = {
++		.zero_len = 1
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_tls_record_proto_zero_len_non_app(void)
++{
++	struct tls_record_test_flags flags = {
++		.zero_len = 1,
++		.content_type = TLS_RECORD_TEST_CONTENT_TYPE_HANDSHAKE,
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
+ static int
+ test_dtls_1_2_record_proto_data_walkthrough(void)
+ {
+@@ -17267,6 +17308,14 @@ static struct unit_test_suite tls12_record_proto_testsuite  = {
+ 			"Custom content type",
+ 			ut_setup_security, ut_teardown,
+ 			test_tls_record_proto_custom_content_type),
++		TEST_CASE_NAMED_ST(
++			"Zero len TLS record with content type as app",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_zero_len),
++		TEST_CASE_NAMED_ST(
++			"Zero len TLS record with content type as ctrl",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_zero_len_non_app),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev_security_tls_record.c b/app/test/test_cryptodev_security_tls_record.c
+index 9a2af259c9a08..c5410a4c92437 100644
+--- a/app/test/test_cryptodev_security_tls_record.c
++++ b/app/test/test_cryptodev_security_tls_record.c
+@@ -103,13 +103,15 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 		}
+ 	}
+ 
+-	if (flags->data_walkthrough) {
++	if (flags->data_walkthrough || flags->zero_len) {
+ 		test_sec_proto_pattern_set(td->input_text.data, data_len);
+ 		td->input_text.len = data_len;
+ 	}
+ 
+ 	if (flags->content_type == TLS_RECORD_TEST_CONTENT_TYPE_CUSTOM)
+ 		td->app_type = RTE_TLS_TYPE_MAX;
++	else if (flags->content_type == TLS_RECORD_TEST_CONTENT_TYPE_HANDSHAKE)
++		td->app_type = RTE_TLS_TYPE_HANDSHAKE;
+ 
+ 	tls_pkt_size = td->input_text.len;
+ 
+@@ -232,6 +234,7 @@ test_tls_record_res_d_prepare(const uint8_t *output_text, uint32_t len,
+ 
+ 	memcpy(&res_d->input_text.data, output_text, len);
+ 	res_d->input_text.len = len;
++	res_d->output_text.len = td->input_text.len;
+ 
+ 	res_d->tls_record_xform.type = RTE_SECURITY_TLS_SESS_TYPE_READ;
+ 	if (res_d->aead) {
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+index b707361fb6f7c..e7ba31c44917e 100644
+--- a/app/test/test_cryptodev_security_tls_record.h
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -98,6 +98,7 @@ struct tls_record_test_flags {
+ 	enum rte_security_tls_version tls_version;
+ 	bool pkt_corruption;
+ 	enum tls_record_test_content_type content_type;
++	bool zero_len;
+ };
+ 
+ extern struct tls_record_test_data tls_test_data_aes_128_gcm_v1;
+@@ -140,5 +141,4 @@ void test_tls_record_td_update(struct tls_record_test_data td_inb[],
+ 
+ int test_tls_record_post_process(const struct rte_mbuf *m, const struct tls_record_test_data *td,
+ 				 struct tls_record_test_data *res_d, bool silent);
+-
+ #endif
+-- 
+2.25.1
+

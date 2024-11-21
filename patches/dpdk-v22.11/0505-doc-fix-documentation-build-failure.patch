@@ -1,0 +1,37 @@
+From 279a5a1f2089f67962c3b0fbbab382d6808f8078 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Tue, 20 Jun 2023 15:12:21 +0530
+Subject: [PATCH 505/955] doc: fix documentation build failure
+
+Fixing documentation build failure by adding correct
+string in crypto feature file.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I51b355213f7ebf350eb697d5c3e0ebf7cc3aa2f8
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/105933
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ doc/guides/cryptodevs/features/cn10k.ini | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/doc/guides/cryptodevs/features/cn10k.ini b/doc/guides/cryptodevs/features/cn10k.ini
+index 2a64bd531d857..052ff6c0c59c6 100644
+--- a/doc/guides/cryptodevs/features/cn10k.ini
++++ b/doc/guides/cryptodevs/features/cn10k.ini
+@@ -38,7 +38,11 @@ DES CBC        = Y
+ KASUMI F8      = Y
+ SNOW3G UEA2    = Y
+ ZUC EEA3       = Y
+-SM4            = Y
++SM4 ECB        = Y
++SM4 CBC        = Y
++SM4 CTR        = Y
++SM4 CFB        = Y
++SM4 OFB        = Y
+ 
+ ;
+ ; Supported authentication algorithms of 'cn10k' crypto driver.
+-- 
+2.25.1
+

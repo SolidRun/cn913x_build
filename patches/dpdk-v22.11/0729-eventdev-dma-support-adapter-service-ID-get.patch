@@ -1,0 +1,46 @@
+From fa3c73fed52b611086b0f87c2fac94e4cd913718 Mon Sep 17 00:00:00 2001
+From: Amit Prakash Shukla <amitprakashs@marvell.com>
+Date: Fri, 29 Sep 2023 17:20:46 +0530
+Subject: [PATCH 729/955] eventdev/dma: support adapter service ID get
+
+Added API support to get DMA adapter service ID. Service id
+returned in the variable by the API call shall be used by application
+to map a service core.
+
+Signed-off-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I4df770cca52524f20786c50e98a7ba5c10080921
+---
+ lib/eventdev/rte_event_dma_adapter.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/lib/eventdev/rte_event_dma_adapter.c b/lib/eventdev/rte_event_dma_adapter.c
+index be6c2623e9316..c3b014aaf9b05 100644
+--- a/lib/eventdev/rte_event_dma_adapter.c
++++ b/lib/eventdev/rte_event_dma_adapter.c
+@@ -1137,6 +1137,23 @@ rte_event_dma_adapter_vchan_del(uint8_t id, int16_t dma_dev_id, uint16_t vchan)
+ 	return ret;
+ }
+ 
++int
++rte_event_dma_adapter_service_id_get(uint8_t id, uint32_t *service_id)
++{
++	struct event_dma_adapter *adapter;
++
++	EVENT_DMA_ADAPTER_ID_VALID_OR_ERR_RET(id, -EINVAL);
++
++	adapter = edma_id_to_adapter(id);
++	if (adapter == NULL || service_id == NULL)
++		return -EINVAL;
++
++	if (adapter->service_initialized)
++		*service_id = adapter->service_id;
++
++	return adapter->service_initialized ? 0 : -ESRCH;
++}
++
+ static int
+ edma_adapter_ctrl(uint8_t id, int start)
+ {
+-- 
+2.25.1
+

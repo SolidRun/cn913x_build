@@ -1,0 +1,45 @@
+From 9d04638bb9a125b001bcc4b59c84c8e4a43ad282 Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Wed, 4 Jan 2023 08:47:19 -0800
+Subject: [PATCH 140/955] common/cnxk: add mailbox support for SDP VF
+
+add mailbox support for Octeon SDP PMD driver
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I7264124997f025bf6b5f11f1f39ed4ddf7a11cc9
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93512
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/common/cnxk/hw/sdp.h | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/common/cnxk/hw/sdp.h b/drivers/common/cnxk/hw/sdp.h
+index 766fd3cf7bf9c..19eca2766ff40 100644
+--- a/drivers/common/cnxk/hw/sdp.h
++++ b/drivers/common/cnxk/hw/sdp.h
+@@ -110,6 +110,8 @@
+ #define SDP_VF_R_OUT_PKT_CNT_START     (0x10180)
+ #define SDP_VF_R_OUT_BYTE_CNT_START    (0x10190)
+ #define SDP_VF_R_OUT_CNTS_ISM_START    (0x10510)
++#define SDP_VF_R_MBOX_PF_VF_DATA_START (0x10210)
++#define SDP_VF_R_MBOX_VF_PF_DATA_START (0x10230)
+ 
+ #define SDP_VF_R_OUT_CONTROL(ring) (SDP_VF_R_OUT_CONTROL_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
+@@ -135,6 +137,12 @@
+ 
+ #define SDP_VF_R_OUT_CNTS_ISM(ring) (SDP_VF_R_OUT_CNTS_ISM_START + (SDP_VF_RING_OFFSET * (ring)))
+ 
++#define SDP_VF_R_MBOX_PF_VF_DATA(ring)                                                             \
++	(SDP_VF_R_MBOX_PF_VF_DATA_START + ((ring)*SDP_VF_RING_OFFSET))
++
++#define SDP_VF_R_MBOX_VF_PF_DATA(ring)                                                             \
++	(SDP_VF_R_MBOX_VF_PF_DATA_START + ((ring)*SDP_VF_RING_OFFSET))
++
+ /* SDP VF OQ Masks */
+ #define SDP_VF_R_OUT_CTL_IDLE  (1ull << 40)
+ #define SDP_VF_R_OUT_CTL_ES_I  (1ull << 34)
+-- 
+2.25.1
+

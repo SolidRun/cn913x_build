@@ -1,0 +1,85 @@
+From eec65a33ac16ceb311489552136aad5963d9051c Mon Sep 17 00:00:00 2001
+From: Harman Kalra <hkalra@marvell.com>
+Date: Thu, 1 Aug 2024 11:23:13 +0530
+Subject: [PATCH 419/513] config/arm: add Marvell CN20k
+
+Add config support to cross compile for Marvell CN20k SoC.
+Marvell CN20k SoC is based on ARM Neoverse N3 cores.
+
+Change-Id: I2538c676843d81c11b54e176a40cd74c1e476ead
+Signed-off-by: Harman Kalra <hkalra@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/132612
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ config/arm/arm64_cn20k_linux_gcc | 17 +++++++++++++++++
+ config/arm/meson.build           | 13 +++++++++++++
+ 2 files changed, 30 insertions(+)
+ create mode 100644 config/arm/arm64_cn20k_linux_gcc
+
+diff --git a/config/arm/arm64_cn20k_linux_gcc b/config/arm/arm64_cn20k_linux_gcc
+new file mode 100644
+index 0000000000000..c8362a28c92d4
+--- /dev/null
++++ b/config/arm/arm64_cn20k_linux_gcc
+@@ -0,0 +1,17 @@
++[binaries]
++c = ['ccache', 'aarch64-marvell-linux-gnu-gcc']
++cpp = ['ccache', 'aarch64-marvell-linux-gnu-g++']
++ar = 'aarch64-marvell-linux-gnu-gcc-ar'
++strip = 'aarch64-marvell-linux-gnu-strip'
++pkgconfig = 'aarch64-marvell-linux-gnu-pkg-config'
++pcap-config = ''
++cmake = 'cmake'
++
++[host_machine]
++system = 'linux'
++cpu_family = 'aarch64'
++cpu = 'armv8.7-a'
++endian = 'little'
++
++[properties]
++platform = 'cn20k'
+diff --git a/config/arm/meson.build b/config/arm/meson.build
+index 6327fb98406c0..354690b11e07b 100644
+--- a/config/arm/meson.build
++++ b/config/arm/meson.build
+@@ -430,6 +430,17 @@ soc_cn10k = {
+     'sve_acle': false
+ }
+ 
++soc_cn20k = {
++    'description' : 'Marvell OCTEON 20',
++    'implementer' : '0x41',
++    'flags': [
++        ['RTE_MAX_LCORE', 42],
++        ['RTE_MAX_NUMA_NODES', 1]
++    ],
++    'part_number': '0xd8e',
++    'numa': false
++}
++
+ soc_dpaa = {
+     'description': 'NXP DPAA',
+     'implementer': '0x41',
+@@ -616,6 +627,7 @@ cdx:             AMD CDX
+ centriq2400:     Qualcomm Centriq 2400
+ cn9k:            Marvell OCTEON 9
+ cn10k:           Marvell OCTEON 10
++cn20k:           Marvell OCTEON 20
+ dpaa:            NXP DPAA
+ emag:            Ampere eMAG
+ ft2000plus:      Phytium FT-2000+
+@@ -651,6 +663,7 @@ socs = {
+     'centriq2400': soc_centriq2400,
+     'cn9k': soc_cn9k,
+     'cn10k' : soc_cn10k,
++    'cn20k' : soc_cn20k,
+     'dpaa': soc_dpaa,
+     'emag': soc_emag,
+     'ft2000plus': soc_ft2000plus,
+-- 
+2.25.1
+

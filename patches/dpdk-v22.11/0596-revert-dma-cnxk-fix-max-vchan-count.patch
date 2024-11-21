@@ -1,0 +1,38 @@
+From 537fc8643647c4ebf6bae1834c094aef806a6e29 Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Fri, 11 Aug 2023 05:16:25 -0700
+Subject: [PATCH 596/955] revert "dma/cnxk: fix max vchan count"
+
+Patch reverts 14e26dfbe652d78b392277f08393b27d3ffbd8d0
+
+cnxk dmadev can support multiple vchans as single HW queue
+can support multiple transfer types.
+
+As per dmadev API spec, all the functions are lock-free
+functions which assume not to be invoked in parallel.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: I66b56b3bfa4f739314e72484c520668b01cc8dd5
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/109690
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/dma/cnxk/cnxk_dmadev.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/dma/cnxk/cnxk_dmadev.h b/drivers/dma/cnxk/cnxk_dmadev.h
+index 0d8203d012fb0..9c6c898d233e0 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev.h
++++ b/drivers/dma/cnxk/cnxk_dmadev.h
+@@ -11,7 +11,7 @@
+ #define STRM_DEC(s, var)     ((s).var = ((s).var - 1) == -1 ? (s).max_cnt : ((s).var - 1))
+ #define DPI_MAX_DESC	     2048
+ #define DPI_MIN_DESC	     2
+-#define MAX_VCHANS_PER_QUEUE 1
++#define MAX_VCHANS_PER_QUEUE 4
+ 
+ /* Set Completion data to 0xFF when request submitted,
+  * upon successful request completion engine reset to completion status
+-- 
+2.25.1
+

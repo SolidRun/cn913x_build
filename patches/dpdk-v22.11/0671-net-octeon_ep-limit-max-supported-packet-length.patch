@@ -1,0 +1,40 @@
+From 22b9898f3fd181e5573178f06a910b8a885b1da9 Mon Sep 17 00:00:00 2001
+From: Vamsi Attunuru <vattunuru@marvell.com>
+Date: Sun, 29 Oct 2023 03:15:55 -0700
+Subject: [PATCH 671/955] net/octeon_ep: limit max supported packet length
+
+Patch limits the max supported rx packet length to 16KB on CN9X & CNF9K
+endpoint devices to workaround the early completions. The NIX block in
+the Octeon may post the completions to SDP immediately after pushing
+the first 16KB of the packet.
+
+Signed-off-by: Vamsi Attunuru <vattunuru@marvell.com>
+Change-Id: Ifdd88d26e87e1ec7e7d36983851f9406df853a23
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/114851
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index 893aea409a724..cc4ba82cfbac0 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -99,6 +99,13 @@ otx_ep_dev_info_get(struct rte_eth_dev *eth_dev,
+ 		return -EINVAL;
+ 	}
+ 
++	if (otx_epvf->chip_id == PCI_DEVID_CN9K_EP_NET_VF ||
++	    otx_epvf->chip_id == PCI_DEVID_CNF95N_EP_NET_VF ||
++	    otx_epvf->chip_id == PCI_DEVID_CNF95O_EP_NET_VF) {
++		max_rx_pktlen =  OTX2_EP_MAX_RX_PKT_LEN;
++		otx_ep_dbg("Max supported pkt len is %d", max_rx_pktlen);
++	}
++
+ 	devinfo->speed_capa = RTE_ETH_LINK_SPEED_10G;
+ 	devinfo->max_rx_queues = otx_epvf->max_rx_queues;
+ 	devinfo->max_tx_queues = otx_epvf->max_tx_queues;
+-- 
+2.25.1
+

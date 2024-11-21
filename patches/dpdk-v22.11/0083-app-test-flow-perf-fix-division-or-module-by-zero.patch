@@ -1,0 +1,54 @@
+From 4cda00ea34555b3fe696609697fb57b6e1f32b1a Mon Sep 17 00:00:00 2001
+From: Mohammad Iqbal Ahmad <mahmad@marvell.com>
+Date: Wed, 14 Dec 2022 17:33:32 +0530
+Subject: [PATCH 083/955] app/test-flow-perf: fix division or module by zero
+
+Fix division or module by zero reported by coverity scan
+
+Coverity issue: 373870
+Fixes: bf3688f1e816 ("app/flow-perf: add insertion rate calculation")
+cc: stable@dpdk.org
+
+Signed-off-by: Mohammad Iqbal Ahmad <mahmad@marvell.com>
+Change-Id: I80c9f06419f169e60993d5da233b2023306b7889
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/92677
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .mailmap                  | 1 +
+ app/test-flow-perf/main.c | 7 ++++++-
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/.mailmap b/.mailmap
+index 75884b6fe23ef..464164765fcb4 100644
+--- a/.mailmap
++++ b/.mailmap
+@@ -911,6 +911,7 @@ Mitch Williams <mitch.a.williams@intel.com>
+ Mit Matelske <mit@pt.net>
+ Mohamad Noor Alim Hussin <mohamad.noor.alim.hussin@intel.com>
+ Mohammad Abdul Awal <mohammad.abdul.awal@intel.com>
++Mohammad Iqbal Ahmad <mahmad@marvell.com>
+ Mohammed Gamal <mgamal@redhat.com>
+ Mohsin Kazmi <mohsin.kazmi14@gmail.com>
+ Mohsin Mazhar Shaikh <mohsinmazhar_shaikh@trendmicro.com>
+diff --git a/app/test-flow-perf/main.c b/app/test-flow-perf/main.c
+index 4a9206803aca2..0a542b0d877f5 100644
+--- a/app/test-flow-perf/main.c
++++ b/app/test-flow-perf/main.c
+@@ -848,7 +848,12 @@ args_parse(int argc, char **argv)
+ 			/* Control */
+ 			if (strcmp(lgopts[opt_idx].name,
+ 					"rules-batch") == 0) {
+-				rules_batch = atoi(optarg);
++				n = atoi(optarg);
++				if (n > 0)
++					rules_batch = n;
++				else
++					rte_exit(EXIT_FAILURE,
++							"flow rules_batch should be > 0\n");
+ 			}
+ 			if (strcmp(lgopts[opt_idx].name,
+ 					"rules-count") == 0) {
+-- 
+2.25.1
+

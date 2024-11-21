@@ -1,0 +1,90 @@
+From 5343703e0349bad25dca05b234cf22e9152d03aa Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Mon, 2 Sep 2024 17:18:07 +0530
+Subject: [PATCH 496/513] examples/ipsec-secgw: fix dequeue count from
+ cryptodev
+
+Setting dequeue packet count to max of MAX_PKT_BURST
+size instead of MAX_PKTS.
+
+Dequeue from cryptodev is called with MAX_PKTS but
+routing functions allocate hop/dst_ip arrays of
+size MAX_PKT_BURST. This can corrupt stack causing
+stack smashing error when more than MAX_PKT_BURST
+packets are returned from cryptodev.
+
+Fixes: a2b445b810ac ("examples/ipsec-secgw: allow larger burst size for vectors")
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I3ab1b6d3aef5385f214f51930bfd521e73255834
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134710
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Akhil Goyal <gakhil@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 1a3bd6f10bac3f4c4bc60745c8d49f05ea5ef1f5)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/135498
+---
+ examples/ipsec-secgw/ipsec-secgw.c   | 6 ++++--
+ examples/ipsec-secgw/ipsec_process.c | 3 ++-
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/examples/ipsec-secgw/ipsec-secgw.c b/examples/ipsec-secgw/ipsec-secgw.c
+index a61bea400adf4..b17c653f6c41a 100644
+--- a/examples/ipsec-secgw/ipsec-secgw.c
++++ b/examples/ipsec-secgw/ipsec-secgw.c
+@@ -626,12 +626,13 @@ drain_inbound_crypto_queues(const struct lcore_conf *qconf,
+ 	uint32_t n;
+ 	struct ipsec_traffic trf;
+ 	unsigned int lcoreid = rte_lcore_id();
++	const int nb_pkts = RTE_DIM(trf.ipsec.pkts);
+ 
+ 	if (app_sa_prm.enable == 0) {
+ 
+ 		/* dequeue packets from crypto-queue */
+ 		n = ipsec_inbound_cqp_dequeue(ctx, trf.ipsec.pkts,
+-			RTE_DIM(trf.ipsec.pkts));
++			RTE_MIN(MAX_PKT_BURST, nb_pkts));
+ 
+ 		trf.ip4.num = 0;
+ 		trf.ip6.num = 0;
+@@ -663,12 +664,13 @@ drain_outbound_crypto_queues(const struct lcore_conf *qconf,
+ {
+ 	uint32_t n;
+ 	struct ipsec_traffic trf;
++	const int nb_pkts = RTE_DIM(trf.ipsec.pkts);
+ 
+ 	if (app_sa_prm.enable == 0) {
+ 
+ 		/* dequeue packets from crypto-queue */
+ 		n = ipsec_outbound_cqp_dequeue(ctx, trf.ipsec.pkts,
+-			RTE_DIM(trf.ipsec.pkts));
++			RTE_MIN(MAX_PKT_BURST, nb_pkts));
+ 
+ 		trf.ip4.num = 0;
+ 		trf.ip6.num = 0;
+diff --git a/examples/ipsec-secgw/ipsec_process.c b/examples/ipsec-secgw/ipsec_process.c
+index ddbe30745becf..5080e810e0f42 100644
+--- a/examples/ipsec-secgw/ipsec_process.c
++++ b/examples/ipsec-secgw/ipsec_process.c
+@@ -336,6 +336,7 @@ ipsec_cqp_process(struct ipsec_ctx *ctx, struct ipsec_traffic *trf)
+ 	struct rte_ipsec_session *ss;
+ 	struct traffic_type *out;
+ 	struct rte_ipsec_group *pg;
++	const int nb_cops = RTE_DIM(trf->ipsec.pkts);
+ 	struct rte_crypto_op *cop[RTE_DIM(trf->ipsec.pkts)];
+ 	struct rte_ipsec_group grp[RTE_DIM(trf->ipsec.pkts)];
+ 
+@@ -345,7 +346,7 @@ ipsec_cqp_process(struct ipsec_ctx *ctx, struct ipsec_traffic *trf)
+ 	out = &trf->ipsec;
+ 
+ 	/* dequeue completed crypto-ops */
+-	n = ctx_dequeue(ctx, cop, RTE_DIM(cop));
++	n = ctx_dequeue(ctx, cop, RTE_MIN(MAX_PKT_BURST, nb_cops));
+ 	if (n == 0)
+ 		return;
+ 
+-- 
+2.25.1
+

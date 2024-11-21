@@ -1,0 +1,90 @@
+From acaff00cb24a898a74af4525d8bf9013a0effbdb Mon Sep 17 00:00:00 2001
+From: Sathesh Edara <sedara@marvell.com>
+Date: Fri, 30 Dec 2022 07:08:33 -0800
+Subject: [PATCH 129/955] net/octeon_ep: add cn10k chip family support
+
+add all the cn10k chip family PCI endpoint devices
+support in the driver.
+
+Signed-off-by: Sathesh Edara <sedara@marvell.com>
+Change-Id: I51659c5d1ab520709b6cd21baaf0f3bc389cdbd6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/93426
+Tested-by: Satananda Burla <sburla@marvell.com>
+Reviewed-by: Veerasenareddy Burru <vburru@marvell.com>
+---
+ drivers/net/octeon_ep/cnxk_ep_vf.h    |  5 ++++-
+ drivers/net/octeon_ep/otx_ep_ethdev.c | 21 +++++++++++++++++----
+ 2 files changed, 21 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/octeon_ep/cnxk_ep_vf.h b/drivers/net/octeon_ep/cnxk_ep_vf.h
+index 7162461dd98a3..aaa57745528a3 100644
+--- a/drivers/net/octeon_ep/cnxk_ep_vf.h
++++ b/drivers/net/octeon_ep/cnxk_ep_vf.h
+@@ -134,7 +134,10 @@
+ #define CNXK_EP_R_OUT_CTL_ROR_P              (1ULL << 24)
+ #define CNXK_EP_R_OUT_CTL_IMODE              (1ULL << 23)
+ 
+-#define PCI_DEVID_CNXK_EP_NET_VF		0xB903
++#define PCI_DEVID_CN10KA_EP_NET_VF		0xB903
++#define PCI_DEVID_CNF10KA_EP_NET_VF		0xBA03
++#define PCI_DEVID_CNF10KB_EP_NET_VF		0xBC03
++#define PCI_DEVID_CN10KB_EP_NET_VF		0xBD03
+ 
+ int
+ cnxk_ep_vf_setup_device(struct otx_ep_device *sdpvf);
+diff --git a/drivers/net/octeon_ep/otx_ep_ethdev.c b/drivers/net/octeon_ep/otx_ep_ethdev.c
+index ae4386006c0fb..4e9fc6100b9bd 100644
+--- a/drivers/net/octeon_ep/otx_ep_ethdev.c
++++ b/drivers/net/octeon_ep/otx_ep_ethdev.c
+@@ -112,7 +112,10 @@ otx_ep_chip_specific_setup(struct otx_ep_device *otx_epvf)
+ 		ret = otx2_ep_vf_setup_device(otx_epvf);
+ 		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+ 		break;
+-	case PCI_DEVID_CNXK_EP_NET_VF:
++	case PCI_DEVID_CN10KA_EP_NET_VF:
++	case PCI_DEVID_CN10KB_EP_NET_VF:
++	case PCI_DEVID_CNF10KA_EP_NET_VF:
++	case PCI_DEVID_CNF10KB_EP_NET_VF:
+ 		otx_epvf->chip_id = dev_id;
+ 		ret = cnxk_ep_vf_setup_device(otx_epvf);
+ 		otx_epvf->fn_list.disable_io_queues(otx_epvf);
+@@ -151,7 +154,10 @@ otx_epdev_init(struct otx_ep_device *otx_epvf)
+ 		 otx_epvf->chip_id == PCI_DEVID_CNF95N_EP_NET_VF ||
+ 		 otx_epvf->chip_id == PCI_DEVID_CNF95O_EP_NET_VF)
+ 		otx_epvf->eth_dev->tx_pkt_burst = &otx2_ep_xmit_pkts;
+-	else if (otx_epvf->chip_id == PCI_DEVID_CNXK_EP_NET_VF)
++	else if (otx_epvf->chip_id == PCI_DEVID_CN10KA_EP_NET_VF ||
++		 otx_epvf->chip_id == PCI_DEVID_CN10KB_EP_NET_VF ||
++		 otx_epvf->chip_id == PCI_DEVID_CNF10KA_EP_NET_VF ||
++		 otx_epvf->chip_id == PCI_DEVID_CNF10KB_EP_NET_VF)
+ 		otx_epvf->eth_dev->tx_pkt_burst = &otx2_ep_xmit_pkts;
+ 	ethdev_queues = (uint32_t)(otx_epvf->sriov_info.rings_per_vf);
+ 	otx_epvf->max_rx_queues = ethdev_queues;
+@@ -551,7 +557,11 @@ otx_ep_eth_dev_init(struct rte_eth_dev *eth_dev)
+ 	if (otx_epvf->chip_id == PCI_DEVID_OCTEONTX2_EP_NET_VF ||
+ 	    otx_epvf->chip_id == PCI_DEVID_CN98XX_EP_NET_VF ||
+ 	    otx_epvf->chip_id == PCI_DEVID_CNF95N_EP_NET_VF ||
+-	    otx_epvf->chip_id == PCI_DEVID_CNF95O_EP_NET_VF) {
++	    otx_epvf->chip_id == PCI_DEVID_CNF95O_EP_NET_VF ||
++	    otx_epvf->chip_id == PCI_DEVID_CN10KA_EP_NET_VF ||
++	    otx_epvf->chip_id == PCI_DEVID_CN10KB_EP_NET_VF ||
++	    otx_epvf->chip_id == PCI_DEVID_CNF10KA_EP_NET_VF ||
++	    otx_epvf->chip_id == PCI_DEVID_CNF10KB_EP_NET_VF) {
+ 		if (otx_epvf->sdp_packet_mode == SDP_PACKET_MODE_NIC)
+ 			otx_epvf->pkind = SDP_OTX2_PKIND_FS24;
+ 		else
+@@ -587,7 +597,10 @@ static const struct rte_pci_id pci_id_otx_ep_map[] = {
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CN98XX_EP_NET_VF) },
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNF95N_EP_NET_VF) },
+ 	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNF95O_EP_NET_VF) },
+-	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNXK_EP_NET_VF) },
++	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CN10KA_EP_NET_VF) },
++	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CN10KB_EP_NET_VF) },
++	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNF10KA_EP_NET_VF) },
++	{ RTE_PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVID_CNF10KB_EP_NET_VF) },
+ 	{ .vendor_id = 0, /* sentinel */ }
+ };
+ 
+-- 
+2.25.1
+

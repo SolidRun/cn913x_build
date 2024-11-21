@@ -1,0 +1,70 @@
+From 0c02d0e5073bea7f1c548959ff6134fed6b6bdf7 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Thu, 25 Aug 2022 22:40:15 +0530
+Subject: [PATCH 044/955] net/cnxk: add debug check for number of Tx
+ descriptors
+
+When SG2 descriptors are used and more than 5 segments
+are present, in certain combination of segments the
+number of descriptors required will be greater than
+16.
+
+In debug builds, add an assert to capture to scenario.
+
+Change-Id: Ia6fcac58496afb8d4c415f2a73345d4370f78ce4
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/83492
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/net/cnxk/cn10k_tx.h | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/drivers/net/cnxk/cn10k_tx.h b/drivers/net/cnxk/cn10k_tx.h
+index 3f08a8a473ede..09c332b2b5962 100644
+--- a/drivers/net/cnxk/cn10k_tx.h
++++ b/drivers/net/cnxk/cn10k_tx.h
+@@ -84,6 +84,22 @@ cn10k_nix_mbuf_sg_dwords(struct rte_mbuf *m)
+ 	return (segw + 1) / 2;
+ }
+ 
++static __plt_always_inline void
++cn10k_nix_tx_mbuf_validate(struct rte_mbuf *m, const uint32_t flags)
++{
++#ifdef RTE_LIBRTE_MBUF_DEBUG
++	uint16_t segdw;
++
++	segdw = cn10k_nix_mbuf_sg_dwords(m);
++	segdw += 1 + !!(flags & NIX_TX_NEED_EXT_HDR) + !!(flags & NIX_TX_OFFLOAD_TSTAMP_F);
++
++	PLT_ASSERT(segdw <= 8);
++#else
++	RTE_SET_USED(m);
++	RTE_SET_USED(flags);
++#endif
++}
++
+ static __plt_always_inline void
+ cn10k_nix_vwqe_wait_fc(struct cn10k_eth_txq *txq, int64_t req)
+ {
+@@ -1307,6 +1323,8 @@ cn10k_nix_xmit_pkts_mseg(void *tx_queue, uint64_t *ws,
+ 	}
+ 
+ 	for (i = 0; i < burst; i++) {
++		cn10k_nix_tx_mbuf_validate(tx_pkts[i], flags);
++
+ 		/* Perform header writes for TSO, barrier at
+ 		 * lmt steorl will suffice.
+ 		 */
+@@ -1906,6 +1924,8 @@ cn10k_nix_xmit_pkts_vector(void *tx_queue, uint64_t *ws,
+ 			for (j = 0; j < NIX_DESCS_PER_LOOP; j++) {
+ 				struct rte_mbuf *m = tx_pkts[j];
+ 
++				cn10k_nix_tx_mbuf_validate(m, flags);
++
+ 				/* Get dwords based on nb_segs. */
+ 				if (!(flags & NIX_TX_OFFLOAD_MBUF_NOFF_F &&
+ 				      flags & NIX_TX_MULTI_SEG_F))
+-- 
+2.25.1
+

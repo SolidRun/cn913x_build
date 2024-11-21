@@ -1,0 +1,44 @@
+From 320d2feb887ac23b86d0cc688c1113cfa46cbf8f Mon Sep 17 00:00:00 2001
+From: Veerasenareddy Burru <vburru@marvell.com>
+Date: Thu, 16 Feb 2023 00:14:24 -0800
+Subject: [PATCH 195/955] common/cnxk: distribute SQ's to sdp channels
+
+map SQ's to SDP channels using round-robin policy.
+
+Signed-off-by: Veerasenareddy Burru <vburru@marvell.com>
+Change-Id: I57cc5e0973b3cfa98a40142b71b416c79ce22313
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/97002
+Reviewed-by: Satananda Burla <sburla@marvell.com>
+Tested-by: Devapraba Muthumani <dmuthumani@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_queue.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_queue.c b/drivers/common/cnxk/roc_nix_queue.c
+index 287a489e7f954..549bd62fe4f93 100644
+--- a/drivers/common/cnxk/roc_nix_queue.c
++++ b/drivers/common/cnxk/roc_nix_queue.c
+@@ -1205,6 +1205,7 @@ static int
+ sq_init(struct nix *nix, struct roc_nix_sq *sq, uint32_t rr_quantum,
+ 	uint16_t smq)
+ {
++	struct roc_nix *roc_nix = nix_priv_to_roc_nix(nix);
+ 	struct mbox *mbox = (&nix->dev)->mbox;
+ 	struct nix_cn10k_aq_enq_req *aq;
+ 
+@@ -1220,7 +1221,11 @@ sq_init(struct nix *nix, struct roc_nix_sq *sq, uint32_t rr_quantum,
+ 	aq->sq.max_sqe_size = sq->max_sqe_sz;
+ 	aq->sq.smq = smq;
+ 	aq->sq.smq_rr_weight = rr_quantum;
+-	aq->sq.default_chan = nix->tx_chan_base;
++	if (roc_nix_is_sdp(roc_nix))
++		aq->sq.default_chan =
++			nix->tx_chan_base + (sq->qid % nix->tx_chan_cnt);
++	else
++		aq->sq.default_chan = nix->tx_chan_base;
+ 	aq->sq.sqe_stype = NIX_STYPE_STF;
+ 	aq->sq.ena = 1;
+ 	aq->sq.sso_ena = !!sq->sso_ena;
+-- 
+2.25.1
+

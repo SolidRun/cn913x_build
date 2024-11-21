@@ -1,0 +1,77 @@
+From 439874dc50ed206448cf075e4f9ddb4c2293f933 Mon Sep 17 00:00:00 2001
+From: Tejasree Kondoj <ktejasree@marvell.com>
+Date: Thu, 1 Jun 2023 14:48:37 +0530
+Subject: [PATCH 488/955] ci: update lookaside IPsec reference numbers
+
+Lowering lookaside IPsec reference numbers for
+64B and 380B packet sizes.
+
+Signed-off-by: Tejasree Kondoj <ktejasree@marvell.com>
+Change-Id: I2f5da1be977674a8f81c0bc08b369ee79c985ad2
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/104608
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+---
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb   | 8 ++++----
+ .../ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb  | 8 ++++----
+ .../cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.outb        | 4 ++--
+ 3 files changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb
+index 78c3fca63036a..90eaa4fcbf16e 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.inb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+-64: 9569861
+-380: 9545686
++64: 9125784
++380: 9116876
+ 1410: 4153811
+ <end>
+ aes-gcm
+-64: 9552379
+-380: 9549989
++64: 9126432
++380: 9109346
+ 1410: 4188490
+ <end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb
+index b8d8e506a0641..846a2daf30a4f 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn10k/rclk2500_sclk1100.106xx.lp_ev.outb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+-64: 8891194
+-380: 8996228
++64: 8695622
++380: 8682232
+ 1410: 4400564
+ <end>
+ aes-gcm
+-64: 8908631
+-380: 8960973
++64: 8666312
++380: 8620362
+ 1410: 4400563
+ <end>
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.outb b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.outb
+index 5f60578cb62dd..48756340b117b 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.outb
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/ref_numbers/cn9k/rclk2200_sclk1100_cptclk1000.96xx.lp.outb
+@@ -1,10 +1,10 @@
+ aes-cbc_sha1-hmac
+ 64: 2997297
+-380: 2975022
++380: 2827116
+ 1410: 2875541
+ <end>
+ aes-gcm
+ 64: 2916542
+-380: 2915342
++380: 2811253
+ 1410: 2684500
+ <end>
+-- 
+2.25.1
+

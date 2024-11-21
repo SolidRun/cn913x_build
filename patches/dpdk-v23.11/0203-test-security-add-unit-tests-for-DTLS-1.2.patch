@@ -1,0 +1,122 @@
+From fe8206d3fa24d454f2362a264a671f973a821230 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Thu, 18 Jan 2024 01:56:16 -0800
+Subject: [PATCH 203/513] test/security: add unit tests for DTLS-1.2
+
+Add unit tests to verify
+1. DTLS record with zero length
+2. DTLS record with header corruption
+3. DTLS record with content type as custom
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I17507e20e3ffe92f9c6665c3f529f146a0a16cca
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/120014
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 7df312d3dde7d9ca862aef883146dd20cdca8aee)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121289
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c | 78 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 78 insertions(+)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 7f07295fa66f2..216a96832503d 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -12251,6 +12251,67 @@ test_dtls_1_2_record_proto_sgl(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_dtls_1_2_record_proto_corrupt_pkt(void)
++{
++	struct tls_record_test_flags flags = {
++		.pkt_corruption = 1,
++		.tls_version = RTE_SECURITY_VERSION_DTLS_1_2
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_dtls_1_2_record_proto_custom_content_type(void)
++{
++	struct tls_record_test_flags flags = {
++		.content_type = TLS_RECORD_TEST_CONTENT_TYPE_CUSTOM,
++		.tls_version = RTE_SECURITY_VERSION_DTLS_1_2
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_dtls_1_2_record_proto_zero_len(void)
++{
++	struct tls_record_test_flags flags = {
++		.zero_len = 1,
++		.tls_version = RTE_SECURITY_VERSION_DTLS_1_2
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
++static int
++test_dtls_1_2_record_proto_zero_len_non_app(void)
++{
++	struct tls_record_test_flags flags = {
++		.zero_len = 1,
++		.content_type = TLS_RECORD_TEST_CONTENT_TYPE_HANDSHAKE,
++		.tls_version = RTE_SECURITY_VERSION_DTLS_1_2
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
+ #endif
+ 
+ static int
+@@ -17421,6 +17482,23 @@ static struct unit_test_suite dtls12_record_proto_testsuite  = {
+ 			"Multi-segmented mode",
+ 			ut_setup_security, ut_teardown,
+ 			test_dtls_1_2_record_proto_sgl),
++		TEST_CASE_NAMED_ST(
++			"Packet corruption",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_corrupt_pkt),
++		TEST_CASE_NAMED_ST(
++			"Custom content type",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_custom_content_type),
++		TEST_CASE_NAMED_ST(
++			"Zero len DTLS record with content type as app",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_zero_len),
++		TEST_CASE_NAMED_ST(
++			"Zero len DTLS record with content type as ctrl",
++			ut_setup_security, ut_teardown,
++			test_dtls_1_2_record_proto_zero_len_non_app),
++
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+-- 
+2.25.1
+

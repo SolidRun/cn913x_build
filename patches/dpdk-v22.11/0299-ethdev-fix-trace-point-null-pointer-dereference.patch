@@ -1,0 +1,115 @@
+From 1712efaa2a8e21698fc6928847c732d50914b853 Mon Sep 17 00:00:00 2001
+From: Ankur Dwivedi <adwivedi@marvell.com>
+Date: Fri, 3 Mar 2023 17:01:36 +0530
+Subject: [PATCH 299/955] ethdev: fix trace point null pointer dereference
+
+The speed_fec_capa pointer can be null. So dereferencing the pointer is
+removed and only the pointer is captured in trace function.
+Fixed few more trace functions in which null pointer can be dereferenced.
+As a result of this fix the address sanitizer error observed with
+rte_eth_trace_find_next_of() is also resolved.
+
+Coverity issue: 383238
+Bugzilla ID: 1162
+Fixes: 6679cf21d608 ("ethdev: add trace points")
+Fixes: ed04fd4072e9 ("ethdev: add trace points for flow")
+
+Signed-off-by: Ankur Dwivedi <adwivedi@marvell.com>
+Acked-by: Ferruh Yigit <ferruh.yigit@amd.com>
+Change-Id: I0300c4d8fb4c557f28d9d65bf427f93eb6af89cd
+---
+ lib/ethdev/ethdev_trace.h | 28 ++++++++--------------------
+ 1 file changed, 8 insertions(+), 20 deletions(-)
+
+diff --git a/lib/ethdev/ethdev_trace.h b/lib/ethdev/ethdev_trace.h
+index 25722bb07f4aa..aca3335ac0ca6 100644
+--- a/lib/ethdev/ethdev_trace.h
++++ b/lib/ethdev/ethdev_trace.h
+@@ -123,8 +123,7 @@ RTE_TRACE_POINT(
+ 	RTE_TRACE_POINT_ARGS(uint16_t port_id,
+ 		const struct rte_eth_dev_owner *owner, int ret),
+ 	rte_trace_point_emit_u16(port_id);
+-	rte_trace_point_emit_u64(owner->id);
+-	rte_trace_point_emit_string(owner->name);
++	rte_trace_point_emit_ptr(owner);
+ 	rte_trace_point_emit_int(ret);
+ )
+ 
+@@ -351,9 +350,7 @@ RTE_TRACE_POINT(
+ 	rte_eth_trace_find_next_of,
+ 	RTE_TRACE_POINT_ARGS(uint16_t port_id, const struct rte_device *parent),
+ 	rte_trace_point_emit_u16(port_id);
+-	rte_trace_point_emit_string(parent->name);
+-	rte_trace_point_emit_string(parent->bus_info);
+-	rte_trace_point_emit_int(parent->numa_node);
++	rte_trace_point_emit_ptr(parent);
+ )
+ 
+ RTE_TRACE_POINT(
+@@ -831,8 +828,7 @@ RTE_TRACE_POINT(
+ 		const struct rte_eth_fec_capa *speed_fec_capa,
+ 		unsigned int num, int ret),
+ 	rte_trace_point_emit_u16(port_id);
+-	rte_trace_point_emit_u32(speed_fec_capa->speed);
+-	rte_trace_point_emit_u32(speed_fec_capa->capa);
++	rte_trace_point_emit_ptr(speed_fec_capa);
+ 	rte_trace_point_emit_u32(num);
+ 	rte_trace_point_emit_int(ret);
+ )
+@@ -1135,10 +1131,8 @@ RTE_TRACE_POINT(
+ RTE_TRACE_POINT(
+ 	rte_eth_trace_read_clock,
+ 	RTE_TRACE_POINT_ARGS(uint16_t port_id, const uint64_t *clk, int ret),
+-	uint64_t clk_v = *clk;
+-
+ 	rte_trace_point_emit_u16(port_id);
+-	rte_trace_point_emit_u64(clk_v);
++	rte_trace_point_emit_ptr(clk);
+ 	rte_trace_point_emit_int(ret);
+ )
+ 
+@@ -1361,8 +1355,7 @@ RTE_TRACE_POINT(
+ 		const struct rte_flow_item *pattern,
+ 		const struct rte_flow_action *actions, int ret),
+ 	rte_trace_point_emit_u16(port_id);
+-	rte_trace_point_emit_u32(attr->group);
+-	rte_trace_point_emit_u32(attr->priority);
++	rte_trace_point_emit_ptr(attr);
+ 	rte_trace_point_emit_ptr(pattern);
+ 	rte_trace_point_emit_ptr(actions);
+ 	rte_trace_point_emit_int(ret);
+@@ -1455,10 +1448,7 @@ RTE_TRACE_POINT(
+ 		const struct rte_flow_item_flex_conf *conf,
+ 		const struct rte_flow_item_flex_handle *handle),
+ 	rte_trace_point_emit_u16(port_id);
+-	rte_trace_point_emit_int(conf->tunnel);
+-	rte_trace_point_emit_int(conf->nb_samples);
+-	rte_trace_point_emit_int(conf->nb_inputs);
+-	rte_trace_point_emit_int(conf->nb_outputs);
++	rte_trace_point_emit_ptr(conf);
+ 	rte_trace_point_emit_ptr(handle);
+ )
+ 
+@@ -2199,8 +2189,7 @@ RTE_TRACE_POINT_FP(
+ 		const struct rte_flow_action *actions,
+ 		const struct rte_flow *flow),
+ 	rte_trace_point_emit_u16(port_id);
+-	rte_trace_point_emit_u32(attr->group);
+-	rte_trace_point_emit_u32(attr->priority);
++	rte_trace_point_emit_ptr(attr);
+ 	rte_trace_point_emit_ptr(pattern);
+ 	rte_trace_point_emit_ptr(actions);
+ 	rte_trace_point_emit_ptr(flow);
+@@ -2223,8 +2212,7 @@ RTE_TRACE_POINT_FP(
+ 		int ret),
+ 	rte_trace_point_emit_u16(port_id);
+ 	rte_trace_point_emit_ptr(flow);
+-	rte_trace_point_emit_int(action->type);
+-	rte_trace_point_emit_ptr(action->conf);
++	rte_trace_point_emit_ptr(action);
+ 	rte_trace_point_emit_ptr(data);
+ 	rte_trace_point_emit_int(ret);
+ )
+-- 
+2.25.1
+

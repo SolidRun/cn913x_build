@@ -1,0 +1,37 @@
+From f0bb18fb735ea459811eb59408a7b498f6831ffa Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Tue, 14 Feb 2023 11:10:54 +0530
+Subject: [PATCH 233/955] net/cnxk: don't allow PFC configuration on started
+ port
+
+Avoid priority flow control configuration when port is
+started.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: I520d82e950ca50a0d55f5439e84b03c6d08efbec
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/96837
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index 3fd6b4ab24f3c..3ef6157f17a1e 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -1121,8 +1121,8 @@ nix_priority_flow_ctrl_rq_conf(struct rte_eth_dev *eth_dev, uint16_t qid,
+ 	struct roc_nix_cq *cq;
+ 	int rc, i;
+ 
+-	if (roc_model_is_cn96_ax() && data->dev_started) {
+-		/* On Ax, CQ should be in disabled state
++	if (data->dev_started) {
++		/* RQ should be in disabled state
+ 		 * while setting flow control configuration.
+ 		 */
+ 		plt_info("Stop the port=%d for setting flow control",
+-- 
+2.25.1
+

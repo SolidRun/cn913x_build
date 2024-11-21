@@ -1,0 +1,75 @@
+From 7fc4ff27528279e3350ad0021dbcc32c43da5d09 Mon Sep 17 00:00:00 2001
+From: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Date: Fri, 5 Jan 2024 13:14:14 +0530
+Subject: [PATCH 762/955] net/cnxk: fix issue with buff size compute
+
+In case where cnxk_nix_mtu_set() is called before
+data->min_rx_buf_size is set, use buf size from first RQ's
+mempool.
+
+Fixes: 34b46320f446 ("net/cnxk: perform early MTU setup for event mode")
+
+Change-Id: I1330624a9a5c72e64ae902a55217a5e07e49561d
+Signed-off-by: Nithin Dabilpuram <ndabilpuram@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119197
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ drivers/net/cnxk/cnxk_ethdev_ops.c | 26 +++++++++++++++++++++++---
+ 1 file changed, 23 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/cnxk/cnxk_ethdev_ops.c b/drivers/net/cnxk/cnxk_ethdev_ops.c
+index e757dcc07391c..0b2805ce6f585 100644
+--- a/drivers/net/cnxk/cnxk_ethdev_ops.c
++++ b/drivers/net/cnxk/cnxk_ethdev_ops.c
+@@ -543,8 +543,9 @@ cnxk_nix_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ 	struct cnxk_eth_dev *dev = cnxk_eth_pmd_priv(eth_dev);
+ 	struct rte_eth_dev_data *data = eth_dev->data;
+ 	struct roc_nix *nix = &dev->nix;
++	struct cnxk_eth_rxq_sp *rxq_sp;
++	uint32_t buffsz = 0;
+ 	int rc = -EINVAL;
+-	uint32_t buffsz;
+ 
+ 	frame_size += CNXK_NIX_TIMESYNC_RX_OFFSET * dev->ptp_en;
+ 
+@@ -560,8 +561,25 @@ cnxk_nix_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ 		goto exit;
+ 	}
+ 
+-	buffsz = data->min_rx_buf_size - RTE_PKTMBUF_HEADROOM;
+-	old_frame_size = data->mtu + CNXK_NIX_L2_OVERHEAD;
++	if (!eth_dev->data->nb_rx_queues)
++		goto skip_buffsz_check;
++
++	/* Perform buff size check */
++	if (data->min_rx_buf_size) {
++		buffsz = data->min_rx_buf_size;
++	} else if (eth_dev->data->rx_queues && eth_dev->data->rx_queues[0]) {
++		rxq_sp = cnxk_eth_rxq_to_sp(data->rx_queues[0]);
++
++		if (rxq_sp->qconf.mp)
++			buffsz = rte_pktmbuf_data_room_size(rxq_sp->qconf.mp);
++	}
++
++	if (!buffsz) {
++		plt_err("Unable to get min buf size");
++		goto exit;
++	}
++
++	buffsz -= RTE_PKTMBUF_HEADROOM;
+ 
+ 	/* Refuse MTU that requires the support of scattered packets
+ 	 * when this feature has not been enabled before.
+@@ -579,6 +597,8 @@ cnxk_nix_mtu_set(struct rte_eth_dev *eth_dev, uint16_t mtu)
+ 		goto exit;
+ 	}
+ 
++skip_buffsz_check:
++	old_frame_size = data->mtu + CNXK_NIX_L2_OVERHEAD;
+ 	/* if new MTU was smaller than old one, then flush all SQs before MTU change */
+ 	if (old_frame_size > frame_size) {
+ 		if (data->dev_started) {
+-- 
+2.25.1
+

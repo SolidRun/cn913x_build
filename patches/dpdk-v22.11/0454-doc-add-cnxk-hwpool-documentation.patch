@@ -1,0 +1,59 @@
+From 119b3523e861a0bd167e4e5236d089a917af7059 Mon Sep 17 00:00:00 2001
+From: Ashwin Sekhar T K <asekhar@marvell.com>
+Date: Tue, 23 May 2023 14:25:00 +0530
+Subject: [PATCH 454/955] doc: add cnxk hwpool documentation
+
+Add missing link to the cnxk hwpool documentation.
+
+Signed-off-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Change-Id: I752ca2f9275aa0c276ceb9d40fee25dfa2981813
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103911
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ doc/api/doxy-api-index.md                   | 1 +
+ doc/api/doxy-api.conf.in                    | 1 +
+ drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h | 2 +-
+ 3 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/doc/api/doxy-api-index.md b/doc/api/doxy-api-index.md
+index de488c7abf829..6319f966977d9 100644
+--- a/doc/api/doxy-api-index.md
++++ b/doc/api/doxy-api-index.md
+@@ -47,6 +47,7 @@ The public API headers are grouped by topics:
+   [iavf](@ref rte_pmd_iavf.h),
+   [bnxt](@ref rte_pmd_bnxt.h),
+   [cnxk](@ref rte_pmd_cnxk.h),
++  [cnxk_mempool](@ref rte_pmd_cnxk_mempool.h),
+   [dpaa](@ref rte_pmd_dpaa.h),
+   [dpaa2](@ref rte_pmd_dpaa2.h),
+   [mlx5](@ref rte_pmd_mlx5.h),
+diff --git a/doc/api/doxy-api.conf.in b/doc/api/doxy-api.conf.in
+index f0886c3bd1a28..4078515010d26 100644
+--- a/doc/api/doxy-api.conf.in
++++ b/doc/api/doxy-api.conf.in
+@@ -9,6 +9,7 @@ INPUT                   = @TOPDIR@/doc/api/doxy-api-index.md \
+                           @TOPDIR@/drivers/crypto/scheduler \
+                           @TOPDIR@/drivers/dma/dpaa2 \
+                           @TOPDIR@/drivers/event/dlb2 \
++                          @TOPDIR@/drivers/mempool/cnxk \
+                           @TOPDIR@/drivers/mempool/dpaa2 \
+                           @TOPDIR@/drivers/net/ark \
+                           @TOPDIR@/drivers/net/bnxt \
+diff --git a/drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h b/drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h
+index b040d0414fea4..ada6e7cd4db27 100644
+--- a/drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h
++++ b/drivers/mempool/cnxk/rte_pmd_cnxk_mempool.h
+@@ -3,7 +3,7 @@
+  */
+ 
+ /**
+- * @file rte_pmd_cnxk.h
++ * @file rte_pmd_cnxk_mempool.h
+  * Marvell CNXK Mempool PMD specific functions.
+  *
+  **/
+-- 
+2.25.1
+

@@ -1,0 +1,674 @@
+From 7d81a4e93c052423e7da2debbf1a785f3668c0a2 Mon Sep 17 00:00:00 2001
+From: Satha Rao <skoteshwar@marvell.com>
+Date: Fri, 2 Aug 2024 12:40:17 +0530
+Subject: [PATCH 442/513] common/cnxk: support NIX debug for cn20k
+
+Add support to dump cn20k queue structs and also provide the same
+in telemetry data.
+
+Change-Id: I013fc1ddc39af35d179c439aa792e7fdf855f373
+Signed-off-by: Satha Rao <skoteshwar@marvell.com>
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133451
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/common/cnxk/cnxk_telemetry_nix.c | 260 ++++++++++++++++++++++-
+ drivers/common/cnxk/roc_nix_debug.c      | 234 +++++++++++++++++++-
+ drivers/common/cnxk/roc_nix_priv.h       |   3 +-
+ 3 files changed, 488 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/common/cnxk/cnxk_telemetry_nix.c b/drivers/common/cnxk/cnxk_telemetry_nix.c
+index ccae5d7853af2..abeefafe1e19f 100644
+--- a/drivers/common/cnxk/cnxk_telemetry_nix.c
++++ b/drivers/common/cnxk/cnxk_telemetry_nix.c
+@@ -346,7 +346,7 @@ nix_rq_ctx_cn9k(volatile void *qctx, struct plt_tel_data *d)
+ }
+ 
+ static void
+-nix_rq_ctx(volatile void *qctx, struct plt_tel_data *d)
++nix_rq_ctx_cn10k(volatile void *qctx, struct plt_tel_data *d)
+ {
+ 	volatile struct nix_cn10k_rq_ctx_s *ctx;
+ 
+@@ -438,6 +438,100 @@ nix_rq_ctx(volatile void *qctx, struct plt_tel_data *d)
+ 	CNXK_TEL_DICT_U64(d, ctx, re_pkts, w10_);
+ }
+ 
++static void
++nix_rq_ctx(volatile void *qctx, struct plt_tel_data *d)
++{
++	volatile struct nix_cn20k_rq_ctx_s *ctx;
++
++	ctx = (volatile struct nix_cn20k_rq_ctx_s *)qctx;
++
++	/* W0 */
++	CNXK_TEL_DICT_INT(d, ctx, wqe_aura, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, len_ol3_dis, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, len_ol4_dis, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, len_il3_dis, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, len_il4_dis, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, csum_ol4_dis, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, csum_il4_dis, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, lenerr_dis, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, port_ol4_dis, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, port_il4_dis, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, ena_wqwd, w0);
++	CNXK_TEL_DICT_INT(d, ctx, ipsech_ena, w0);
++	CNXK_TEL_DICT_INT(d, ctx, sso_ena, w0);
++	CNXK_TEL_DICT_INT(d, ctx, ena, w0);
++
++	/* W1 */
++	CNXK_TEL_DICT_INT(d, ctx, chi_ena, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, ipsecd_drop_en, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, pb_stashing, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, lpb_drop_ena, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, spb_drop_ena, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, xqe_drop_ena, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, wqe_caching, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, pb_caching, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, sso_tt, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, sso_grp, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, lpb_aura, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, spb_aura, w1_);
++
++	/* W2 */
++	CNXK_TEL_DICT_INT(d, ctx, xqe_hdr_split, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, xqe_imm_copy, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, band_prof_id_h, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, xqe_imm_size, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, later_skip, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, sso_bp_ena, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, first_skip, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, lpb_sizem1, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, spb_ena, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, spb_high_sizem1, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, wqe_skip, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, spb_sizem1, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, policer_ena, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, band_prof_id_l, w2_);
++
++	/* W3 */
++	CNXK_TEL_DICT_INT(d, ctx, spb_pool_pass, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, spb_pool_drop, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, spb_aura_pass, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, spb_aura_drop, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, wqe_pool_pass, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, wqe_pool_drop, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, xqe_pass, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, xqe_drop, w3_);
++
++	/* W4 */
++	CNXK_TEL_DICT_INT(d, ctx, qint_idx, w4_);
++	CNXK_TEL_DICT_INT(d, ctx, rq_int_ena, w4_);
++	CNXK_TEL_DICT_INT(d, ctx, rq_int, w4_);
++	CNXK_TEL_DICT_INT(d, ctx, lpb_pool_pass, w4_);
++	CNXK_TEL_DICT_INT(d, ctx, lpb_pool_drop, w4_);
++	CNXK_TEL_DICT_INT(d, ctx, lpb_aura_pass, w4_);
++	CNXK_TEL_DICT_INT(d, ctx, lpb_aura_drop, w4_);
++
++	/* W5 */
++	CNXK_TEL_DICT_INT(d, ctx, flow_tagw, w5_);
++	CNXK_TEL_DICT_INT(d, ctx, bad_utag, w5_);
++	CNXK_TEL_DICT_INT(d, ctx, good_utag, w5_);
++	CNXK_TEL_DICT_INT(d, ctx, ltag, w5_);
++
++	/* W6 */
++	CNXK_TEL_DICT_U64(d, ctx, octs, w6_);
++
++	/* W7 */
++	CNXK_TEL_DICT_U64(d, ctx, pkts, w7_);
++
++	/* W8 */
++	CNXK_TEL_DICT_U64(d, ctx, drop_octs, w8_);
++
++	/* W9 */
++	CNXK_TEL_DICT_U64(d, ctx, drop_pkts, w9_);
++
++	/* W10 */
++	CNXK_TEL_DICT_U64(d, ctx, re_pkts, w10_);
++}
++
+ static int
+ cnxk_tel_nix_rq_ctx(struct roc_nix *roc_nix, uint8_t n, struct plt_tel_data *d)
+ {
+@@ -459,12 +553,77 @@ cnxk_tel_nix_rq_ctx(struct roc_nix *roc_nix, uint8_t n, struct plt_tel_data *d)
+ 
+ 	if (roc_model_is_cn9k())
+ 		nix_rq_ctx_cn9k(qctx, d);
++	else if (roc_model_is_cn10k())
++		nix_rq_ctx_cn10k(qctx, d);
+ 	else
+ 		nix_rq_ctx(qctx, d);
+ 
+ 	return 0;
+ }
+ 
++static int
++cnxk_tel_nix_cq_ctx_cn20k(struct roc_nix *roc_nix, uint8_t n, struct plt_tel_data *d)
++{
++	struct nix *nix = roc_nix_to_nix_priv(roc_nix);
++	struct dev *dev = &nix->dev;
++	struct npa_lf *npa_lf;
++	volatile struct nix_cn20k_cq_ctx_s *ctx;
++	int rc = -1;
++
++	npa_lf = idev_npa_obj_get();
++	if (npa_lf == NULL)
++		return NPA_ERR_DEVICE_NOT_BOUNDED;
++
++	rc = nix_q_ctx_get(dev, NIX_AQ_CTYPE_CQ, n, (void *)&ctx);
++	if (rc) {
++		plt_err("Failed to get cq context");
++		return rc;
++	}
++
++	/* W0 */
++	CNXK_TEL_DICT_PTR(d, ctx, base, w0_);
++
++	/* W1 */
++	CNXK_TEL_DICT_U64(d, ctx, wrptr, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, avg_con, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, cint_idx, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, cq_err, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, qint_idx, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, lbpid_high, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, bpid, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, lbpid_med, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, bp_ena, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, lbpid_low, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, lbp_ena, w1_);
++
++	/* W2 */
++	CNXK_TEL_DICT_INT(d, ctx, update_time, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, avg_level, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, head, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, tail, w2_);
++
++	/* W3 */
++	CNXK_TEL_DICT_INT(d, ctx, cq_err_int_ena, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, cq_err_int, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, qsize, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, stashing, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, caching, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, lbp_frac, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, stash_thresh, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, msh_valid, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, msh_dst, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, cpt_drop_err_en, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, ena, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, drop_ena, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, drop, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, bp, w3_);
++
++	CNXK_TEL_DICT_INT(d, ctx, lbpid_ext, w4_);
++	CNXK_TEL_DICT_INT(d, ctx, bpid_ext, w4_);
++
++	return 0;
++}
++
+ static int
+ cnxk_tel_nix_cq_ctx(struct roc_nix *roc_nix, uint8_t n, struct plt_tel_data *d)
+ {
+@@ -474,6 +633,9 @@ cnxk_tel_nix_cq_ctx(struct roc_nix *roc_nix, uint8_t n, struct plt_tel_data *d)
+ 	volatile struct nix_cq_ctx_s *ctx;
+ 	int rc = -1;
+ 
++	if (roc_model_is_cn20k())
++		return cnxk_tel_nix_cq_ctx_cn20k(roc_nix, n, d);
++
+ 	npa_lf = idev_npa_obj_get();
+ 	if (npa_lf == NULL)
+ 		return NPA_ERR_DEVICE_NOT_BOUNDED;
+@@ -602,7 +764,7 @@ nix_sq_ctx_cn9k(volatile void *qctx, struct plt_tel_data *d)
+ }
+ 
+ static void
+-nix_sq_ctx(volatile void *qctx, struct plt_tel_data *d)
++nix_sq_ctx_cn10k(volatile void *qctx, struct plt_tel_data *d)
+ {
+ 	volatile struct nix_cn10k_sq_ctx_s *ctx;
+ 
+@@ -617,6 +779,97 @@ nix_sq_ctx(volatile void *qctx, struct plt_tel_data *d)
+ 	CNXK_TEL_DICT_INT(d, ctx, ena, w0_);
+ 
+ 	/* W1 */
++	CNXK_TEL_DICT_INT(d, ctx, smq_rr_count_lb, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, sqb_count, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, default_chan, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, smq_rr_weight, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, sso_ena, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, xoff, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, cq_ena, w1_);
++	CNXK_TEL_DICT_INT(d, ctx, smq, w1_);
++
++	/* W2 */
++	CNXK_TEL_DICT_INT(d, ctx, sqe_stype, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, sq_int_ena, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, sq_int, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, sqb_aura, w2_);
++	CNXK_TEL_DICT_INT(d, ctx, smq_rr_count_ub, w2_);
++
++	/* W3 */
++	CNXK_TEL_DICT_INT(d, ctx, smq_next_sq_vld, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, smq_pend, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, smenq_next_sqb_vld, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, head_offset, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, smenq_offset, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, tail_offset, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, smq_lso_segnum, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, smq_next_sq, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, mnq_dis, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, lmt_dis, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, cq_limit, w3_);
++	CNXK_TEL_DICT_INT(d, ctx, max_sqe_size, w3_);
++
++	/* W4 */
++	CNXK_TEL_DICT_PTR(d, ctx, next_sqb, w4_);
++
++	/* W5 */
++	CNXK_TEL_DICT_PTR(d, ctx, tail_sqb, w5_);
++
++	/* W6 */
++	CNXK_TEL_DICT_PTR(d, ctx, smenq_sqb, w6_);
++
++	/* W7 */
++	CNXK_TEL_DICT_PTR(d, ctx, smenq_next_sqb, w7_);
++
++	/* W8 */
++	CNXK_TEL_DICT_PTR(d, ctx, head_sqb, w8_);
++
++	/* W9 */
++	CNXK_TEL_DICT_INT(d, ctx, vfi_lso_vld, w9_);
++	CNXK_TEL_DICT_INT(d, ctx, vfi_lso_vlan1_ins_ena, w9_);
++	CNXK_TEL_DICT_INT(d, ctx, vfi_lso_vlan0_ins_ena, w9_);
++	CNXK_TEL_DICT_INT(d, ctx, vfi_lso_mps, w9_);
++	CNXK_TEL_DICT_INT(d, ctx, vfi_lso_sb, w9_);
++	CNXK_TEL_DICT_INT(d, ctx, vfi_lso_sizem1, w9_);
++	CNXK_TEL_DICT_INT(d, ctx, vfi_lso_total, w9_);
++
++	/* W10 */
++	CNXK_TEL_DICT_BF_PTR(d, ctx, scm_lso_rem, w10_);
++
++	/* W11 */
++	CNXK_TEL_DICT_BF_PTR(d, ctx, octs, w11_);
++
++	/* W12 */
++	CNXK_TEL_DICT_BF_PTR(d, ctx, pkts, w12_);
++
++	/* W13 */
++	CNXK_TEL_DICT_INT(d, ctx, aged_drop_octs, w13_);
++	CNXK_TEL_DICT_INT(d, ctx, aged_drop_pkts, w13_);
++
++	/* W14 */
++	CNXK_TEL_DICT_BF_PTR(d, ctx, drop_octs, w14_);
++
++	/* W15 */
++	CNXK_TEL_DICT_BF_PTR(d, ctx, drop_pkts, w15_);
++}
++
++static void
++nix_sq_ctx(volatile void *qctx, struct plt_tel_data *d)
++{
++	volatile struct nix_cn20k_sq_ctx_s *ctx;
++
++	ctx = (volatile struct nix_cn20k_sq_ctx_s *)qctx;
++
++	/* W0 */
++	CNXK_TEL_DICT_INT(d, ctx, sqe_way_mask, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, cq, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, sdp_mcast, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, substream, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, qint_idx, w0_);
++	CNXK_TEL_DICT_INT(d, ctx, ena, w0_);
++
++	/* W1 */
++	CNXK_TEL_DICT_INT(d, ctx, smq_rr_count_lb, w1_);
+ 	CNXK_TEL_DICT_INT(d, ctx, sqb_count, w1_);
+ 	CNXK_TEL_DICT_INT(d, ctx, default_chan, w1_);
+ 	CNXK_TEL_DICT_INT(d, ctx, smq_rr_weight, w1_);
+@@ -631,7 +884,6 @@ nix_sq_ctx(volatile void *qctx, struct plt_tel_data *d)
+ 	CNXK_TEL_DICT_INT(d, ctx, sq_int, w2_);
+ 	CNXK_TEL_DICT_INT(d, ctx, sqb_aura, w2_);
+ 	CNXK_TEL_DICT_INT(d, ctx, smq_rr_count_ub, w2_);
+-	CNXK_TEL_DICT_INT(d, ctx, smq_rr_count_lb, w2_);
+ 
+ 	/* W3 */
+ 	CNXK_TEL_DICT_INT(d, ctx, smq_next_sq_vld, w3_);
+@@ -712,6 +964,8 @@ cnxk_tel_nix_sq_ctx(struct roc_nix *roc_nix, uint8_t n, struct plt_tel_data *d)
+ 
+ 	if (roc_model_is_cn9k())
+ 		nix_sq_ctx_cn9k(qctx, d);
++	else if (roc_model_is_cn10k())
++		nix_sq_ctx_cn10k(qctx, d);
+ 	else
+ 		nix_sq_ctx(qctx, d);
+ 
+diff --git a/drivers/common/cnxk/roc_nix_debug.c b/drivers/common/cnxk/roc_nix_debug.c
+index 2e91470c09a91..0cc8d7cc1e742 100644
+--- a/drivers/common/cnxk/roc_nix_debug.c
++++ b/drivers/common/cnxk/roc_nix_debug.c
+@@ -358,7 +358,7 @@ nix_q_ctx_get(struct dev *dev, uint8_t ctype, uint16_t qid, __io void **ctx_p)
+ 			*ctx_p = &rsp->sq;
+ 		else
+ 			*ctx_p = &rsp->cq;
+-	} else {
++	} else if (roc_model_is_cn10k()) {
+ 		struct nix_cn10k_aq_enq_rsp *rsp;
+ 		struct nix_cn10k_aq_enq_req *aq;
+ 
+@@ -372,6 +372,30 @@ nix_q_ctx_get(struct dev *dev, uint8_t ctype, uint16_t qid, __io void **ctx_p)
+ 		aq->ctype = ctype;
+ 		aq->op = NIX_AQ_INSTOP_READ;
+ 
++		rc = mbox_process_msg(mbox, (void *)&rsp);
++		if (rc)
++			goto exit;
++
++		if (ctype == NIX_AQ_CTYPE_RQ)
++			*ctx_p = &rsp->rq;
++		else if (ctype == NIX_AQ_CTYPE_SQ)
++			*ctx_p = &rsp->sq;
++		else
++			*ctx_p = &rsp->cq;
++	} else {
++		struct nix_cn20k_aq_enq_rsp *rsp;
++		struct nix_cn20k_aq_enq_req *aq;
++
++		aq = mbox_alloc_msg_nix_cn20k_aq_enq(mbox);
++		if (!aq) {
++			rc = -ENOSPC;
++			goto exit;
++		}
++
++		aq->qidx = qid;
++		aq->ctype = ctype;
++		aq->op = NIX_AQ_INSTOP_READ;
++
+ 		rc = mbox_process_msg(mbox, (void *)&rsp);
+ 		if (rc)
+ 			goto exit;
+@@ -452,7 +476,69 @@ nix_cn9k_lf_sq_dump(__io struct nix_sq_ctx_s *ctx, uint32_t *sqb_aura_p, FILE *f
+ }
+ 
+ static inline void
+-nix_lf_sq_dump(__io struct nix_cn10k_sq_ctx_s *ctx, uint32_t *sqb_aura_p, FILE *file)
++nix_cn10k_lf_sq_dump(__io struct nix_cn10k_sq_ctx_s *ctx, uint32_t *sqb_aura_p, FILE *file)
++{
++	nix_dump(file, "W0: sqe_way_mask \t\t%d\nW0: cq \t\t\t\t%d",
++		 ctx->sqe_way_mask, ctx->cq);
++	nix_dump(file, "W0: sdp_mcast \t\t\t%d\nW0: substream \t\t\t0x%03x",
++		 ctx->sdp_mcast, ctx->substream);
++	nix_dump(file, "W0: qint_idx \t\t\t%d\nW0: ena \t\t\t%d\n", ctx->qint_idx,
++		 ctx->ena);
++
++	nix_dump(file, "W1: sqb_count \t\t\t%d\nW1: default_chan \t\t%d",
++		 ctx->sqb_count, ctx->default_chan);
++	nix_dump(file, "W1: smq_rr_weight \t\t%d\nW1: sso_ena \t\t\t%d",
++		 ctx->smq_rr_weight, ctx->sso_ena);
++	nix_dump(file, "W1: xoff \t\t\t%d\nW1: cq_ena \t\t\t%d\nW1: smq\t\t\t\t%d\n",
++		 ctx->xoff, ctx->cq_ena, ctx->smq);
++
++	nix_dump(file, "W2: sqe_stype \t\t\t%d\nW2: sq_int_ena \t\t\t%d",
++		 ctx->sqe_stype, ctx->sq_int_ena);
++	nix_dump(file, "W2: sq_int  \t\t\t%d\nW2: sqb_aura \t\t\t%d", ctx->sq_int,
++		 ctx->sqb_aura);
++	nix_dump(file, "W2: smq_rr_count[ub:lb] \t\t%x:%x\n", ctx->smq_rr_count_ub,
++		 ctx->smq_rr_count_lb);
++
++	nix_dump(file, "W3: smq_next_sq_vld\t\t%d\nW3: smq_pend\t\t\t%d",
++		 ctx->smq_next_sq_vld, ctx->smq_pend);
++	nix_dump(file, "W3: smenq_next_sqb_vld  \t%d\nW3: head_offset\t\t\t%d",
++		 ctx->smenq_next_sqb_vld, ctx->head_offset);
++	nix_dump(file, "W3: smenq_offset\t\t%d\nW3: tail_offset \t\t%d",
++		 ctx->smenq_offset, ctx->tail_offset);
++	nix_dump(file, "W3: smq_lso_segnum \t\t%d\nW3: smq_next_sq \t\t%d",
++		 ctx->smq_lso_segnum, ctx->smq_next_sq);
++	nix_dump(file, "W3: mnq_dis \t\t\t%d\nW3: lmt_dis \t\t\t%d", ctx->mnq_dis,
++		 ctx->lmt_dis);
++	nix_dump(file, "W3: cq_limit\t\t\t%d\nW3: max_sqe_size\t\t%d\n",
++		 ctx->cq_limit, ctx->max_sqe_size);
++
++	nix_dump(file, "W4: next_sqb \t\t\t0x%" PRIx64 "", ctx->next_sqb);
++	nix_dump(file, "W5: tail_sqb \t\t\t0x%" PRIx64 "", ctx->tail_sqb);
++	nix_dump(file, "W6: smenq_sqb \t\t\t0x%" PRIx64 "", ctx->smenq_sqb);
++	nix_dump(file, "W7: smenq_next_sqb \t\t0x%" PRIx64 "", ctx->smenq_next_sqb);
++	nix_dump(file, "W8: head_sqb \t\t\t0x%" PRIx64 "", ctx->head_sqb);
++
++	nix_dump(file, "W9: vfi_lso_vld \t\t%d\nW9: vfi_lso_vlan1_ins_ena\t%d", ctx->vfi_lso_vld,
++		 ctx->vfi_lso_vlan1_ins_ena);
++	nix_dump(file, "W9: vfi_lso_vlan0_ins_ena\t%d\nW9: vfi_lso_mps\t\t\t%d",
++		 ctx->vfi_lso_vlan0_ins_ena, ctx->vfi_lso_mps);
++	nix_dump(file, "W9: vfi_lso_sb \t\t\t%d\nW9: vfi_lso_sizem1\t\t%d", ctx->vfi_lso_sb,
++		 ctx->vfi_lso_sizem1);
++	nix_dump(file, "W9: vfi_lso_total\t\t%d", ctx->vfi_lso_total);
++
++	nix_dump(file, "W10: scm_lso_rem \t\t0x%" PRIx64 "", (uint64_t)ctx->scm_lso_rem);
++	nix_dump(file, "W11: octs \t\t\t0x%" PRIx64 "", (uint64_t)ctx->octs);
++	nix_dump(file, "W12: pkts \t\t\t0x%" PRIx64 "", (uint64_t)ctx->pkts);
++	nix_dump(file, "W13: aged_drop_pkts \t\t\t0x%" PRIx64 "", (uint64_t)ctx->aged_drop_pkts);
++	nix_dump(file, "W13: aged_drop_octs \t\t\t0x%" PRIx64 "", (uint64_t)ctx->aged_drop_octs);
++	nix_dump(file, "W14: dropped_octs \t\t0x%" PRIx64 "", (uint64_t)ctx->drop_octs);
++	nix_dump(file, "W15: dropped_pkts \t\t0x%" PRIx64 "", (uint64_t)ctx->drop_pkts);
++
++	*sqb_aura_p = ctx->sqb_aura;
++}
++
++static inline void
++nix_lf_sq_dump(__io struct nix_cn20k_sq_ctx_s *ctx, uint32_t *sqb_aura_p, FILE *file)
+ {
+ 	nix_dump(file, "W0: sqe_way_mask \t\t%d\nW0: cq \t\t\t\t%d",
+ 		 ctx->sqe_way_mask, ctx->cq);
+@@ -574,7 +660,7 @@ nix_cn9k_lf_rq_dump(__io struct nix_rq_ctx_s *ctx, FILE *file)
+ }
+ 
+ void
+-nix_lf_rq_dump(__io struct nix_cn10k_rq_ctx_s *ctx, FILE *file)
++nix_cn10k_lf_rq_dump(__io struct nix_cn10k_rq_ctx_s *ctx, FILE *file)
+ {
+ 	nix_dump(file, "W0: wqe_aura \t\t\t%d\nW0: len_ol3_dis \t\t\t%d",
+ 		 ctx->wqe_aura, ctx->len_ol3_dis);
+@@ -649,6 +735,124 @@ nix_lf_rq_dump(__io struct nix_cn10k_rq_ctx_s *ctx, FILE *file)
+ 	nix_dump(file, "W10: re_pkts \t\t\t0x%" PRIx64 "\n", (uint64_t)ctx->re_pkts);
+ }
+ 
++void
++nix_lf_rq_dump(__io struct nix_cn20k_rq_ctx_s *ctx, FILE *file)
++{
++	nix_dump(file, "W0: wqe_aura \t\t\t%d\nW0: len_ol3_dis \t\t\t%d",
++		 ctx->wqe_aura, ctx->len_ol3_dis);
++	nix_dump(file, "W0: len_ol4_dis \t\t\t%d\nW0: len_il3_dis \t\t\t%d",
++		 ctx->len_ol4_dis, ctx->len_il3_dis);
++	nix_dump(file, "W0: len_il4_dis \t\t\t%d\nW0: csum_ol4_dis \t\t\t%d",
++		 ctx->len_il4_dis, ctx->csum_ol4_dis);
++	nix_dump(file, "W0: csum_il4_dis \t\t\t%d\nW0: lenerr_dis \t\t\t%d",
++		 ctx->csum_il4_dis, ctx->lenerr_dis);
++	nix_dump(file, "W0: port_ol4_dis \t\t\t%d\nW0: port_il4_dis\t\t\t%d",
++		 ctx->port_ol4_dis, ctx->port_il4_dis);
++	nix_dump(file, "W0: cq \t\t\t\t%d\nW0: ena_wqwd \t\t\t%d", ctx->cq,
++		 ctx->ena_wqwd);
++	nix_dump(file, "W0: ipsech_ena \t\t\t%d\nW0: sso_ena \t\t\t%d",
++		 ctx->ipsech_ena, ctx->sso_ena);
++	nix_dump(file, "W0: ena \t\t\t%d\n", ctx->ena);
++
++	nix_dump(file, "W1: chi_ena \t\t%d\nW1: ipsecd_drop_en \t\t%d", ctx->chi_ena,
++		 ctx->ipsecd_drop_en);
++	nix_dump(file, "W1: pb_stashing \t\t\t%d", ctx->pb_stashing);
++	nix_dump(file, "W1: lpb_drop_ena \t\t%d\nW1: spb_drop_ena \t\t%d",
++		 ctx->lpb_drop_ena, ctx->spb_drop_ena);
++	nix_dump(file, "W1: xqe_drop_ena \t\t%d\nW1: wqe_caching \t\t%d",
++		 ctx->xqe_drop_ena, ctx->wqe_caching);
++	nix_dump(file, "W1: pb_caching \t\t\t%d\nW1: sso_tt \t\t\t%d",
++		 ctx->pb_caching, ctx->sso_tt);
++	nix_dump(file, "W1: sso_grp \t\t\t%d\nW1: lpb_aura \t\t\t%d", ctx->sso_grp,
++		 ctx->lpb_aura);
++	nix_dump(file, "W1: spb_aura \t\t\t%d\n", ctx->spb_aura);
++
++	nix_dump(file, "W2: xqe_hdr_split \t\t%d\nW2: xqe_imm_copy \t\t%d",
++		 ctx->xqe_hdr_split, ctx->xqe_imm_copy);
++	nix_dump(file, "W2: band_prof_id\t\t%d\n",
++		 ((ctx->band_prof_id_h << 10) | ctx->band_prof_id_l));
++	nix_dump(file, "W2: xqe_imm_size \t\t%d\nW2: later_skip \t\t\t%d",
++		 ctx->xqe_imm_size, ctx->later_skip);
++	nix_dump(file, "W2: sso_bp_ena\t\t%d\n", ctx->sso_bp_ena);
++	nix_dump(file, "W2: first_skip \t\t\t%d\nW2: lpb_sizem1 \t\t\t%d",
++		 ctx->first_skip, ctx->lpb_sizem1);
++	nix_dump(file, "W2: spb_ena \t\t\t%d\nW2: spb_high_sizem1 \t\t\t%d", ctx->spb_ena,
++		 ctx->spb_high_sizem1);
++	nix_dump(file, "W2: wqe_skip \t\t\t%d", ctx->wqe_skip);
++	nix_dump(file, "W2: spb_sizem1 \t\t\t%d\nW2: policer_ena \t\t\t%d",
++		 ctx->spb_sizem1, ctx->policer_ena);
++	nix_dump(file, "W2: sso_fc_ena \t\t\t%d\n", ctx->sso_fc_ena);
++
++	nix_dump(file, "W3: spb_pool_pass \t\t%d\nW3: spb_pool_drop \t\t%d",
++		 ctx->spb_pool_pass, ctx->spb_pool_drop);
++	nix_dump(file, "W3: spb_aura_pass \t\t%d\nW3: spb_aura_drop \t\t%d",
++		 ctx->spb_aura_pass, ctx->spb_aura_drop);
++	nix_dump(file, "W3: wqe_pool_pass \t\t%d\nW3: wqe_pool_drop \t\t%d",
++		 ctx->wqe_pool_pass, ctx->wqe_pool_drop);
++	nix_dump(file, "W3: xqe_pass \t\t\t%d\nW3: xqe_drop \t\t\t%d\n",
++		 ctx->xqe_pass, ctx->xqe_drop);
++
++	nix_dump(file, "W4: qint_idx \t\t\t%d\nW4: rq_int_ena \t\t\t%d",
++		 ctx->qint_idx, ctx->rq_int_ena);
++	nix_dump(file, "W4: rq_int \t\t\t%d\nW4: lpb_pool_pass \t\t%d", ctx->rq_int,
++		 ctx->lpb_pool_pass);
++	nix_dump(file, "W4: lpb_pool_drop \t\t%d\nW4: lpb_aura_pass \t\t%d",
++		 ctx->lpb_pool_drop, ctx->lpb_aura_pass);
++	nix_dump(file, "W4: lpb_aura_drop \t\t%d\n", ctx->lpb_aura_drop);
++
++	nix_dump(file, "W5: flow_tagw \t\t\t%d\nW5: bad_utag \t\t\t%d",
++		 ctx->flow_tagw, ctx->bad_utag);
++	nix_dump(file, "W5: good_utag \t\t\t%d\nW5: ltag \t\t\t%d\n", ctx->good_utag,
++		 ctx->ltag);
++
++	nix_dump(file, "W6: octs \t\t\t0x%" PRIx64 "", (uint64_t)ctx->octs);
++	nix_dump(file, "W7: pkts \t\t\t0x%" PRIx64 "", (uint64_t)ctx->pkts);
++	nix_dump(file, "W8: drop_octs \t\t\t0x%" PRIx64 "", (uint64_t)ctx->drop_octs);
++	nix_dump(file, "W9: drop_pkts \t\t\t0x%" PRIx64 "", (uint64_t)ctx->drop_pkts);
++	nix_dump(file, "W10: re_pkts \t\t\t0x%" PRIx64 "\n", (uint64_t)ctx->re_pkts);
++}
++
++static inline void
++nix_cn20k_lf_cq_dump(__io struct nix_cn20k_cq_ctx_s *ctx, FILE *file)
++{
++	nix_dump(file, "W0: base \t\t\t0x%" PRIx64 "\n", ctx->base);
++
++	nix_dump(file, "W1: wrptr \t\t\t%" PRIx64 "", (uint64_t)ctx->wrptr);
++	nix_dump(file, "W1: avg_con \t\t\t%d\nW1: cint_idx \t\t\t%d", ctx->avg_con,
++		 ctx->cint_idx);
++	nix_dump(file, "W1: cq_err \t\t\t%d\nW1: qint_idx \t\t\t%d", ctx->cq_err,
++		 ctx->qint_idx);
++	nix_dump(file, "W1: bpid  \t\t\t%d\nW1: bp_ena \t\t\t%d\n", ctx->bpid,
++		 ctx->bp_ena);
++	nix_dump(file,
++		 "W1: lbpid_high \t\t\t0x%03x\nW1: lbpid_med \t\t\t0x%03x\n"
++		 "W1: lbpid_low \t\t\t0x%03x\n(W1: lbpid) \t\t\t0x%03x\n",
++		 ctx->lbpid_high, ctx->lbpid_med, ctx->lbpid_low, (unsigned int)
++		 (ctx->lbpid_high << 6 | ctx->lbpid_med << 3 | ctx->lbpid_low));
++	nix_dump(file, "W1: lbp_ena \t\t\t\t%d\n", ctx->lbp_ena);
++
++	nix_dump(file, "W2: update_time \t\t%d\nW2: avg_level \t\t\t%d",
++		 ctx->update_time, ctx->avg_level);
++	nix_dump(file, "W2: head \t\t\t%d\nW2: tail \t\t\t%d\n", ctx->head,
++		 ctx->tail);
++
++	nix_dump(file, "W3: cq_err_int_ena \t\t%d\nW3: cq_err_int \t\t\t%d",
++		 ctx->cq_err_int_ena, ctx->cq_err_int);
++	nix_dump(file, "W3: qsize \t\t\t%d\nW3: stashing \t\t\t%d", ctx->qsize,
++		 ctx->stashing);
++	nix_dump(file, "W3: caching \t\t\t%d\nW3: lbp_frac \t\t\t%d", ctx->caching, ctx->lbp_frac);
++	nix_dump(file, "W3: stash_thresh \t\t\t%d\nW3: msh_valid\t\t\t%d", ctx->stash_thresh,
++		 ctx->msh_valid);
++	nix_dump(file, "W3: msh_dst \t\t\t0x%03x\nW3: cpt_drop_err_en \t\t\t%d\n",
++		 ctx->msh_dst, ctx->cpt_drop_err_en);
++	nix_dump(file, "W3: ena \t\t\t%d\n", ctx->ena);
++	nix_dump(file, "W3: drop_ena \t\t\t%d\nW3: drop \t\t\t%d", ctx->drop_ena,
++		 ctx->drop);
++	nix_dump(file, "W3: bp \t\t\t\t%d\n", ctx->bp);
++	nix_dump(file, "W4: lbpid_ext \t\t\t%d\nW3: bpid_ext \t\t\t%d", ctx->lbpid_ext,
++		 ctx->bpid_ext);
++}
++
+ static inline void
+ nix_lf_cq_dump(__io struct nix_cq_ctx_s *ctx, FILE *file)
+ {
+@@ -713,7 +917,10 @@ roc_nix_queues_ctx_dump(struct roc_nix *roc_nix, FILE *file)
+ 		}
+ 		nix_dump(file, "============== port=%d cq=%d ===============",
+ 			 roc_nix->port_id, q);
+-		nix_lf_cq_dump(ctx, file);
++		if (roc_model_is_cn20k())
++			nix_cn20k_lf_cq_dump(ctx, file);
++		else
++			nix_lf_cq_dump(ctx, file);
+ 	}
+ 
+ 	for (q = 0; q < rq; q++) {
+@@ -726,6 +933,8 @@ roc_nix_queues_ctx_dump(struct roc_nix *roc_nix, FILE *file)
+ 			 roc_nix->port_id, q);
+ 		if (roc_model_is_cn9k())
+ 			nix_cn9k_lf_rq_dump(ctx, file);
++		else if (roc_model_is_cn10k())
++			nix_cn10k_lf_rq_dump(ctx, file);
+ 		else
+ 			nix_lf_rq_dump(ctx, file);
+ 	}
+@@ -751,6 +960,8 @@ roc_nix_queues_ctx_dump(struct roc_nix *roc_nix, FILE *file)
+ 			 inl_rq->qid);
+ 		if (roc_model_is_cn9k())
+ 			nix_cn9k_lf_rq_dump(ctx, file);
++		else if (roc_model_is_cn10k())
++			nix_cn10k_lf_rq_dump(ctx, file);
+ 		else
+ 			nix_lf_rq_dump(ctx, file);
+ 	}
+@@ -765,6 +976,8 @@ roc_nix_queues_ctx_dump(struct roc_nix *roc_nix, FILE *file)
+ 			 roc_nix->port_id, q);
+ 		if (roc_model_is_cn9k())
+ 			nix_cn9k_lf_sq_dump(ctx, &sqb_aura, file);
++		else if (roc_model_is_cn10k())
++			nix_cn10k_lf_sq_dump(ctx, &sqb_aura, file);
+ 		else
+ 			nix_lf_sq_dump(ctx, &sqb_aura, file);
+ 
+@@ -1480,9 +1693,20 @@ roc_nix_sq_desc_dump(struct roc_nix *roc_nix, uint16_t q, uint16_t offset, uint1
+ 		tail_sqb = (void *)ctx->tail_sqb;
+ 		head_off = ctx->head_offset;
+ 		tail_off = ctx->tail_offset;
+-	} else {
++	} else if (roc_model_is_cn10k()) {
+ 		volatile struct nix_cn10k_sq_ctx_s *ctx = (struct nix_cn10k_sq_ctx_s *)dat;
+ 
++		if (ctx->mnq_dis || ctx->lmt_dis)
++			full = 1;
++
++		count = ctx->sqb_count;
++		sqb_buf = (void *)ctx->head_sqb;
++		tail_sqb = (void *)ctx->tail_sqb;
++		head_off = ctx->head_offset;
++		tail_off = ctx->tail_offset;
++	} else {
++		volatile struct nix_cn20k_sq_ctx_s *ctx = (struct nix_cn20k_sq_ctx_s *)dat;
++
+ 		if (ctx->mnq_dis || ctx->lmt_dis)
+ 			full = 1;
+ 
+diff --git a/drivers/common/cnxk/roc_nix_priv.h b/drivers/common/cnxk/roc_nix_priv.h
+index ade42c18788cc..3fd6fcbe9f9bf 100644
+--- a/drivers/common/cnxk/roc_nix_priv.h
++++ b/drivers/common/cnxk/roc_nix_priv.h
+@@ -469,7 +469,8 @@ struct nix_tm_shaper_profile *nix_tm_shaper_profile_alloc(void);
+ void nix_tm_shaper_profile_free(struct nix_tm_shaper_profile *profile);
+ 
+ uint64_t nix_get_blkaddr(struct dev *dev);
+-void nix_lf_rq_dump(__io struct nix_cn10k_rq_ctx_s *ctx, FILE *file);
++void nix_cn10k_lf_rq_dump(__io struct nix_cn10k_rq_ctx_s *ctx, FILE *file);
++void nix_lf_rq_dump(__io struct nix_cn20k_rq_ctx_s *ctx, FILE *file);
+ int nix_lf_gen_reg_dump(uintptr_t nix_lf_base, uint64_t *data);
+ int nix_lf_stat_reg_dump(uintptr_t nix_lf_base, uint64_t *data, uint8_t lf_tx_stats,
+ 			 uint8_t lf_rx_stats);
+-- 
+2.25.1
+

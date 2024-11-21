@@ -1,0 +1,155 @@
+From 792047c898110ce51660ff0fca06d4fedaf07e00 Mon Sep 17 00:00:00 2001
+From: Rahul Bhansali <rbhansali@marvell.com>
+Date: Sun, 29 Jan 2023 17:14:24 +0530
+Subject: [PATCH 191/955] ci/ipsec_perf: split inline protocol tests
+
+Splits IPsec perf tests to run inline protocol tests
+separately.
+
+Signed-off-by: Rahul Bhansali <rbhansali@marvell.com>
+Change-Id: Ia980a4e11b7e66b9bc019c956aaefd453c8bd625
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/95690
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ .../test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh | 15 +++++++++++++++
+ marvell-ci/test/cnxk-tests/ipsec_perf/meson.build | 11 ++++++++++-
+ marvell-ci/test/env/cn106-perf.env                |  5 +++--
+ marvell-ci/test/env/cn10k.env                     |  3 ++-
+ marvell-ci/test/env/cn96-perf.env                 |  5 +++--
+ marvell-ci/test/env/cn9k.env                      |  3 ++-
+ 6 files changed, 35 insertions(+), 7 deletions(-)
+
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+index c77250038f6fc..a5bdf5377b4d3 100755
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/cnxk_ipsec_perf.sh
+@@ -954,9 +954,24 @@ EVENT_VF=$SSO_DEV
+ setup_interfaces
+ exec_genboard_cleanup
+ 
++function is_skip_test()
++{
++	local inline=$1
++	if [[ $inline = "inline" ]]; then
++		! is_inline_proto_test
++	else
++		is_inline_proto_test
++	fi
++}
++
+ Y=0
+ 
+ while [[ $Y -lt $NB_TYPES ]]; do
++	if is_skip_test $2; then
++		((++Y))
++		continue
++	fi
++
+ 	if [[ $IS_CN10K -eq 0 ]] && ! supported_by_9k ${TYPE[$Y]}; then
+ 		((++Y))
+ 		continue
+diff --git a/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build b/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
+index 3c573884ad104..9e6c7d26a274f 100644
+--- a/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
++++ b/marvell-ci/test/cnxk-tests/ipsec_perf/meson.build
+@@ -3,7 +3,8 @@
+ # Test script
+ test_script = 'cnxk_ipsec_perf.sh'
+ # Test name
+-test_name = 'cnxk_ipsec_perf'
++test_name = 'cnxk_ipsec_la_perf'
++test_inline_name = 'cnxk_ipsec_inline_perf'
+ # Test arguments
+ test_args = '$REMOTE_DIR'
+ # Test directory name relative to build directory.
+@@ -76,6 +77,14 @@ test(test_name,
+     ['TEST_DIR=' + test_dir]],
+     args : [[test_script], [test_args]],
+     is_parallel : false, suite : 'cnxk-tests')
++
++test_args+= ' inline'
++test(test_inline_name,
++    cnxk_test_script_wrapper,
++    env : [['DPDK_TEST=' + test_inline_name],
++    ['TEST_DIR=' + test_dir]],
++    args : [[test_script], [test_args]],
++    is_parallel : false, suite : 'cnxk-tests')
+ # Install the sample script
+ install_data(test_script,
+              install_mode : 'rwxr-xr-x',
+diff --git a/marvell-ci/test/env/cn106-perf.env b/marvell-ci/test/env/cn106-perf.env
+index 6a17755642d8e..38d161298ebd0 100644
+--- a/marvell-ci/test/env/cn106-perf.env
++++ b/marvell-ci/test/env/cn106-perf.env
+@@ -10,14 +10,15 @@ RUN_TESTS="
+ 	cnxk_ptp_test
+ 	cnxk_event_perf
+ 	cnxk_crypto_perf
+-	cnxk_ipsec_perf
++	cnxk_ipsec_la_perf
++	cnxk_ipsec_inline_perf
+ 	cnxk_mempool_perf
+ 	cnxk_ipsec_reassembly_perf
+ 	cnxk_fwd_perf
+ "
+ 
+ # Update command timeout
+-CMD_TIMEOUTS="cnxk_event_perf=60m cnxk_ipsec_perf=70m cnxk_ipsec_reassembly_perf=30m $CMD_TIMEOUTS"
++CMD_TIMEOUTS="cnxk_event_perf=60m cnxk_ipsec_la_perf=70m cnxk_ipsec_inline_perf=70m cnxk_ipsec_reassembly_perf=30m $CMD_TIMEOUTS"
+ 
+ # Perf stage flag
+ PERF_STAGE=1
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 443b08d0e4763..3b4aaada6b5e3 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -96,7 +96,8 @@ DEFAULT_SKIP_TESTS="
+ 	cryptodev_scheduler_autotest
+ 	cnxk_crypto_perf
+ 	cnxk_event_perf
+-	cnxk_ipsec_perf
++	cnxk_ipsec_la_perf
++	cnxk_ipsec_inline_perf
+ 	cnxk_mempool_perf
+ 	cnxk_fwd_perf
+ 	cnxk_ptp_test
+diff --git a/marvell-ci/test/env/cn96-perf.env b/marvell-ci/test/env/cn96-perf.env
+index fbd6671c6ede8..38c3976f14864 100644
+--- a/marvell-ci/test/env/cn96-perf.env
++++ b/marvell-ci/test/env/cn96-perf.env
+@@ -10,14 +10,15 @@ RUN_TESTS="
+ 	cnxk_ptp_test
+ 	cnxk_fwd_perf
+ 	cnxk_crypto_perf
+-	cnxk_ipsec_perf
++	cnxk_ipsec_la_perf
++	cnxk_ipsec_inline_perf
+ 	cnxk_event_perf
+ 	cnxk_mempool_perf
+ 	flow_perf
+ "
+ 
+ # Update command timeout
+-CMD_TIMEOUTS="cnxk_ipsec_perf=60m cnxk_event_perf=60m $CMD_TIMEOUTS"
++CMD_TIMEOUTS="cnxk_ipsec_la_perf=60m cnxk_event_perf=60m $CMD_TIMEOUTS"
+ 
+ # Perf stage flag
+ PERF_STAGE=1
+diff --git a/marvell-ci/test/env/cn9k.env b/marvell-ci/test/env/cn9k.env
+index df78c15abce3e..b6a6f16b93725 100644
+--- a/marvell-ci/test/env/cn9k.env
++++ b/marvell-ci/test/env/cn9k.env
+@@ -95,7 +95,8 @@ DEFAULT_SKIP_TESTS="
+ 	cryptodev_scheduler_autotest
+ 	cnxk_crypto_perf
+ 	cnxk_event_perf
+-	cnxk_ipsec_perf
++	cnxk_ipsec_la_perf
++	cnxk_ipsec_inline_perf
+ 	cnxk_mempool_perf
+ 	cnxk_fwd_perf
+ 	cnxk_ptp_test
+-- 
+2.25.1
+

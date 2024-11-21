@@ -1,0 +1,35 @@
+From 24c9d38cc9c20c8c9b7d908b461a200d360aa2b7 Mon Sep 17 00:00:00 2001
+From: Sunil Kumar Kori <skori@marvell.com>
+Date: Fri, 2 Dec 2022 13:07:08 +0530
+Subject: [PATCH 013/955] app/testpmd: fix debug build error
+
+Header file for strtol() was not included which were reported as warning
+but in debug build it gets failed as it is treated as error.
+
+Fixes: a5c73a59f312 ("app/testpmd: support congestion management CLIs")
+
+Signed-off-by: Sunil Kumar Kori <skori@marvell.com>
+Change-Id: I76fa53f846a6b0782e534e0b9b64fcd24ae34ecf
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/91721
+Reviewed-by: Ashwin Sekhar T K <asekhar@marvell.com>
+Tested-by: Ashwin Sekhar T K <asekhar@marvell.com>
+---
+ app/test-pmd/cmdline_cman.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/app/test-pmd/cmdline_cman.c b/app/test-pmd/cmdline_cman.c
+index 344759189df91..1a34172f1f442 100644
+--- a/app/test-pmd/cmdline_cman.c
++++ b/app/test-pmd/cmdline_cman.c
+@@ -2,6 +2,8 @@
+  * Copyright(C) 2022 Marvell International Ltd.
+  */
+ 
++#include <stdlib.h>
++
+ #include <cmdline_parse.h>
+ #include <cmdline_parse_num.h>
+ #include <cmdline_parse_string.h>
+-- 
+2.25.1
+

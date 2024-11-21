@@ -1,0 +1,493 @@
+From bdf281f0646b4dc2949728795fab25526702e765 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Mon, 26 Aug 2024 02:02:56 +0530
+Subject: [PATCH 475/513] event/cnxk: add CN20K event port configuration
+
+Add SSO HWS a.k.a event port setup, release, link, unlink
+functions.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Change-Id: I436773d1a4cf23651cdfa7c5d26bd991d9dccd0d
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/134412
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ drivers/event/cnxk/cn10k_eventdev.c         |  52 ++----
+ drivers/event/cnxk/cn20k_eventdev.c         | 174 +++++++++++++++++++-
+ drivers/event/cnxk/cn20k_eventdev.h         |  25 +++
+ drivers/event/cnxk/cnxk_common.h            |  34 ++++
+ drivers/event/cnxk/cnxk_eventdev.c          |   2 +-
+ drivers/event/cnxk/cnxk_eventdev.h          |   8 +-
+ drivers/event/cnxk/cnxk_eventdev_selftest.c |   6 +-
+ 7 files changed, 255 insertions(+), 46 deletions(-)
+ create mode 100644 drivers/event/cnxk/cn20k_eventdev.h
+ create mode 100644 drivers/event/cnxk/cnxk_common.h
+
+diff --git a/drivers/event/cnxk/cn10k_eventdev.c b/drivers/event/cnxk/cn10k_eventdev.c
+index aed1c7980b336..c1860125804f1 100644
+--- a/drivers/event/cnxk/cn10k_eventdev.c
++++ b/drivers/event/cnxk/cn10k_eventdev.c
+@@ -2,15 +2,16 @@
+  * Copyright(C) 2021 Marvell.
+  */
+ 
++#include <rte_dmadev_pmd.h>
++
++#include "cn10k_cryptodev_ops.h"
++#include "cn10k_ethdev.h"
+ #include "cn10k_tx_worker.h"
+ #include "cn10k_worker.h"
+-#include "cn10k_ethdev.h"
+-#include "cn10k_cryptodev_ops.h"
++#include "cnxk_common.h"
++#include "cnxk_dma_event_dp.h"
+ #include "cnxk_eventdev.h"
+ #include "cnxk_worker.h"
+-#include "cnxk_dma_event_dp.h"
+-
+-#include <rte_dmadev_pmd.h>
+ 
+ #define CN10K_SET_EVDEV_DEQ_OP(dev, deq_op, deq_ops)                           \
+ 	deq_op = deq_ops[dev->rx_offloads & (NIX_RX_OFFLOAD_MAX - 1)]
+@@ -18,29 +19,6 @@
+ #define CN10K_SET_EVDEV_ENQ_OP(dev, enq_op, enq_ops)                           \
+ 	enq_op = enq_ops[dev->tx_offloads & (NIX_TX_OFFLOAD_MAX - 1)]
+ 
+-static uint32_t
+-cn10k_sso_gw_mode_wdata(struct cnxk_sso_evdev *dev)
+-{
+-	uint32_t wdata = 1;
+-
+-	if (dev->deq_tmo_ns)
+-		wdata |= BIT(16);
+-
+-	switch (dev->gw_mode) {
+-	case CN10K_GW_MODE_NONE:
+-	default:
+-		break;
+-	case CN10K_GW_MODE_PREF:
+-		wdata |= BIT(19);
+-		break;
+-	case CN10K_GW_MODE_PREF_WFE:
+-		wdata |= BIT(20) | BIT(19);
+-		break;
+-	}
+-
+-	return wdata;
+-}
+-
+ static void *
+ cn10k_sso_init_hws_mem(void *arg, uint8_t port_id)
+ {
+@@ -61,7 +39,7 @@ cn10k_sso_init_hws_mem(void *arg, uint8_t port_id)
+ 	ws->base = roc_sso_hws_base_get(&dev->sso, port_id);
+ 	ws->hws_id = port_id;
+ 	ws->swtag_req = 0;
+-	ws->gw_wdata = cn10k_sso_gw_mode_wdata(dev);
++	ws->gw_wdata = cnxk_sso_hws_prf_wdata(dev);
+ 	ws->gw_rdata = SSO_TT_EMPTY << 32;
+ 	ws->lmt_base = dev->sso.lmt_base;
+ 	ws->xae_waes = dev->sso.feat.xaq_wq_entries;
+@@ -219,12 +197,12 @@ cn10k_sso_hws_reset(void *arg, void *hws)
+ 	} while (pend_state & (BIT_ULL(58) | BIT_ULL(56)));
+ 
+ 	switch (dev->gw_mode) {
+-	case CN10K_GW_MODE_PREF:
+-	case CN10K_GW_MODE_PREF_WFE:
++	case CNXK_GW_MODE_PREF:
++	case CNXK_GW_MODE_PREF_WFE:
+ 		while (plt_read64(base + SSOW_LF_GWS_PRF_WQE0) & BIT_ULL(63))
+ 			;
+ 		break;
+-	case CN10K_GW_MODE_NONE:
++	case CNXK_GW_MODE_NONE:
+ 	default:
+ 		break;
+ 	}
+@@ -648,13 +626,13 @@ cn10k_sso_port_quiesce(struct rte_eventdev *event_dev, void *port,
+ 
+ 	/* Check if we have work in PRF_WQE0, if so extract it. */
+ 	switch (dev->gw_mode) {
+-	case CN10K_GW_MODE_PREF:
+-	case CN10K_GW_MODE_PREF_WFE:
++	case CNXK_GW_MODE_PREF:
++	case CNXK_GW_MODE_PREF_WFE:
+ 		while (plt_read64(ws->base + SSOW_LF_GWS_PRF_WQE0) &
+ 		       BIT_ULL(63))
+ 			;
+ 		break;
+-	case CN10K_GW_MODE_NONE:
++	case CNXK_GW_MODE_NONE:
+ 	default:
+ 		break;
+ 	}
+@@ -1232,7 +1210,7 @@ cn10k_sso_init(struct rte_eventdev *event_dev)
+ 		return 0;
+ 	}
+ 
+-	dev->gw_mode = CN10K_GW_MODE_PREF_WFE;
++	dev->gw_mode = CNXK_GW_MODE_PREF_WFE;
+ 	rc = cnxk_sso_init(event_dev);
+ 	if (rc < 0)
+ 		return rc;
+@@ -1289,7 +1267,7 @@ RTE_PMD_REGISTER_KMOD_DEP(event_cn10k, "vfio-pci");
+ RTE_PMD_REGISTER_PARAM_STRING(event_cn10k, CNXK_SSO_XAE_CNT "=<int>"
+ 			      CNXK_SSO_GGRP_QOS "=<string>"
+ 			      CNXK_SSO_FORCE_BP "=1"
+-			      CN10K_SSO_GW_MODE "=<int>"
++			      CNXK_SSO_GW_MODE "=<int>"
+ 			      CNXK_SSO_STASH "=<string>"
+ 			      CNXK_TIM_DISABLE_NPA "=1"
+ 			      CNXK_TIM_CHNK_SLOTS "=<int>"
+diff --git a/drivers/event/cnxk/cn20k_eventdev.c b/drivers/event/cnxk/cn20k_eventdev.c
+index b876c368069c5..6a80bddb7c36d 100644
+--- a/drivers/event/cnxk/cn20k_eventdev.c
++++ b/drivers/event/cnxk/cn20k_eventdev.c
+@@ -4,7 +4,85 @@
+ 
+ #include "roc_api.h"
+ 
++#include "cn20k_eventdev.h"
++#include "cnxk_common.h"
+ #include "cnxk_eventdev.h"
++#include "cnxk_worker.h"
++
++static void *
++cn20k_sso_init_hws_mem(void *arg, uint8_t port_id)
++{
++	struct cnxk_sso_evdev *dev = arg;
++	struct cn20k_sso_hws *ws;
++
++	/* Allocate event port memory */
++	ws = rte_zmalloc("cn20k_ws", sizeof(struct cn20k_sso_hws) + RTE_CACHE_LINE_SIZE,
++			 RTE_CACHE_LINE_SIZE);
++	if (ws == NULL) {
++		plt_err("Failed to alloc memory for port=%d", port_id);
++		return NULL;
++	}
++
++	/* First cache line is reserved for cookie */
++	ws = (struct cn20k_sso_hws *)((uint8_t *)ws + RTE_CACHE_LINE_SIZE);
++	ws->base = roc_sso_hws_base_get(&dev->sso, port_id);
++	ws->hws_id = port_id;
++	ws->swtag_req = 0;
++	ws->gw_wdata = cnxk_sso_hws_prf_wdata(dev);
++	ws->gw_rdata = SSO_TT_EMPTY << 32;
++
++	return ws;
++}
++
++static int
++cn20k_sso_hws_link(void *arg, void *port, uint16_t *map, uint16_t nb_link, uint8_t profile)
++{
++	struct cnxk_sso_evdev *dev = arg;
++	struct cn20k_sso_hws *ws = port;
++
++	return roc_sso_hws_link(&dev->sso, ws->hws_id, map, nb_link, profile, 0);
++}
++
++static int
++cn20k_sso_hws_unlink(void *arg, void *port, uint16_t *map, uint16_t nb_link, uint8_t profile)
++{
++	struct cnxk_sso_evdev *dev = arg;
++	struct cn20k_sso_hws *ws = port;
++
++	return roc_sso_hws_unlink(&dev->sso, ws->hws_id, map, nb_link, profile, 0);
++}
++
++static void
++cn20k_sso_hws_setup(void *arg, void *hws, uintptr_t grp_base)
++{
++	struct cnxk_sso_evdev *dev = arg;
++	struct cn20k_sso_hws *ws = hws;
++	uint64_t val;
++
++	ws->grp_base = grp_base;
++	ws->fc_mem = (int64_t *)dev->fc_iova;
++	ws->xaq_lmt = dev->xaq_lmt;
++	ws->fc_cache_space = dev->fc_cache_space;
++	ws->aw_lmt = dev->sso.lmt_base;
++
++	/* Set get_work timeout for HWS */
++	val = NSEC2USEC(dev->deq_tmo_ns);
++	val = val ? val - 1 : 0;
++	plt_write64(val, ws->base + SSOW_LF_GWS_NW_TIM);
++}
++
++static void
++cn20k_sso_hws_release(void *arg, void *hws)
++{
++	struct cnxk_sso_evdev *dev = arg;
++	struct cn20k_sso_hws *ws = hws;
++	uint16_t i, j;
++
++	for (i = 0; i < CNXK_SSO_MAX_PROFILES; i++)
++		for (j = 0; j < dev->nb_event_queues; j++)
++			roc_sso_hws_unlink(&dev->sso, ws->hws_id, &j, 1, i, 0);
++	memset(ws, 0, sizeof(*ws));
++}
+ 
+ static void
+ cn20k_sso_set_rsrc(void *arg)
+@@ -60,11 +138,96 @@ cn20k_sso_dev_configure(const struct rte_eventdev *event_dev)
+ 	if (rc < 0)
+ 		goto cnxk_rsrc_fini;
+ 
++	rc = cnxk_setup_event_ports(event_dev, cn20k_sso_init_hws_mem, cn20k_sso_hws_setup);
++	if (rc < 0)
++		goto cnxk_rsrc_fini;
++
++	/* Restore any prior port-queue mapping. */
++	cnxk_sso_restore_links(event_dev, cn20k_sso_hws_link);
++
++	dev->configured = 1;
++	rte_mb();
++
++	return 0;
+ cnxk_rsrc_fini:
+ 	roc_sso_rsrc_fini(&dev->sso);
++	dev->nb_event_ports = 0;
+ 	return rc;
+ }
+ 
++static int
++cn20k_sso_port_setup(struct rte_eventdev *event_dev, uint8_t port_id,
++		     const struct rte_event_port_conf *port_conf)
++{
++
++	RTE_SET_USED(port_conf);
++	return cnxk_sso_port_setup(event_dev, port_id, cn20k_sso_hws_setup);
++}
++
++static void
++cn20k_sso_port_release(void *port)
++{
++	struct cnxk_sso_hws_cookie *gws_cookie = cnxk_sso_hws_get_cookie(port);
++	struct cnxk_sso_evdev *dev;
++
++	if (port == NULL)
++		return;
++
++	dev = cnxk_sso_pmd_priv(gws_cookie->event_dev);
++	if (!gws_cookie->configured)
++		goto free;
++
++	cn20k_sso_hws_release(dev, port);
++	memset(gws_cookie, 0, sizeof(*gws_cookie));
++free:
++	rte_free(gws_cookie);
++}
++
++static int
++cn20k_sso_port_link_profile(struct rte_eventdev *event_dev, void *port, const uint8_t queues[],
++			    const uint8_t priorities[], uint16_t nb_links, uint8_t profile)
++{
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	uint16_t hwgrp_ids[nb_links];
++	uint16_t link;
++
++	RTE_SET_USED(priorities);
++	for (link = 0; link < nb_links; link++)
++		hwgrp_ids[link] = queues[link];
++	nb_links = cn20k_sso_hws_link(dev, port, hwgrp_ids, nb_links, profile);
++
++	return (int)nb_links;
++}
++
++static int
++cn20k_sso_port_unlink_profile(struct rte_eventdev *event_dev, void *port, uint8_t queues[],
++			      uint16_t nb_unlinks, uint8_t profile)
++{
++	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
++	uint16_t hwgrp_ids[nb_unlinks];
++	uint16_t unlink;
++
++	for (unlink = 0; unlink < nb_unlinks; unlink++)
++		hwgrp_ids[unlink] = queues[unlink];
++	nb_unlinks = cn20k_sso_hws_unlink(dev, port, hwgrp_ids, nb_unlinks, profile);
++
++	return (int)nb_unlinks;
++}
++
++static int
++cn20k_sso_port_link(struct rte_eventdev *event_dev, void *port, const uint8_t queues[],
++		    const uint8_t priorities[], uint16_t nb_links)
++{
++	return cn20k_sso_port_link_profile(event_dev, port, queues, priorities, nb_links, 0);
++}
++
++static int
++cn20k_sso_port_unlink(struct rte_eventdev *event_dev, void *port, uint8_t queues[],
++		      uint16_t nb_unlinks)
++{
++	return cn20k_sso_port_unlink_profile(event_dev, port, queues, nb_unlinks, 0);
++}
++
+ static struct eventdev_ops cn20k_sso_dev_ops = {
+ 	.dev_infos_get = cn20k_sso_info_get,
+ 	.dev_configure = cn20k_sso_dev_configure,
+@@ -75,6 +238,13 @@ static struct eventdev_ops cn20k_sso_dev_ops = {
+ 	.queue_attr_set = cnxk_sso_queue_attribute_set,
+ 
+ 	.port_def_conf = cnxk_sso_port_def_conf,
++	.port_setup = cn20k_sso_port_setup,
++	.port_release = cn20k_sso_port_release,
++	.port_link = cn20k_sso_port_link,
++	.port_unlink = cn20k_sso_port_unlink,
++	.port_link_profile = cn20k_sso_port_link_profile,
++	.port_unlink_profile = cn20k_sso_port_unlink_profile,
++	.timeout_ticks = cnxk_sso_timeout_ticks,
+ };
+ 
+ static int
+@@ -94,6 +264,7 @@ cn20k_sso_init(struct rte_eventdev *event_dev)
+ 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+ 		return 0;
+ 
++	dev->gw_mode = CNXK_GW_MODE_PREF_WFE;
+ 	rc = cnxk_sso_init(event_dev);
+ 	if (rc < 0)
+ 		return rc;
+@@ -140,4 +311,5 @@ RTE_PMD_REGISTER_KMOD_DEP(event_cn20k, "vfio-pci");
+ RTE_PMD_REGISTER_PARAM_STRING(event_cn20k,
+ 			      CNXK_SSO_XAE_CNT "=<int>"
+ 			      CNXK_SSO_GGRP_QOS "=<string>"
+-			      CNXK_SSO_STASH "=<string>");
++			      CNXK_SSO_STASH "=<string>"
++			      CNXK_SSO_GW_MODE "=<int>");
+diff --git a/drivers/event/cnxk/cn20k_eventdev.h b/drivers/event/cnxk/cn20k_eventdev.h
+new file mode 100644
+index 0000000000000..3cb1d10e68006
+--- /dev/null
++++ b/drivers/event/cnxk/cn20k_eventdev.h
+@@ -0,0 +1,25 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2022 Marvell.
++ */
++
++#ifndef __CN20K_EVENTDEV_H__
++#define __CN20K_EVENTDEV_H__
++
++#define CN20K_SSO_DEFAULT_STASH_OFFSET -1
++#define CN20K_SSO_DEFAULT_STASH_LENGTH 2
++
++struct cn20k_sso_hws {
++	uint64_t base;
++	uint32_t gw_wdata;
++	uint64_t gw_rdata;
++	uint8_t swtag_req;
++	uint8_t hws_id;
++	/* Add Work Fastpath data */
++	int64_t *fc_mem __rte_cache_aligned;
++	int64_t *fc_cache_space;
++	uintptr_t aw_lmt;
++	uintptr_t grp_base;
++	int32_t xaq_lmt;
++} __rte_cache_aligned;
++
++#endif /* __CN20K_EVENTDEV_H__ */
+diff --git a/drivers/event/cnxk/cnxk_common.h b/drivers/event/cnxk/cnxk_common.h
+new file mode 100644
+index 0000000000000..5f6aeb37ebb99
+--- /dev/null
++++ b/drivers/event/cnxk/cnxk_common.h
+@@ -0,0 +1,34 @@
++/* SPDX-License-Identifier: BSD-3-Clause
++ * Copyright(C) 2024 Marvell.
++ */
++
++#ifndef __CNXK_COMMON_H__
++#define __CNXK_COMMON_H__
++
++#include "cnxk_eventdev.h"
++#include "cnxk_worker.h"
++
++static uint32_t
++cnxk_sso_hws_prf_wdata(struct cnxk_sso_evdev *dev)
++{
++	uint32_t wdata = 1;
++
++	if (dev->deq_tmo_ns)
++		wdata |= BIT(16);
++
++	switch (dev->gw_mode) {
++	case CNXK_GW_MODE_NONE:
++	default:
++		break;
++	case CNXK_GW_MODE_PREF:
++		wdata |= BIT(19);
++		break;
++	case CNXK_GW_MODE_PREF_WFE:
++		wdata |= BIT(20) | BIT(19);
++		break;
++	}
++
++	return wdata;
++}
++
++#endif /* __CNXK_COMMON_H__ */
+diff --git a/drivers/event/cnxk/cnxk_eventdev.c b/drivers/event/cnxk/cnxk_eventdev.c
+index 862c8d25ea18f..48d91c1a85f80 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.c
++++ b/drivers/event/cnxk/cnxk_eventdev.c
+@@ -618,7 +618,7 @@ cnxk_sso_parse_devargs(struct cnxk_sso_evdev *dev, struct rte_devargs *devargs)
+ 			   &dev->force_ena_bp);
+ 	rte_kvargs_process(kvlist, CN9K_SSO_SINGLE_WS, &parse_kvargs_flag,
+ 			   &single_ws);
+-	rte_kvargs_process(kvlist, CN10K_SSO_GW_MODE, &parse_kvargs_value,
++	rte_kvargs_process(kvlist, CNXK_SSO_GW_MODE, &parse_kvargs_value,
+ 			   &dev->gw_mode);
+ 	rte_kvargs_process(kvlist, CNXK_SSO_STASH, &parse_sso_kvargs_stash_dict,
+ 			   dev);
+diff --git a/drivers/event/cnxk/cnxk_eventdev.h b/drivers/event/cnxk/cnxk_eventdev.h
+index f7249d18fe2c0..d075c966201b3 100644
+--- a/drivers/event/cnxk/cnxk_eventdev.h
++++ b/drivers/event/cnxk/cnxk_eventdev.h
+@@ -27,7 +27,7 @@
+ #define CNXK_SSO_GGRP_QOS  "qos"
+ #define CNXK_SSO_FORCE_BP  "force_rx_bp"
+ #define CN9K_SSO_SINGLE_WS "single_ws"
+-#define CN10K_SSO_GW_MODE  "gw_mode"
++#define CNXK_SSO_GW_MODE   "gw_mode"
+ #define CNXK_SSO_STASH	   "stash"
+ 
+ #define CNXK_SSO_MAX_PROFILES 2
+@@ -39,9 +39,9 @@
+ #define CN9K_SSOW_GET_BASE_ADDR(_GW) ((_GW)-SSOW_LF_GWS_OP_GET_WORK0)
+ #define CN9K_DUAL_WS_NB_WS	     2
+ 
+-#define CN10K_GW_MODE_NONE     0
+-#define CN10K_GW_MODE_PREF     1
+-#define CN10K_GW_MODE_PREF_WFE 2
++#define CNXK_GW_MODE_NONE     0
++#define CNXK_GW_MODE_PREF     1
++#define CNXK_GW_MODE_PREF_WFE 2
+ 
+ #define CNXK_QOS_NORMALIZE(val, min, max, cnt)                                 \
+ 	(min + val / ((max + cnt - 1) / cnt))
+diff --git a/drivers/event/cnxk/cnxk_eventdev_selftest.c b/drivers/event/cnxk/cnxk_eventdev_selftest.c
+index a371e44300a6c..7b5e3e5cf9ef9 100644
+--- a/drivers/event/cnxk/cnxk_eventdev_selftest.c
++++ b/drivers/event/cnxk/cnxk_eventdev_selftest.c
+@@ -1568,15 +1568,15 @@ cnxk_sso_selftest(const char *dev_name)
+ 
+ 	if (roc_model_runtime_is_cn10k()) {
+ 		printf("Verifying CN10K workslot getwork mode none\n");
+-		dev->gw_mode = CN10K_GW_MODE_NONE;
++		dev->gw_mode = CNXK_GW_MODE_NONE;
+ 		if (cnxk_sso_testsuite_run(dev_name))
+ 			return rc;
+ 		printf("Verifying CN10K workslot getwork mode prefetch\n");
+-		dev->gw_mode = CN10K_GW_MODE_PREF;
++		dev->gw_mode = CNXK_GW_MODE_PREF;
+ 		if (cnxk_sso_testsuite_run(dev_name))
+ 			return rc;
+ 		printf("Verifying CN10K workslot getwork mode smart prefetch\n");
+-		dev->gw_mode = CN10K_GW_MODE_PREF_WFE;
++		dev->gw_mode = CNXK_GW_MODE_PREF_WFE;
+ 		if (cnxk_sso_testsuite_run(dev_name))
+ 			return rc;
+ 	}
+-- 
+2.25.1
+

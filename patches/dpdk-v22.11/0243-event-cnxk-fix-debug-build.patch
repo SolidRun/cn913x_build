@@ -1,0 +1,58 @@
+From 9884ace995cd6ca66d226a58eb7ee6165dc008e5 Mon Sep 17 00:00:00 2001
+From: Shijith Thotton <sthotton@marvell.com>
+Date: Mon, 27 Feb 2023 17:13:09 +0530
+Subject: [PATCH 243/955] event/cnxk: fix debug build
+
+As per new function prototype, last argument of cn9k_sso_set_priv_mem
+should be removed.
+
+Fixes: d982f2f488e8 ("common/cnxk: support of per NIX LF meta aura")
+Cc: rbhansali@marvell.com
+
+Signed-off-by: Shijith Thotton <sthotton@marvell.com>
+Change-Id: I8dfcd3e2be0cbb6074b0217152205f1db955ee35
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/98003
+Reviewed-by: Volodymyr Fialko <vfialko@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/event/cnxk/cn9k_eventdev.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/event/cnxk/cn9k_eventdev.c b/drivers/event/cnxk/cn9k_eventdev.c
+index 8d021a225fc0c..2d2985f17512a 100644
+--- a/drivers/event/cnxk/cn9k_eventdev.c
++++ b/drivers/event/cnxk/cn9k_eventdev.c
+@@ -929,8 +929,7 @@ cn9k_sso_rx_adapter_caps_get(const struct rte_eventdev *event_dev,
+ }
+ 
+ static void
+-cn9k_sso_set_priv_mem(const struct rte_eventdev *event_dev, void *lookup_mem,
+-		      uint64_t aura __rte_unused)
++cn9k_sso_set_priv_mem(const struct rte_eventdev *event_dev, void *lookup_mem)
+ {
+ 	struct cnxk_sso_evdev *dev = cnxk_sso_pmd_priv(event_dev);
+ 	int i;
+@@ -976,7 +975,7 @@ cn9k_sso_rx_adapter_queue_add(
+ 
+ 	rxq = eth_dev->data->rx_queues[0];
+ 	lookup_mem = rxq->lookup_mem;
+-	cn9k_sso_set_priv_mem(event_dev, lookup_mem, 0);
++	cn9k_sso_set_priv_mem(event_dev, lookup_mem);
+ 	cn9k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
+ 
+ 	return 0;
+@@ -1125,7 +1124,7 @@ cn9k_crypto_adapter_qp_add(const struct rte_eventdev *event_dev,
+ 	cn9k_sso_fp_fns_set((struct rte_eventdev *)(uintptr_t)event_dev);
+ 
+ 	ret = cnxk_crypto_adapter_qp_add(event_dev, cdev, queue_pair_id, conf);
+-	cn9k_sso_set_priv_mem(event_dev, NULL, 0);
++	cn9k_sso_set_priv_mem(event_dev, NULL);
+ 
+ 	return ret;
+ }
+-- 
+2.25.1
+

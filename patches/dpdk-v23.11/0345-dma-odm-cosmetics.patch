@@ -1,0 +1,104 @@
+From c84ab1ae0dca6200de6a121bf93ec214a6286156 Mon Sep 17 00:00:00 2001
+From: Anoob Joseph <anoobj@marvell.com>
+Date: Mon, 27 May 2024 06:47:03 +0000
+Subject: [PATCH 345/513] dma/odm: cosmetics
+
+Minor changes.
+
+Signed-off-by: Anoob Joseph <anoobj@marvell.com>
+Change-Id: I07f129a701e99c733a5c6abc9dc10e9c07e53c64
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128479
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+(cherry picked from commit f9593e0265ab68a48edaabbf35e91587dd93758a)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/128527
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+---
+ drivers/dma/odm/odm.h | 24 +++++++-----------------
+ 1 file changed, 7 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/dma/odm/odm.h b/drivers/dma/odm/odm.h
+index 0bdcc2485fea7..796a98d59d577 100644
+--- a/drivers/dma/odm/odm.h
++++ b/drivers/dma/odm/odm.h
+@@ -32,12 +32,11 @@ extern int odm_logtype;
+ #define ODM_VF_INT_ENA_W1C	(0x1010)
+ #define ODM_VF_INT_ENA_W1S	(0x1018)
+ #define ODM_MBOX_VF_PF_DATA(i)	(0x2000 | (i << 3))
+-
+ #define ODM_MBOX_RETRY_CNT	(0xfffffff)
+ #define ODM_MBOX_ERR_CODE_MAX	(0xf)
+ #define ODM_IRING_IDLE_WAIT_CNT (0xfffffff)
+ 
+-/**
++/*
+  * Enumeration odm_hdr_xtype_e
+  *
+  * ODM Transfer Type Enumeration
+@@ -47,7 +46,7 @@ extern int odm_logtype;
+ #define ODM_XTYPE_FILL0	   4
+ #define ODM_XTYPE_FILL1	   5
+ 
+-/**
++/*
+  *  ODM Header completion type enumeration
+  *  Enumerates the completion type in ODM_DMA_INSTR_HDR_S[CT]
+  */
+@@ -78,7 +77,7 @@ extern int odm_logtype;
+ 	(RTE_MEMZONE_1GB | RTE_MEMZONE_16MB | RTE_MEMZONE_16GB | RTE_MEMZONE_256MB |               \
+ 	 RTE_MEMZONE_512MB | RTE_MEMZONE_4GB | RTE_MEMZONE_SIZE_HINT_ONLY)
+ 
+-/**
++/*
+  * Structure odm_instr_hdr_s for ODM
+  *
+  * ODM DMA Instruction Header Format
+@@ -100,10 +99,7 @@ union odm_instr_hdr_s {
+ 	} s;
+ };
+ 
+-/**
+- *  ODM Completion Entry Structure
+- *
+- */
++/* ODM Completion Entry Structure */
+ union odm_cmpl_ent_s {
+ 	uint32_t u;
+ 	struct odm_cmpl_ent {
+@@ -113,9 +109,7 @@ union odm_cmpl_ent_s {
+ 	} s;
+ };
+ 
+-/**
+- * ODM DMA Ring Configuration Register
+- */
++/* ODM DMA Ring Configuration Register */
+ union odm_vdma_ring_cfg_s {
+ 	uint64_t u;
+ 	struct {
+@@ -126,9 +120,7 @@ union odm_vdma_ring_cfg_s {
+ 	} s;
+ };
+ 
+-/**
+- * ODM DMA Instruction Ring DBG
+- */
++/* ODM DMA Instruction Ring DBG */
+ union odm_vdma_iring_dbg_s {
+ 	uint64_t u;
+ 	struct {
+@@ -139,9 +131,7 @@ union odm_vdma_iring_dbg_s {
+ 	} s;
+ };
+ 
+-/**
+- * ODM DMA Counts
+- */
++/* ODM DMA Counts */
+ union odm_vdma_counts_s {
+ 	uint64_t u;
+ 	struct {
+-- 
+2.25.1
+

@@ -1,0 +1,425 @@
+From b7c4f81bb5c02c996489b1caf539460b252234f2 Mon Sep 17 00:00:00 2001
+From: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Date: Fri, 7 Jun 2024 16:06:25 +0530
+Subject: [PATCH 454/513] eventdev/dma: reorganize event DMA ops
+
+Re-organize event DMA ops structure to allow holding
+source and destination pointers without the need for
+additional memory, the mempool allocating memory for
+rte_event_dma_adapter_ops can size the structure to
+accommodate all the needed source and destination
+pointers.
+
+Add multiple words for holding user metadata, adapter
+implementation specific metadata and event metadata.
+
+Signed-off-by: Pavan Nikhilesh <pbhagavatula@marvell.com>
+Acked-by: Amit Prakash Shukla <amitprakashs@marvell.com>
+Change-Id: I622e32d224f12833820f6f629f6017cf139021af
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/133682
+Reviewed-by: Jerin Jacob <jerinj@marvell.com>
+Tested-by: Jerin Jacob <jerinj@marvell.com>
+---
+ app/test-eventdev/test_perf_common.c        | 26 ++----
+ app/test/test_event_dma_adapter.c           | 20 ++---
+ doc/guides/prog_guide/event_dma_adapter.rst |  2 +-
+ drivers/dma/cnxk/cnxk_dmadev_fp.c           | 95 +++++++++++++++++++--
+ lib/eventdev/rte_event_dma_adapter.c        | 27 ++----
+ lib/eventdev/rte_event_dma_adapter.h        | 46 +++++++---
+ 6 files changed, 144 insertions(+), 72 deletions(-)
+
+diff --git a/app/test-eventdev/test_perf_common.c b/app/test-eventdev/test_perf_common.c
+index 75fabea84b848..244f7cff3c816 100644
+--- a/app/test-eventdev/test_perf_common.c
++++ b/app/test-eventdev/test_perf_common.c
+@@ -1533,7 +1533,6 @@ perf_event_dev_port_setup(struct evt_test *test, struct evt_options *opt,
+ 		prod = 0;
+ 		for (; port < perf_nb_event_ports(opt); port++) {
+ 			struct prod_data *p = &t->prod[port];
+-			struct rte_event *response_info;
+ 			uint32_t flow_id;
+ 
+ 			p->dev_id = opt->dev_id;
+@@ -1553,13 +1552,10 @@ perf_event_dev_port_setup(struct evt_test *test, struct evt_options *opt,
+ 			for (flow_id = 0; flow_id < t->nb_flows; flow_id++) {
+ 				rte_mempool_get(t->da_op_pool, (void **)&op);
+ 
+-				op->src_seg = rte_malloc(NULL, sizeof(struct rte_dma_sge), 0);
+-				op->dst_seg = rte_malloc(NULL, sizeof(struct rte_dma_sge), 0);
+-
+-				op->src_seg->addr = rte_pktmbuf_iova(rte_pktmbuf_alloc(pool));
+-				op->dst_seg->addr = rte_pktmbuf_iova(rte_pktmbuf_alloc(pool));
+-				op->src_seg->length = 1024;
+-				op->dst_seg->length = 1024;
++				op->src_dst_seg[0].addr = rte_pktmbuf_iova(rte_pktmbuf_alloc(pool));
++				op->src_dst_seg[1].addr = rte_pktmbuf_iova(rte_pktmbuf_alloc(pool));
++				op->src_dst_seg[0].length = 1024;
++				op->src_dst_seg[1].length = 1024;
+ 				op->nb_src = 1;
+ 				op->nb_dst = 1;
+ 				op->flags = RTE_DMA_OP_FLAG_SUBMIT;
+@@ -1567,12 +1563,6 @@ perf_event_dev_port_setup(struct evt_test *test, struct evt_options *opt,
+ 				op->dma_dev_id = dma_dev_id;
+ 				op->vchan = vchan_id;
+ 
+-				response_info = (struct rte_event *)((uint8_t *)op +
+-						 sizeof(struct rte_event_dma_adapter_op));
+-				response_info->queue_id = p->queue_id;
+-				response_info->sched_type = RTE_SCHED_TYPE_ATOMIC;
+-				response_info->flow_id = flow_id;
+-
+ 				p->da.dma_op[flow_id] = op;
+ 			}
+ 
+@@ -2065,7 +2055,7 @@ perf_dmadev_setup(struct evt_test *test, struct evt_options *opt)
+ 		return -ENODEV;
+ 	}
+ 
+-	elt_size = sizeof(struct rte_event_dma_adapter_op) + sizeof(struct rte_event);
++	elt_size = sizeof(struct rte_event_dma_adapter_op) + (sizeof(struct rte_dma_sge) * 2);
+ 	t->da_op_pool = rte_mempool_create("dma_op_pool", opt->pool_sz, elt_size, 256,
+ 					   0, NULL, NULL, NULL, NULL, rte_socket_id(), 0);
+ 	if (t->da_op_pool == NULL) {
+@@ -2120,10 +2110,8 @@ perf_dmadev_destroy(struct evt_test *test, struct evt_options *opt)
+ 		for (flow_id = 0; flow_id < t->nb_flows; flow_id++) {
+ 			op = p->da.dma_op[flow_id];
+ 
+-			rte_pktmbuf_free((struct rte_mbuf *)op->src_seg->addr);
+-			rte_pktmbuf_free((struct rte_mbuf *)op->dst_seg->addr);
+-			rte_free(op->src_seg);
+-			rte_free(op->dst_seg);
++			rte_pktmbuf_free((struct rte_mbuf *)(uintptr_t)op->src_dst_seg[0].addr);
++			rte_pktmbuf_free((struct rte_mbuf *)(uintptr_t)op->src_dst_seg[1].addr);
+ 			rte_mempool_put(op->op_mp, op);
+ 		}
+ 
+diff --git a/app/test/test_event_dma_adapter.c b/app/test/test_event_dma_adapter.c
+index 35b417b69f7bb..d9dff4ff7d3f8 100644
+--- a/app/test/test_event_dma_adapter.c
++++ b/app/test/test_event_dma_adapter.c
+@@ -235,7 +235,6 @@ test_op_forward_mode(void)
+ 	struct rte_mbuf *dst_mbuf[TEST_MAX_OP];
+ 	struct rte_event_dma_adapter_op *op;
+ 	struct rte_event ev[TEST_MAX_OP];
+-	struct rte_event response_info;
+ 	int ret, i;
+ 
+ 	ret = rte_pktmbuf_alloc_bulk(params.src_mbuf_pool, src_mbuf, TEST_MAX_OP);
+@@ -253,14 +252,11 @@ test_op_forward_mode(void)
+ 		rte_mempool_get(params.op_mpool, (void **)&op);
+ 		TEST_ASSERT_NOT_NULL(op, "Failed to allocate dma operation struct\n");
+ 
+-		op->src_seg = rte_malloc(NULL, sizeof(struct rte_dma_sge), 0);
+-		op->dst_seg = rte_malloc(NULL, sizeof(struct rte_dma_sge), 0);
+-
+ 		/* Update Op */
+-		op->src_seg->addr = rte_pktmbuf_iova(src_mbuf[i]);
+-		op->dst_seg->addr = rte_pktmbuf_iova(dst_mbuf[i]);
+-		op->src_seg->length = PACKET_LENGTH;
+-		op->dst_seg->length = PACKET_LENGTH;
++		op->src_dst_seg[0].addr = rte_pktmbuf_iova(src_mbuf[i]);
++		op->src_dst_seg[1].addr = rte_pktmbuf_iova(dst_mbuf[i]);
++		op->src_dst_seg[0].length = PACKET_LENGTH;
++		op->src_dst_seg[1].length = PACKET_LENGTH;
+ 		op->nb_src = 1;
+ 		op->nb_dst = 1;
+ 		op->flags = RTE_DMA_OP_FLAG_SUBMIT;
+@@ -268,10 +264,6 @@ test_op_forward_mode(void)
+ 		op->dma_dev_id = TEST_DMA_DEV_ID;
+ 		op->vchan = TEST_DMA_VCHAN_ID;
+ 
+-		response_info.event = dma_response_info.event;
+-		rte_memcpy((uint8_t *)op + sizeof(struct rte_event_dma_adapter_op), &response_info,
+-			   sizeof(struct rte_event));
+-
+ 		/* Fill in event info and update event_ptr with rte_event_dma_adapter_op */
+ 		memset(&ev[i], 0, sizeof(struct rte_event));
+ 		ev[i].event = 0;
+@@ -294,8 +286,6 @@ test_op_forward_mode(void)
+ 
+ 		TEST_ASSERT_EQUAL(ret, 0, "Data mismatch for dma adapter\n");
+ 
+-		rte_free(op->src_seg);
+-		rte_free(op->dst_seg);
+ 		rte_mempool_put(op->op_mp, op);
+ 	}
+ 
+@@ -400,7 +390,7 @@ configure_dmadev(void)
+ 						       rte_socket_id());
+ 	RTE_TEST_ASSERT_NOT_NULL(params.dst_mbuf_pool, "Can't create DMA_DST_MBUFPOOL\n");
+ 
+-	elt_size = sizeof(struct rte_event_dma_adapter_op) + sizeof(struct rte_event);
++	elt_size = sizeof(struct rte_event_dma_adapter_op) + (sizeof(struct rte_dma_sge) * 2);
+ 	params.op_mpool = rte_mempool_create("EVENT_DMA_OP_POOL", DMA_OP_POOL_SIZE, elt_size, 0,
+ 					     0, NULL, NULL, NULL, NULL, rte_socket_id(), 0);
+ 	RTE_TEST_ASSERT_NOT_NULL(params.op_mpool, "Can't create DMA_OP_POOL\n");
+diff --git a/doc/guides/prog_guide/event_dma_adapter.rst b/doc/guides/prog_guide/event_dma_adapter.rst
+index 3443b6a8032ec..1fb9b0a07b875 100644
+--- a/doc/guides/prog_guide/event_dma_adapter.rst
++++ b/doc/guides/prog_guide/event_dma_adapter.rst
+@@ -144,7 +144,7 @@ on which it enqueues events towards the DMA adapter using ``rte_event_enqueue_bu
+    uint32_t cap;
+    int ret;
+ 
+-   /* Fill in event info and update event_ptr with rte_dma_op */
++   /* Fill in event info and update event_ptr with rte_event_dma_adapter_op */
+    memset(&ev, 0, sizeof(ev));
+    .
+    .
+diff --git a/drivers/dma/cnxk/cnxk_dmadev_fp.c b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+index 56812ed661d63..436fb9e8cf032 100644
+--- a/drivers/dma/cnxk/cnxk_dmadev_fp.c
++++ b/drivers/dma/cnxk/cnxk_dmadev_fp.c
+@@ -489,8 +489,8 @@ cn10k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
+ 		hdr[1] = ((uint64_t)comp_ptr);
+ 		hdr[2] = cnxk_dma_adapter_format_event(rsp_info->event);
+ 
+-		src = &op->src_seg[0];
+-		dst = &op->dst_seg[0];
++		src = &op->src_dst_seg[0];
++		dst = &op->src_dst_seg[op->nb_src];
+ 
+ 		if (CNXK_TAG_IS_HEAD(work->gw_rdata) ||
+ 		    ((CNXK_TT_FROM_TAG(work->gw_rdata) == SSO_TT_ORDERED) &&
+@@ -501,7 +501,88 @@ cn10k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
+ 		rte_mcslock_lock(&dpi_ml, &ml_me);
+ 		rc = __dpi_queue_write_sg(dpivf, hdr, src, dst, nb_src, nb_dst);
+ 		if (unlikely(rc)) {
+-			rte_mcslock_unlock(&dpi_ml, &ml_me);
++			rte_mcslock_unlock(&dpivf->mcs_lock, &mcs_lock_me);
++			return rc;
++		}
++
++		if (op->flags & RTE_DMA_OP_FLAG_SUBMIT) {
++			rte_wmb();
++			plt_write64(dpi_conf->pnum_words + CNXK_DPI_CMD_LEN(nb_src, nb_dst),
++				    dpivf->rdpi.rbase + DPI_VDMA_DBELL);
++			dpi_conf->stats.submitted += dpi_conf->pending + 1;
++			dpi_conf->pnum_words = 0;
++			dpi_conf->pending = 0;
++		} else {
++			dpi_conf->pnum_words += CNXK_DPI_CMD_LEN(nb_src, nb_dst);
++			dpi_conf->pending++;
++		}
++		rte_mcslock_unlock(&dpivf->mcs_lock, &mcs_lock_me);
++	}
++
++	return count;
++}
++
++uint16_t
++cn9k_dma_adapter_dual_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
++{
++	const struct rte_dma_sge *fptr, *lptr;
++	struct rte_event_dma_adapter_op *op;
++	struct cnxk_dpi_compl_s *comp_ptr;
++	struct cn9k_sso_hws_dual *work;
++	struct cnxk_dpi_conf *dpi_conf;
++	struct cnxk_dpi_vf_s *dpivf;
++	struct rte_event *rsp_info;
++	uint16_t nb_src, nb_dst;
++	rte_mcslock_t mcs_lock_me;
++	uint64_t hdr[4];
++	uint16_t count;
++	int rc;
++
++	work = (struct cn9k_sso_hws_dual *)ws;
++
++	for (count = 0; count < nb_events; count++) {
++		op = ev[count].event_ptr;
++		rsp_info = (struct rte_event *)((uint8_t *)op +
++						sizeof(struct rte_event_dma_adapter_op));
++		dpivf = rte_dma_fp_objs[op->dma_dev_id].dev_private;
++		dpi_conf = &dpivf->conf[op->vchan];
++
++		if (unlikely(rte_mempool_get(dpi_conf->adapter_info.req_mp, (void **)&comp_ptr)))
++			return count;
++
++		comp_ptr->op = op;
++		comp_ptr->dev_id = op->dma_dev_id;
++		comp_ptr->vchan = op->vchan;
++		comp_ptr->cdata = CNXK_DPI_REQ_SSO_CDATA;
++
++		hdr[1] = dpi_conf->cmd.u | ((uint64_t)DPI_HDR_PT_WQP << 36);
++		hdr[2] = (uint64_t)comp_ptr;
++
++		nb_src = op->nb_src & CNXK_DPI_MAX_POINTER;
++		nb_dst = op->nb_dst & CNXK_DPI_MAX_POINTER;
++		/*
++		 * For inbound case, src pointers are last pointers.
++		 * For all other cases, src pointers are first pointers.
++		 */
++		if (((dpi_conf->cmd.u >> 48) & DPI_HDR_XTYPE_MASK) == DPI_XTYPE_INBOUND) {
++			fptr = &op->src_dst_seg[nb_src];
++			lptr = &op->src_dst_seg[0];
++			RTE_SWAP(nb_src, nb_dst);
++		} else {
++			fptr = &op->src_dst_seg[0];
++			lptr = &op->src_dst_seg[nb_src];
++		}
++
++		hdr[0] = ((uint64_t)nb_dst << 54) | (uint64_t)nb_src << 48;
++		hdr[0] |= cnxk_dma_adapter_format_event(rsp_info->event);
++
++		if ((rsp_info->sched_type & DPI_HDR_TT_MASK) == RTE_SCHED_TYPE_ORDERED)
++			roc_sso_hws_head_wait(work->base[!work->vws]);
++
++		rte_mcslock_lock(&dpivf->mcs_lock, &mcs_lock_me);
++		rc = __dpi_queue_write_sg(dpivf, hdr, fptr, lptr, nb_src, nb_dst);
++		if (unlikely(rc)) {
++			rte_mcslock_unlock(&dpivf->mcs_lock, &mcs_lock_me);
+ 			return rc;
+ 		}
+ 
+@@ -563,12 +644,12 @@ cn9k_dma_adapter_enqueue(void *ws, struct rte_event ev[], uint16_t nb_events)
+ 		 * For all other cases, src pointers are first pointers.
+ 		 */
+ 		if (((dpi_conf->cmd.u >> 48) & DPI_HDR_XTYPE_MASK) == DPI_XTYPE_INBOUND) {
+-			fptr = &op->dst_seg[0];
+-			lptr = &op->src_seg[0];
++			fptr = &op->src_dst_seg[nb_src];
++			lptr = &op->src_dst_seg[0];
+ 			RTE_SWAP(nb_src, nb_dst);
+ 		} else {
+-			fptr = &op->src_seg[0];
+-			lptr = &op->dst_seg[0];
++			fptr = &op->src_dst_seg[0];
++			lptr = &op->src_dst_seg[nb_src];
+ 		}
+ 
+ 		hdr[0] = ((uint64_t)nb_dst << 54) | (uint64_t)nb_src << 48;
+diff --git a/lib/eventdev/rte_event_dma_adapter.c b/lib/eventdev/rte_event_dma_adapter.c
+index af4b5ad38828d..a0f0a3c0312a7 100644
+--- a/lib/eventdev/rte_event_dma_adapter.c
++++ b/lib/eventdev/rte_event_dma_adapter.c
+@@ -236,9 +236,9 @@ edma_circular_buffer_flush_to_dma_dev(struct event_dma_adapter *adapter,
+ 				      uint16_t vchan, uint16_t *nb_ops_flushed)
+ {
+ 	struct rte_event_dma_adapter_op *op;
+-	struct dma_vchan_info *tq;
+ 	uint16_t *head = &bufp->head;
+ 	uint16_t *tail = &bufp->tail;
++	struct dma_vchan_info *tq;
+ 	uint16_t n;
+ 	uint16_t i;
+ 	int ret;
+@@ -257,11 +257,13 @@ edma_circular_buffer_flush_to_dma_dev(struct event_dma_adapter *adapter,
+ 	for (i = 0; i < n; i++)	{
+ 		op = bufp->op_buffer[*head];
+ 		if (op->nb_src == 1 && op->nb_dst == 1)
+-			ret = rte_dma_copy(dma_dev_id, vchan, op->src_seg->addr, op->dst_seg->addr,
+-					   op->src_seg->length, op->flags);
++			ret = rte_dma_copy(dma_dev_id, vchan, op->src_dst_seg[0].addr,
++					   op->src_dst_seg[1].addr, op->src_dst_seg[0].length,
++					   op->flags);
+ 		else
+-			ret = rte_dma_copy_sg(dma_dev_id, vchan, op->src_seg, op->dst_seg,
+-					      op->nb_src, op->nb_dst, op->flags);
++			ret = rte_dma_copy_sg(dma_dev_id, vchan, &op->src_dst_seg[0],
++					      &op->src_dst_seg[op->nb_src], op->nb_src, op->nb_dst,
++					      op->flags);
+ 		if (ret < 0)
+ 			break;
+ 
+@@ -511,8 +513,7 @@ edma_enq_to_dma_dev(struct event_dma_adapter *adapter, struct rte_event *ev, uns
+ 		if (dma_op == NULL)
+ 			continue;
+ 
+-		/* Expected to have response info appended to dma_op. */
+-
++		dma_op->impl_opaque[0] = ev[i].event;
+ 		dma_dev_id = dma_op->dma_dev_id;
+ 		vchan = dma_op->vchan;
+ 		vchan_qinfo = &adapter->dma_devs[dma_dev_id].vchanq[vchan];
+@@ -647,7 +648,6 @@ edma_ops_enqueue_burst(struct event_dma_adapter *adapter, struct rte_event_dma_a
+ 	uint8_t event_port_id = adapter->event_port_id;
+ 	uint8_t event_dev_id = adapter->eventdev_id;
+ 	struct rte_event events[DMA_BATCH_SIZE];
+-	struct rte_event *response_info;
+ 	uint16_t nb_enqueued, nb_ev;
+ 	uint8_t retry;
+ 	uint8_t i;
+@@ -659,16 +659,7 @@ edma_ops_enqueue_burst(struct event_dma_adapter *adapter, struct rte_event_dma_a
+ 	for (i = 0; i < num; i++) {
+ 		struct rte_event *ev = &events[nb_ev++];
+ 
+-		/* Expected to have response info appended to dma_op. */
+-		response_info = (struct rte_event *)((uint8_t *)ops[i] +
+-							  sizeof(struct rte_event_dma_adapter_op));
+-		if (unlikely(response_info == NULL)) {
+-			if (ops[i] != NULL && ops[i]->op_mp != NULL)
+-				rte_mempool_put(ops[i]->op_mp, ops[i]);
+-			continue;
+-		}
+-
+-		rte_memcpy(ev, response_info, sizeof(struct rte_event));
++		ev->event = ops[i]->impl_opaque[0];
+ 		ev->event_ptr = ops[i];
+ 		ev->event_type = RTE_EVENT_TYPE_DMADEV;
+ 		if (adapter->implicit_release_disabled)
+diff --git a/lib/eventdev/rte_event_dma_adapter.h b/lib/eventdev/rte_event_dma_adapter.h
+index e924ab673df7e..048ddba3f354d 100644
+--- a/lib/eventdev/rte_event_dma_adapter.h
++++ b/lib/eventdev/rte_event_dma_adapter.h
+@@ -157,24 +157,46 @@ extern "C" {
+  * instance.
+  */
+ struct rte_event_dma_adapter_op {
+-	struct rte_dma_sge *src_seg;
+-	/**< Source segments. */
+-	struct rte_dma_sge *dst_seg;
+-	/**< Destination segments. */
+-	uint16_t nb_src;
+-	/**< Number of source segments. */
+-	uint16_t nb_dst;
+-	/**< Number of destination segments. */
+ 	uint64_t flags;
+ 	/**< Flags related to the operation.
+ 	 * @see RTE_DMA_OP_FLAG_*
+ 	 */
+-	int16_t dma_dev_id;
+-	/**< DMA device ID to be used */
+-	uint16_t vchan;
+-	/**< DMA vchan ID to be used */
+ 	struct rte_mempool *op_mp;
+ 	/**< Mempool from which op is allocated. */
++	enum rte_dma_status_code status;
++	/**< Status code for this operation. */
++	uint32_t rsvd;
++	/**< Reserved for future use. */
++	uint64_t impl_opaque[2];
++	/**< Implementation-specific opaque data.
++	 * An dma device implementation use this field to hold
++	 * implementation specific values to share between dequeue and enqueue
++	 * operations.
++	 * The application should not modify this field.
++	 */
++	uint64_t user_meta;
++	/**<  Memory to store user specific metadata.
++	 * The dma device implementation should not modify this area.
++	 */
++	uint64_t event_meta;
++	/**< Event metadata that defines event attributes when used in OP_NEW mode.
++	 * @see rte_event_dma_adapter_mode::RTE_EVENT_DMA_ADAPTER_OP_NEW
++	 * @see struct rte_event::event
++	 */
++	int16_t dma_dev_id;
++	/**< DMA device ID to be used with OP_FORWARD mode.
++	 * @see rte_event_dma_adapter_mode::RTE_EVENT_DMA_ADAPTER_OP_FORWARD
++	 */
++	uint16_t vchan;
++	/**< DMA vchan ID to be used with OP_FORWARD mode
++	 * @see rte_event_dma_adapter_mode::RTE_EVENT_DMA_ADAPTER_OP_FORWARD
++	 */
++	uint16_t nb_src;
++	/**< Number of source segments. */
++	uint16_t nb_dst;
++	/**< Number of destination segments. */
++	struct rte_dma_sge src_dst_seg[0];
++	/**< Source and destination segments. */
+ };
+ 
+ /**
+-- 
+2.25.1
+

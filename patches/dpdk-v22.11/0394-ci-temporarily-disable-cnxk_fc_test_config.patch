@@ -1,0 +1,31 @@
+From c441c9ff284270ecf68736e5f0ff8afa538f9c99 Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Tue, 9 May 2023 12:35:49 +0530
+Subject: [PATCH 394/955] ci: temporarily disable cnxk_fc_test_config
+
+Temporarily disable cnxk_fc_test_config.
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: I2c63233370c85571da637f88ff8d12bfac9db255
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/103103
+Tested-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+Reviewed-by: Jerin Jacob Kollanukkaran <jerinj@marvell.com>
+---
+ marvell-ci/test/env/cn10k.env | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/marvell-ci/test/env/cn10k.env b/marvell-ci/test/env/cn10k.env
+index 90616302c0336..d4239bc2bda4a 100644
+--- a/marvell-ci/test/env/cn10k.env
++++ b/marvell-ci/test/env/cn10k.env
+@@ -70,6 +70,7 @@ TM_SETUP=${TM_SETUP:-}
+ 
+ FIXME_SKIP_TESTS="
+ 	cnxk_mtr_test_config
++	cnxk_fc_test_config
+ "
+ 
+ DEFAULT_SKIP_TESTS="
+-- 
+2.25.1
+

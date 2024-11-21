@@ -1,0 +1,38 @@
+From 04b20317c2ca8f4179ca335c1d95da0dac2460bb Mon Sep 17 00:00:00 2001
+From: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Date: Tue, 18 Apr 2023 11:50:05 +0530
+Subject: [PATCH 374/955] common/cnxk: fix receive queue with multiple mask
+
+enable or disable RQ mask based on function
+parameter.This fix allocates different profile
+for different rq masks
+
+Fixes: ddf955d3917e ("common/cnxk: support CPT second pass")
+
+Signed-off-by: Rakesh Kudurumalla <rkudurumalla@marvell.com>
+Change-Id: Ice702d65cfe4255b2bf901bd77d7f673900623d6
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/100758
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Nithin Kumar Dabilpuram <ndabilpuram@marvell.com>
+---
+ drivers/common/cnxk/roc_nix_inl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/common/cnxk/roc_nix_inl.c b/drivers/common/cnxk/roc_nix_inl.c
+index 69f658ba875d1..16f858f5619a8 100644
+--- a/drivers/common/cnxk/roc_nix_inl.c
++++ b/drivers/common/cnxk/roc_nix_inl.c
+@@ -1382,7 +1382,7 @@ roc_nix_inl_rq_ena_dis(struct roc_nix *roc_nix, bool enable)
+ 		return -EFAULT;
+ 
+ 	if (roc_feature_nix_has_inl_rq_mask()) {
+-		rc = nix_inl_rq_mask_cfg(roc_nix, true);
++		rc = nix_inl_rq_mask_cfg(roc_nix, enable);
+ 		if (rc) {
+ 			plt_err("Failed to get rq mask rc=%d", rc);
+ 			return rc;
+-- 
+2.25.1
+

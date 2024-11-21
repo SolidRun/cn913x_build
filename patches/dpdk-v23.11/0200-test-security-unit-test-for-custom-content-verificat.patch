@@ -1,0 +1,113 @@
+From d45fc81cdb0ca6e8d1cfdc73d8ef9f8fd2105d50 Mon Sep 17 00:00:00 2001
+From: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Date: Wed, 31 Jan 2024 08:43:36 -0800
+Subject: [PATCH 200/513] test/security: unit test for custom content
+ verification
+
+Add unit test to verify the TLS header creation with
+custom content type
+
+Signed-off-by: Vidya Sagar Velumuri <vvelumuri@marvell.com>
+Change-Id: I88c064d3c21529cddfb6285291803ed6c500abf4
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/119951
+Base-Builds: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Base-Tests: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Tested-by: sa_ip-toolkits-Jenkins <sa_ip-toolkits-jenkins@marvell.com>
+Reviewed-by: Anoob Joseph <anoobj@marvell.com>
+(cherry picked from commit 5f00214cdd859dce49bc76a875923c1a0361df34)
+Reviewed-on: https://sj1git1.cavium.com/c/IP/SW/dataplane/dpdk/+/121231
+Tested-by: Anoob Joseph <anoobj@marvell.com>
+---
+ app/test/test_cryptodev.c                     | 19 +++++++++++++++++++
+ app/test/test_cryptodev_security_tls_record.c |  3 +++
+ app/test/test_cryptodev_security_tls_record.h |  9 +++++++++
+ 3 files changed, 31 insertions(+)
+
+diff --git a/app/test/test_cryptodev.c b/app/test/test_cryptodev.c
+index 3516c641e693f..f71e5242c1b39 100644
+--- a/app/test/test_cryptodev.c
++++ b/app/test/test_cryptodev.c
+@@ -21,6 +21,7 @@
+ #include <rte_ip.h>
+ #include <rte_string_fns.h>
+ #include <rte_tcp.h>
++#include <rte_tls.h>
+ #include <rte_udp.h>
+ 
+ #ifdef RTE_CRYPTO_SCHEDULER
+@@ -12130,6 +12131,20 @@ test_tls_record_proto_corrupt_pkt(void)
+ 	return test_tls_record_proto_all(&flags);
+ }
+ 
++static int
++test_tls_record_proto_custom_content_type(void)
++{
++	struct tls_record_test_flags flags = {
++		.content_type = TLS_RECORD_TEST_CONTENT_TYPE_CUSTOM
++	};
++	struct crypto_testsuite_params *ts_params = &testsuite_params;
++	struct rte_cryptodev_info dev_info;
++
++	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
++
++	return test_tls_record_proto_all(&flags);
++}
++
+ static int
+ test_dtls_1_2_record_proto_data_walkthrough(void)
+ {
+@@ -17248,6 +17263,10 @@ static struct unit_test_suite tls12_record_proto_testsuite  = {
+ 			"TLS packet header corruption",
+ 			ut_setup_security, ut_teardown,
+ 			test_tls_record_proto_corrupt_pkt),
++		TEST_CASE_NAMED_ST(
++			"Custom content type",
++			ut_setup_security, ut_teardown,
++			test_tls_record_proto_custom_content_type),
+ 		TEST_CASES_END() /**< NULL terminate unit test array */
+ 	}
+ };
+diff --git a/app/test/test_cryptodev_security_tls_record.c b/app/test/test_cryptodev_security_tls_record.c
+index 93ff7f36fab58..9a2af259c9a08 100644
+--- a/app/test/test_cryptodev_security_tls_record.c
++++ b/app/test/test_cryptodev_security_tls_record.c
+@@ -108,6 +108,9 @@ test_tls_record_td_prepare(const struct crypto_param *param1, const struct crypt
+ 		td->input_text.len = data_len;
+ 	}
+ 
++	if (flags->content_type == TLS_RECORD_TEST_CONTENT_TYPE_CUSTOM)
++		td->app_type = RTE_TLS_TYPE_MAX;
++
+ 	tls_pkt_size = td->input_text.len;
+ 
+ 	if (!td->aead) {
+diff --git a/app/test/test_cryptodev_security_tls_record.h b/app/test/test_cryptodev_security_tls_record.h
+index 5faa277740d75..b707361fb6f7c 100644
+--- a/app/test/test_cryptodev_security_tls_record.h
++++ b/app/test/test_cryptodev_security_tls_record.h
+@@ -42,6 +42,14 @@ static_assert(TLS_1_3_RECORD_PLAINTEXT_MAX_LEN <= TEST_SEC_CLEARTEXT_MAX_LEN,
+ 
+ #define TLS_RECORD_PLAINTEXT_MIN_LEN       (1u)
+ 
++enum tls_record_test_content_type {
++	TLS_RECORD_TEST_CONTENT_TYPE_APP,
++	/* For verifying zero packet length */
++	TLS_RECORD_TEST_CONTENT_TYPE_HANDSHAKE,
++	/* For verifying handling of custom content types */
++	TLS_RECORD_TEST_CONTENT_TYPE_CUSTOM,
++};
++
+ struct tls_record_test_data {
+ 	struct {
+ 		uint8_t data[32];
+@@ -89,6 +97,7 @@ struct tls_record_test_flags {
+ 	bool data_walkthrough;
+ 	enum rte_security_tls_version tls_version;
+ 	bool pkt_corruption;
++	enum tls_record_test_content_type content_type;
+ };
+ 
+ extern struct tls_record_test_data tls_test_data_aes_128_gcm_v1;
+-- 
+2.25.1
+
