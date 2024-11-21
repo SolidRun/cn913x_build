@@ -157,7 +157,7 @@ for i in $SDK_COMPONENTS; do
 		if [ "x$i" == "xlinux" ]; then
 			echo "Cloing https://www.github.com/torvalds/$i release $RELEASE"
 			cd $ROOTDIR/build
-			git clone $SHALLOW_FLAG https://kernel.googlesource.com/pub/scm/linux/kernel/git/stable/linux.git linux -b $RELEASE
+			git clone $SHALLOW_FLAG https://github.com/SolidRun/linux-marvell.git linux -b linux-6.1.y-marvell-sdk-v12
 		elif [ "x$i" == "xarmada-firmware" ]; then
 			echo "Cloning armada-firmware from SolidRun"
 			echo "Cloning https://github.com/SolidRun/armada-firmware.git"
