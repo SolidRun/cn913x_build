@@ -1,0 +1,132 @@
+From 0d0893b8bff659f7859153dbd5b2e5f0df73eb27 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Thu, 28 Nov 2024 14:23:24 +0100
+Subject: [PATCH 9/9] board: marvell: octeontx2_cn913x: fixup cn9131-solidwan
+ ethernet phy
+
+CP0 mdio bus has an address conflict for 1x PHY on the SoM, and 1x PHY
+on the SolidWAN Carrier at address 0. The PHY on the SoM is not actually
+used on SolidWAN, the SoC RGMII interface is disabled and the board does
+not route the MII signals.
+Therefore runtime information such as link status can not be read
+reliably from mdio bus, reporting mostly the status of PHY on the SoM
+rather than the one on the board.
+
+Configure the PHY(s) during boot for SGMII auto-negotiation to support
+link status and configuration without mdio messages.
+Also configure the LED functions to match how Linux sets up the other 3
+ethernet ports.
+
+For consistency configure all 4x ethernet PHYs on the board at the same
+time, ensuring LEDs behave the same on all ports, during both U-Boot and
+Linux.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ board/Marvell/octeontx2_cn913x/board.c | 86 ++++++++++++++++++++++++++
+ 1 file changed, 86 insertions(+)
+
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index fbcff6f11cb..635899efe3a 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -20,6 +20,8 @@
+ #ifdef CONFIG_ARMV8_SEC_FIRMWARE_SUPPORT
+ #include <asm/armv8/sec_firmware.h>
+ #endif
++#include <linux/delay.h>
++#include <miiphy.h>
+ 
+ #define CP_USB20_BASE_REG(cp, p)	(MVEBU_REGS_BASE_CP(0, cp) + \
+ 						0x00580000 + 0x1000 * (p))
+@@ -145,3 +147,87 @@ int do_mac(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
+ 	return 1;
+ }
+ #endif /* CONFIG_ID_EEPROM */
++
++#ifdef CONFIG_LAST_STAGE_INIT
++/*
++ * Wrapper around miphy_read & miiphy_write to allow modifying by bitmask
++ */
++static inline int miiphy_modify(const char *devname, unsigned char addr, unsigned char reg, unsigned short value, unsigned short mask) {
++	unsigned short old, new;
++
++	if (miiphy_read(devname, addr, reg, &old)) {
++		printf("read failed ...\n");
++		return 1;
++	}
++
++	new = old & (~mask);
++	new |= (value & mask);
++
++	return miiphy_write(devname, addr, reg, new);
++}
++
++/*
++ * Configure PHY(s) at address 0 for SGMII auto-negotiation between MAC and PHY,
++ */
++static void solidwan_phy_init(const char *mii_bus_name, unsigned char addr) {
++	struct mii_dev *bus;
++	int ret = 0;
++
++	bus = miiphy_get_dev_by_name(mii_bus_name);
++	if (!bus) {
++		printf("Warning: Failed to get \"%s\", can't configure phy for eth1!\n", mii_bus_name);
++		return;
++	}
++
++	ret |= miiphy_write(mii_bus_name, addr, 0x16, 0x0001); // select page 1
++	ret |= miiphy_modify(mii_bus_name, addr, 0x00, 0x1000, 0x1000); // set page 1 register 0 bit 12=1
++	ret |= miiphy_modify(mii_bus_name, addr, 0x1a, 0x0000, 0x0040); // set page 1 register 26 bit 6=0
++	ret |= miiphy_modify(mii_bus_name, addr, 0x00, 0x8000, 0x8000); // set page 1 register 0 bit 15=1
++	udelay(1000); // wait for sw-reset to complete
++	ret |= miiphy_write(mii_bus_name, addr, 0x16, 0x0012); // select page 18
++	ret |= miiphy_modify(mii_bus_name, addr, 0x14, 0x0001, 0x0007); // set page 18 register 20 bits [2:0]=001
++	ret |= miiphy_modify(mii_bus_name, addr, 0x14, 0x8000, 0x8000); // set page 18 register 20 bit 15=1
++	udelay(1000); // wait for sw-reset to complete
++
++	/*
++	 * Configure LEDs default behaviour (consistent with Linux default):
++	 * - LED[0]: link is 1000Mbps: On (yellow)
++	 * - LED[1]: link/activity: On/blink (green)
++	 * - LED[2]: high impedance (floating)
++	 */
++	ret |= miiphy_write(mii_bus_name, addr, 0x16, 0x0003); // select page 3
++	ret |= miiphy_modify(mii_bus_name, addr, 0x10, 0x0a17, 0x0fff); // set page 3 register 16 bits [11:0]=0xa17
++
++	if (ret)
++		printf("Warning: Failed to configure phy %s:%d!\n", mii_bus_name, addr);
++
++	/*
++	 * Restore page register to reset-default. Otherwise phy drivers get confused
++	 * reading ID register as 0x00 from wrong page.
++	 */
++	miiphy_write(mii_bus_name, addr, 0x16, 0x0000); // select page 0
++}
++
++int last_stage_init(void)
++{
++	const char *fdtfile;
++
++	fdtfile = env_get("fdtfile");
++	if (strcmp(fdtfile, "marvell/cn9131-cf-solidwan.dtb") == 0) {
++		printf("Applying eth1 phy workaround ...\n");
++		/*
++		 * CN9131 SolidWAN has a PHY address conflict between SoM and Carrier.
++		 * Configure PHY(s) at address 0 as workaround for address conflict.
++		 *
++		 * Also configure the other 3 PHYs for SGMII mode, to ensure LEDs
++		 * are configured correctly before netdev initialization.
++		 */
++		solidwan_phy_init("cp0-mdio", 0);
++		solidwan_phy_init("cp0-mdio", 1);
++		solidwan_phy_init("cp1-mdio", 0);
++		solidwan_phy_init("cp1-mdio", 1);
++	}
++
++	return 0;
++}
++#endif /* CONFIG_LAST_STAGE_INIT */
+-- 
+2.43.0
+

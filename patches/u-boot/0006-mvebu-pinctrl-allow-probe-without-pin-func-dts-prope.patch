@@ -1,0 +1,39 @@
+From 4ab6ec0c05a77c25a98c92b7ca8c36106dc05c5e Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Thu, 28 Nov 2024 17:08:43 +0100
+Subject: [PATCH 6/9] mvebu: pinctrl: allow probe without pin-func dts property
+
+mvebu pinctrl driver supports both set_state call-back for configuring
+individual pins as linked from various nodes, as well as configuring all
+pins during probe from pin-func property.
+
+The pin-func property is optional, do not fail probe when it is missing,
+to ensure that set_state call-back is still usable.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/pinctrl/mvebu/pinctrl-mvebu.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/pinctrl/mvebu/pinctrl-mvebu.c b/drivers/pinctrl/mvebu/pinctrl-mvebu.c
+index fd49a97b5b0..483f009b15c 100644
+--- a/drivers/pinctrl/mvebu/pinctrl-mvebu.c
++++ b/drivers/pinctrl/mvebu/pinctrl-mvebu.c
+@@ -140,6 +140,14 @@ static int mvebu_pinctrl_set_state_all(struct udevice *dev,
+ 
+ 	priv = dev_get_priv(dev);
+ 
++	/*
++	 * If pin-func property does not exist there is nothing to do.
++	 * This is not an error because there may still be child-nodes
++	 * configuring pins individually.
++	 */
++	if (!fdtdec_get_bool(blob, node, "pin-func"))
++		return 0;
++
+ 	err = fdtdec_get_int_array(blob, node, "pin-func",
+ 				   func_arr, priv->pin_cnt);
+ 	if (err) {
+-- 
+2.43.0
+
