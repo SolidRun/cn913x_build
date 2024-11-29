@@ -1,0 +1,87 @@
+From fc9e89ab133e9ee356cd52ce803b5f73d0dcaeea Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 2 Oct 2024 17:04:40 +0300
+Subject: [PATCH] phy: mvebu-cp110-utmi: support swapping d+/d- lanes by dts
+ property
+
+CP11x UTMI PHY supports swapping D+/D- signals via digital control
+register 1.
+
+Add support for the "swap-dx-lanes" device-tree property, which lists
+the port-ids that should swap D+ and D-.
+The property is evaluated in probe and applied before power-on
+during mvebu_cp110_utmi_port_setup.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+Link: https://lore.kernel.org/r/20241002-mvebu-utmi-phy-v4-1-83783dc89b9d@solid-run.com
+Signed-off-by: Vinod Koul <vkoul@kernel.org>
+---
+ drivers/phy/marvell/phy-mvebu-cp110-utmi.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/drivers/phy/marvell/phy-mvebu-cp110-utmi.c b/drivers/phy/marvell/phy-mvebu-cp110-utmi.c
+index aa27c7994610..d3852f146f0b 100644
+--- a/drivers/phy/marvell/phy-mvebu-cp110-utmi.c
++++ b/drivers/phy/marvell/phy-mvebu-cp110-utmi.c
+@@ -62,6 +62,8 @@
+ #define   SQ_AMP_CAL_MASK			GENMASK(2, 0)
+ #define   SQ_AMP_CAL_VAL			1
+ #define   SQ_AMP_CAL_EN				BIT(3)
++#define UTMI_DIG_CTRL1_REG			0x20
++#define   SWAP_DPDM				BIT(15)
+ #define UTMI_CTRL_STATUS0_REG			0x24
+ #define   SUSPENDM				BIT(22)
+ #define   TEST_SEL				BIT(25)
+@@ -99,11 +101,13 @@ struct mvebu_cp110_utmi {
+  * @priv: PHY driver data
+  * @id: PHY port ID
+  * @dr_mode: PHY connection: USB_DR_MODE_HOST or USB_DR_MODE_PERIPHERAL
++ * @swap_dx: whether to swap d+/d- signals
+  */
+ struct mvebu_cp110_utmi_port {
+ 	struct mvebu_cp110_utmi *priv;
+ 	u32 id;
+ 	enum usb_dr_mode dr_mode;
++	bool swap_dx;
+ };
+ 
+ static void mvebu_cp110_utmi_port_setup(struct mvebu_cp110_utmi_port *port)
+@@ -159,6 +163,13 @@ static void mvebu_cp110_utmi_port_setup(struct mvebu_cp110_utmi_port *port)
+ 	reg &= ~(VDAT_MASK | VSRC_MASK);
+ 	reg |= (VDAT_VAL << VDAT_OFFSET) | (VSRC_VAL << VSRC_OFFSET);
+ 	writel(reg, PORT_REGS(port) + UTMI_CHGDTC_CTRL_REG);
++
++	/* Swap D+/D- */
++	reg = readl(PORT_REGS(port) + UTMI_DIG_CTRL1_REG);
++	reg &= ~(SWAP_DPDM);
++	if (port->swap_dx)
++		reg |= SWAP_DPDM;
++	writel(reg, PORT_REGS(port) + UTMI_DIG_CTRL1_REG);
+ }
+ 
+ static int mvebu_cp110_utmi_phy_power_off(struct phy *phy)
+@@ -285,7 +296,10 @@ static int mvebu_cp110_utmi_phy_probe(struct platform_device *pdev)
+ 	struct mvebu_cp110_utmi *utmi;
+ 	struct phy_provider *provider;
+ 	struct device_node *child;
++	struct property *prop;
++	const __be32 *p;
+ 	u32 usb_devices = 0;
++	u32 swap_dx = 0;
+ 
+ 	utmi = devm_kzalloc(dev, sizeof(*utmi), GFP_KERNEL);
+ 	if (!utmi)
+@@ -345,6 +359,10 @@ static int mvebu_cp110_utmi_phy_probe(struct platform_device *pdev)
+ 			}
+ 		}
+ 
++		of_property_for_each_u32(dev->of_node, "swap-dx-lanes", prop, p, swap_dx)
++			if (swap_dx == port_id)
++				port->swap_dx = 1;
++
+ 		/* Retrieve PHY capabilities */
+ 		utmi->ops = &mvebu_cp110_utmi_phy_ops;
+ 
+-- 
+2.43.0
+

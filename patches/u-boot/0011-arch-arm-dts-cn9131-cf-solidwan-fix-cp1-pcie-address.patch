@@ -1,0 +1,33 @@
+From e1d3078f905f91933585f8bfae477be905a78edd Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Fri, 29 Nov 2024 16:27:51 +0100
+Subject: [PATCH 11/13] arch: arm: dts: cn9131-cf-solidwan: fix cp1 pcie
+ addresses
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9131-cf-solidwan.dts | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/dts/cn9131-cf-solidwan.dts b/arch/arm/dts/cn9131-cf-solidwan.dts
+index 0a1820adeb4..5475aaca18e 100644
+--- a/arch/arm/dts/cn9131-cf-solidwan.dts
++++ b/arch/arm/dts/cn9131-cf-solidwan.dts
+@@ -18,10 +18,10 @@
+  * Instantiate the external CP115
+  */
+ 
+-#define CP110_NAME		cp1
+-#define CP110_NUM		1
+-#define CP110_PCIEx_CPU_MEM_BASE(iface)	((iface == 0) ? 0xc0000000 : \
+-					 (0xe0000000 + (iface - 1) * 0x1000000))
++#define CP110_NAME			cp1
++#define CP110_NUM			1
++#define CP110_PCIE_MEM_SIZE(iface)	(0xf00000)
++#define CP110_PCIEx_CPU_MEM_BASE(iface)	(0xe2000000 + (iface) * 0x1000000)
+ #define CP110_PCIEx_BUS_MEM_BASE(iface)	(CP110_PCIEx_CPU_MEM_BASE(iface))
+ 
+ #include "armada-cp110.dtsi"
+-- 
+2.43.0
+

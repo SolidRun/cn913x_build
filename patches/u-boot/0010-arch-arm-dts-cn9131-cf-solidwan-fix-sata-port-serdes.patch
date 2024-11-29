@@ -1,0 +1,27 @@
+From f01608b552f042dacb88e56251ebac70cd71bc74 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Fri, 29 Nov 2024 15:04:11 +0100
+Subject: [PATCH 10/13] arch: arm: dts: cn9131-cf-solidwan: fix sata port
+ serdes mux value
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9131-cf-solidwan.dts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/dts/cn9131-cf-solidwan.dts b/arch/arm/dts/cn9131-cf-solidwan.dts
+index 89bb81c1b44..0a1820adeb4 100644
+--- a/arch/arm/dts/cn9131-cf-solidwan.dts
++++ b/arch/arm/dts/cn9131-cf-solidwan.dts
+@@ -432,7 +432,7 @@
+ 	};
+ 
+ 	phy1 {
+-		phy-type = <COMPHY_TYPE_SATA1>;
++		phy-type = <COMPHY_TYPE_SATA0>;
+ 	};
+ 
+ 	phy2 {
+-- 
+2.43.0
+

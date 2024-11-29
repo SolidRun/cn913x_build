@@ -78,20 +78,10 @@ export ARCH=arm64
 
 case "${BOARD_CONFIG}" in
 	0)
-		echo "*** Board Configuration CEx7 CN9132 based on Clearfog CN9K ***"
-		if [ "x$CP_NUM" == "x1" ]; then
-			DTB_UBOOT=cn9130-cex7-A
-			DTB_KERNEL=cn9130-cex7
-		elif [ "x$CP_NUM" == "x2" ]; then
-			DTB_UBOOT=cn9131-cex7-A
-			DTB_KERNEL=cn9131-cex7
-		elif [ "x$CP_NUM" == "x3" ]; then
-                        DTB_UBOOT=cn9132-cex7-A
-			DTB_KERNEL=cn9132-cex7
-		else 
-			 echo "Please define a correct number of CPs [1,2,3]"
-			 exit -1
-		fi
+		echo "*** CN9132 CEX-7 based Clearfog ***"
+		CP_NUM=3
+		DTB_UBOOT=cn9132-clearfog
+		DTB_KERNEL=cn9132-clearfog
 	;;
 	1)
                 echo "*** CN9130 SOM based on Clearfog Base ***"

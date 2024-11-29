@@ -1,0 +1,127 @@
+From aa018a0ff7cb0f75a917362c8a9f8ff2c0ebc248 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Fri, 29 Nov 2024 16:26:05 +0100
+Subject: [PATCH 12/13] arch: arm: dts: cn9130-sr-som: fix comphy configuration
+
+u-boot comphy driver requires the phy nodes strictly in ascending order
+and does not use reg properties.
+Move all comphy configuration into the respective board dts and remove
+parts from includes.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9130-cf-base.dts | 22 ++++++++++++++++++++++
+ arch/arm/dts/cn9130-cf-pro.dts  | 22 ++++++++++++++++++++++
+ arch/arm/dts/cn9130-cf.dtsi     | 24 ------------------------
+ 3 files changed, 44 insertions(+), 24 deletions(-)
+
+diff --git a/arch/arm/dts/cn9130-cf-base.dts b/arch/arm/dts/cn9130-cf-base.dts
+index 7b123b2d6d8..cf09223fcd0 100644
+--- a/arch/arm/dts/cn9130-cf-base.dts
++++ b/arch/arm/dts/cn9130-cf-base.dts
+@@ -53,9 +53,31 @@
+ };
+ 
+ &cp0_comphy {
++	phy0 {
++		phy-type = <COMPHY_TYPE_SATA1>;
++	};
++
++	phy1 {
++		phy-type = <COMPHY_TYPE_USB3_HOST0>;
++	};
++
++	phy2 {
++		phy-type = <COMPHY_TYPE_SFI0>;
++		phy-speed = <COMPHY_SPEED_10_3125G>;
++	};
++
++	phy3 {
++		phy-type = <COMPHY_TYPE_SGMII1>;
++		phy-speed = <COMPHY_SPEED_1_25G>;
++	};
++
+ 	phy4 {
+ 		phy-type = <COMPHY_TYPE_USB3_HOST1>;
+ 	};
++
++	phy5 {
++		phy-type = <COMPHY_TYPE_PEX2>;
++	};
+ };
+ 
+ /* SRDS #3 - SGMII 1GE */
+diff --git a/arch/arm/dts/cn9130-cf-pro.dts b/arch/arm/dts/cn9130-cf-pro.dts
+index 5874fed2c2e..f9d590db594 100644
+--- a/arch/arm/dts/cn9130-cf-pro.dts
++++ b/arch/arm/dts/cn9130-cf-pro.dts
+@@ -36,9 +36,31 @@
+ };
+ 
+ &cp0_comphy {
++	phy0 {
++		phy-type = <COMPHY_TYPE_SATA1>;
++	};
++
++	phy1 {
++		phy-type = <COMPHY_TYPE_USB3_HOST0>;
++	};
++
++	phy2 {
++		phy-type = <COMPHY_TYPE_SFI0>;
++		phy-speed = <COMPHY_SPEED_10_3125G>;
++	};
++
++	phy3 {
++		phy-type = <COMPHY_TYPE_SGMII1>;
++		phy-speed = <COMPHY_SPEED_1_25G>;
++	};
++
+ 	phy4 {
+ 		phy-type = <COMPHY_TYPE_PEX1>;
+ 	};
++
++	phy5 {
++		phy-type = <COMPHY_TYPE_PEX2>;
++	};
+ };
+ 
+ /* SRDS #3 - SGMII 1GE to L2 switch */
+diff --git a/arch/arm/dts/cn9130-cf.dtsi b/arch/arm/dts/cn9130-cf.dtsi
+index e03cf90aeee..c14e922fb0c 100644
+--- a/arch/arm/dts/cn9130-cf.dtsi
++++ b/arch/arm/dts/cn9130-cf.dtsi
+@@ -35,30 +35,6 @@
+ 	};
+ };
+ 
+-&cp0_comphy {
+-	phy0 {
+-		phy-type = <COMPHY_TYPE_SATA1>;
+-	};
+-
+-	phy1 {
+-		phy-type = <COMPHY_TYPE_USB3_HOST0>;
+-	};
+-
+-	phy2 {
+-		phy-type = <COMPHY_TYPE_SFI0>;
+-		phy-speed = <COMPHY_SPEED_10_3125G>;
+-	};
+-
+-	phy3 {
+-		phy-type = <COMPHY_TYPE_SGMII1>;
+-		phy-speed = <COMPHY_SPEED_1_25G>;
+-	};
+-
+-	phy5 {
+-		phy-type = <COMPHY_TYPE_PEX2>;
+-	};
+-};
+-
+ /* SRDS #2 - SFP+ 10GE */
+ &cp0_eth0 {
+ 	managed = "in-band-status";
+-- 
+2.43.0
+
