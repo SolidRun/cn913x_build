@@ -1,27 +1,17 @@
 #!/bin/bash
-set -e
-#set -x
 
-# BOOT_LOADER=u-boot
-# CPU_SPEED=1600,2000,2200
-# SERDES=0
-# CP_NUM=1,2,3
 ###############################################################################
 # General configurations
 ###############################################################################
-#RELEASE=cn9130-early-access-bsp_rev1.0 # Supports both rev1.0 and rev1.1
-BUILDROOT_VERSION=2020.02.1
-: ${BR2_PRIMARY_SITE:=} # custom buildroot mirror
-#UEFI_RELEASE=DEBUG
-#BOOT_LOADER=uefi
-#DDR_SPEED=2400
-#BOARD_CONFIG -
+
+: ${BOARD_CONFIG:=2}
 # 0-clearfog_cn COM express
 # 1-clearfog-base (cn9130 SOM)
 # 2-clearfog-pro (cn9130 SOM)
 # 3-SolidWAN (cn9130 SOM)
 # 4-BlDN MBV-A/B (cn9130 SOM)
 
+: ${BOOT_LOADER:=u-boot}
 
 #UBOOT_ENVIRONMENT -
 # - spi (SPI FLash)
@@ -32,13 +22,16 @@ BUILDROOT_VERSION=2020.02.1
 # - mmc:1:1 (MMC 1 Partition boot0)
 # - mmc:1:2 (MMC 1 Partition boot1)
 : ${UBOOT_ENVIRONMENT:=mmc:1:0}
+
 : ${BUILD_ROOTFS:=yes} # set to no for bootloader-only build
 
 : ${DISTRO:=ubuntu}
+
 # Debian Version
 # - bookworm (12)
 : ${DEBIAN_VERSION:=bookworm}
 : ${DEBIAN_ROOTFS_SIZE:=1472M}
+
 # Ubuntu Version
 # - bionic (18.04)
 # - focal (20.04)
@@ -46,35 +39,41 @@ BUILDROOT_VERSION=2020.02.1
 : ${UBUNTU_VERSION:=focal}
 : ${UBUNTU_ROOTFS_SIZE:=500M}
 
-# Check if git user name and git email are configured
-if [ -z "`git config user.name`" ] || [ -z "`git config user.email`" ]; then
-			echo "git is not configured, please run:"
-			echo "git config --global user.email \"you@example.com\""
-			echo "git config --global user.name \"Your Name\""
-			exit -1
-fi
+: ${DPDK_RELEASE:=v24.07}
+
+: ${SHALLOW:=true}
 
 ###############################################################################
 # Misc
 ###############################################################################
 
-RELEASE=${RELEASE:-v6.1.111}
-DPDK_RELEASE=${DPDK_RELEASE:-v24.07}
+# we don't have status code checks for each step - use "-e" with a trap instead
+function error() {
+	status=$?
+	printf "ERROR: Line %i failed with status %i: %s\n" $BASH_LINENO $status "$BASH_COMMAND" >&2
+	exit $status
+}
+trap error ERR
+set -e
 
-SHALLOW=${SHALLOW:true}
-	if [ "x$SHALLOW" == "xtrue" ]; then
-		SHALLOW_FLAG="--depth 1"
-	fi
-BOOT_LOADER=${BOOT_LOADER:-u-boot}
-BOARD_CONFIG=${BOARD_CONFIG:-2}
-CP_NUM=${CP_NUM:-1}
-mkdir -p build images
 ROOTDIR=`pwd`
 PARALLEL=$(getconf _NPROCESSORS_ONLN) # Amount of parallel jobs for the builds
-TOOLS="wget tar git make 7z unsquashfs dd vim mkfs.ext4 parted mkdosfs mcopy dtc iasl mkimage e2cp truncate qemu-system-aarch64 cpio rsync bc bison flex python unzip depmod debootstrap"
-
 export CROSS_COMPILE=aarch64-linux-gnu-
 export ARCH=arm64
+
+# Check if git user name and git email are configured
+GIT_CONF=`git config user.name || true`
+if [ "x$GIT_CONF" == "x" ]; then
+	echo "git is not configured! using fake email and username ..."
+	export GIT_AUTHOR_NAME="SolidRun cn913x_build Script"
+	export GIT_AUTHOR_EMAIL="support@solid-run.com"
+	export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}"
+	export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
+fi
+
+if [ "x$SHALLOW" == "xtrue" ]; then
+	SHALLOW_FLAG="--depth 1"
+fi
 
 case "${BOARD_CONFIG}" in
 	0)
@@ -84,7 +83,7 @@ case "${BOARD_CONFIG}" in
 		DTB_KERNEL=cn9132-clearfog
 	;;
 	1)
-                echo "*** CN9130 SOM based on Clearfog Base ***"
+		echo "*** CN9130 SOM based on Clearfog Base ***"
 		CP_NUM=1
 		DTB_UBOOT=cn9130-cf-base
 		DTB_KERNEL=cn9130-cf-base
@@ -95,7 +94,6 @@ case "${BOARD_CONFIG}" in
 		DTB_UBOOT=cn9130-cf-pro
                 DTB_KERNEL=cn9130-cf-pro
 	;;
-
 	3)
 		echo "*** CN9131 SOM based on SolidWAN ***"
 		CP_NUM=2
@@ -104,12 +102,10 @@ case "${BOARD_CONFIG}" in
 	;;
 	4) 	
 		echo "*** CN9131 SOM based on Bldn MBV-A/B ***"
-                CP_NUM=2
-                DTB_UBOOT=cn9131-bldn-mbv
-                DTB_KERNEL=cn9131-bldn-mbv
-        ;;
-
-
+		CP_NUM=2
+		DTB_UBOOT=cn9131-bldn-mbv
+		DTB_KERNEL=cn9131-bldn-mbv
+	;;
 	*)
 		echo "Please define board configuration"
 		exit -1
@@ -122,7 +118,7 @@ esac
 
 echo "Checking all required tools are installed"
 
-set +e
+TOOLS="wget tar git make 7z unsquashfs dd vim mkfs.ext4 parted mkdosfs mcopy dtc iasl mkimage e2cp truncate qemu-system-aarch64 cpio rsync bc bison flex python unzip depmod debootstrap"
 for i in $TOOLS; do
         TOOL_PATH=`which $i`
         if [ "x$TOOL_PATH" == "x" ]; then
@@ -132,25 +128,24 @@ for i in $TOOLS; do
                 exit -1
         fi
 done
-set -e
-
-echo "Building boot loader"
-cd $ROOTDIR
 
 ###############################################################################
 # source code cloning and building 
 ###############################################################################
+
+echo "Fetching Sources"
+
 SDK_COMPONENTS="u-boot mv-ddr-marvell arm-trusted-firmware armada-firmware linux dpdk mdio-proxy-module"
 
+mkdir -p build
 for i in $SDK_COMPONENTS; do
 	if [[ ! -d $ROOTDIR/build/$i ]]; then
 		if [ "x$i" == "xlinux" ]; then
-			echo "Cloing https://www.github.com/torvalds/$i release $RELEASE"
+			echo "Cloing linux from SolidRun"
 			cd $ROOTDIR/build
 			git clone $SHALLOW_FLAG https://github.com/SolidRun/linux-marvell.git linux -b linux-6.1.y-marvell-sdk-v12
 		elif [ "x$i" == "xarmada-firmware" ]; then
 			echo "Cloning armada-firmware from SolidRun"
-			echo "Cloning https://github.com/SolidRun/armada-firmware.git"
 			cd $ROOTDIR/build
 			git clone https://github.com/SolidRun/armada-firmware.git armada-firmware -b marvell-sdk-v12
 		elif [ "x$i" == "xarm-trusted-firmware" ]; then
@@ -167,9 +162,9 @@ for i in $SDK_COMPONENTS; do
 			cd $ROOTDIR/build
 			git clone https://github.com/SolidRun/u-boot.git u-boot -b u-boot-v2023.01-marvell-sdk-v12
 		elif [ "x$i" == "xdpdk" ]; then
-                        echo "Cloning DPDK from https://github.com/DPDK/dpdk.git"
-                        cd $ROOTDIR/build
-                        git clone $SHALLOW_FLAG https://github.com/DPDK/dpdk.git dpdk -b $DPDK_RELEASE
+			echo "Cloning DPDK ${DPDK_RELEASE} from https://github.com/DPDK/dpdk.git"
+			cd $ROOTDIR/build
+			git clone $SHALLOW_FLAG https://github.com/DPDK/dpdk.git dpdk -b $DPDK_RELEASE
 			# Apply release specific DPDK patches
 			if [ -d $ROOTDIR/patches/dpdk-$DPDK_RELEASE ]; then
 				cd dpdk
@@ -195,10 +190,14 @@ done
 
 rm -rf $ROOTDIR/images/tmp
 mkdir -p $ROOTDIR/images/tmp
+mkdir -p images
 
 ###############################################################################
 # Building sources u-boot / atf / mv-ddr / kernel
 ###############################################################################
+
+echo "Building boot loader"
+cd $ROOTDIR
 
 build_uboot() {
 	cd $ROOTDIR/build/u-boot/

@@ -6,67 +6,89 @@ The main intention of this repository is to provide build scripts that are easy 
 They are used in SolidRun to quickly build images for development where those images can be used to boot from SD card, SPI, eMMC, network TFTP (kernel) or used for root NFS
 
 The sources are pulled from:
-1. arm-trusted firmware: https://github.com/SolidRun/atf-marvell/tree/atf-v2.2-marvell-sdk-v10
-2. mv-ddr: https://github.com/SolidRun/mv-ddr-marvell/tree/mv-ddr-marvell-sdk-v10
-3. u-boot: https://github.com/SolidRun/u-boot/tree/u-boot-v2019.10-marvell-sdk-v10
-4. armada-firmware: https://github.com/SolidRun/armada-firmware/tree/marvell-sdk-v10
-5. linux: https://github.com/torvalds/linux.git
-6. patches are supplied by Solid-Run in the patches/ directory
-7. binaries are supplied by Solid-Run in the binaries/ directory
+1. arm-trusted firmware: https://github.com/SolidRun/atf-marvell/tree/atf-v2.8-marvell-sdk-v12
+2. mv-ddr: https://github.com/SolidRun/mv-ddr-marvell/tree/mv-ddr-marvell-sdk-v12
+3. u-boot: https://github.com/SolidRun/u-boot/tree/u-boot-v2023.01-marvell-sdk-v12
+4. armada-firmware: https://github.com/SolidRun/armada-firmware/tree/marvell-sdk-v12
+5. linux: https://github.com/SolidRun/linux-marvell/tree/linux-6.1.y-marvell-sdk-v12
+6. patches are provided by Solid-Run in the `patches/` directory
 
-The build script builds the u-boot, atf and linux components, integrate it with Ubuntu rootfs bootstrapped with multistrap. Buildroot is also built aside for future use.
+The build script builds the u-boot, atf and linux components, integrate it with either Debian or Ubuntu bootstrapped rootfs.
 
 ## Build
-### Docker build (recommended)
 
-* Build the Docker image (<b>Just once</b>):
+### Build Full Image from Source with Docker
 
-```
-docker build --build-arg user=$(whoami) --build-arg userid=$(id -u) -t cn913x_build docker/
-```
+A docker image providing a consistent build environment can be used as below:
 
-To check if the image exists in you machine, you can use the following command:
+1. build container image (first time only)
 
-```
-docker images | grep cn913x_build
-```
+       docker build --build-arg user=$(whoami) --build-arg userid=$(id -u) -t cn913x_build docker
 
-* Run the build script:
-```
-docker run --rm -i -t -v "$PWD":/cn913x_build_dir -v /etc/gitconfig:/etc/gitconfig cn913x_build bash -c "<ARGUMENTS> ./runme.sh"
-```
+2. invoke build script in working directory
 
-> The git configuration file is mounted, if your gitconfig file is not located in /etc/gitconfig, change the command accordingly, or copy the file to /etc/gitconfig.
+       docker run --rm -i -t -v "$PWD":/cn913x_build_dir cn913x_build bash -c "<ARGUMENTS> ./runme.sh"
 
-### Build with host tools
+#### rootless Podman
+
+Due to the way podman performs user-id mapping, the root user inside the container (uid=0, gid=0) will be mapped to the user running podman (e.g. 1000:100).
+Therefore in order for the build directory to be owned by current user, `-build-arg user=root --build-arg userid=0` have to be passed to *docker build*.
+
+### Build Full Image from Source with Host Tools
+
 Simply running ./runme.sh will check for required tools, clone and build images and place results in images/ directory.
 
-## Auto detection of boot device such as SD card, eMMC and SPI
-Currently there no support of distro for auto detection of boot device, however it is under development.
+### Configure Build Options
 
-## Configuration adn Customization
-The board can be configured based on the amount of CP# devices and to which carrier board it will fit.
-There are a few parameters that must be taken to account:
+By default the script will create an image bootable from SD (ready to use .img file) suitable for Clearfog Pro.
 
-1. CP_NUM:
-	1 - CN9130
-	2 - CN9131
-	3 - CN9132
-2. BOARD_CONFIG - defines the device tree based on the platform
-	0 - CN9132 CEx7 based on Clearfog Eval Board
-	1 - CN9130 SOM based on Clearfog Base
-	2 - CN9130 SOM based on Clearfog Pro
+Build options can be customised by passing environment variables to the runme script, For example:
 
+- `BOARD_CONFIG=0 ./runme.sh` **or**
+- `docker run --rm -i -t -v "$PWD":/cn913x_build_dir cn913x_build bash -c "BOARD_CONFIG=0 ./runme.sh"`
 
-## Examples:
-1. For CN9130 SOM base on Clearfog Base, run:
-	`BOARD_CONFIG=1 CP_NUM=1 ./runme`
-	generates *images/cn9130-cf-base_config_1_ubuntu.img*
+#### Available Options:
 
-2. For CN9132 CEx7 base on Clearfog EVAL board, run:
-        `BOARD_CONFIG=0 CP_NUM=3 ./runme`
-	generates *images/cn9132-cex7_config_0_ubuntu.img*
-
+- `BOARD_CONFIG`: select target board
+  - `0`: CN9132 CEX-7 Evaluation Board
+  - `1`: CN9130 Clearfog Base
+  - `2`: CN9130 Clearfog Pro (default)
+  - `3`: CN9131 SolidWAN
+- `BOOT_LOADER`: select boot -loader type
+  - `u-boot` (default)
+- `UBOOT_ENVIRONMENT`: U-Boot Environment Variabel Storage (recommended to match boot media)
+  - `spi`: SPI Flash
+  - `mmc:0:0`: MMC0 (SoM eMMC), data Partition
+  - `mmc:0:1`: MMC0 (SoM eMMC), boot0 Partition
+  - `mmc:0:2`: MMC0 (SoM eMMC), boot1 Partition
+  - `mmc:1:0`: MMC1 (Carrier Board SD), data Partition (default)
+  - `mmc:1:1`: MMC1 (Carrier Board SD), boot0 Partition (only valid if carrier board has eMMC instead of microSD)
+  - `mmc:1:2`: MMC1 (Carrier Board SD), boot1 Partition (only valid if carrier board has eMMC instead of microSD)
+- `BUILD_ROOTFS`: DDR speed in MHz increments
+  - `yes`: build full bootable image with kernel & rootfs (default)
+  - `no`: build bootloader only
+- `DISTRO`: Platform clock in MHz
+  - `debian`: Generate Debian based rootfs
+  - `ubuntu`: Generate Ubuntu based rootfs (default)
+- `DEBIAN_VERSION`: Debian Version
+  - bookworm (12, default)
+- `DEBIAN_ROOTFS_SIZE`: rootfs / partition size
+  - `1472M` (default)
+  - arbitrary sizes supported in unit `M`, 1472M recommended minimum
+- `UBUNTU_VERSION`: Ubuntu Version
+  - bionic (18.04)
+  - focal (20.04, default)
+  - jammy (22.04)
+- `UBUNTU_ROOTFS_SIZE`: rootfs / partition size
+  - `500M` (default)
+  - arbitrary sizes supported in unit `M`, 500M recommended minimum
+- `DPDK_RELEASE`: select soc revision
+  - `v22.11`
+  - `v23.11`
+  - `v24.07` (default)
+- `SHALLOW`: enable shallow git clone to save space and bandwidth
+  - `true` (default)
+  - `false`
 
 ## DDR configuration and EEPROM
 The atf dram_port.c supports both CN9132 CEx7 SO-DIMM with SPD and CN9130 SOM with DDRs soldered on board which might have various configurations and are set according to boot straps MPPs[11:10].
