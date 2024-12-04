@@ -75,6 +75,17 @@ if [ "x$SHALLOW" == "xtrue" ]; then
 	SHALLOW_FLAG="--depth 1"
 fi
 
+# use human-readable names for uboot environment storage
+declare -A UBOOT_ENV_MAP
+UBOOT_ENV_MAP['spi']=spi
+UBOOT_ENV_MAP['mmc:0:0']=emmc
+UBOOT_ENV_MAP['mmc:0:1']=emmc-boot0
+UBOOT_ENV_MAP['mmc:0:2']=emmc-boot1
+UBOOT_ENV_MAP['mmc:1:0']=microsd
+UBOOT_ENV_MAP['mmc:1:1']=mmc:1:1
+UBOOT_ENV_MAP['mmc:1:2']=mmc:1:2
+# boards may override these names below
+
 case "${BOARD_CONFIG}" in
 	0)
 		echo "*** CN9132 CEX-7 based Clearfog ***"
@@ -256,8 +267,8 @@ build_atf() {
 		all fip
 
 	echo "Copying flash-image.bin to /Images folder"
-	cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images/u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin
-	ln -sfv u-boot-${DTB_UBOOT}-${UBOOT_ENVIRONMENT}.bin $ROOTDIR/images/flash-image.bin
+	cp $ROOTDIR/build/arm-trusted-firmware/build/t9130/release/flash-image.bin $ROOTDIR/images/u-boot-${DTB_UBOOT}-${UBOOT_ENV_MAP["$UBOOT_ENVIRONMENT"]}.bin
+	ln -sfv u-boot-${DTB_UBOOT}-${UBOOT_ENV_MAP["$UBOOT_ENVIRONMENT"]}.bin $ROOTDIR/images/flash-image.bin
 }
 echo "Building arm-trusted-firmware"
 build_atf
@@ -632,6 +643,6 @@ parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary
 echo "0000" | dd of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1 seek=440 conv=notrunc
 dd if=$ROOTDIR/images/tmp/rootfs.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1M seek=64 conv=notrunc,sparse
 dd if=$ROOTDIR/images/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc,sparse
-mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/ubuntu-${DTB_KERNEL}-${UBOOT_ENVIRONMENT}.img
+mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/ubuntu-${DTB_KERNEL}-${UBOOT_ENV_MAP["$UBOOT_ENVIRONMENT"]}.img
 
 echo "Images are ready at $ROOTDIR/image/"
