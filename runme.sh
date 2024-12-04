@@ -428,7 +428,7 @@ do_build_debian() {
 	if [ ! -f ${DEBIAN_VERSION}.ext4 ]; then
 		rm -f rootfs.ext4
 
-		local PKGS=apt-transport-https,busybox,ca-certificates,can-utils,command-not-found,curl,e2fsprogs,ethtool,fdisk,gpiod,haveged,i2c-tools,ifupdown,iputils-ping,isc-dhcp-client,initramfs-tools,lm-sensors,locales,nano,net-tools,ntpdate,openssh-server,psmisc,rfkill,sudo,systemd-sysv,usbutils,wget,xterm,xz-utils
+		local PKGS=apt-transport-https,busybox,ca-certificates,can-utils,command-not-found,curl,e2fsprogs,ethtool,fdisk,gpiod,haveged,i2c-tools,ifupdown,iputils-ping,isc-dhcp-client,initramfs-tools,lm-sensors,locales,nano,net-tools,ntpdate,openssh-server,pciutils,psmisc,rfkill,sudo,systemd-sysv,usbutils,wget,xterm,xz-utils
 
 		# bootstrap a first-stage rootfs
 		rm -rf stage1
