@@ -91,10 +91,15 @@ Build options can be customised by passing environment variables to the runme sc
   - `false`
 
 ## DDR configuration and EEPROM
-The atf dram_port.c supports both CN9132 CEx7 SO-DIMM with SPD and CN9130 SOM with DDRs soldered on board which might have various configurations and are set according to boot straps MPPs[11:10].
-In order to differentiate, it checks the first 196 Bytes of the EEPROM. 
-If programming data on the EEPROM (address 0x53) is requiered, and is not related to the DDR configuration, it must be after the first 196 Bytes. Otherwise, the boot sequence will be corrupted. 
 
+The atf dram_port.c supports both CN9132 CEX-7 SO-DIMM integrating SPD EEPROM, and CN9130 SOM with DDRs soldered on board which are configured according to boot straps MPP[10:11].
+
+To differentiate during boot the EEPROM at 0x53 is read, and SPD check-sum (bytes 126, 127) is calculated. Only if reading succeeds and checksum is correct will the system use EEPROM data for memory configuration.
+Otherwise SoM memory is configured from CP0 MPP[10:11].
+This heuristic only fails on CN9132 CEX-7 when SO-DIMM is missing or defective.
+
+The SoM uses EEPROM at 0x53 for board identification purposes, storing product number and MAC addresses.
+The COM uses EEPROM at 0x50 for the same purpose.
 
 ## Deploying
 For SD card bootable images:
