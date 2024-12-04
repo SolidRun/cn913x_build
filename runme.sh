@@ -581,7 +581,6 @@ cat > $ROOTDIR/images/tmp/extlinux/extlinux.conf << EOF
     APPEND console=ttyS0,115200 root=PARTUUID=30303030-01 rw rootwait cma=256M
 EOF
 
-# blkid images/tmp/ubuntu-core.img | cut -f2 -d'"'
 e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:extlinux
 e2cp -G 0 -O 0 $ROOTDIR/images/tmp/extlinux/extlinux.conf $ROOTDIR/images/tmp/rootfs.ext4:extlinux/
 e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:boot
@@ -632,17 +631,17 @@ e2mkdir -G 0 -O 0 $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
 e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/modules/cma/musdk_cma.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
 e2cp -G 0 -O 0 $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/modules/pp2/mv_pp_uio.ko $ROOTDIR/images/tmp/rootfs.ext4:root/musdk_modules
 
-# ext4 ubuntu partition is ready
-cp $ROOTDIR/build/linux/arch/arm64/boot/Image $ROOTDIR/images
+# ext4 rootfs is ready, generate bootable disk image
 cd $ROOTDIR/
+DISTRO_VERSION_VAR=${DISTRO^^}_VERSION
+IMG=${DTB_KERNEL}-${DISTRO}-${!DISTRO_VERSION_VAR}-${UBOOT_ENV_MAP["$UBOOT_ENVIRONMENT"]}.img
 ROOTFS_SIZE=$(stat -c "%s" $ROOTDIR/images/tmp/rootfs.ext4)
-truncate -s 64M $ROOTDIR/images/tmp/ubuntu-core.img
-truncate -s +$ROOTFS_SIZE $ROOTDIR/images/tmp/ubuntu-core.img
-parted --script $ROOTDIR/images/tmp/ubuntu-core.img mklabel msdos mkpart primary 64MiB $((64*1024*1024+ROOTFS_SIZE-1))B
+truncate -s 64M $ROOTDIR/images/${IMG}
+truncate -s +$ROOTFS_SIZE $ROOTDIR/images/${IMG}
+parted --script $ROOTDIR/images/${IMG} mklabel msdos mkpart primary 64MiB $((64*1024*1024+ROOTFS_SIZE-1))B
 # Generate the above partuuid 3030303030 which is the 4 characters of '0' in ascii
-echo "0000" | dd of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1 seek=440 conv=notrunc
-dd if=$ROOTDIR/images/tmp/rootfs.ext4 of=$ROOTDIR/images/tmp/ubuntu-core.img bs=1M seek=64 conv=notrunc,sparse
-dd if=$ROOTDIR/images/flash-image.bin of=$ROOTDIR/images/tmp/ubuntu-core.img bs=512 seek=4096 conv=notrunc,sparse
-mv $ROOTDIR/images/tmp/ubuntu-core.img $ROOTDIR/images/ubuntu-${DTB_KERNEL}-${UBOOT_ENV_MAP["$UBOOT_ENVIRONMENT"]}.img
+echo "0000" | dd of=$ROOTDIR/images/${IMG} bs=1 seek=440 conv=notrunc
+dd if=$ROOTDIR/images/tmp/rootfs.ext4 of=$ROOTDIR/images/${IMG} bs=1M seek=64 conv=notrunc,sparse
+dd if=$ROOTDIR/images/flash-image.bin of=$ROOTDIR/images/${IMG} bs=512 seek=4096 conv=notrunc,sparse
 
 echo "Images are ready at $ROOTDIR/image/"
