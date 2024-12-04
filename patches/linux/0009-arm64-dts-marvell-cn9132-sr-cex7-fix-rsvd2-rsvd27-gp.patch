@@ -1,0 +1,43 @@
+From 64f3fc4ff919fd84fc91a8718f4a1c8ebd26685f Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Mon, 2 Dec 2024 14:53:09 +0100
+Subject: [PATCH 9/9] arm64: dts: marvell: cn9132-sr-cex7: fix rsvd2, rsvd27
+ gpio pinmux
+
+SolidRun CN9132 CEX-7 exposes several GPIOs on the board-to-board
+connector. The existing pinmux nodes have mistakes on pinmux for RSVD2
+and RSVD27 pins.
+
+Update pinmux for RSVD2 and RSVD27 mapping them to CP2 MPP2 and MPP27
+respectively.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9132-sr-cex7.dtsi | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9132-sr-cex7.dtsi b/arch/arm64/boot/dts/marvell/cn9132-sr-cex7.dtsi
+index afc041c1c448..b798a77d3516 100644
+--- a/arch/arm64/boot/dts/marvell/cn9132-sr-cex7.dtsi
++++ b/arch/arm64/boot/dts/marvell/cn9132-sr-cex7.dtsi
+@@ -607,7 +607,7 @@ cp2_rsvd4_pins: cp2-rsvd4-pins {
+ 		};
+ 
+ 		cp2_rsvd5_pins: cp2-rsvd5-pins {
+-			marvell,pins = "mpp54";
++			marvell,pins = "mpp5";
+ 			marvell,function = "gpio";
+ 		};
+ 
+@@ -637,7 +637,7 @@ cp2_rsvd11_pins: cp2-rsvd11-pins {
+ 		};
+ 
+ 		cp2_rsvd27_pins: cp2-rsvd27-pins {
+-			marvell,pins = "mpp11";
++			marvell,pins = "mpp27";
+ 			marvell,function = "gpio";
+ 		};
+ 
+-- 
+2.43.0
+
