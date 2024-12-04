@@ -2,9 +2,10 @@
 
 This project is organised in branches for different BSP versions:
 
-- [develop](https://github.com/SolidRun/cn913x_build/tree/develop)
+- [develop-sdk12](https://github.com/SolidRun/cn913x_build/tree/develop-sdk12)
 
-  This version is considered unstable and under active development.
+  Based fully on Marvell SDK12, featuring U-Boot v2023.01 and Linux v6.1.
+  This version is under active development.
 
 - [develop-sdk10](https://github.com/SolidRun/cn913x_build/tree/develop-sdk10):
 
