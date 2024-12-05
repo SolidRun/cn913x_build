@@ -366,7 +366,7 @@ test "$UBUNTU_VERSION" = "bionic" && export PATH=$PATH:/sbin:/usr/sbin:/usr/loca
 
 apt-get update
 env DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true LC_ALL=C LANGUAGE=C LANG=C \
-	apt-get install --no-install-recommends -y apt apt-utils ethtool htop i2c-tools ifupdown iproute2 iptables iputils-ping isc-dhcp-client kmod less lm-sensors locales memtester net-tools ntpdate openssh-server pciutils procps psmisc rfkill rng-tools sudo systemd-sysv usbutils wget
+	apt-get install --no-install-recommends -y apt apt-utils ethtool htop i2c-tools ifupdown iproute2 iptables iputils-ping isc-dhcp-client kmod libatomic1 less lm-sensors locales memtester net-tools ntpdate openssh-server pciutils procps psmisc rfkill rng-tools sudo systemd-sysv usbutils wget
 apt-get clean
 
 # fix modules location for split lib,usr/lib
@@ -439,7 +439,7 @@ do_build_debian() {
 	if [ ! -f ${DEBIAN_VERSION}.ext4 ]; then
 		rm -f rootfs.ext4
 
-		local PKGS=apt-transport-https,busybox,ca-certificates,can-utils,command-not-found,curl,e2fsprogs,ethtool,fdisk,gpiod,haveged,i2c-tools,ifupdown,iputils-ping,isc-dhcp-client,initramfs-tools,lm-sensors,locales,nano,net-tools,ntpdate,openssh-server,pciutils,psmisc,rfkill,sudo,systemd-sysv,usbutils,wget,xterm,xz-utils
+		local PKGS=apt-transport-https,busybox,ca-certificates,can-utils,command-not-found,curl,e2fsprogs,ethtool,fdisk,gpiod,haveged,i2c-tools,ifupdown,iputils-ping,isc-dhcp-client,initramfs-tools,libatomic1,lm-sensors,locales,nano,net-tools,ntpdate,openssh-server,pciutils,psmisc,rfkill,sudo,systemd-sysv,usbutils,wget,xterm,xz-utils
 
 		# bootstrap a first-stage rootfs
 		rm -rf stage1
@@ -544,7 +544,7 @@ fi
 
 cd $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}
 ./bootstrap
-./configure --host=aarch64-linux-gnu CFLAGS="-fPIC -O2"
+./configure --host=aarch64-linux-gnu CFLAGS="-fPIC -O2 -mcpu=cortex-a72"
 make -j${PARALLEL}
 make install
 cd $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/modules/cma
@@ -557,11 +557,13 @@ make -j${PARALLEL} -C "$ROOTDIR/build/linux" M="$PWD" modules
 ###############################################################################
 export PKG_CONFIG_PATH=$ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/usr/local/lib/pkgconfig/:$PKG_CONFIG_PATH
 cd $ROOTDIR/build/dpdk
-meson build \
+meson setup \
+	-Dplatform=cn9k \
 	-Dexamples=all \
 	-Dwerror=false \
 	-Dpkg_config_path=$ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/usr/local/lib/pkgconfig \
-	--cross-file $ROOTDIR/configs/dpdk/arm64_armada_solidrun_linux_gcc
+	--cross-file $ROOTDIR/configs/dpdk/arm64_armada_solidrun_linux_gcc \
+	build
 ninja -C build
 
 ###############################################################################
@@ -592,6 +594,9 @@ e2cp -G 0 -O 0 $ROOTDIR/images/tmp/boot/*.dtb $ROOTDIR/images/tmp/rootfs.ext4:bo
 e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/app/dpdk-testpmd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
 e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l2fwd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
 e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/build/examples/dpdk-l3fwd $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/usertools/dpdk-devbind.py $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/usertools/dpdk-hugepages.py $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
+e2cp -G 0 -O 0 -p $ROOTDIR/build/dpdk/usertools/dpdk-pmdinfo.py $ROOTDIR/images/tmp/rootfs.ext4:usr/bin/
 
 # Copy MUSDK
 cd $ROOTDIR/build/musdk-marvell-${MUSDK_VERSION}/usr/local/

@@ -169,9 +169,7 @@ The runme script will clone the version specified by the <b>DPDK_RELEASE</b> arg
 Allocate hugepages for DPDK, for example:
 
 ```
-mkdir -p /mnt/huge
-mount -t hugetlbfs nodev /mnt/huge
-echo 512 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+dpdk-hugepages.py --setup 2G
 ```
 
 Insert MUSDK kernel modules
@@ -182,10 +180,10 @@ insmod /root/musdk_modules/musdk_cma.ko
 ```
 
 Run test-pmd
-In order to use all three interfaces, the next command can be used:
+In order to use all first two interfaces, the next command can be used:
 
 ```
-dpdk-testpmd --vdev=eth_mvpp2,iface=eth0,iface=eth1,iface=eth2 -- --txd=1024 --txpkts=1500 --tx-first --auto-start --forward-mode=txonly --nb-cores=1 --stats-period=1
+dpdk-testpmd --vdev=eth_mvpp2,iface=eth0,iface=eth1 -- --txd=1500 --txpkts=1500 --tx-first --auto-start --nb-cores=2 --stats-period=1
 ```
 
 The output image will have the following DPDK applications:
