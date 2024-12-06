@@ -180,11 +180,17 @@ insmod /root/musdk_modules/musdk_cma.ko
 ```
 
 Run test-pmd
-In order to use all first two interfaces, the next command can be used:
+In order to use first two interfaces, the next command can be used:
 
 ```
-dpdk-testpmd --vdev=eth_mvpp2,iface=eth0,iface=eth1 -- --txd=1500 --txpkts=1500 --tx-first --auto-start --nb-cores=2 --stats-period=1
+dpdk-testpmd --vdev=eth_mvpp2,iface=eth3,iface=eth4 -- --txd=1024 --txpkts=64 --tx-first --auto-start --nb-cores=2 --coremask=0xc --stats-period=1 --burst=256
 ```
+
+Performance related Options:
+
+- `--nb-cores=2`: use 2 cores, 1 per interface
+- `--burst=256`: send packets in bursts of 256 to reduce time spent in usleep. `32` is testpmd default and gives about 1.3Gbps throughput with 64 byte packets. At `128` throughput doubles to 2.8Gbps, while `256` consistently exceeds 3Gbps.
+- `--txpkts=64`: packet size, selected tiny only for benchmarking purposes. With packet size `200` 4.4Gbps throughput are achievable - double again for close to 10Gbps.
 
 The output image will have the following DPDK applications:
 * dpdk-testpmd
