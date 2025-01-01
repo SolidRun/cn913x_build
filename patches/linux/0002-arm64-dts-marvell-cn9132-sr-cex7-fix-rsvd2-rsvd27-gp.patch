@@ -1,7 +1,7 @@
-From 64f3fc4ff919fd84fc91a8718f4a1c8ebd26685f Mon Sep 17 00:00:00 2001
+From 3d514c902f950829657c4a774d7272f9868ff5b5 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 2 Dec 2024 14:53:09 +0100
-Subject: [PATCH 9/9] arm64: dts: marvell: cn9132-sr-cex7: fix rsvd2, rsvd27
+Subject: [PATCH 2/3] arm64: dts: marvell: cn9132-sr-cex7: fix rsvd2, rsvd27
  gpio pinmux
 
 SolidRun CN9132 CEX-7 exposes several GPIOs on the board-to-board

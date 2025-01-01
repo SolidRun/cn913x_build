@@ -152,9 +152,10 @@ mkdir -p build
 for i in $SDK_COMPONENTS; do
 	if [[ ! -d $ROOTDIR/build/$i ]]; then
 		if [ "x$i" == "xlinux" ]; then
-			echo "Cloing linux from SolidRun"
+			echo "Cloing linux from kernel.org"
 			cd $ROOTDIR/build
-			git clone $SHALLOW_FLAG https://github.com/SolidRun/linux-marvell.git linux -b linux-6.1.y-marvell-sdk-v12
+			git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/torvalds/linux.git linux -b master
+			pushd linux; git reset --hard v6.13-rc1; popd
 		elif [ "x$i" == "xarmada-firmware" ]; then
 			echo "Cloning armada-firmware from SolidRun"
 			cd $ROOTDIR/build
