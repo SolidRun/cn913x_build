@@ -17,6 +17,7 @@ The sources are pulled from:
 The build script builds the u-boot, atf and linux components, integrate it with Ubuntu rootfs bootstrapped with multistrap. Buildroot is also built aside for future use.
 
 ## Build
+
 ### Docker build (recommended)
 
 * Build the Docker image (<b>Just once</b>):
@@ -69,10 +70,16 @@ There are a few parameters that must be taken to account:
 
 
 ## DDR configuration and EEPROM
-The atf dram_port.c supports both CN9132 CEx7 SO-DIMM with SPD and CN9130 SOM with DDRs soldered on board which might have various configurations and are set according to boot straps MPPs[11:10].
-In order to differentiate, it checks the first 196 Bytes of the EEPROM. 
-If programming data on the EEPROM (address 0x53) is requiered, and is not related to the DDR configuration, it must be after the first 196 Bytes. Otherwise, the boot sequence will be corrupted. 
 
+The atf dram_port.c supports both CN9132 CEX-7 SO-DIMM integrating SPD EEPROM, and CN9130 SOM with DDRs soldered on board which are configured according to boot straps MPP[10:11].
+
+To differentiate during boot the EEPROM at 0x53 is read, and SPD check-sum (bytes 126, 127) is calculated. Only if reading succeeds and checksum is correct will the system use SPD encoded EEPROM data for memory configuration.
+As a second option the CN9130 SoM can have TLV encoded data on eeprom at 0x53 including optional memory configuration. Only if TLV data is valid and includes memory configuration will the system use this.
+Otherwise SoM memory is configured from CP0 MPP[10:11].
+This heuristic only fails on CN9132 CEX-7 when SO-DIMM is missing or defective.
+
+The SoM uses EEPROM at 0x53 for board identification purposes, storing product number, MAC addresses and optional memory configuration.
+The COM uses EEPROM at 0x50 for board identification purposes, storing product number and MAC addresses.
 
 ## Deploying
 For SD card bootable images:

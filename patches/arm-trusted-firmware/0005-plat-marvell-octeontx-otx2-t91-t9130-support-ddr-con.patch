@@ -1,0 +1,590 @@
+From 216ac0a41d14b0e4010859e47ee6a5076795c520 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Fri, 17 Jan 2025 15:32:07 +0100
+Subject: [PATCH] plat/marvell/octeontx/otx2/t91/t9130: support ddr config from
+ tlv eeprom
+
+As first fall-back on CN9130 SoM (when there is no SPD) try reading
+memory configuration from TLV encoded data on EEPROM.
+
+A SolidRun-specific vendor extension provides memory density and number
+of chip-selects to support a variety of sdram modules of same size.
+
+Future productions of CN9130 SoM will ship preprogrammed according to
+specific BoM.
+
+Older SoMs fall back to bootstrap resistors if tlv data is missing or
+incomplete.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ plat/marvell/armada/a8k/common/a8k_common.mk  |   5 +-
+ .../octeontx/otx2/t91/t9130/board/dram_port.c | 101 +++++-
+ .../otx2/t91/t9130/board/tlv_eeprom.c         | 316 ++++++++++++++++++
+ .../otx2/t91/t9130/board/tlv_eeprom.h         |  22 ++
+ .../octeontx/otx2/t91/t9130/platform.mk       |   4 +
+ 5 files changed, 434 insertions(+), 14 deletions(-)
+ create mode 100644 plat/marvell/octeontx/otx2/t91/t9130/board/tlv_eeprom.c
+ create mode 100644 plat/marvell/octeontx/otx2/t91/t9130/board/tlv_eeprom.h
+
+diff --git a/plat/marvell/armada/a8k/common/a8k_common.mk b/plat/marvell/armada/a8k/common/a8k_common.mk
+index c8273265e..2da535882 100644
+--- a/plat/marvell/armada/a8k/common/a8k_common.mk
++++ b/plat/marvell/armada/a8k/common/a8k_common.mk
+@@ -87,8 +87,9 @@ PLAT_INCLUDES		:=	-I$(BOARD_DIR)				\
+ PLAT_BL_COMMON_SOURCES	:=	$(PLAT_COMMON_BASE)/aarch64/a8k_common.c \
+ 				drivers/ti/uart/aarch64/16550_console.S
+ 
+-BLE_PORTING_SOURCES	:=	$(BOARD_DIR)/board/dram_port.c \
+-				$(BOARD_DIR)/board/marvell_plat_config.c
++BLE_PORTING_SOURCES	=	$(BOARD_DIR)/board/dram_port.c \
++				$(BOARD_DIR)/board/marvell_plat_config.c \
++				$(EXTRA_BLE_PORTING_SOURCES)
+ 
+ MARVELL_MOCHI_DRV	+=	$(MARVELL_DRV_BASE)/mochi/cp110_setup.c
+ 
+diff --git a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+index 506e62073..6ba050157 100644
+--- a/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
++++ b/plat/marvell/octeontx/otx2/t91/t9130/board/dram_port.c
+@@ -8,12 +8,16 @@
+ #include <arch_helpers.h>
+ #include <common/debug.h>
+ #include <drivers/mentor/mi2cv.h>
++#include <endian.h>
++#include <errno.h>
+ #include <lib/mmio.h>
+ 
+ #include <mv_ddr_if.h>
+ #include <mvebu_def.h>
+ #include <plat_marvell.h>
+ 
++#include "tlv_eeprom.h"
++
+ #define MVEBU_CP_MPP_CTRL37_OFFS		20
+ #define MVEBU_CP_MPP_CTRL38_OFFS		24
+ #define MVEBU_CP_MPP_CTRL37_I2C0_SCK_ENA	0x2
+@@ -125,14 +129,13 @@ u8 spd_verify_correction_sr(u8 *spd_buffer){
+ 		}
+ 
+ 	return 0;
+-	
+ }
+ 
+ void define_gpio_input_sr (u32 mux_address, u32 direction_address, u8 bit_start_mux, u8 bit_dir_address)
+ {
+ 	u32 mask=0;
+ 	u32 val;
+-	
++
+ 	/* define as gpio */
+ 	val = mmio_read_32 (mux_address);
+ 	mask |= (0xf << bit_start_mux);
+@@ -157,9 +160,9 @@ u8 read_gpio_strap_sr (u32 addr, u8 bit_loc)
+ 
+ 	if (!val)
+ 		return (u8) 0;
+-	
++
+ 	return (u8) 1;
+-	
++
+ }
+ 
+ void set_param_based_on_som_strap (){
+@@ -169,12 +172,12 @@ void set_param_based_on_som_strap (){
+ 	 */
+ 
+ 	/*defining MPP[11:10] as gpio inputs*/
+-	define_gpio_input_sr (0xf2440004, 0xf2440100, 8, 10);	
++	define_gpio_input_sr (0xf2440004, 0xf2440100, 8, 10);
+ 	define_gpio_input_sr (0xf2440004, 0xf2440100, 12,11);
+ 
+ 	/*after SPD crc failed, defining as DEFAULT configuration*/
+ 	dram_iface_ap0.tm.cfg_src = MV_DDR_CFG_DEFAULT;
+- 
++
+ 	/* read gpio value to check if ECC exist or not */
+ 	if (read_gpio_strap_sr ((u32) 0xf2440110, (u8) 10)){
+ 		printf("w/ ecc; strap value=1\n");
+@@ -185,13 +188,14 @@ void set_param_based_on_som_strap (){
+ 		printf("w/o ecc; strap value=0\n");
+ 	}
+ 	/* read gpio value to check 4GB or 8GB configuration */
+-	if (read_gpio_strap_sr ((u32) 0xf2440110, (u8) 11)){ 
++	if (read_gpio_strap_sr ((u32) 0xf2440110, (u8) 11)){
+ 		dram_iface_ap0.tm.interface_params[0].memory_size=MV_DDR_DIE_CAP_16GBIT;
+ 		dram_iface_ap0.tm.twin_die_combined = COMBINED;
+ 		printf("8GB capacity; strap value=1\n");
+ 	}
+ 	else{
+ 		dram_iface_ap0.tm.interface_params[0].memory_size=MV_DDR_DIE_CAP_8GBIT;
++		dram_iface_ap0.tm.twin_die_combined = NOT_COMBINED;
+ 		printf("4GB capacity; strap value=0\n");
+ 	}
+ }
+@@ -229,6 +233,72 @@ static void mpp_config(void)
+ 	mmio_write_32(reg, val);
+ }
+ 
++static int read_tlv()
++{
++	struct mv_ddr_topology_map *tm = mv_ddr_topology_map_get();
++	int ret;
++	uint16_t vext_len;
++	struct {
++		u32 pen; /* IANA Private Enterprise Numbers */
++		u8 code; /* SolidRun data type */
++		u8 density; /* dram density */
++		u8 num_cs; /* dram chips (separate or DDP) */
++	} __attribute__((packed)) vext;
++
++	/* initialize i2c */
++	i2c_init((void *)MVEBU_CP0_I2C_BASE);
++
++	/* read data from tlv eeprom @ 0x53 */
++	ret = tlv_read_eeprom(0x53, 0x00);
++	if (!ret)
++		return -EINVAL;
++
++	/* lookup vendor extension with memory configuration */
++	vext_len = tlv_find(TLV_CODE_VENDOR_EXT, NULL, NULL);
++	if (vext_len != sizeof(vext))
++		return -EINVAL;
++
++	/* extract vendor extension value */
++	vext_len = tlv_find(TLV_CODE_VENDOR_EXT, (uint8_t *)&vext, NULL);
++
++	/* validate PEN */
++	if (be32toh(vext.pen) != 0xffffffff)
++		return -EINVAL;
++
++	/* validate code */
++	if (vext.code != 0x81)
++		return -EINVAL;
++
++	/* apply memory size */
++	switch(vext.density) {
++	case 8:
++		tm->interface_params[0].memory_size = MV_DDR_DIE_CAP_8GBIT;
++		break;
++	case 16:
++		tm->interface_params[0].memory_size = MV_DDR_DIE_CAP_16GBIT;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	/* apply chip-selects / DDP */
++	switch(vext.num_cs) {
++	case 1:
++		tm->twin_die_combined = NOT_COMBINED;
++		break;
++	case 2:
++		tm->twin_die_combined = COMBINED;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	/* indicate parameter source is builtin */
++	tm->cfg_src = MV_DDR_CFG_DEFAULT;
++
++	return 0;
++}
++
+ /*
+  * This function may modify the default DRAM parameters
+  * based on information received from SPD or bootloader
+@@ -254,11 +324,18 @@ void plat_marvell_dram_update_topology(void)
+ 
+ 		/* read data from spd */
+ 		i2c_read(I2C_SPD_ADDR, 0x0, 1, tm->spd_data.all_bytes,sizeof(tm->spd_data.all_bytes));
+-		
+-		/* if SPD is empty, then copy default configuration as SPD */
+-		if (spd_verify_correction_sr(tm->spd_data.all_bytes)) {
+-			set_param_based_on_som_strap();
++
++		if (!spd_verify_correction_sr(tm->spd_data.all_bytes)) {
++			NOTICE("Found valid DDR SPD\n");
++		} else {
++			/* if SPD is empty, try TLV */
++			if (!read_tlv()) {
++				NOTICE("Found valid TLV\n");
++			} else {
++				/* if TLV is invalid, fall-back to bootstrap resistors */
++				set_param_based_on_som_strap();
++			}
+ 		}
+-	
++
+ 	}
+ }
+diff --git a/plat/marvell/octeontx/otx2/t91/t9130/board/tlv_eeprom.c b/plat/marvell/octeontx/otx2/t91/t9130/board/tlv_eeprom.c
+new file mode 100644
+index 000000000..dc5664469
+--- /dev/null
++++ b/plat/marvell/octeontx/otx2/t91/t9130/board/tlv_eeprom.c
+@@ -0,0 +1,316 @@
++// SPDX-License-Identifier: BSD-4-Clause
++/*
++ * Copyright 2023 SolidRun ltd. All rights reserved.
++ * Author: Alvaro Karsz (alvaro.karsz@solid-run.com)
++ * Copyright 2024 Josua Mayer <josua@solid-run.com>
++ */
++
++#include <endian.h>
++#include <stdbool.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++
++#include <drivers/mentor/mi2cv.h>
++#include "tlv_eeprom.h"
++
++struct tlv_hdr {
++	/* TLV signature */
++	char sig[8];
++	/* Version */
++	uint8_t ver;
++	/* Total length */
++	uint16_t len;
++} __attribute__((packed));
++
++struct tlv_field {
++	uint8_t type;
++	uint8_t len;
++	uint8_t *val;
++} __attribute__((packed));
++
++#define TLV_MAX_LEN	 256
++static uint8_t eeprom[TLV_MAX_LEN];
++
++#define GET_TLV_HDR()		((struct tlv_hdr *)eeprom)
++#define GET_TLV_LEN()		be16toh(GET_TLV_HDR()->len)
++#define GET_TLV_FIELD(off)	   ((struct tlv_field *)((uint64_t)eeprom + (off)))
++#define GET_TLV_DATA(off, len, buf)  (memcpy((buf), (void *)((uint64_t)eeprom + (off)), (len)))
++
++static uint32_t tlv_calc_crc32(uint8_t *buf, uint16_t len)
++{
++	int i, j;
++	uint32_t byte, crc, mask;
++
++	i = 0;
++	crc = 0xFFFFFFFF;
++	while (len--) {
++		byte = buf[i];
++		crc = crc ^ byte;
++		for (j = 7; j >= 0; j--) {
++			mask = -(crc & 1);
++			crc = (crc >> 1) ^ (0xEDB88320 & mask);
++		}
++		i = i + 1;
++	}
++	return ~crc;
++}
++
++uint16_t tlv_find(uint8_t code, uint8_t *output, uint16_t *offset_out)
++{
++	struct tlv_field *field;
++	__unused struct tlv_hdr *hdr;
++	uint16_t tot_len, offset;
++
++	hdr = GET_TLV_HDR();
++	offset = sizeof(struct tlv_hdr);
++	tot_len = GET_TLV_LEN() + offset;
++
++	/* Search for code */
++	for (;;) {
++		/* Get next field, read only the code and length */
++		field = GET_TLV_FIELD(offset);
++
++		/* Is this the code we are looking for? if so, load data and return status */
++		if (field->type == code) {
++			if (output)
++				GET_TLV_DATA(offset + 2, field->len, output);
++			if (offset_out)
++				*offset_out = offset;
++
++			return field->len;
++		}
++
++		/* Move offset */
++		offset += 2 + field->len;
++
++		/* Have we reached to the last value? (CRC)
++		 * If so, the value was not found..
++		 */
++		if (field->type == TLV_CODE_CRC_32)
++			return 0;
++
++		/* Sanity check - data not found*/
++		if (offset >= tot_len)
++			return 0;
++	}
++}
++
++static bool tlv_verify_crc32(void)
++{
++	uint32_t crc_calc, crc_val;
++
++	crc_calc = tlv_calc_crc32(eeprom, GET_TLV_LEN() + sizeof(struct tlv_hdr) - 4);//Don't CRC the CRC itself :)
++
++	/* Now find the CRC value in the EEPROM */
++	if (!tlv_find(TLV_CODE_CRC_32, (uint8_t *)&crc_val, NULL)) {
++		printf("No CRC32 value found in TLV..\n");
++		return false;
++	}
++
++	return be32toh(crc_val) == crc_calc;
++}
++
++static bool is_valid_tlvhdr(struct tlv_hdr *hdr)
++{
++	return strcmp(hdr->sig, "TlvInfo") == 0 &&
++		      be16toh(hdr->len) <= (TLV_MAX_LEN - sizeof(struct tlv_hdr));
++}
++
++bool tlv_read_eeprom(uint8_t chip, uint8_t offset)
++{
++	struct tlv_hdr *hdr;
++	uint8_t *buf_ptr = eeprom;
++	int ret = true;
++
++	/* Load tlv header */
++	ret = i2c_read(chip, offset, 1, buf_ptr, sizeof(struct tlv_hdr));
++	if (ret < 0) {
++		printf("Can't read EEPROM..\n");
++		goto close;
++	}
++
++	buf_ptr += sizeof(struct tlv_hdr);
++	hdr = GET_TLV_HDR();
++
++	/* Validate TLV header */
++	if (!is_valid_tlvhdr(hdr)) {
++		ret = -1;
++		printf("Invalid TLV header read from EEPROM!\n");
++		goto close;
++	}
++
++	/* Read entire TLV data */
++	ret = i2c_read(chip, offset + sizeof(struct tlv_hdr), 1, buf_ptr, GET_TLV_LEN());
++	if (ret < 0) {
++		printf("Can't read EEPROM..\n");
++		goto close;
++	}
++
++	/* Verify TLV CRC */
++	if (!tlv_verify_crc32()) {
++		ret = -1;
++		printf("Invalid TLV-CRC32 value in EEPROM!\n");
++		goto close;
++	}
++
++close:
++	return ret == 0;
++}
++
++static void print_type_name(uint8_t type)
++{
++	switch (type) {
++	case TLV_CODE_MAC_BASE:
++		printf("\tMAC Address base: ");
++		break;
++	case TLV_CODE_PRODUCT_NAME:
++		printf("\tProduct Name: ");
++		break;
++	case TLV_CODE_PART_NUMBER:
++		printf("\tPart Number: ");
++		break;
++	case TLV_CODE_SERIAL_NUMBER:
++		printf("\tSerial Number: ");
++		break;
++	case TLV_CODE_MANUF_DATE:
++		printf("\tManufacturing Date: ");
++		break;
++	case TLV_CODE_DEVICE_VERSION:
++		printf("\tDevice Version: ");
++		break;
++	case TLV_CODE_PLATFORM_NAME:
++		printf("\tPlatform Name: ");
++		break;
++	case TLV_CODE_MAC_SIZE:
++		printf("\tMAC Size: ");
++		break;
++	case TLV_CODE_MANUF_NAME:
++		printf("\tManufacturer Name: ");
++		break;
++	case TLV_CODE_MANUF_COUNTRY:
++		printf("\tManufacturer Country: ");
++		break;
++	case TLV_CODE_VENDOR_NAME:
++		printf("\tVendor Name: ");
++		break;
++	case TLV_CODE_VENDOR_EXT:
++		printf("\tVendor Extension: ");
++		break;
++	case TLV_CODE_CRC_32:
++		printf("\tCRC32: ");
++		break;
++	default:
++		printf("\tUnknown type (%02x): ", type);
++		break;
++	}
++}
++
++static void print_general(struct tlv_field *field)
++{
++	uint8_t i, *ptr = (uint8_t *)&field->val;
++
++	for ( i = 0; i < field->len; i++) {
++		printf("%02x", *ptr++);
++		if ( i < field->len)
++			putchar(' ');
++	}
++	putchar('\n');
++}
++
++static void print_string(struct tlv_field *field)
++{
++	uint8_t i, *ptr = (uint8_t *)&field->val;
++
++	for (i = 0; i < field->len; i++)
++		putchar((char)ptr[i]);
++
++	putchar('\n');
++}
++
++static void print_u16(struct tlv_field *field)
++{
++	uint8_t *ptr = (uint8_t *)&field->val;
++
++	if (field->len != 2) {
++		printf("Invalid value size, expected %u bytes, not %u\n", 2, field->len);
++		return;
++	}
++
++	printf("%u\n", be16toh(*((uint16_t *)ptr)));
++}
++
++static void print_mac(struct tlv_field *field)
++{
++	uint8_t i, *ptr = (uint8_t *)&field->val;
++
++	if (field->len != 6) {
++		printf("Invalid MAC address, expected %u bytes, received %u\n", 6, field->len);
++		return;
++	}
++
++	for ( i = 0; i < 6; i++) {
++		printf("%02x", *ptr++);
++		if ( i != 5)
++			printf(":");
++	}
++
++	printf("\n");
++}
++
++static void print_field(struct tlv_field *field)
++{
++	print_type_name(field->type);
++
++	switch (field->type) {
++
++	case TLV_CODE_MAC_BASE:
++		print_mac(field);
++		break;
++
++	case TLV_CODE_PRODUCT_NAME:
++	case TLV_CODE_SERIAL_NUMBER:
++	case TLV_CODE_PLATFORM_NAME:
++	case TLV_CODE_MANUF_COUNTRY:
++	case TLV_CODE_VENDOR_NAME:
++	case TLV_CODE_MANUF_NAME:
++	case TLV_CODE_PART_NUMBER:
++		print_string(field);
++		break;
++
++	case TLV_CODE_MAC_SIZE:
++		print_u16(field);
++		break;
++
++	default:
++		print_general(field);
++		break;
++
++	}
++}
++
++void tlv_print_eeprom(void)
++{
++	struct tlv_field *field;
++	__unused struct tlv_hdr *hdr;
++	uint16_t tot_len, offset;
++
++	printf("EEPROM Contents:\n");
++
++	hdr = GET_TLV_HDR();
++	offset = sizeof(struct tlv_hdr);
++	tot_len = GET_TLV_LEN() + offset;
++
++	for (;;) {
++		/* Get next field, read only the code and length */
++		field = GET_TLV_FIELD(offset);
++		print_field(field);
++		/* Move offset */
++		offset += 2 + field->len;
++
++		if (offset >= tot_len)
++			break;
++	}
++
++	printf("\n");
++}
+diff --git a/plat/marvell/octeontx/otx2/t91/t9130/board/tlv_eeprom.h b/plat/marvell/octeontx/otx2/t91/t9130/board/tlv_eeprom.h
+new file mode 100644
+index 000000000..9c18cb498
+--- /dev/null
++++ b/plat/marvell/octeontx/otx2/t91/t9130/board/tlv_eeprom.h
+@@ -0,0 +1,22 @@
++// SPDX-License-Identifier: BSD-4-Clause
++/*
++ * Copyright 2024 Josua Mayer <josua@solid-run.com>
++ */
++
++#define TLV_CODE_PRODUCT_NAME   0x21
++#define TLV_CODE_PART_NUMBER    0x22
++#define TLV_CODE_SERIAL_NUMBER  0x23
++#define TLV_CODE_MAC_BASE       0x24
++#define TLV_CODE_MANUF_DATE     0x25
++#define TLV_CODE_DEVICE_VERSION 0x26
++#define TLV_CODE_PLATFORM_NAME  0x28
++#define TLV_CODE_MAC_SIZE       0x2A
++#define TLV_CODE_MANUF_NAME     0x2B
++#define TLV_CODE_MANUF_COUNTRY  0x2C
++#define TLV_CODE_VENDOR_NAME    0x2D
++#define TLV_CODE_VENDOR_EXT     0xFD
++#define TLV_CODE_CRC_32	 	0xFE
++
++bool tlv_read_eeprom(uint8_t chip, uint8_t offset);
++uint16_t tlv_find(uint8_t code, uint8_t *output, uint16_t *offset_out);
++void tlv_print_eeprom(void);
+diff --git a/plat/marvell/octeontx/otx2/t91/t9130/platform.mk b/plat/marvell/octeontx/otx2/t91/t9130/platform.mk
+index 1e2716df0..1440cbc4b 100644
+--- a/plat/marvell/octeontx/otx2/t91/t9130/platform.mk
++++ b/plat/marvell/octeontx/otx2/t91/t9130/platform.mk
+@@ -15,6 +15,10 @@ DOIMAGE_SEC     	:=	tools/doimage/secure/sec_img_7K.cfg
+ MARVELL_MOCHI_DRV	:=	drivers/marvell/mochi/ap807_setup.c
+ 
+ BOARD_DIR		:= $(shell dirname $(lastword $(MAKEFILE_LIST)))
++
++EXTRA_BLE_PORTING_SOURCES += $(BOARD_DIR)/board/tlv_eeprom.c
++
+ include plat/marvell/armada/a8k/common/a8k_common.mk
+ 
+ include plat/marvell/armada/common/marvell_common.mk
++
+-- 
+2.43.0
+
