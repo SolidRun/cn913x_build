@@ -80,7 +80,7 @@ Build options can be customised by passing environment variables to the runme sc
   - focal (20.04, default)
   - jammy (22.04)
 - `UBUNTU_ROOTFS_SIZE`: rootfs / partition size
-  - `500M` (default)
+  - `704M` (default)
   - arbitrary sizes supported in unit `M`, 500M recommended minimum
 - `DPDK_RELEASE`: select soc revision
   - `v22.11`

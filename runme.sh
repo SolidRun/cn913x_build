@@ -37,7 +37,7 @@
 # - focal (20.04)
 # - jammy (22.04)
 : ${UBUNTU_VERSION:=focal}
-: ${UBUNTU_ROOTFS_SIZE:=500M}
+: ${UBUNTU_ROOTFS_SIZE:=704M}
 
 : ${DPDK_RELEASE:=v24.07}
 
