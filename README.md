@@ -104,7 +104,7 @@ The COM uses EEPROM at 0x50 for board identification purposes, storing product n
 
 ## Deploying
 
-For SD card bootable images:
+### For SD card bootable images:
 
 Plug in a uSD into your machine and run the following, where sdX is the location of the SD card got probed into your machine -
 
@@ -120,8 +120,9 @@ To active the FAN on CEx7 platform, add to the command:
 For burning u-boot image only on uSD card:
 `sudo dd if=images/flash-image.bin of=/dev/sdX bs=512 seek=4096`
 
+Then set the boot DIP switch (see links below) and reset the system.
 
-For SPI boot:
+### For SPI boot:
 
 Burn the flash-image.bin onto a uSD to the system memory and flash it using the `sf probe` and `sf update` commands. 
 
@@ -129,10 +130,9 @@ An example below loads the image through TFTP prototocl, flashes and then verifi
 
 `sf probe; setenv ipaddr 192.168.15.223; setenv serverip 192.168.15.3; tftp 0xa0000000 cn9132-cex7_config_0_ubuntu.img ;sf update 0xa0000000 0 $filesize; sf read 0xa4000000 0 $filesize; cmp 0xa0000000 0xa4000000 $filesize`
 
-and then set boot DIP switch SW2 on COM to off/on/on/off/on from numbers 1 to 5 (notice the marking 'ON' on the DIP switch)
+Then set the boot DIP switch (see links below) and reset the system.
 
-
-For eMMC boot: 
+### For eMMC boot:
 
 Copy the image located at images/cn9132-cex7_config_0_ubuntu.img onto a SD card or a USB drive.
 
@@ -142,13 +142,20 @@ After booting the device from SD card, burn the image onto the eMMC:
 
 `sudo dd if=/mnt/cn9132-cex7_config_0_ubuntu.img of=/dev/mmcblk0 bs=512 seek=1`
 
-Then set the boot DIP switch and reset the system. 
+Then set the boot DIP switch (see links below) and reset the system.
 
 `get_images=load mmc 0:1 $kernel_addr_r boot/Image; load mmc 0:1 $fdt_addr_r boot/cn9132-cex7.dtb; setenv root 'root=/dev/mmcblk0p1' rw; boot`
 
 Afterwards run update the RTC and update the repository -
 
 `dhclient -i eth2; ntpdate pool.ntp.org; apt update`
+
+### Validate Boot Switches
+
+Before booting ensure the boot-select switches are set according to the chosen bootloader media above:
+
+- [CN9130 Clearfog Boot-Select](https://solidrun.atlassian.net/wiki/spaces/developer/pages/287179332/ClearFog+CN9130+Boot+Select)
+- [CN9132 CEX-7 Boot-Select](https://solidrun.atlassian.net/wiki/spaces/developer/pages/295796739/CN913x+COM+Boot+Select)
 
 ## DPDK
 
