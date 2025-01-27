@@ -71,6 +71,16 @@ jobs:
           build_tag=$(date +%Y-%m-%d)_$(git rev-parse --short HEAD)
           echo "build_tag=$build_tag" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch Proprietary Firmware
+        shell: bash -e {0}
+        env:
+          ACCESS_KEY: ${{ secrets.IMAGES_S3_ACCESS }}
+          SECRET_KEY: ${{ secrets.IMAGES_S3_SECRET }}
+          HOST: ${{ secrets.IMAGES_S3_HOST }}
+          BUCKET: ${{ secrets.PROTECTED_S3_BUCKET }}
+        run: |
+          s3cmd --access_key="$ACCESS_KEY" --secret_key="$SECRET_KEY" --host="$HOST" --host-bucket="%(bucket)s.$HOST" get s3://$BUCKET/marvell/cn913x/sources-is_fw-SDK12.24.10.tar.bz2 ./cn9130-crypto-firmware.tar.bz2
+
       - name: Build
         shell: bash -x {0}
         run: |
