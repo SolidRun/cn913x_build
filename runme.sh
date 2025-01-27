@@ -567,6 +567,21 @@ meson setup \
 ninja -C build
 
 ###############################################################################
+# inject proprietary firmware blobs
+###############################################################################
+
+if [ -e "$ROOTDIR/cn9130-crypto-firmware.tar.bz2" ]; then
+	rm -rf $ROOTDIR/build/firmware
+	mkdir -p $ROOTDIR/build/firmware
+
+	tar -C $ROOTDIR/build/firmware -xf $ROOTDIR/cn9130-crypto-firmware.tar.bz2
+
+	echo inside-secure/eip197b/ifpp.bin | e2cp -v -G 0 -O 0 -P 644 -s "$ROOTDIR/build/firmware/is_fw" -d "$ROOTDIR/images/tmp/rootfs.ext4:usr/lib/firmware/" -a
+	echo inside-secure/eip197b/ipue.bin | e2cp -v -G 0 -O 0 -P 644 -s "$ROOTDIR/build/firmware/is_fw" -d "$ROOTDIR/images/tmp/rootfs.ext4:usr/lib/firmware/" -a
+	echo license.txt | e2cp -v -G 0 -O 0 -P 644 -s "$ROOTDIR/build/firmware/is_fw" -d "$ROOTDIR/images/tmp/rootfs.ext4:usr/lib/firmware/inside-secure/eip197b/" -a
+fi
+
+###############################################################################
 # assembling images
 ###############################################################################
 echo "Assembling kernel image"

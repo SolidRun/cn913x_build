@@ -90,6 +90,20 @@ Build options can be customised by passing environment variables to the runme sc
   - `true` (default)
   - `false`
 
+### Include Crypto Accelerator Firmware
+
+CN9130 SoC comes with a cryptographic accelerator block that requires a proprietary firmware package from Marvell.
+
+This package is picked up automatically by the build system, **only if** a file `cn9130-crypto-firmware.tar.bz2` exists in the root directory of the build (i.e. next to this `README.md` file).
+
+The package must include the files below:
+
+- `is_fw/license.txt`
+- `is_fw/inside-secure/eip197b/ifpp.bin`
+- `is_fw/inside-secure/eip197b/ipue.bin`
+
+Carefully review `license.txt` before use!
+
 ## DDR configuration and EEPROM
 
 The atf dram_port.c supports both CN9132 CEX-7 SO-DIMM integrating SPD EEPROM, and CN9130 SOM with DDRs soldered on board which are configured according to boot straps MPP[10:11].
