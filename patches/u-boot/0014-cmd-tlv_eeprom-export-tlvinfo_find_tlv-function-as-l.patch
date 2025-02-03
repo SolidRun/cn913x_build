@@ -1,0 +1,68 @@
+From ba6b032dc6d915bca81861495157eabad19c9b36 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 26 Jan 2025 16:12:38 +0100
+Subject: [PATCH 14/15] cmd: tlv_eeprom: export tlvinfo_find_tlv function as
+ library function
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ cmd/tlv_eeprom.c     |  3 +--
+ include/tlv_eeprom.h | 14 ++++++++++++++
+ 2 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/cmd/tlv_eeprom.c b/cmd/tlv_eeprom.c
+index bb0c7d1d9ca..833ad55d1b8 100644
+--- a/cmd/tlv_eeprom.c
++++ b/cmd/tlv_eeprom.c
+@@ -34,7 +34,6 @@ static void show_eeprom(u8 *eeprom);
+ static void decode_tlv(struct tlvinfo_tlv *tlv);
+ static void update_crc(u8 *eeprom);
+ static int prog_eeprom(u8 *eeprom);
+-static bool tlvinfo_find_tlv(u8 *eeprom, u8 tcode, int *eeprom_index);
+ static bool tlvinfo_delete_tlv(u8 *eeprom, u8 code);
+ static bool tlvinfo_add_tlv(u8 *eeprom, int tcode, char *strval);
+ static int set_mac(char *buf, const char *string);
+@@ -551,7 +550,7 @@ U_BOOT_CMD(tlv_eeprom, 4, 1,  do_tlv_eeprom,
+  *  An offset from the beginning of the EEPROM is returned in the
+  *  eeprom_index parameter if the TLV is found.
+  */
+-static bool tlvinfo_find_tlv(u8 *eeprom, u8 tcode, int *eeprom_index)
++bool tlvinfo_find_tlv(u8 *eeprom, u8 tcode, int *eeprom_index)
+ {
+ 	struct tlvinfo_header *eeprom_hdr = to_header(eeprom);
+ 	struct tlvinfo_tlv    *eeprom_tlv;
+diff --git a/include/tlv_eeprom.h b/include/tlv_eeprom.h
+index a2c333e7446..058458be3f8 100644
+--- a/include/tlv_eeprom.h
++++ b/include/tlv_eeprom.h
+@@ -110,6 +110,15 @@ int write_tlv_eeprom(void *eeprom, int len);
+ int read_tlvinfo_tlv_eeprom(void *eeprom, struct tlvinfo_header **hdr,
+ 			    struct tlvinfo_tlv **first_entry, int dev);
+ 
++/**
++ *  tlvinfo_find_tlv
++ *
++ *  This function finds the TLV with the supplied code in the EERPOM.
++ *  An offset from the beginning of the EEPROM is returned in the
++ *  eeprom_index parameter if the TLV is found.
++ */
++bool tlvinfo_find_tlv(u8 *eeprom, u8 tcode, int *eeprom_index);
++
+ #else /* !CONFIG_IS_ENABLED(CMD_TLV_EEPROM) */
+ 
+ static inline int read_tlv_eeprom(void *eeprom, int offset, int len, int dev)
+@@ -129,6 +138,11 @@ read_tlvinfo_tlv_eeprom(void *eeprom, struct tlvinfo_header **hdr,
+ 	return -ENOSYS;
+ }
+ 
++static inline bool tlvinfo_find_tlv(u8 *eeprom, u8 tcode, int *eeprom_index)
++{
++	return -ENOSYS;
++}
++
+ #endif /* CONFIG_IS_ENABLED(CMD_TLV_EEPROM) */
+ 
+ /**
+-- 
+2.43.0
+

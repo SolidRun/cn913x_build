@@ -80,7 +80,7 @@ Build options can be customised by passing environment variables to the runme sc
   - focal (20.04, default)
   - jammy (22.04)
 - `UBUNTU_ROOTFS_SIZE`: rootfs / partition size
-  - `500M` (default)
+  - `704M` (default)
   - arbitrary sizes supported in unit `M`, 500M recommended minimum
 - `DPDK_RELEASE`: select soc revision
   - `v22.11`
@@ -90,19 +90,35 @@ Build options can be customised by passing environment variables to the runme sc
   - `true` (default)
   - `false`
 
+### Include Crypto Accelerator Firmware
+
+CN9130 SoC comes with a cryptographic accelerator block that requires a proprietary firmware package from Marvell.
+
+This package is picked up automatically by the build system, **only if** a file `cn9130-crypto-firmware.tar.bz2` exists in the root directory of the build (i.e. next to this `README.md` file).
+
+The package must include the files below:
+
+- `is_fw/license.txt`
+- `is_fw/inside-secure/eip197b/ifpp.bin`
+- `is_fw/inside-secure/eip197b/ipue.bin`
+
+Carefully review `license.txt` before use!
+
 ## DDR configuration and EEPROM
 
 The atf dram_port.c supports both CN9132 CEX-7 SO-DIMM integrating SPD EEPROM, and CN9130 SOM with DDRs soldered on board which are configured according to boot straps MPP[10:11].
 
-To differentiate during boot the EEPROM at 0x53 is read, and SPD check-sum (bytes 126, 127) is calculated. Only if reading succeeds and checksum is correct will the system use EEPROM data for memory configuration.
+To differentiate during boot the EEPROM at 0x53 is read, and SPD check-sum (bytes 126, 127) is calculated. Only if reading succeeds and checksum is correct will the system use SPD encoded EEPROM data for memory configuration.
+As a second option the CN9130 SoM can have TLV encoded data on eeprom at 0x53 including optional memory configuration. Only if TLV data is valid and includes memory configuration will the system use this.
 Otherwise SoM memory is configured from CP0 MPP[10:11].
 This heuristic only fails on CN9132 CEX-7 when SO-DIMM is missing or defective.
 
-The SoM uses EEPROM at 0x53 for board identification purposes, storing product number and MAC addresses.
-The COM uses EEPROM at 0x50 for the same purpose.
+The SoM uses EEPROM at 0x53 for board identification purposes, storing product number and MAC addresses and optional memory configuration.
+The COM uses EEPROM at 0x50 for board identification purposes, storing product number and MAC addresses.
 
 ## Deploying
-For SD card bootable images:
+
+### For SD card bootable images:
 
 Plug in a uSD into your machine and run the following, where sdX is the location of the SD card got probed into your machine -
 
@@ -118,8 +134,9 @@ To active the FAN on CEx7 platform, add to the command:
 For burning u-boot image only on uSD card:
 `sudo dd if=images/flash-image.bin of=/dev/sdX bs=512 seek=4096`
 
+Then set the boot DIP switch (see links below) and reset the system.
 
-For SPI boot:
+### For SPI boot:
 
 Burn the flash-image.bin onto a uSD to the system memory and flash it using the `sf probe` and `sf update` commands. 
 
@@ -127,10 +144,9 @@ An example below loads the image through TFTP prototocl, flashes and then verifi
 
 `sf probe; setenv ipaddr 192.168.15.223; setenv serverip 192.168.15.3; tftp 0xa0000000 cn9132-cex7_config_0_ubuntu.img ;sf update 0xa0000000 0 $filesize; sf read 0xa4000000 0 $filesize; cmp 0xa0000000 0xa4000000 $filesize`
 
-and then set boot DIP switch SW2 on COM to off/on/on/off/on from numbers 1 to 5 (notice the marking 'ON' on the DIP switch)
+Then set the boot DIP switch (see links below) and reset the system.
 
-
-For eMMC boot: 
+### For eMMC boot:
 
 Copy the image located at images/cn9132-cex7_config_0_ubuntu.img onto a SD card or a USB drive.
 
@@ -140,13 +156,20 @@ After booting the device from SD card, burn the image onto the eMMC:
 
 `sudo dd if=/mnt/cn9132-cex7_config_0_ubuntu.img of=/dev/mmcblk0 bs=512 seek=1`
 
-Then set the boot DIP switch and reset the system. 
+Then set the boot DIP switch (see links below) and reset the system.
 
 `get_images=load mmc 0:1 $kernel_addr_r boot/Image; load mmc 0:1 $fdt_addr_r boot/cn9132-cex7.dtb; setenv root 'root=/dev/mmcblk0p1' rw; boot`
 
 Afterwards run update the RTC and update the repository -
 
 `dhclient -i eth2; ntpdate pool.ntp.org; apt update`
+
+### Validate Boot Switches
+
+Before booting ensure the boot-select switches are set according to the chosen bootloader media above:
+
+- [CN9130 Clearfog Boot-Select](https://solidrun.atlassian.net/wiki/spaces/developer/pages/287179332/ClearFog+CN9130+Boot+Select)
+- [CN9132 CEX-7 Boot-Select](https://solidrun.atlassian.net/wiki/spaces/developer/pages/295796739/CN913x+COM+Boot+Select)
 
 ## DPDK
 

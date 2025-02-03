@@ -1,0 +1,147 @@
+From 6103db946cd5d001e105ba8cc5d1f484f2aba36f Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Mon, 3 Feb 2025 16:20:02 +0100
+Subject: [PATCH] arch: arm: dts: cn9130-sr-som / cn9130-sr-cex7: fix utmi phy
+ status
+
+U-Boot armada-cp110.dtsi disables utmi phy port's nodes by default.
+Add status okay for those ports in use by SolidRun CN913x based boards.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9130-cf-base.dts     |  2 +-
+ arch/arm/dts/cn9130-cf.dtsi         | 10 +++++++++-
+ arch/arm/dts/cn9131-cf-solidwan.dts | 16 ++++++++++++++--
+ arch/arm/dts/cn9132-sr-cex7.dtsi    | 16 ++++++++++++++++
+ 4 files changed, 40 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/dts/cn9130-cf-base.dts b/arch/arm/dts/cn9130-cf-base.dts
+index cf09223fcd0..0b2a4252582 100644
+--- a/arch/arm/dts/cn9130-cf-base.dts
++++ b/arch/arm/dts/cn9130-cf-base.dts
+@@ -183,7 +183,7 @@
+  */
+ &cp0_usb3_1 {
+ 	phys = <&cp0_utmi1>;
+-	phy-names = "comphy", "utmi";
++	phy-names = "utmi";
+ 	dr_mode = "host";
+ 	status = "okay";
+ };
+diff --git a/arch/arm/dts/cn9130-cf.dtsi b/arch/arm/dts/cn9130-cf.dtsi
+index c14e922fb0c..7808597d61f 100644
+--- a/arch/arm/dts/cn9130-cf.dtsi
++++ b/arch/arm/dts/cn9130-cf.dtsi
+@@ -170,7 +170,7 @@
+  */
+ &cp0_usb3_0 {
+ 	phys = <&cp0_utmi0>;
+-	phy-names = "comphy", "utmi";
++	phy-names = "utmi";
+ 	vbus-supply = <&reg_usb3_vbus0>;
+ 	dr_mode = "host";
+ 	status = "okay";
+@@ -180,6 +180,14 @@
+ 	status = "okay";
+ };
+ 
++&cp0_utmi0 {
++	status = "okay";
++};
++
++&cp0_utmi1 {
++	status = "okay";
++};
++
+ /* mikrobus uart */
+ &cp0_uart0 {
+ 	pinctrl-0 = <&mikro_uart_pins>;
+diff --git a/arch/arm/dts/cn9131-cf-solidwan.dts b/arch/arm/dts/cn9131-cf-solidwan.dts
+index 5475aaca18e..4f1519a28fd 100644
+--- a/arch/arm/dts/cn9131-cf-solidwan.dts
++++ b/arch/arm/dts/cn9131-cf-solidwan.dts
+@@ -413,7 +413,7 @@
+ /* SRDS #4 - USB-3.0 Host to USB-Hub */
+ &cp0_usb3_1 {
+ 	phys = <&cp0_utmi1>;
+-	phy-names = "comphy", "utmi";
++	phy-names = "utmi";
+ 	dr_mode = "host";
+ 	status = "okay";
+ };
+@@ -422,6 +422,10 @@
+ 	status = "okay";
+ };
+ 
++&cp0_utmi0 {
++	status = "okay";
++};
++
+ &cp0_utmi1 {
+ 	status = "disabled";
+ };
+@@ -651,7 +655,7 @@
+  */
+ &cp1_usb3_0 {
+ 	phys = <&cp1_utmi0>;
+-	phy-names = "comphy", "utmi";
++	phy-names = "utmi";
+ 	dr_mode = "host";
+ 	status = "okay";
+ };
+@@ -667,3 +671,11 @@
+ &cp1_utmi {
+ 	status = "okay";
+ };
++
++&cp1_utmi0 {
++	status = "okay";
++};
++
++&cp1_utmi1 {
++	status = "okay";
++};
+diff --git a/arch/arm/dts/cn9132-sr-cex7.dtsi b/arch/arm/dts/cn9132-sr-cex7.dtsi
+index 18ed0df56c7..c4723bb96ab 100644
+--- a/arch/arm/dts/cn9132-sr-cex7.dtsi
++++ b/arch/arm/dts/cn9132-sr-cex7.dtsi
+@@ -329,6 +329,14 @@
+ 	status = "okay";
+ };
+ 
++&cp0_utmi0 {
++	status = "okay";
++};
++
++&cp0_utmi1 {
++	status = "okay";
++};
++
+ &cp1_gpio0 {
+ 	status = "okay";
+ };
+@@ -439,6 +447,10 @@
+ 	status = "okay";
+ };
+ 
++&cp1_utmi0 {
++	status = "okay";
++};
++
+ &cp2_ethernet {
+ 	status = "okay";
+ };
+@@ -562,6 +574,10 @@
+ 	status = "okay";
+ };
+ 
++&cp2_utmi0 {
++	status = "okay";
++};
++
+ /* AP default console */
+ &uart0 {
+ 	pinctrl-0 = <&uart0_pins>;
+-- 
+2.43.0
+
