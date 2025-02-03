@@ -155,7 +155,7 @@ for i in $SDK_COMPONENTS; do
 			echo "Cloing linux from kernel.org"
 			cd $ROOTDIR/build
 			git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/torvalds/linux.git linux -b master
-			pushd linux; git reset --hard v6.13-rc1; popd
+			pushd linux; git reset --hard v6.14-rc1; popd
 		elif [ "x$i" == "xarmada-firmware" ]; then
 			echo "Cloning armada-firmware from SolidRun"
 			cd $ROOTDIR/build
