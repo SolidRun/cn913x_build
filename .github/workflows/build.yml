@@ -65,7 +65,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Get build tag
-        shell: bash {0}
+        shell: bash -e  {0}
         id: tag_step
         run: |
           build_tag=$(date +%Y-%m-%d)_$(git rev-parse --short HEAD)
@@ -82,7 +82,7 @@ jobs:
           s3cmd --access_key="$ACCESS_KEY" --secret_key="$SECRET_KEY" --host="$HOST" --host-bucket="%(bucket)s.$HOST" get s3://$BUCKET/marvell/cn913x/sources-is_fw-SDK12.24.10.tar.bz2 ./cn9130-crypto-firmware.tar.bz2
 
       - name: Build
-        shell: bash -x {0}
+        shell: bash -e -x {0}
         run: |
             for env in spi mmc:0:0 mmc:0:1 mmc:0:2 mmc:1:0; do for config in 0 1 2 3; do for distro in debian ubuntu; do UBOOT_ENVIRONMENT=$env BOARD_CONFIG=$config DISTRO=$distro ./runme.sh; done; done; done
 
