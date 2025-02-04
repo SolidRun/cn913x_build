@@ -1,7 +1,8 @@
 From 927439d51ab604e047bf8a06b5acc3c0782f9e74 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Wed, 2 Oct 2024 15:07:16 +0200
-Subject: [PATCH] arm64: dts: marvell: cn9130-sr-som: fix cp0 mdio pin numbers
+Subject: [PATCH 5/9] arm64: dts: marvell: cn9130-sr-som: fix cp0 mdio pin
+ numbers
 
 SolidRun CN9130 SoM actually uses CP_MPP[0:1] for mdio. CP_MPP[40]
 provides reference clock for dsa switch and ethernet phy on Clearfog

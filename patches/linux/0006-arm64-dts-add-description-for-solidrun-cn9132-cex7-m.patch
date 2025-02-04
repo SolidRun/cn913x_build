@@ -1,8 +1,8 @@
 From fd3ec8649437090158235e348a4c855da9e9d42f Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 4 Jul 2024 17:03:23 +0200
-Subject: [PATCH] arm64: dts: add description for solidrun cn9132 cex7 module
- and clearfog board
+Subject: [PATCH 6/9] arm64: dts: add description for solidrun cn9132 cex7
+ module and clearfog board
 
 Add description for the SolidRun CN9132 COM-Express Type 7 module, and
 the Clearfog evaluation board.

@@ -1,8 +1,8 @@
 From fc9e89ab133e9ee356cd52ce803b5f73d0dcaeea Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Wed, 2 Oct 2024 17:04:40 +0300
-Subject: [PATCH] phy: mvebu-cp110-utmi: support swapping d+/d- lanes by dts
- property
+Subject: [PATCH 7/9] phy: mvebu-cp110-utmi: support swapping d+/d- lanes by
+ dts property
 
 CP11x UTMI PHY supports swapping D+/D- signals via digital control
 register 1.

@@ -1,7 +1,8 @@
 From 364c22416d3193d27dc1353f680322cd17f51f9b Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Thu, 21 Nov 2024 15:09:33 +0100
-Subject: [PATCH] ata: libahci_platform: support non-consecutive port numbers
+Subject: [PATCH 4/9] ata: libahci_platform: support non-consecutive port
+ numbers
 
 So far ahci_platform relied on number of child nodes in firmware to
 allocate arrays and expected port numbers to start from 0 without holes.
