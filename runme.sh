@@ -92,30 +92,35 @@ case "${BOARD_CONFIG}" in
 		CP_NUM=3
 		DTB_UBOOT=cn9132-clearfog
 		DTB_KERNEL=cn9132-clearfog
+		TARGET_UBOOT=TARGET_SOLIDRUN_CN9132_CLEARFOG
 	;;
 	1)
 		echo "*** CN9130 SOM based on Clearfog Base ***"
 		CP_NUM=1
 		DTB_UBOOT=cn9130-cf-base
 		DTB_KERNEL=cn9130-cf-base
+		TARGET_UBOOT=TARGET_SOLIDRUN_CN9130_CLEARFOG_BASE
 	;;
 	2)
 		echo "*** CN9130 SOM based on Clearfog Pro ***"
 		CP_NUM=1
 		DTB_UBOOT=cn9130-cf-pro
                 DTB_KERNEL=cn9130-cf-pro
+                TARGET_UBOOT=TARGET_SOLIDRUN_CN9130_CLEARFOG_PRO
 	;;
 	3)
 		echo "*** CN9131 SOM based on SolidWAN ***"
 		CP_NUM=2
 		DTB_UBOOT=cn9131-cf-solidwan
 		DTB_KERNEL=cn9131-cf-solidwan
+		TARGET_UBOOT=TARGET_SOLIDRUN_CN9131_SOLIDWAN
 	;;
 	4) 	
 		echo "*** CN9131 SOM based on Bldn MBV-A/B ***"
 		CP_NUM=2
 		DTB_UBOOT=cn9131-bldn-mbv
 		DTB_KERNEL=cn9131-bldn-mbv
+		TARGET_UBOOT=TARGET_SOLIDRUN_CN9131_SOLIDWAN
 	;;
 	*)
 		echo "Please define board configuration"
@@ -170,9 +175,10 @@ for i in $SDK_COMPONENTS; do
 			cd $ROOTDIR/build
 			git clone https://github.com/SolidRun/mv-ddr-marvell.git mv-ddr-marvell -b mv-ddr-marvell-sdk-v12
 		elif [ "x$i" == "xu-boot" ]; then
-			echo "Cloning u-boot from SolidRun"
+			echo "Cloning u-boot from denx.de"
 			cd $ROOTDIR/build
-			git clone https://github.com/SolidRun/u-boot.git u-boot -b u-boot-v2023.01-marvell-sdk-v12
+			git clone https://source.denx.de/u-boot/u-boot.git u-boot -b master
+			pushd u-boot; git reset --hard v2025.01; popd
 		elif [ "x$i" == "xdpdk" ]; then
 			echo "Cloning DPDK ${DPDK_RELEASE} from https://github.com/DPDK/dpdk.git"
 			cd $ROOTDIR/build
@@ -213,7 +219,7 @@ cd $ROOTDIR
 
 build_uboot() {
 	cd $ROOTDIR/build/u-boot/
-	./scripts/kconfig/merge_config.sh configs/mvebu_db_cn91xx_defconfig $ROOTDIR/configs/u-boot/cn913x_additions.config
+	./scripts/kconfig/merge_config.sh configs/cn9130_clearfog_defconfig $ROOTDIR/configs/u-boot/cn913x_additions.config
 	[[ "${UBOOT_ENVIRONMENT}" =~ (.*):(.*):(.*) ]] || [[ "${UBOOT_ENVIRONMENT}" =~ (.*) ]]
 	if [ "x${BASH_REMATCH[1]}" = "xspi" ]; then
 cat >> .config << EOF
@@ -234,8 +240,9 @@ EOF
 		echo "ERROR: \$UBOOT_ENVIRONMENT setting invalid"
 		exit 1
 	fi
-	printf "CONFIG_DEFAULT_DEVICE_TREE=\"%s\"\n" "$DTB_UBOOT" >> .config
+	printf "CONFIG_%s=y\n" "$TARGET_UBOOT" >> .config
 	make olddefconfig
+	make savedefconfig
 	make -j${PARALLEL}
 }
 

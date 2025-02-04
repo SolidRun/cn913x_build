@@ -20,7 +20,7 @@ RUN apt-get --no-install-recommends -y install \
 	vim qemu-system-arm libtool m4 automake meson \
 	pkg-config python3-pyelftools kmod \
 	debootstrap libncurses-dev crossbuild-essential-arm64 \
-	openssl ca-certificates fakeroot s3cmd
+	openssl ca-certificates fakeroot s3cmd libgnutls28-dev
 
 # generate cross pkg-config
 ADD aarch64-linux-gnu.personality /usr/share/pkgconfig/personality.d
