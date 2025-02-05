@@ -84,7 +84,8 @@ jobs:
       - name: Build
         shell: bash -e -x {0}
         run: |
-            for env in spi mmc:0:0 mmc:0:1 mmc:0:2 mmc:1:0; do for config in 0 1 2 3; do for distro in debian ubuntu; do UBOOT_ENVIRONMENT=$env BOARD_CONFIG=$config DISTRO=$distro ./runme.sh; done; done; done
+            for env in mmc:0:0 mmc:1:0; do for config in 0 1 2 3; do for distro in debian ubuntu; do UBOOT_ENVIRONMENT=$env BOARD_CONFIG=$config DISTRO=$distro ./runme.sh; done; done; done
+            for env in spi mmc:0:1 mmc:0:2; do for config in 0 1 2 3; do UBOOT_ENVIRONMENT=$env BOARD_CONFIG=$config BUILD_ROOTFS=no ./runme.sh; done; done
 
       - name: Select artifacts for publishing
         shell: bash -e {0}
