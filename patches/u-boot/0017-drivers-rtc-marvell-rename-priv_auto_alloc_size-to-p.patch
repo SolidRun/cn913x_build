@@ -1,0 +1,30 @@
+From f0fdb818f3f63a3b4c15812d91e7cf27d399df35 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 5 Feb 2025 13:21:47 +0100
+Subject: [PATCH 17/18] drivers: rtc: marvell: rename "priv_auto_alloc_size" to
+ "priv_auto"
+
+Commit 41575d8e4c33 renamed priv_auto_alloc_size "to be shorter".
+
+Rename in marvell rtc driver also, to fix the build.
+
+Fixes: 41575d8e4c33 ("dm: treewide: Rename auto_alloc_size members to be shorter")
+Signedo-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/rtc/marvell_rtc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/rtc/marvell_rtc.c b/drivers/rtc/marvell_rtc.c
+index 827b6504496..1ce4c21c281 100644
+--- a/drivers/rtc/marvell_rtc.c
++++ b/drivers/rtc/marvell_rtc.c
+@@ -182,5 +182,5 @@ U_BOOT_DRIVER(marvell_rtc) = {
+ 	.of_match = marvell_rtc_ids,
+ 	.ops	= &marvell_rtc_ops,
+ 	.probe = marvell_rtc_probe,
+-	.priv_auto_alloc_size = sizeof(struct rtc_unit_config),
++	.priv_auto = sizeof(struct rtc_unit_config),
+ };
+-- 
+2.43.0
+
