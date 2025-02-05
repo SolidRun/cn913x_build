@@ -1,0 +1,114 @@
+From b5f11cef9c1cba00b56111228ab54c859cd973e0 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 5 Feb 2025 13:46:18 +0100
+Subject: [PATCH] arch: arm: dts: cn9130-sr-som / cn9130-sr-cex7: fix emmc
+ probe
+
+The xenon_sdhci driver expects a vqmmc-supply regulator to support
+setting voltage to 3.3V. Further the driver does not implement dynamic
+3.3/1.8V switch.
+Fixed regulators do not support setting any voltage and return an error,
+failing xenon_sdhci probe when used.
+
+Delete the supply from u-boot dts fixing error message:
+"Failed to set VQMMC regulator to 3.3V"
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9130-cf-base-u-boot.dtsi     | 11 +++++++++++
+ arch/arm/dts/cn9130-cf-pro-u-boot.dtsi      | 11 +++++++++++
+ arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi | 11 +++++++++++
+ arch/arm/dts/cn9132-clearfog-u-boot.dtsi    | 11 +++++++++++
+ 4 files changed, 44 insertions(+)
+
+diff --git a/arch/arm/dts/cn9130-cf-base-u-boot.dtsi b/arch/arm/dts/cn9130-cf-base-u-boot.dtsi
+index db310dbe852..d390baa933e 100644
+--- a/arch/arm/dts/cn9130-cf-base-u-boot.dtsi
++++ b/arch/arm/dts/cn9130-cf-base-u-boot.dtsi
+@@ -5,6 +5,17 @@
+ 	};
+ };
+ 
++&ap_sdhci0 {
++	/*
++	 * xenon_sdhci driver expects a vqmmc-supply regulator
++	 * to support setting voltage to 3.3V.
++	 * Further the driver does not implement dynamic 3.3/1.8V switch.
++	 * Delete the fixed-regulator reference to avoid error message:
++	 * "Failed to set VQMMC regulator to 3.3V"
++	 */
++	/delete-property/ vqmmc-supply;
++};
++
+ &cp0_eth2 {
+ 	/* u-boot Marvell 88E151x driver does not understand "rgmii-id" */
+ 	phy-mode = "rgmii";
+diff --git a/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi b/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi
+index 2a39763ed19..b9514ef693f 100644
+--- a/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi
++++ b/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi
+@@ -5,6 +5,17 @@
+ 	};
+ };
+ 
++&ap_sdhci0 {
++	/*
++	 * xenon_sdhci driver expects a vqmmc-supply regulator
++	 * to support setting voltage to 3.3V.
++	 * Further the driver does not implement dynamic 3.3/1.8V switch.
++	 * Delete the fixed-regulator reference to avoid error message:
++	 * "Failed to set VQMMC regulator to 3.3V"
++	 */
++	/delete-property/ vqmmc-supply;
++};
++
+ &cp0_eth2 {
+ 	/* u-boot Marvell 88E151x driver does not understand "rgmii-id" */
+ 	phy-mode = "rgmii";
+diff --git a/arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi b/arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi
+index 2fb393921dd..cee9d159436 100644
+--- a/arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi
++++ b/arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi
+@@ -5,6 +5,17 @@
+ 	};
+ };
+ 
++&ap_sdhci0 {
++	/*
++	 * xenon_sdhci driver expects a vqmmc-supply regulator
++	 * to support setting voltage to 3.3V.
++	 * Further the driver does not implement dynamic 3.3/1.8V switch.
++	 * Delete the fixed-regulator reference to avoid error message:
++	 * "Failed to set VQMMC regulator to 3.3V"
++	 */
++	/delete-property/ vqmmc-supply;
++};
++
+ &cp0_rtc {
+ 	/* unlike upstream dts this rtc is disabled by default */
+ 	status = "okay";
+diff --git a/arch/arm/dts/cn9132-clearfog-u-boot.dtsi b/arch/arm/dts/cn9132-clearfog-u-boot.dtsi
+index 47d0f28140b..9c2cf58bc03 100644
+--- a/arch/arm/dts/cn9132-clearfog-u-boot.dtsi
++++ b/arch/arm/dts/cn9132-clearfog-u-boot.dtsi
+@@ -4,6 +4,17 @@
+ 	};
+ };
+ 
++&ap_sdhci0 {
++	/*
++	 * xenon_sdhci driver expects a vqmmc-supply regulator
++	 * to support setting voltage to 3.3V.
++	 * Further the driver does not implement dynamic 3.3/1.8V switch.
++	 * Delete the fixed-regulator reference to avoid error message:
++	 * "Failed to set VQMMC regulator to 3.3V"
++	 */
++	/delete-property/ vqmmc-supply;
++};
++
+ &cp0_eth1 {
+ 	/* u-boot Marvell 88E151x driver does not understand "rgmii-id" */
+ 	phy-mode = "rgmii";
+-- 
+2.43.0
+
