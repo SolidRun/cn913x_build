@@ -1,0 +1,42 @@
+From c0409acd87009806df1a030c54108a30ddc7a859 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 9 Feb 2025 20:51:20 +0100
+Subject: [PATCH 2/4] mvebu: armada-8k: set fdtfile env from DEFAULT_FDT_FILE
+
+Developers find themselves with two options for defining the default
+device-tree for a platform:
+
+1. CONFIG_DEFAULT_DEVICE_TREE deciding which DT the u-boot build will
+   use for itself.
+2. CONFIG_DEFAULT_FDT_FILE deciding what should be the name of the
+   actual device-tree file, when booting an OS.
+
+Armada 8k config file used option 1 while adding a marvell/ directory
+prefix. This causes issues when switching a board to CONFIG_OF_UPSTREAM
+where the marvell/ prefix would be added twice.
+
+Update the header file to set fdtfile variable instead from
+CONFIG_DEFAULT_FDT_FILE. This allows clear separation between
+device-tree for U-Boot and OS.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ include/configs/mvebu_armada-8k.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/configs/mvebu_armada-8k.h b/include/configs/mvebu_armada-8k.h
+index 6fedbe9ee38..cf2e92cf125 100644
+--- a/include/configs/mvebu_armada-8k.h
++++ b/include/configs/mvebu_armada-8k.h
+@@ -50,7 +50,7 @@
+ 	"fdt_addr_r=0x6f00000\0"	\
+ 	"kernel_addr_r=0x7000000\0"	\
+ 	"ramdisk_addr_r=0xa000000\0"	\
+-	"fdtfile=marvell/" CONFIG_DEFAULT_DEVICE_TREE ".dtb\0" \
++	"fdtfile=" CONFIG_DEFAULT_FDT_FILE "\0" \
+ 	BOOTENV
+ 
+ #endif /* _CONFIG_MVEBU_ARMADA_8K_H */
+-- 
+2.43.0
+

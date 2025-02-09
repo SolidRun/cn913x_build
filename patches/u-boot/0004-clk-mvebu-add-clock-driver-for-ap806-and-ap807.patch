@@ -1,7 +1,7 @@
-From 69da43b372f8b5e07bafb795bb0fc3f418485fea Mon Sep 17 00:00:00 2001
+From f5a54930545a32344d58e755dd56f2e82bb6535d Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Wed, 5 Feb 2025 18:22:50 +0100
-Subject: [PATCH 3/3] clk: mvebu: add clock driver for ap806 and ap807
+Subject: [PATCH 4/4] clk: mvebu: add clock driver for ap806 and ap807
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---
