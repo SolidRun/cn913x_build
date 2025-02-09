@@ -1,0 +1,367 @@
+From 69da43b372f8b5e07bafb795bb0fc3f418485fea Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 5 Feb 2025 18:22:50 +0100
+Subject: [PATCH 3/3] clk: mvebu: add clock driver for ap806 and ap807
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ configs/cn9130_clearfog_defconfig           |   2 +
+ drivers/clk/mvebu/Kconfig                   |  21 ++
+ drivers/clk/mvebu/Makefile                  |   1 +
+ drivers/clk/mvebu/ap806-system-controller.c | 295 ++++++++++++++++++++
+ 4 files changed, 319 insertions(+)
+ create mode 100644 drivers/clk/mvebu/ap806-system-controller.c
+
+diff --git a/configs/cn9130_clearfog_defconfig b/configs/cn9130_clearfog_defconfig
+index d32ccbd3d65..0e58fc73976 100644
+--- a/configs/cn9130_clearfog_defconfig
++++ b/configs/cn9130_clearfog_defconfig
+@@ -45,6 +45,8 @@ CONFIG_SYS_64BIT_LBA=y
+ CONFIG_BUTTON=y
+ CONFIG_BUTTON_GPIO=y
+ CONFIG_CLK=y
++CONFIG_CLK_MVEBU=y
++CONFIG_ARMADA_AP806_SYSCON=y
+ CONFIG_GPIO_HOG=y
+ CONFIG_DM_PCA953X=y
+ CONFIG_DM_I2C=y
+diff --git a/drivers/clk/mvebu/Kconfig b/drivers/clk/mvebu/Kconfig
+index e776a15e7bb..f211252ce16 100644
+--- a/drivers/clk/mvebu/Kconfig
++++ b/drivers/clk/mvebu/Kconfig
+@@ -9,3 +9,24 @@ config CLK_ARMADA_3720
+ 	depends on CLK_MVEBU && ARM64
+ 	help
+ 	  Enable this to support the clocks on Marvell Armada 3720 SoC.
++
++config ARMADA_AP806_SYSCON
++	bool "Armada AP806/807 clock driver"
++	depends on CLK_MVEBU && ARM64
++	select REGMAP
++	select CLK_CCF
++	select SYSCON
++	help
++	  Enable this to support the clocks in the AP of Armada 8040
++	  and CN9130 SoCs.
++
++config SPL_ARMADA_AP806_SYSCON
++	bool "Armada AP806/807 clock driver in SPL"
++	depends on CLK_MVEBU && ARM64 && SPL
++	default y if ARMADA_AP806_SYSCON
++	select SPL_REGMAP
++	select SPL_CLK_CCF
++	select SPL_SYSCON
++	help
++	  Enable this to support the clocks in the AP of Armada 8040
++	  and CN9130 SoCs within SPL.
+diff --git a/drivers/clk/mvebu/Makefile b/drivers/clk/mvebu/Makefile
+index 7f803132035..5d02bb2df12 100644
+--- a/drivers/clk/mvebu/Makefile
++++ b/drivers/clk/mvebu/Makefile
+@@ -1 +1,2 @@
+ obj-$(CONFIG_CLK_ARMADA_3720) += armada-37xx-periph.o armada-37xx-tbg.o
++obj-$(CONFIG_$(PHASE_)ARMADA_AP806_SYSCON) += ap806-system-controller.o
+diff --git a/drivers/clk/mvebu/ap806-system-controller.c b/drivers/clk/mvebu/ap806-system-controller.c
+new file mode 100644
+index 00000000000..a121bc7517f
+--- /dev/null
++++ b/drivers/clk/mvebu/ap806-system-controller.c
+@@ -0,0 +1,295 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Marvell Armada AP806 System Controller
++ *
++ * Copyright (C) 2016 Marvell
++ *
++ * Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++ *
++ * Copyright 2025 Josua Mayer <josua@solid-run.com>
++ *
++ */
++
++#define pr_fmt(fmt) "ap806-system-controller: " fmt
++
++#include <dm.h>
++#include <dm/device_compat.h>
++#include <dm/devres.h>
++#include <dm/of_addr.h>
++#include <linux/clk-provider.h>
++#include <linux/ioport.h>
++#include <regmap.h>
++#include <syscon.h>
++
++#define AP806_SAR_REG			0x400
++#define AP806_SAR_CLKFREQ_MODE_MASK	0x1f
++
++#define AP806_CLK_NUM			6
++
++static char *ap_cp_unique_name(struct udevice *dev, const char *name)
++{
++	fdt_addr_t base;
++	int len;
++	char *str;
++
++	/* Do not create a name if there is no clock */
++	if (!name)
++		return NULL;
++
++	base = dev_read_addr(dev);
++
++	len = snprintf(NULL, 0, "%llx-%s", (unsigned long long)fdt_addr_to_cpu(base), name);
++	str = devm_kmalloc(dev, len + 1, GFP_KERNEL);
++	snprintf(str, len + 1, "%llx-%s", (unsigned long long)fdt_addr_to_cpu(base), name);
++	return str;
++}
++
++static struct clk *ap806_clks[AP806_CLK_NUM];
++
++static int ap806_get_sar_clocks(unsigned int freq_mode,
++				unsigned int *cpuclk_freq,
++				unsigned int *dclk_freq)
++{
++	switch (freq_mode) {
++	case 0x0:
++		*cpuclk_freq = 2000;
++		*dclk_freq = 600;
++		break;
++	case 0x1:
++		*cpuclk_freq = 2000;
++		*dclk_freq = 525;
++		break;
++	case 0x6:
++		*cpuclk_freq = 1800;
++		*dclk_freq = 600;
++		break;
++	case 0x7:
++		*cpuclk_freq = 1800;
++		*dclk_freq = 525;
++		break;
++	case 0x4:
++		*cpuclk_freq = 1600;
++		*dclk_freq = 400;
++		break;
++	case 0xB:
++		*cpuclk_freq = 1600;
++		*dclk_freq = 450;
++		break;
++	case 0xD:
++		*cpuclk_freq = 1600;
++		*dclk_freq = 525;
++		break;
++	case 0x1a:
++		*cpuclk_freq = 1400;
++		*dclk_freq = 400;
++		break;
++	case 0x14:
++		*cpuclk_freq = 1300;
++		*dclk_freq = 400;
++		break;
++	case 0x17:
++		*cpuclk_freq = 1300;
++		*dclk_freq = 325;
++		break;
++	case 0x19:
++		*cpuclk_freq = 1200;
++		*dclk_freq = 400;
++		break;
++	case 0x13:
++		*cpuclk_freq = 1000;
++		*dclk_freq = 325;
++		break;
++	case 0x1d:
++		*cpuclk_freq = 1000;
++		*dclk_freq = 400;
++		break;
++	case 0x1c:
++		*cpuclk_freq = 800;
++		*dclk_freq = 400;
++		break;
++	case 0x1b:
++		*cpuclk_freq = 600;
++		*dclk_freq = 400;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++static int ap807_get_sar_clocks(unsigned int freq_mode,
++				unsigned int *cpuclk_freq,
++				unsigned int *dclk_freq)
++{
++	switch (freq_mode) {
++	case 0x0:
++		*cpuclk_freq = 2000;
++		*dclk_freq = 1200;
++		break;
++	case 0x6:
++		*cpuclk_freq = 2200;
++		*dclk_freq = 1200;
++		break;
++	case 0xD:
++		*cpuclk_freq = 1600;
++		*dclk_freq = 1200;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++static int ap806_syscon_common_probe(struct udevice *dev,
++				     struct device_node *syscon_node)
++{
++	unsigned int freq_mode, cpuclk_freq, dclk_freq;
++	const char *name, *fixedclk_name;
++	struct regmap *regmap;
++	u32 reg;
++	int ret;
++
++	regmap = syscon_node_to_regmap(np_to_ofnode(syscon_node));
++	if (IS_ERR(regmap)) {
++		dev_err(dev, "cannot get regmap\n");
++		return PTR_ERR(regmap);
++	}
++
++	ret = regmap_read(regmap, AP806_SAR_REG, &reg);
++	if (ret) {
++		dev_err(dev, "cannot read from regmap\n");
++		return ret;
++	}
++
++	freq_mode = reg & AP806_SAR_CLKFREQ_MODE_MASK;
++
++	if (device_is_compatible(dev, "marvell,ap806-clock")) {
++		ret = ap806_get_sar_clocks(freq_mode, &cpuclk_freq, &dclk_freq);
++	} else if (device_is_compatible(dev, "marvell,ap807-clock")) {
++		ret = ap807_get_sar_clocks(freq_mode, &cpuclk_freq, &dclk_freq);
++	} else {
++		dev_err(dev, "compatible not supported\n");
++		return -EINVAL;
++	}
++
++	if (ret) {
++		dev_err(dev, "invalid Sample at Reset value\n");
++		return ret;
++	}
++
++	/* Convert to hertz */
++	cpuclk_freq *= 1000 * 1000;
++	dclk_freq *= 1000 * 1000;
++
++	/* CPU clocks depend on the Sample At Reset configuration */
++	name = ap_cp_unique_name(dev, "pll-cluster-0");
++	ap806_clks[0] = clk_register_fixed_rate(NULL, name, cpuclk_freq);
++	if (IS_ERR(ap806_clks[0])) {
++		ret = PTR_ERR(ap806_clks[0]);
++		return ret;
++	}
++
++	name = ap_cp_unique_name(dev, "pll-cluster-1");
++	ap806_clks[1] = clk_register_fixed_rate(NULL, name, cpuclk_freq);
++	if (IS_ERR(ap806_clks[1])) {
++		ret = PTR_ERR(ap806_clks[1]);
++		return ret;
++	}
++
++	/* Fixed clock is always 1200 Mhz */
++	fixedclk_name = ap_cp_unique_name(dev, "fixed");
++	ap806_clks[2] = clk_register_fixed_rate(NULL, fixedclk_name,
++						1200 * 1000 * 1000);
++	if (IS_ERR(ap806_clks[2])) {
++		ret = PTR_ERR(ap806_clks[2]);
++		return ret;
++	}
++
++	/* MSS Clock is fixed clock divided by 6 */
++	name = ap_cp_unique_name(dev, "mss");
++	ap806_clks[3] = clk_register_fixed_factor(NULL, name, fixedclk_name,
++						  0, 1, 6);
++	if (IS_ERR(ap806_clks[3])) {
++		ret = PTR_ERR(ap806_clks[3]);
++		return ret;
++	}
++
++	/* SDIO(/eMMC) Clock is fixed clock divided by 3 */
++	name = ap_cp_unique_name(dev, "sdio");
++	ap806_clks[4] = clk_register_fixed_factor(NULL, name,
++						  fixedclk_name,
++						  0, 1, 3);
++	if (IS_ERR(ap806_clks[4])) {
++		ret = PTR_ERR(ap806_clks[4]);
++		return ret;
++	}
++
++	/* AP-DCLK(HCLK) Clock is DDR clock divided by 2 */
++	name = ap_cp_unique_name(dev, "ap-dclk");
++	ap806_clks[5] = clk_register_fixed_rate(NULL, name, dclk_freq);
++	if (IS_ERR(ap806_clks[5])) {
++		ret = PTR_ERR(ap806_clks[5]);
++		return ret;
++	}
++
++	return 0;
++}
++
++static int ap806_clock_probe(struct udevice *dev)
++{
++	return ap806_syscon_common_probe(dev, dev_np(dev)->parent);
++}
++
++static ulong ap806_clk_get_rate(struct clk *clk)
++{
++	if (clk->id >= AP806_CLK_NUM)
++		return -EINVAL;
++
++	return clk_get_rate(ap806_clks[clk->id]);
++}
++
++#if IS_ENABLED(CONFIG_CMD_CLK)
++static const char * const clk_names[AP806_CLK_NUM] = {
++	"pll-cluster-0", "pll-cluster-1", "fixed", "mss", "sdio", "ap-dclk"
++};
++
++static void ap806_clk_dump(struct udevice *dev)
++{
++	int i;
++	unsigned long rate;
++
++	printf("clk\t\t\tfrequency\n");
++	for (i = 0; i < AP806_CLK_NUM; i++) {
++		rate = clk_get_rate(ap806_clks[i]);
++		if ((rate == (unsigned long)-ENOSYS) ||
++		    (rate == (unsigned long)-ENXIO))
++			printf("%13s%20s\n", clk_names[i], "unknown");
++		else
++			printf("%13s%20lu\n", clk_names[i], rate);
++	}
++}
++#endif
++
++static const struct udevice_id ap806_clock_of_match[] = {
++	{ .compatible = "marvell,ap806-clock", },
++	{ .compatible = "marvell,ap807-clock", },
++	{ }
++};
++
++static const struct clk_ops ap806_clk_ops = {
++	.get_rate = ap806_clk_get_rate,
++#if IS_ENABLED(CONFIG_CMD_CLK)
++	.dump = ap806_clk_dump,
++#endif
++};
++
++U_BOOT_DRIVER(marvell_ap806_clock) = {
++	.name		= "marvell-ap806-clock",
++	.id		= UCLASS_CLK,
++	.of_match	= ap806_clock_of_match,
++	.ops		= &ap806_clk_ops,
++	.probe		= ap806_clock_probe,
++	.flags		= DM_FLAG_PRE_RELOC,
++};
+-- 
+2.43.0
+

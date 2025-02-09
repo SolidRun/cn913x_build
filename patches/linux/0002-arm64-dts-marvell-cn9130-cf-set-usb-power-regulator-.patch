@@ -1,0 +1,39 @@
+From a38d721924f64a6d497faaf8876157df76638958 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Sun, 9 Feb 2025 20:05:15 +0100
+Subject: [PATCH 2/2] arm64: dts: marvell: cn9130-cf: set usb power regulator
+ gpio active high
+
+CN9130 Clearfog Base and Pro use a gpio to toggle power supply for type
+A USB connector. The regulator is NCP380 with enable pin active high.
+
+Update the regulator node changing it's configured gpio from active low
+to active high.
+
+As xhci-hcd driver does not manage the vbus-supply mark it always-on to
+ensure the port is powered.
+
+Fixes: 1c510c7d82e5 ("arm64: dts: add description for solidrun cn9130 som and clearfog boards")
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cf.dtsi | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi b/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
+index ad0ab34b6602..d59b92a713a2 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
+@@ -21,7 +21,9 @@ reg_usb3_vbus0: regulator-usb3-vbus0 {
+ 		regulator-name = "vbus0";
+ 		regulator-min-microvolt = <5000000>;
+ 		regulator-max-microvolt = <5000000>;
+-		gpios = <&expander0 6 GPIO_ACTIVE_LOW>;
++		gpios = <&expander0 6 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		regulator-always-on;
+ 	};
+ 
+ 	sfp: sfp {
+-- 
+2.43.0
+

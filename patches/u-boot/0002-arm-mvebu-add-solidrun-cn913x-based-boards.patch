@@ -1,23 +1,23 @@
-From 2c01e60ea892454eb06ca8ebd954946d3b513960 Mon Sep 17 00:00:00 2001
+From 3d3c654cc93cdd36ffd22c0f871dea4803888160 Mon Sep 17 00:00:00 2001
 From: Josua Mayer <josua@solid-run.com>
 Date: Mon, 3 Feb 2025 18:12:22 +0100
-Subject: [PATCH] arm: mvebu: add solidrun cn913x based boards
+Subject: [PATCH 2/3] arm: mvebu: add solidrun cn913x based boards
 
 Signed-off-by: Josua Mayer <josua@solid-run.com>
 ---
  arch/arm/dts/cn9130-cf-base-u-boot.dtsi     |  15 ++
- arch/arm/dts/cn9130-cf-pro-u-boot.dtsi      |  15 ++
- arch/arm/dts/cn9130-cf-u-boot.dtsi          |  37 +++
- arch/arm/dts/cn9130-sr-som-u-boot.dtsi      | 125 +++++++++
+ arch/arm/dts/cn9130-cf-pro-u-boot.dtsi      |  24 ++
+ arch/arm/dts/cn9130-cf-u-boot.dtsi          |  52 ++++
+ arch/arm/dts/cn9130-sr-som-u-boot.dtsi      | 122 +++++++++
  arch/arm/dts/cn9131-cf-solidwan-u-boot.dtsi |  91 +++++++
  arch/arm/dts/cn9132-clearfog-u-boot.dtsi    |  79 ++++++
- arch/arm/dts/cn9132-sr-cex7-u-boot.dtsi     | 268 ++++++++++++++++++++
+ arch/arm/dts/cn9132-sr-cex7-u-boot.dtsi     | 265 ++++++++++++++++++++
  arch/arm/mach-mvebu/Kconfig                 |  11 +
- board/solidrun/octeontx2_cn913x/Kconfig     |  28 ++
+ board/solidrun/octeontx2_cn913x/Kconfig     |  27 ++
  board/solidrun/octeontx2_cn913x/Makefile    |   8 +
  board/solidrun/octeontx2_cn913x/board.c     |  40 +++
- configs/cn9130_clearfog_defconfig           | 101 ++++++++
- 12 files changed, 818 insertions(+)
+ configs/cn9130_clearfog_defconfig           |  77 ++++++
+ 12 files changed, 811 insertions(+)
  create mode 100644 arch/arm/dts/cn9130-cf-base-u-boot.dtsi
  create mode 100644 arch/arm/dts/cn9130-cf-pro-u-boot.dtsi
  create mode 100644 arch/arm/dts/cn9130-cf-u-boot.dtsi
@@ -53,10 +53,10 @@ index 00000000000..6e10fdb54fd
 +};
 diff --git a/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi b/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi
 new file mode 100644
-index 00000000000..f1ad0191578
+index 00000000000..90a7f5f1826
 --- /dev/null
 +++ b/arch/arm/dts/cn9130-cf-pro-u-boot.dtsi
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,24 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Copyright (C) 2025 Josua Mayer <josua@solid-run.com>
@@ -69,15 +69,24 @@ index 00000000000..f1ad0191578
 +	phy-type = <COMPHY_TYPE_PEX1>;
 +};
 +
++&cp0_pcie1 {
++	/*
++	 * Unlike the Linux dw-pcie driver, u-boot pcie_dw_mvebu
++	 * uses non-standard "marvell,reset-gpio" property
++	 * and does not invert polarity internally.
++	 */
++	marvell,reset-gpio = <&expander0 2 GPIO_ACTIVE_LOW>;
++};
++
 +&cp0_utmi1 {
 +	status = "okay";
 +};
 diff --git a/arch/arm/dts/cn9130-cf-u-boot.dtsi b/arch/arm/dts/cn9130-cf-u-boot.dtsi
 new file mode 100644
-index 00000000000..6cbb4d8cce8
+index 00000000000..ad728e58595
 --- /dev/null
 +++ b/arch/arm/dts/cn9130-cf-u-boot.dtsi
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,52 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Copyright (C) 2025 Josua Mayer <josua@solid-run.com>
@@ -112,15 +121,30 @@ index 00000000000..6cbb4d8cce8
 +	phy-type = <COMPHY_TYPE_PEX2>;
 +};
 +
++&cp0_pcie2 {
++	/*
++	 * Unlike the Linux dw-pcie driver, u-boot pcie_dw_mvebu
++	 * uses non-standard "marvell,reset-gpio" property
++	 * and does not invert polarity internally.
++	 */
++	marvell,reset-gpio = <&expander0 1 GPIO_ACTIVE_LOW>;
++};
++
 +&cp0_utmi0 {
 +	status = "okay";
 +};
++
++&reg_usb3_vbus0 {
++	/* upstream dts gpio polarity is wrong */
++	gpios = <&expander0 6 GPIO_ACTIVE_HIGH>;
++	enable-active-high;
++};
 diff --git a/arch/arm/dts/cn9130-sr-som-u-boot.dtsi b/arch/arm/dts/cn9130-sr-som-u-boot.dtsi
 new file mode 100644
-index 00000000000..f4721f59752
+index 00000000000..cdc01692c09
 --- /dev/null
 +++ b/arch/arm/dts/cn9130-sr-som-u-boot.dtsi
-@@ -0,0 +1,125 @@
+@@ -0,0 +1,122 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Copyright (C) 2025 Josua Mayer <josua@solid-run.com>
@@ -133,45 +157,41 @@ index 00000000000..f4721f59752
 +	/*
 +	 * U-Boot does not (yet) have a driver for compatible
 +	 * "marvell,ap807-clock" used by upstream device-tree.
-+	 * For now define it's clocks using fixed-clock.
++	 * For now define required clocks using fixed-clock.
 +	 */
 +	ap_mss_clk: ap-mss-clock {
 +		compatible = "fixed-clock";
 +		#clock-cells = <0>;
 +		clock-frequency = <200000000>;
 +	};
-+
-+	ap_sdio_clk: ap-sdio-clock {
-+		compatible = "fixed-clock";
-+		#clock-cells = <0>;
-+		clock-frequency = <400000000>;
-+	};
 +};
 +
 +&ap_sdhci0 {
++	/*
++	 * U-Boot does not (yet) support compatible string
++	 * "marvell,armada-ap806-sdhci" used by upstream device-tree.
++	 * Add fall-back matching existing u-boot driver.
++	 */
 +	compatible = "marvell,armada-ap806-sdhci", "marvell,armada-8k-sdhci";
-+	clocks = <&ap_sdio_clk>;
-+};
-+
-+&i2c0 {
-+	clocks = <&ap_mss_clk>;
-+};
-+
-+&spi0 {
-+	clocks = <&ap_mss_clk>;
 +};
 +
 +&uart0 {
-+	clocks = <&ap_mss_clk>;
-+};
-+
-+&uart1 {
++	/*
++	 * The ns16550_serial u-boot driver requires a valid clock
++	 * handle to enable the console uart.
++	 * Link the fixed clock defined above due to lack of dedicated
++	 * ap807-clock driver.
++	 */
 +	clocks = <&ap_mss_clk>;
 +};
 +
 +/* Changes for armada-cp115.dtsi and its parents */
 +
 +&cp0_comphy {
++	/*
++	 * Add compatible, register and additional properties
++	 * for U-Boot mvebu_comphy driver.
++	 */
 +	compatible = "marvell,comphy-cp110", "marvell,mvebu-comphy";
 +	reg = <0x441000 0x8>,
 +	      <0x120000 0x8>;
@@ -180,6 +200,11 @@ index 00000000000..f4721f59752
 +};
 +
 +&cp0_sdhci0 {
++	/*
++	 * U-Boot does not (yet) support compatible string
++	 * "marvell,armada-cp110-sdhci" used by upstream device-tree.
++	 * Add fall-back matching existing u-boot driver.
++	 */
 +	compatible = "marvell,armada-cp110-sdhci", "marvell,armada-8k-sdhci";
 +};
 +
@@ -225,14 +250,10 @@ index 00000000000..f4721f59752
 +/* Changes for cn9130-sr-som.dtsi */
 +
 +&ap_sdhci0 {
-+	/*
-+	 * xenon_sdhci driver expects a vqmmc-supply regulator
-+	 * to support setting voltage to 3.3V.
-+	 * Further the driver does not implement dynamic 3.3/1.8V switch.
-+	 * Delete the fixed-regulator reference to avoid error message:
-+	 * "Failed to set VQMMC regulator to 3.3V"
-+	 */
++	/* avoid xenon_sdhci driver trying to configure fixed-regulator */
 +	/delete-property/ vqmmc-supply;
++	/* ap mmc voltage domain is fixed 1.8V */
++	marvell,pad-type = "fixed-1-8v";
 +};
 +
 +&cp0_pinctrl {
@@ -430,10 +451,10 @@ index 00000000000..1bcec3aead7
 +};
 diff --git a/arch/arm/dts/cn9132-sr-cex7-u-boot.dtsi b/arch/arm/dts/cn9132-sr-cex7-u-boot.dtsi
 new file mode 100644
-index 00000000000..c5755895625
+index 00000000000..398da325a61
 --- /dev/null
 +++ b/arch/arm/dts/cn9132-sr-cex7-u-boot.dtsi
-@@ -0,0 +1,268 @@
+@@ -0,0 +1,265 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Copyright (C) 2025 Josua Mayer <josua@solid-run.com>
@@ -448,45 +469,41 @@ index 00000000000..c5755895625
 +	/*
 +	 * U-Boot does not (yet) have a driver for compatible
 +	 * "marvell,ap807-clock" used by upstream device-tree.
-+	 * For now define it's clocks using fixed-clock.
++	 * For now define required clocks using fixed-clock.
 +	 */
 +	ap_mss_clk: ap-mss-clock {
 +		compatible = "fixed-clock";
 +		#clock-cells = <0>;
 +		clock-frequency = <200000000>;
 +	};
-+
-+	ap_sdio_clk: ap-sdio-clock {
-+		compatible = "fixed-clock";
-+		#clock-cells = <0>;
-+		clock-frequency = <400000000>;
-+	};
 +};
 +
 +&ap_sdhci0 {
++	/*
++	 * U-Boot does not (yet) support compatible string
++	 * "marvell,armada-ap806-sdhci" used by upstream device-tree.
++	 * Add fall-back matching existing u-boot driver.
++	 */
 +	compatible = "marvell,armada-ap806-sdhci", "marvell,armada-8k-sdhci";
-+	clocks = <&ap_sdio_clk>;
-+};
-+
-+&i2c0 {
-+	clocks = <&ap_mss_clk>;
-+};
-+
-+&spi0 {
-+	clocks = <&ap_mss_clk>;
 +};
 +
 +&uart0 {
-+	clocks = <&ap_mss_clk>;
-+};
-+
-+&uart1 {
++	/*
++	 * The ns16550_serial u-boot driver requires a valid clock
++	 * handle to enable the console uart.
++	 * Link the fixed clock defined above due to lack of dedicated
++	 * ap807-clock driver.
++	 */
 +	clocks = <&ap_mss_clk>;
 +};
 +
 +/* Changes for armada-cp115.dtsi and its parents */
 +
 +&cp0_comphy {
++	/*
++	 * Add compatible, register and additional properties
++	 * for U-Boot mvebu_comphy driver.
++	 */
 +	compatible = "marvell,comphy-cp110", "marvell,mvebu-comphy";
 +	reg = <0x441000 0x8>,
 +	      <0x120000 0x8>;
@@ -495,6 +512,11 @@ index 00000000000..c5755895625
 +};
 +
 +&cp0_sdhci0 {
++	/*
++	 * U-Boot does not (yet) support compatible string
++	 * "marvell,armada-cp110-sdhci" used by upstream device-tree.
++	 * Add fall-back matching existing u-boot driver.
++	 */
 +	compatible = "marvell,armada-cp110-sdhci", "marvell,armada-8k-sdhci";
 +};
 +
@@ -621,14 +643,10 @@ index 00000000000..c5755895625
 +/* Changes for cn9132-sr-cex7.dtsi */
 +
 +&ap_sdhci0 {
-+	/*
-+	 * xenon_sdhci driver expects a vqmmc-supply regulator
-+	 * to support setting voltage to 3.3V.
-+	 * Further the driver does not implement dynamic 3.3/1.8V switch.
-+	 * Delete the fixed-regulator reference to avoid error message:
-+	 * "Failed to set VQMMC regulator to 3.3V"
-+	 */
++	/* avoid xenon_sdhci driver trying to configure fixed-regulator */
 +	/delete-property/ vqmmc-supply;
++	/* ap mmc voltage domain is fixed 1.8V */
++	marvell,pad-type = "fixed-1-8v";
 +};
 +
 +&cp0_gpio1 {
@@ -754,17 +772,17 @@ index adb816982f8..2d30734933e 100644
  endif
 diff --git a/board/solidrun/octeontx2_cn913x/Kconfig b/board/solidrun/octeontx2_cn913x/Kconfig
 new file mode 100644
-index 00000000000..d564b0132f4
+index 00000000000..c636f729ae9
 --- /dev/null
 +++ b/board/solidrun/octeontx2_cn913x/Kconfig
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,27 @@
 +if TARGET_SOLIDRUN_CN913X
 +choice
-+	prompt "SolidRun CN913x default board select"
++	prompt "SolidRun CN913x board select"
 +	default TARGET_SOLIDRUN_CN9130_CLEARFOG_PRO
 +	help
-+	  SolidRun CN913x platforms use EEPROMs for board identification.
-+	  Select the fallback value in case identification fails.
++	  SolidRun has a range of boards based on CN9130 SoC
++	  supported by common code.
 +
 +config TARGET_SOLIDRUN_CN9130_CLEARFOG_BASE
 +	bool "Support SolidRun CN9130 Clearfog Base"
@@ -777,7 +795,6 @@ index 00000000000..d564b0132f4
 +
 +config TARGET_SOLIDRUN_CN9132_CLEARFOG
 +	bool "Support SolidRun CN9132 Clearfog Evaluation Board"
-+
 +endchoice
 +
 +config DEFAULT_DEVICE_TREE
@@ -848,10 +865,10 @@ index 00000000000..3ffe15d42b8
 +}
 diff --git a/configs/cn9130_clearfog_defconfig b/configs/cn9130_clearfog_defconfig
 new file mode 100644
-index 00000000000..d90d4681c34
+index 00000000000..d32ccbd3d65
 --- /dev/null
 +++ b/configs/cn9130_clearfog_defconfig
-@@ -0,0 +1,101 @@
+@@ -0,0 +1,77 @@
 +CONFIG_ARM=y
 +CONFIG_ARCH_CPU_INIT=y
 +CONFIG_ARCH_MVEBU=y
@@ -876,63 +893,43 @@ index 00000000000..d90d4681c34
 +CONFIG_SYS_PBSIZE=1051
 +CONFIG_SYS_CONSOLE_INFO_QUIET=y
 +# CONFIG_DISPLAY_CPUINFO is not set
-+# CONFIG_DISPLAY_BOARDINFO is not set
-+CONFIG_DISPLAY_BOARDINFO_LATE=y
 +CONFIG_BOARD_EARLY_INIT_F=y
 +CONFIG_ID_EEPROM=y
-+CONFIG_SYS_PROMPT="Marvell>> "
 +CONFIG_SYS_MAXARGS=32
 +CONFIG_CMD_TLV_EEPROM=y
++CONFIG_CMD_GPIO=y
 +CONFIG_CMD_I2C=y
 +CONFIG_CMD_MMC=y
-+CONFIG_CMD_MTD=y
 +CONFIG_CMD_PCI=y
 +CONFIG_CMD_SPI=y
 +CONFIG_CMD_USB=y
-+# CONFIG_CMD_SETEXPR is not set
-+CONFIG_CMD_TFTPPUT=y
-+CONFIG_CMD_CACHE=y
-+CONFIG_CMD_TIME=y
-+CONFIG_CMD_EXT4_WRITE=y
-+CONFIG_MAC_PARTITION=y
++CONFIG_CMD_SNTP=y
 +CONFIG_OF_UPSTREAM=y
 +CONFIG_ENV_OVERWRITE=y
 +CONFIG_ENV_IS_IN_MMC=y
 +CONFIG_SYS_RELOC_GD_ENV_ADDR=y
 +CONFIG_SYS_MMC_ENV_DEV=1
-+CONFIG_ARP_TIMEOUT=200
-+CONFIG_NET_RETRY_COUNT=50
 +CONFIG_NET_RANDOM_ETHADDR=y
 +CONFIG_AHCI_GENERIC=y
 +CONFIG_LBA48=y
 +CONFIG_SYS_64BIT_LBA=y
++CONFIG_BUTTON=y
++CONFIG_BUTTON_GPIO=y
 +CONFIG_CLK=y
 +CONFIG_GPIO_HOG=y
-+CONFIG_DM_GPIO_LOOKUP_LABEL=y
 +CONFIG_DM_PCA953X=y
 +CONFIG_DM_I2C=y
 +CONFIG_SYS_I2C_MVTWSI=y
++CONFIG_LED=y
++CONFIG_LED_GPIO=y
 +CONFIG_MISC=y
 +CONFIG_I2C_EEPROM=y
-+CONFIG_MMC_BROKEN_CD=y
-+CONFIG_MMC_HS200_SUPPORT=y
++CONFIG_SUPPORT_EMMC_BOOT=y
 +CONFIG_MMC_SDHCI=y
 +CONFIG_MMC_SDHCI_XENON=y
-+CONFIG_MTD_RAW_NAND=y
-+CONFIG_SYS_NAND_USE_FLASH_BBT=y
-+CONFIG_NAND_PXA3XX=y
-+CONFIG_SYS_NAND_ONFI_DETECTION=y
-+CONFIG_SPI_FLASH_SFDP_SUPPORT=y
-+CONFIG_SPI_FLASH_MACRONIX=y
-+CONFIG_SPI_FLASH_SPANSION=y
-+CONFIG_SPI_FLASH_STMICRO=y
-+CONFIG_SPI_FLASH_SST=y
 +CONFIG_SPI_FLASH_WINBOND=y
-+CONFIG_SPI_FLASH_MTD=y
 +CONFIG_PHY_MARVELL=y
 +CONFIG_PHY_MARVELL_10G=y
-+CONFIG_PHY_GIGE=y
-+CONFIG_E1000=y
 +CONFIG_MVPP2=y
 +CONFIG_NVME_PCI=y
 +CONFIG_PCIE_DW_MVEBU=y
@@ -941,18 +938,14 @@ index 00000000000..d90d4681c34
 +CONFIG_PINCTRL=y
 +CONFIG_PINCTRL_ARMADA_8K=y
 +CONFIG_DM_REGULATOR_FIXED=y
++CONFIG_DM_RTC=y
++CONFIG_MARVELL_RTC=y
 +CONFIG_DEBUG_UART_SHIFT=2
-+CONFIG_DEBUG_UART_ANNOUNCE=y
 +CONFIG_SYS_NS16550=y
 +CONFIG_KIRKWOOD_SPI=y
 +CONFIG_USB=y
 +CONFIG_USB_XHCI_HCD=y
 +CONFIG_USB_EHCI_HCD=y
-+CONFIG_USB_HOST_ETHER=y
-+CONFIG_USB_ETHER_ASIX=y
-+CONFIG_USB_ETHER_MCS7830=y
-+CONFIG_USB_ETHER_RTL8152=y
-+CONFIG_USB_ETHER_SMSC95XX=y
 -- 
 2.43.0
 
