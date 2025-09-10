@@ -1,0 +1,59 @@
+From 7f295dd41a7fcb0df9add6877ee810bec5a0ecce Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Wed, 10 Sep 2025 15:20:28 +0200
+Subject: [PATCH 22/22] board: marvell: octeontx2_cn913x: avoid fdtfile
+ override for cex7 evb
+
+CN9132 Clearfog board does not have id eeprom on carrier board, just on
+the CEX-7 module. Therefore carrier board identification is not
+possible.
+
+Do not initialise carrier variable to ensure that the fdtfile variable
+as set in u-boot environment is not changed.
+
+There are special builds of u-boot for this board and they initialise
+environment fdtfile for cn9132-clearfog by default.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ board/Marvell/octeontx2_cn913x/board.c | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/board/Marvell/octeontx2_cn913x/board.c b/board/Marvell/octeontx2_cn913x/board.c
+index abd0e3f7ae..f24d4adca7 100644
+--- a/board/Marvell/octeontx2_cn913x/board.c
++++ b/board/Marvell/octeontx2_cn913x/board.c
+@@ -183,9 +183,9 @@ static bool get_fdtfile_from_tlv_eeprom(u8 *buffer, size_t length) {
+ 				strcpy(cpu, "9131");
+ 			} else if(memcmp(&sku[2], "C", 1) == 0) {
+ 				// COM-Express 7 - C9130 / C9131 / C9132 ...
+-				strcpy(carrier, "cex7");
++				// carrier unknown
+ 
+-				// COM can have additional CPs indicated in next 4 chars
++				// COM can be assembled with 0-2 separate CPs indicated in next 4 chars
+ 				memcpy(cpu, &sku[2+1], 4);
+ 			} else {
+ 				pr_err("%s: did not recognise SKU %s!\n", __func__, sku);
+@@ -200,8 +200,16 @@ static bool get_fdtfile_from_tlv_eeprom(u8 *buffer, size_t length) {
+ 	}
+ 
+ 	if(!carrier[0]) {
+-		pr_err("%s: could not identify carrier, defaulting to %s!\n", __func__, "Clearfog Pro");
+-		strcpy(carrier, "cf-pro");
++		if (strcpy(cpu, "9130") == 0) {
++			pr_err("%s: could not identify carrier, defaulting to CN%s %s!\n", __func__, cpu, "Clearfog Pro");
++			strcpy(carrier, "cf-pro");
++		} else if (strcpy(cpu, "9132") == 0) {
++			pr_err("%s: could not identify carrier, defaulting to CN%s %s!\n", __func__, cpu, "Clearfog");
++			strcpy(carrier, "clearfog");
++		} else {
++			pr_err("%s: could not identify carrier!\n", __func__);
++		}
++
+ 		ret = false;
+ 	}
+ 
+-- 
+2.51.0
+
