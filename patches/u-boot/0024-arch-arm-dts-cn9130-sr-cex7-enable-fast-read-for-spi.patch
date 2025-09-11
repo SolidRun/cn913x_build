@@ -1,0 +1,29 @@
+From c8d8fc41fc4c3c2f2f2dc9efbdbf723fcbe6e896 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Thu, 11 Sep 2025 15:31:54 +0200
+Subject: [PATCH 24/24] arch: arm: dts: cn9130-sr-cex7: enable fast-read for
+ spi flash
+
+The spi flash on cex7 module supports fast read command, enable in
+device-tree.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/dts/cn9132-sr-cex7.dtsi | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm/dts/cn9132-sr-cex7.dtsi b/arch/arm/dts/cn9132-sr-cex7.dtsi
+index c4723bb96a..c0c3083e86 100644
+--- a/arch/arm/dts/cn9132-sr-cex7.dtsi
++++ b/arch/arm/dts/cn9132-sr-cex7.dtsi
+@@ -254,6 +254,7 @@
+ 		reg = <0>;
+ 		/* read command supports max. 50MHz */
+ 		spi-max-frequency = <50000000>;
++		m25p,fast-read;
+ 	};
+ };
+ 
+-- 
+2.51.0
+

@@ -1,0 +1,108 @@
+From a89f6202fb0cdca043a7864cdc469b7ffd63b825 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Thu, 11 Sep 2025 15:25:47 +0200
+Subject: [PATCH 23/24] spi: kirkwood: add quirk for cn9132 cex7: miso sample
+ delay
+
+Set miso sample delay to 3 core-clk cycles to avoid bit errros that are
+consistent with 1 cycle delay and sporadic with 2 cycles.
+At 3 cycles access is stable.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm/include/asm/arch-mvebu/spi.h |  1 +
+ drivers/spi/kirkwood_spi.c            | 43 ++++++++++++++++++++++-----
+ 2 files changed, 36 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm/include/asm/arch-mvebu/spi.h b/arch/arm/include/asm/arch-mvebu/spi.h
+index 58b6c32c4d..7bfee7343e 100644
+--- a/arch/arm/include/asm/arch-mvebu/spi.h
++++ b/arch/arm/include/asm/arch-mvebu/spi.h
+@@ -50,6 +50,7 @@ struct kwspi_registers {
+ #define KW_SPI_TMISO_SAMPLE_MASK	(0x3 << KW_SPI_TMISO_SAMPLE_OFFSET)
+ #define KW_SPI_TMISO_SAMPLE_1		(1 << KW_SPI_TMISO_SAMPLE_OFFSET)
+ #define KW_SPI_TMISO_SAMPLE_2		(2 << KW_SPI_TMISO_SAMPLE_OFFSET)
++#define KW_SPI_TMISO_SAMPLE_3		(3 << KW_SPI_TMISO_SAMPLE_OFFSET)
+ 
+ #define KWSPI_IRQUNMASK		1 /* unmask SPI interrupt */
+ #define KWSPI_IRQMASK		0 /* mask SPI interrupt */
+diff --git a/drivers/spi/kirkwood_spi.c b/drivers/spi/kirkwood_spi.c
+index bc5da0a1e6..3fb9dde34e 100644
+--- a/drivers/spi/kirkwood_spi.c
++++ b/drivers/spi/kirkwood_spi.c
+@@ -182,12 +182,39 @@ static int mvebu_spi_set_speed(struct udevice *bus, uint hz)
+ 	return 0;
+ }
+ 
+-static void mvebu_spi_50mhz_ac_timing_erratum(struct udevice *bus, uint mode)
++/* configure extra miso sample delay */
++static int mvebu_spi_set_miso_sample_delay(struct udevice *bus, const uint8_t cycles)
+ {
+ 	struct mvebu_spi_plat *plat = dev_get_plat(bus);
+ 	struct kwspi_registers *reg = plat->spireg;
+ 	u32 data;
+ 
++	data = readl(&reg->timing1);
++	data &= ~KW_SPI_TMISO_SAMPLE_MASK;
++
++	switch (cycles) {
++	case 0:
++		break;
++	case 1:
++		data |= KW_SPI_TMISO_SAMPLE_1;
++		break;
++	case 2:
++		data |= KW_SPI_TMISO_SAMPLE_2;
++		break;
++	case 3:
++		data |= KW_SPI_TMISO_SAMPLE_3;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	writel(data, &reg->timing1);
++
++	return 0;
++}
++
++static void mvebu_spi_50mhz_ac_timing_erratum(struct udevice *bus, uint mode)
++{
+ 	/*
+ 	 * Erratum description: (Erratum NO. FE-9144572) The device
+ 	 * SPI interface supports frequencies of up to 50 MHz.
+@@ -202,17 +229,12 @@ static void mvebu_spi_50mhz_ac_timing_erratum(struct udevice *bus, uint mode)
+ 	 * 2. Set TMISO_SAMPLE value to 0x2 in "SPI Timing Parameters 1
+ 	 * Register" before setting the interface.
+ 	 */
+-	data = readl(&reg->timing1);
+-	data &= ~KW_SPI_TMISO_SAMPLE_MASK;
+-
+ 	if (CONFIG_SYS_TCLK == 250000000 &&
+ 	    mode & SPI_CPOL &&
+ 	    mode & SPI_CPHA)
+-		data |= KW_SPI_TMISO_SAMPLE_2;
++		mvebu_spi_set_miso_sample_delay(bus, 2);
+ 	else
+-		data |= KW_SPI_TMISO_SAMPLE_1;
+-
+-	writel(data, &reg->timing1);
++		mvebu_spi_set_miso_sample_delay(bus, 1);
+ }
+ 
+ static int mvebu_spi_set_mode(struct udevice *bus, uint mode)
+@@ -235,6 +257,11 @@ static int mvebu_spi_set_mode(struct udevice *bus, uint mode)
+ 	if (plat->is_errata_50mhz_ac)
+ 		mvebu_spi_50mhz_ac_timing_erratum(bus, mode);
+ 
++	/* CN9132 CEX-7 requires 3 cycles delay before sampling miso to avoid bit errors */
++	if (of_machine_is_compatible("solidrun,cn9132-sr-cex7") &&
++	    ofnode_to_offset(dev_ofnode(bus)) == ofnode_to_offset(ofnode_path("/cp0/config-space/spi@700680")))
++		mvebu_spi_set_miso_sample_delay(bus, 3);
++
+ 	return 0;
+ }
+ 
+-- 
+2.51.0
+
