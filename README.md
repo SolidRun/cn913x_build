@@ -71,14 +71,14 @@ Build options can be customised by passing environment variables to the runme sc
   - `debian`: Generate Debian based rootfs
   - `ubuntu`: Generate Ubuntu based rootfs (default)
 - `DEBIAN_VERSION`: Debian Version
-  - bookworm (12, default)
+  - `bookworm`: 12 Bookworm (default)
 - `DEBIAN_ROOTFS_SIZE`: rootfs / partition size
   - `1472M` (default)
   - arbitrary sizes supported in unit `M`, 1472M recommended minimum
 - `UBUNTU_VERSION`: Ubuntu Version
-  - bionic (18.04)
-  - focal (20.04, default)
-  - jammy (22.04)
+  - `bionic`: 18.04 Bionic Beaver
+  - `focal`: 20.04 Focal Fossa (default)
+  - `jammy`: 22.04 Jammy Jellyfish
 - `UBUNTU_ROOTFS_SIZE`: rootfs / partition size
   - `704M` (default)
   - arbitrary sizes supported in unit `M`, 500M recommended minimum
