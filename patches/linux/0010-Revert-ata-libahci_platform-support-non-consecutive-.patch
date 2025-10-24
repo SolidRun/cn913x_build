@@ -1,0 +1,238 @@
+From 9455724906bb13cc4a47d06ea57c5c2f452bea30 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Fri, 24 Oct 2025 14:34:34 +0200
+Subject: [PATCH 10/11] Revert "ata: libahci_platform: support non-consecutive
+ port numbers"
+
+This reverts commit 35f682d66475f7e23ccecd5279cfc932e2bd289f.
+On Linux v6.1 marvell fork this caused errors in cleanup path on
+deferred probe [1].
+
+Revert it here in vendor bsp only.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ drivers/ata/ahci.h             |  5 ++-
+ drivers/ata/ahci_brcm.c        |  5 +--
+ drivers/ata/ahci_ceva.c        | 10 +----
+ drivers/ata/libahci_platform.c | 81 ++++++++++++++++++++++------------
+ 4 files changed, 60 insertions(+), 41 deletions(-)
+
+diff --git a/drivers/ata/ahci.h b/drivers/ata/ahci.h
+index 33b38be53688..ff8e6ae1c636 100644
+--- a/drivers/ata/ahci.h
++++ b/drivers/ata/ahci.h
+@@ -349,14 +349,15 @@ struct ahci_host_priv {
+ 	struct clk_bulk_data	*clks;		/* Optional */
+ 	unsigned int		f_rsts;
+ 	struct reset_control	*rsts;		/* Optional */
+-	struct regulator	*target_pwrs[AHCI_MAX_PORTS];	/* Optional */
++	struct regulator	**target_pwrs;	/* Optional */
+ 	struct regulator	*ahci_regulator;/* Optional */
+ 	struct regulator	*phy_regulator;/* Optional */
+ 	/*
+ 	 * If platform uses PHYs. There is a 1:1 relation between the port number and
+ 	 * the PHY position in this array.
+ 	 */
+-	struct phy		*phys[AHCI_MAX_PORTS];
++	struct phy		**phys;
++	unsigned		nports;		/* Number of ports */
+ 	void			*plat_data;	/* Other platform data */
+ 	unsigned int		irq;		/* interrupt line */
+ 	/*
+diff --git a/drivers/ata/ahci_brcm.c b/drivers/ata/ahci_brcm.c
+index fd45b33057f8..6f216eb25610 100644
+--- a/drivers/ata/ahci_brcm.c
++++ b/drivers/ata/ahci_brcm.c
+@@ -287,10 +287,7 @@ static unsigned int brcm_ahci_read_id(struct ata_device *dev,
+ 	brcm_sata_phy_enable(priv, ap->port_no);
+ 
+ 	/* Re-initialize and calibrate the PHY */
+-	for (i = 0; i < AHCI_MAX_PORTS; i++) {
+-		if (!(hpriv->mask_port_map & (1 << i)))
+-			continue;
+-
++	for (i = 0; i < hpriv->nports; i++) {
+ 		rc = phy_init(hpriv->phys[i]);
+ 		if (rc)
+ 			goto disable_phys;
+diff --git a/drivers/ata/ahci_ceva.c b/drivers/ata/ahci_ceva.c
+index 3c2f4f9731e4..cb24ecf36faf 100644
+--- a/drivers/ata/ahci_ceva.c
++++ b/drivers/ata/ahci_ceva.c
+@@ -227,10 +227,7 @@ static int ceva_ahci_probe(struct platform_device *pdev)
+ 		/* Assert the controller reset */
+ 		reset_control_assert(cevapriv->rst);
+ 
+-		for (i = 0; i < AHCI_MAX_PORTS; i++) {
+-			if (!(hpriv->mask_port_map & (1 << i)))
+-				continue;
+-
++		for (i = 0; i < hpriv->nports; i++) {
+ 			rc = phy_init(hpriv->phys[i]);
+ 			if (rc)
+ 				return rc;
+@@ -239,10 +236,7 @@ static int ceva_ahci_probe(struct platform_device *pdev)
+ 		/* De-assert the controller reset */
+ 		reset_control_deassert(cevapriv->rst);
+ 
+-		for (i = 0; i < AHCI_MAX_PORTS; i++) {
+-			if (!(hpriv->mask_port_map & (1 << i)))
+-				continue;
+-
++		for (i = 0; i < hpriv->nports; i++) {
+ 			rc = phy_power_on(hpriv->phys[i]);
+ 			if (rc) {
+ 				phy_exit(hpriv->phys[i]);
+diff --git a/drivers/ata/libahci_platform.c b/drivers/ata/libahci_platform.c
+index 08542d26b47b..b9e336bacf17 100644
+--- a/drivers/ata/libahci_platform.c
++++ b/drivers/ata/libahci_platform.c
+@@ -47,10 +47,7 @@ int ahci_platform_enable_phys(struct ahci_host_priv *hpriv)
+ {
+ 	int rc, i;
+ 
+-	for (i = 0; i < AHCI_MAX_PORTS; i++) {
+-		if (!(hpriv->mask_port_map & (1 << i)))
+-			continue;
+-
++	for (i = 0; i < hpriv->nports; i++) {
+ 		rc = phy_init(hpriv->phys[i]);
+ 		if (rc)
+ 			goto disable_phys;
+@@ -72,10 +69,8 @@ int ahci_platform_enable_phys(struct ahci_host_priv *hpriv)
+ 
+ disable_phys:
+ 	while (--i >= 0) {
+-		if (hpriv->mask_port_map & (1 << i)) {
+-			phy_power_off(hpriv->phys[i]);
+-			phy_exit(hpriv->phys[i]);
+-		}
++		phy_power_off(hpriv->phys[i]);
++		phy_exit(hpriv->phys[i]);
+ 	}
+ 	return rc;
+ }
+@@ -91,11 +86,9 @@ void ahci_platform_disable_phys(struct ahci_host_priv *hpriv)
+ {
+ 	int i;
+ 
+-	for (i = 0; i < AHCI_MAX_PORTS; i++) {
+-		if (hpriv->mask_port_map & (1 << i)) {
+-			phy_power_off(hpriv->phys[i]);
+-			phy_exit(hpriv->phys[i]);
+-		}
++	for (i = 0; i < hpriv->nports; i++) {
++		phy_power_off(hpriv->phys[i]);
++		phy_exit(hpriv->phys[i]);
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(ahci_platform_disable_phys);
+@@ -215,12 +208,13 @@ int ahci_platform_enable_regulators(struct ahci_host_priv *hpriv)
+ 	if (rc)
+ 		goto disable_ahci_pwrs;
+ 
+-	for (i = 0; i < AHCI_MAX_PORTS; i++) {
+-		if (hpriv->mask_port_map & (1 << i)) {
+-			rc = regulator_enable(hpriv->target_pwrs[i]);
+-			if (rc)
+-				goto disable_target_pwrs;
+-		}
++	for (i = 0; i < hpriv->nports; i++) {
++		if (!hpriv->target_pwrs[i])
++			continue;
++
++		rc = regulator_enable(hpriv->target_pwrs[i]);
++		if (rc)
++			goto disable_target_pwrs;
+ 	}
+ 
+ 	return 0;
+@@ -248,9 +242,10 @@ void ahci_platform_disable_regulators(struct ahci_host_priv *hpriv)
+ {
+ 	int i;
+ 
+-	for (i = 0; i < AHCI_MAX_PORTS; i++) {
+-		if (hpriv->mask_port_map & (1 << i))
+-			regulator_disable(hpriv->target_pwrs[i]);
++	for (i = 0; i < hpriv->nports; i++) {
++		if (!hpriv->target_pwrs[i])
++			continue;
++		regulator_disable(hpriv->target_pwrs[i]);
+ 	}
+ 
+ 	regulator_disable(hpriv->ahci_regulator);
+@@ -347,8 +342,8 @@ static void ahci_platform_put_resources(struct device *dev, void *res)
+ 	 * SATA device itself. So we can't use devm for automatically
+ 	 * releasing them. We have to do it manually here.
+ 	 */
+-	for (c = 0; c < AHCI_MAX_PORTS; c++)
+-		if ((hpriv->mask_port_map & (1 << c)) && hpriv->target_pwrs[c])
++	for (c = 0; c < hpriv->nports; c++)
++		if (hpriv->target_pwrs && hpriv->target_pwrs[c])
+ 			regulator_put(hpriv->target_pwrs[c]);
+ 
+ 	kfree(hpriv->target_pwrs);
+@@ -547,7 +542,41 @@ struct ahci_host_priv *ahci_platform_get_resources(struct platform_device *pdev,
+ 		hpriv->f_rsts = flags & AHCI_PLATFORM_RST_TRIGGER;
+ 	}
+ 
++	/*
++	 * Too many sub-nodes most likely means having something wrong with
++	 * the firmware.
++	 */
+ 	child_nodes = of_get_child_count(dev->of_node);
++	if (child_nodes > AHCI_MAX_PORTS) {
++		rc = -EINVAL;
++		goto err_out;
++	}
++
++	/*
++	 * If no sub-node was found, we still need to set nports to
++	 * one in order to be able to use the
++	 * ahci_platform_[en|dis]able_[phys|regulators] functions.
++	 */
++	if (child_nodes)
++		hpriv->nports = child_nodes;
++	else
++		hpriv->nports = 1;
++
++	hpriv->phys = devm_kcalloc(dev, hpriv->nports, sizeof(*hpriv->phys), GFP_KERNEL);
++	if (!hpriv->phys) {
++		rc = -ENOMEM;
++		goto err_out;
++	}
++	/*
++	 * We cannot use devm_ here, since ahci_platform_put_resources() uses
++	 * target_pwrs after devm_ have freed memory
++	 */
++	hpriv->target_pwrs = kcalloc(hpriv->nports, sizeof(*hpriv->target_pwrs), GFP_KERNEL);
++	if (!hpriv->target_pwrs) {
++		rc = -ENOMEM;
++		goto err_out;
++	}
++
+ 	if (child_nodes) {
+ 		for_each_child_of_node(dev->of_node, child) {
+ 			u32 port;
+@@ -562,7 +591,7 @@ struct ahci_host_priv *ahci_platform_get_resources(struct platform_device *pdev,
+ 				goto err_out;
+ 			}
+ 
+-			if (port >= AHCI_MAX_PORTS) {
++			if (port >= hpriv->nports) {
+ 				dev_warn(dev, "invalid port number %d\n", port);
+ 				continue;
+ 			}
+@@ -604,8 +633,6 @@ struct ahci_host_priv *ahci_platform_get_resources(struct platform_device *pdev,
+ 		 * If no sub-node was found, keep this for device tree
+ 		 * compatibility
+ 		 */
+-		hpriv->mask_port_map |= BIT(0);
+-
+ 		rc = ahci_platform_get_phy(hpriv, 0, dev, dev->of_node);
+ 		if (rc)
+ 			goto err_out;
+-- 
+2.51.0
+

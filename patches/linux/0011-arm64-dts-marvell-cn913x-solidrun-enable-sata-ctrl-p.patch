@@ -1,0 +1,57 @@
+From cad988429f288d826755739555bd65ecddf7e860 Mon Sep 17 00:00:00 2001
+From: Josua Mayer <josua@solid-run.com>
+Date: Fri, 24 Oct 2025 14:42:10 +0200
+Subject: [PATCH 11/11] arm64: dts: marvell: cn913x-solidrun: enable sata ctrl
+ port0
+
+After reverting support for non-consecutive sata-ports, re-enable the
+primary port for those controllers where only the second port is
+actually used - to ensure it is usable.
+
+Signed-off-by: Josua Mayer <josua@solid-run.com>
+---
+ arch/arm64/boot/dts/marvell/cn9130-cf.dtsi      | 3 ---
+ arch/arm64/boot/dts/marvell/cn9132-clearfog.dts | 6 ------
+ 2 files changed, 9 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi b/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
+index ad0ab34b6602..b78d17b2f7a9 100644
+--- a/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
++++ b/arch/arm64/boot/dts/marvell/cn9130-cf.dtsi
+@@ -154,9 +154,6 @@ expander0_pins: cp0-expander0-pins {
+ &cp0_sata0 {
+ 	phys = <&cp0_comphy0 1>;
+ 	status = "okay";
+-
+-	/* only port 1 is available */
+-	/delete-node/ sata-port@0;
+ };
+ 
+ /* microSD */
+diff --git a/arch/arm64/boot/dts/marvell/cn9132-clearfog.dts b/arch/arm64/boot/dts/marvell/cn9132-clearfog.dts
+index 0f53745a6fa0..9c4fcea0913a 100644
+--- a/arch/arm64/boot/dts/marvell/cn9132-clearfog.dts
++++ b/arch/arm64/boot/dts/marvell/cn9132-clearfog.dts
+@@ -511,9 +511,6 @@ &cp1_pinctrl {
+ &cp1_sata0 {
+ 	status = "okay";
+ 
+-	/* only port 1 is available */
+-	/delete-node/ sata-port@0;
+-
+ 	sata-port@1 {
+ 		phys = <&cp1_comphy3 1>;
+ 	};
+@@ -630,9 +627,6 @@ &cp2_pinctrl {
+ &cp2_sata0 {
+ 	status = "okay";
+ 
+-	/* only port 1 is available */
+-	/delete-node/ sata-port@0;
+-
+ 	sata-port@1 {
+ 		phys = <&cp2_comphy3 1>;
+ 	};
+-- 
+2.51.0
+
