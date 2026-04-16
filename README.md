@@ -124,7 +124,7 @@ Plug in a uSD into your machine and run the following, where sdX is the location
 
 `sudo dd if=images/<image_name>.img of=/dev/sdX`
 
-In u-boot prompt, write the folloiwng command for loading ubuntu:
+In u-boot prompt, write the following command for loading ubuntu:
 
 `get_images=load mmc 1:1 $kernel_addr_r boot/Image; load mmc 1:1 $fdt_addr_r boot/<device_tree>.dtb; setenv root 'root=/dev/mmcblk1p1' rw; boot`
 
