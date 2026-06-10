@@ -104,6 +104,55 @@ The package must include the files below:
 
 Carefully review `license.txt` before use!
 
+## Compiling External Kernel Modules
+
+Kernel modules can be built using the "linux-headers" package for a specific image.
+It is available in the same place as binary images on [our website](https://images.solid-run.com/CN913x/cn913x_build).
+
+### Preparations for Cross-Build on x86_64 Host
+
+Modules should be compiled in the same environment as the original images:
+x86_64 host, Debian 10, `apt-get install crossbuild-essential-arm64`.
+
+### Preparations for Native Build on CN913x
+
+The kernel headers package includes binary programs built for x86_64.
+For a native build QEMU user-mode emulation packages must be installed and configured,
+to allow transparent execution of these programs:
+
+    apt-get update
+    apt-get install qemu-user-binfmt
+
+Install amd64 library dependencies:
+
+       apt-get install libc6-amd64-cross
+       ln -sv /lib /lib64
+       ln -sv /usr/x86_64-linux-gnu/lib/ld-linux-x86-64.so.2 /lib/ld-linux-x86-64.so.2
+       ln -sv /usr/x86_64-linux-gnu/lib /usr/lib/x86_64-linux-gnu
+
+Install native toolchain:
+
+    apt-get install build-essential ca-certificates
+
+### Compiling the Module
+
+After configuration of the build host according to the previous steps,
+a ficticious module may be compiled for binary images `sdk12/2026-06-10_96f6cb0/cn9130-cf-pro-debian-bookworm-microsd.img.xz` using the steps below:
+
+```
+wget https://images.solid-run.com/CN913x/cn913x_build/sdk12/2026-06-10_96f6cb0/linux-headers.tar.xz
+mkdir linux-headers
+tar -C linux-headers -xf linux-headers.tar.xz
+
+cd kernel-mod-src
+
+make -C ../linux-headers/ CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 M="$PWD" modules
+ls *.ko
+```
+
+In case the module requires access to kernel private headers not included in -headers package,
+it must be built as part of a full image. See [runme.sh]((https://github.com/SolidRun/cn913x_build/blob/develop-sdk12/runme.sh#L296) section `# Build mdio-proxy kernel module` for an example.
+
 ## DDR configuration and EEPROM
 
 The atf dram_port.c supports both CN9132 CEX-7 SO-DIMM integrating SPD EEPROM, and CN9130 SOM with DDRs soldered on board which are configured according to boot straps MPP[10:11].
