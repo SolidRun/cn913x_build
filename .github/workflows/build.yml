@@ -93,7 +93,8 @@ jobs:
             mkdir -p deploy/u-boot
             cp -L -v images/*.bin deploy/u-boot
             cp -L -v images/*.img deploy
-            xz -v -9 deploy/*.img
+            cp -L -v images/*.tar deploy
+            xz -v -9 deploy/*.img deploy/*.tar
 
       - name: Deploy to the local minio storage
         uses: yakubique/minio-upload@v1.1.3
