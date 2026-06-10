@@ -366,7 +366,7 @@ test "$UBUNTU_VERSION" = "bionic" && export PATH=$PATH:/sbin:/usr/sbin:/usr/loca
 
 apt-get update
 env DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true LC_ALL=C LANGUAGE=C LANG=C \
-	apt-get install --no-install-recommends -y apt apt-utils ethtool htop i2c-tools ifupdown iproute2 iptables iputils-ping isc-dhcp-client kmod libatomic1 less lm-sensors locales memtester net-tools ntpdate openssh-server pciutils procps psmisc rfkill rng-tools sudo systemd-sysv usbutils wget
+	apt-get install --no-install-recommends -y apt apt-utils ethtool fio htop i2c-tools ifupdown iperf3 iproute2 iptables iputils-ping isc-dhcp-client kmod libatomic1 less lm-sensors locales memtester net-tools ntpdate openssh-server pciutils procps psmisc rfkill rng-tools sudo systemd-sysv usbutils wget
 apt-get clean
 
 # fix modules location for split lib,usr/lib
@@ -439,7 +439,7 @@ do_build_debian() {
 	if [ ! -f ${DEBIAN_VERSION}.ext4 ]; then
 		rm -f rootfs.ext4
 
-		local PKGS=apt-transport-https,busybox,ca-certificates,can-utils,command-not-found,curl,e2fsprogs,ethtool,fdisk,gpiod,haveged,i2c-tools,ifupdown,iputils-ping,isc-dhcp-client,initramfs-tools,libatomic1,lm-sensors,locales,nano,net-tools,ntpdate,openssh-server,pciutils,psmisc,rfkill,sudo,systemd-sysv,usbutils,wget,xterm,xz-utils
+		local PKGS=apt-transport-https,busybox,ca-certificates,can-utils,command-not-found,curl,e2fsprogs,ethtool,fdisk,fio,gpiod,haveged,i2c-tools,ifupdown,iperf3,iputils-ping,isc-dhcp-client,initramfs-tools,libatomic1,lm-sensors,locales,nano,net-tools,ntpdate,openssh-server,pciutils,perf-tools-unstable,psmisc,rfkill,sudo,systemd-sysv,usbutils,wget,xterm,xz-utils
 
 		# bootstrap a first-stage rootfs
 		rm -rf stage1
