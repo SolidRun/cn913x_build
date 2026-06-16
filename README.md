@@ -71,14 +71,14 @@ Build options can be customised by passing environment variables to the runme sc
   - `debian`: Generate Debian based rootfs
   - `ubuntu`: Generate Ubuntu based rootfs (default)
 - `DEBIAN_VERSION`: Debian Version
-  - bookworm (12, default)
+  - `bookworm`: 12 Bookworm (default)
 - `DEBIAN_ROOTFS_SIZE`: rootfs / partition size
   - `1472M` (default)
   - arbitrary sizes supported in unit `M`, 1472M recommended minimum
 - `UBUNTU_VERSION`: Ubuntu Version
-  - bionic (18.04)
-  - focal (20.04, default)
-  - jammy (22.04)
+  - `bionic`: 18.04 Bionic Beaver
+  - `focal`: 20.04 Focal Fossa (default)
+  - `jammy`: 22.04 Jammy Jellyfish
 - `UBUNTU_ROOTFS_SIZE`: rootfs / partition size
   - `704M` (default)
   - arbitrary sizes supported in unit `M`, 500M recommended minimum
@@ -173,7 +173,7 @@ Plug in a uSD into your machine and run the following, where sdX is the location
 
 `sudo dd if=images/<image_name>.img of=/dev/sdX`
 
-In u-boot prompt, write the folloiwng command for loading ubuntu:
+In u-boot prompt, write the following command for loading ubuntu:
 
 `get_images=load mmc 1:1 $kernel_addr_r boot/Image; load mmc 1:1 $fdt_addr_r boot/<device_tree>.dtb; setenv root 'root=/dev/mmcblk1p1' rw; boot`
 
